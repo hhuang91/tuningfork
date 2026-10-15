@@ -15,6 +15,10 @@ A step debugger and experiment lab for agent skills running on local LLMs.
 > command by command: first a five-minute tour that needs no GPU, then the real experiment.
 > [`examples/hermes-design-md/`](examples/hermes-design-md/README.md) does it on a real skill,
 > Hermes Agent's own `design-md`, from the failing step to an approved fix and the runs after.
+> [`examples/hermes-architecture-diagram/`](examples/hermes-architecture-diagram/README.md) is a
+> case study, with an agent standing in for the person: Hermes's own self-improvement loop against
+> Hermes with tuningfork's tools over MCP, on another of its skills, with the same local model in
+> both.
 
 ## The problem
 
@@ -410,7 +414,8 @@ MCP tool approves, and an MCP client's token is refused where approving happens.
 OpenJarvis teacher — over the Model Context Protocol. An agent can do what a person does:
 count what the failed runs' checks said, find where a task's runs split, read that step's
 context and the skill lines in it, measure how often each behaviour happens there, and
-A/B-test a wording it wrote.
+A/B-test a wording it wrote. What that gave Hermes on one of its own skills, against its own
+self-improvement loop, is in [`examples/hermes-architecture-diagram/`](examples/hermes-architecture-diagram/README.md).
 
 ```console
 $ claude mcp add --transport stdio tuningfork -- tuningfork mcp --home ~/recordings

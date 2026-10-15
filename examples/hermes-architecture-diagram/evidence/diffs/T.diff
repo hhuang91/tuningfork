@@ -1,0 +1,33 @@
+--- original/SKILL.md
++++ T/SKILL.md
+@@ -39,8 +39,8 @@
+ ## Workflow
+ 
+-1. User describes their system architecture (components, connections, technologies)
+-2. Generate the HTML file following the design system below
+-3. Save with `write_file` to a `.html` file (e.g. `~/architecture-diagram.html`)
+-4. User opens in any browser — works offline, no dependencies
++1. User describes their system architecture.
++2. Component Inventory: List every component, boundary, and connection mentioned in the request.
++3. Layout Planning: Organize the inventory into layers (e.g., External -> Edge -> Logic -> Data). Assign Y-coordinates by layer (100, 250, 400, 550) and distribute X-coordinates evenly across the 1000px width.
++4. Generate and save the HTML, ensuring the legend is 20px below the lowest boundary.
+ 
+ ### Output Location
+@@ -92,7 +92,7 @@
+ 
+ ### Component Rendering
+-Components are rounded rectangles (`rx="6"`) with 1.5px strokes. To prevent arrows from showing through semi-transparent fills, use a **double-rect masking technique**:
+-1. Draw an opaque background rect (`#0f172a`)
+-2. Draw the semi-transparent styled rect on top
++Every component MUST be rendered using this exact two-layer stack:
++1. Mask Layer: <rect ... fill="#0f172a" rx="6" /> (MUST be first)
++2. Visual Layer: <rect ... fill="rgba(...)" stroke="..." rx="6" /> (MUST be second)
+ 
+ ### Connection Rules
+@@ -108,5 +108,5 @@
+ - **Vertical Gap:** Minimum 40px between components
+ - **Message Buses:** Must be placed *in the gap* between services, not overlapping them
+-- **Legend Placement:** **CRITICAL.** Must be placed outside all boundary boxes. Calculate the lowest Y-coordinate of all boundaries and place the legend at least 20px below it.
++Legend Placement: **CRITICAL.** The legend MUST be outside all boundaries. You MUST write the calculation 'Lowest Boundary Bottom = Y + H; Legend Y = Y + H + 20' before generating the SVG.
+ 
+ ## Document Structure

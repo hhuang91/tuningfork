@@ -119,6 +119,12 @@
 - **A benchmark driver** (`benchmark/driver/run.py`): Hermes's own self-improvement loop, as a
   told chain, against Hermes with tuningfork's tools over MCP — the same task, model and server,
   each arm's final skill judged by fresh runs — with one task, `benchmark/architecture-diagram/`.
+- **A case study** (`examples/hermes-architecture-diagram/`): on Hermes's `architecture-diagram`
+  skill, its own loop reached 9/10 by growing the skill, templates of the training answer
+  included; Hermes with tuningfork's tools reached 8/10 with an 8-line edit, kept only after it
+  beat the original in forks. A demonstration of the tools, with an agent standing in for a
+  person.
+
 ## 0.1.0 — the first public release
 
 A step debugger and experiment lab for agent skills on local LLMs, pre-alpha. What it does:

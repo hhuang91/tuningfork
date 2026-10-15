@@ -1,0 +1,339 @@
+{
+ "about": "Every evaluation run of each arm's final skill on the task (fresh runs, the task's check deciding), and T's screens: forks restarted from four recorded failed runs at the step that writes the diagram, run to the end with the edit in place, and judged by the same check.",
+ "fresh_runs": {
+  "original (the baseline T studied)": {
+   "passed": 0,
+   "of": 10,
+   "runs": [
+    {
+     "run": "23f9104a",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "2f9cc2b6",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "8a5d6d6a",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "1fc15a4f",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "b0e155f2",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "bbdfbfe9",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "24ab996c",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "b0a195a3",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "fe24a60e",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "0fa851af",
+     "passed": false,
+     "timed_out": false
+    }
+   ]
+  },
+  "H: Hermes's own loop, its final skill": {
+   "passed": 9,
+   "of": 10,
+   "runs": [
+    {
+     "run": "e4fec20a",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "e369d260",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "dce9166e",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "d1fbcc5c",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "19953e8b",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "e62ea356",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "2dc6fb0e",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "701f590b",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "2ec5fa30",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "3d569c0c",
+     "passed": false,
+     "timed_out": false
+    }
+   ]
+  },
+  "T: Hermes with tuningfork, its kept edit": {
+   "passed": 8,
+   "of": 10,
+   "runs": [
+    {
+     "run": "e4b3bec5",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "e6380975",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "e713b85c",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "8163b542",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "fba5dc51",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "16301c02",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "f35159cc",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "c588e458",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "29546d35",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "5f6e827c",
+     "passed": false,
+     "timed_out": false
+    }
+   ]
+  },
+  "X: a frontier model's edit (reference)": {
+   "passed": 10,
+   "of": 10,
+   "runs": [
+    {
+     "run": "6d6f82db",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "bdb80a51",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "8ad3b872",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "16b3ca45",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "cd58e2cb",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "7e3934b9",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "d5ead09b",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "2dd982cd",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "513b391a",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "7bcc0475",
+     "passed": true,
+     "timed_out": false
+    }
+   ]
+  },
+  "T's first attempt (before the fixes), its kept edit": {
+   "passed": 3,
+   "of": 10,
+   "runs": [
+    {
+     "run": "c3c2d877",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "2e0f1067",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "1a646df7",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "63bcc706",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "10d4ac48",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "99396626",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "2ee8e3e6",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "5f96a0e0",
+     "passed": true,
+     "timed_out": false
+    },
+    {
+     "run": "3e3b362a",
+     "passed": false,
+     "timed_out": false
+    },
+    {
+     "run": "af4905e8",
+     "passed": false,
+     "timed_out": false
+    }
+   ]
+  }
+ },
+ "t_screens": [
+  {
+   "kind": "quick look",
+   "proposal": "f2aa9c79",
+   "passed": 0,
+   "of": 8
+  },
+  {
+   "kind": "quick look",
+   "proposal": "a76b75c6",
+   "passed": 1,
+   "of": 8
+  },
+  {
+   "kind": "quick look",
+   "proposal": "a9a867e4",
+   "passed": 5,
+   "of": 8
+  },
+  {
+   "kind": "full screen",
+   "proposal": "a9a867e4",
+   "passed": 12,
+   "of": 20,
+   "original": {
+    "passed": 0,
+    "of": 20
+   },
+   "fisher_p": 4.5e-05,
+   "verdict": "survives",
+   "by_checkpoint": [
+    {
+     "run": "0fa851af",
+     "proposal": "2/5",
+     "original": "0/5"
+    },
+    {
+     "run": "fe24a60e",
+     "proposal": "3/5",
+     "original": "0/5"
+    },
+    {
+     "run": "b0a195a3",
+     "proposal": "4/5",
+     "original": "0/5"
+    },
+    {
+     "run": "24ab996c",
+     "proposal": "3/5",
+     "original": "0/5"
+    }
+   ]
+  }
+ ]
+}

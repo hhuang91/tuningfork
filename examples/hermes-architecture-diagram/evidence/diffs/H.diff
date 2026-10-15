@@ -1,0 +1,69 @@
+--- original/SKILL.md
++++ H/SKILL.md
+@@ -39,8 +39,17 @@
+ ## Workflow
+ 
++**CRITICAL: You MUST execute the "Verification Step" checklist before saving the file. The most common failures are Legend Placement (must be outside all boundaries) and Double-Rect Masking (must be used for all components to hide the grid).**
++
+ 1. User describes their system architecture (components, connections, technologies)
+-2. Generate the HTML file following the design system below
+-3. Save with `write_file` to a `.html` file (e.g. `~/architecture-diagram.html`)
+-4. User opens in any browser — works offline, no dependencies
++2. Generate the HTML file following the design system below.
++   - **CRITICAL:** Load `references/service-mapping.md`, `references/layout-patterns.md`, and `references/common-patterns.md` first to ensure colors, spacing, and flow patterns are precise.
++3. **Verification Step (CRITICAL):** Before saving, cross-reference the generated SVG against the user's prompt and the design system. Use this checklist:
++   - **Completeness:** Every component, technology, and and boundary mentioned is present.
++   - **Connectivity:** Every described relationship is represented by a correctly directed arrow.
++   - **Containment:** Components are inside the correct Security Groups and Regions.
++   - **Legend Placement:** **CRITICAL.** Is the legend entirely outside all boundary boxes? (Calculate: Legend.y > Boundary.y + Boundary.height + 20px).
++   - **Masking:** Every styled component uses the double-rect technique (opaque background rect + semi-transparent styled rect) to hide the grid and arrows.
++   - **Legibility:** No overlapping text or components.
++   - Accuracy: Port numbers, region names, and service names are exact.
+ 
+ ### Output Location
+@@ -65,5 +74,7 @@
+ ### Color Palette (Semantic Mapping)
+ 
+-Use specific `rgba` fills and hex strokes to categorize components:
++See `references/service-mapping.md` for a detailed guide on mapping specific AWS services to these categories.
++
++| Component Type | Fill (rgba) | Stroke (Hex) |
+ 
+ | Component Type | Fill (rgba) | Stroke (Hex) |
+@@ -104,9 +115,21 @@
+   - *Regions:* Large dashed (`8,4`), amber color, `rx="12"`
+ 
++
+ ### Spacing & Layout Logic
++- **Reference:** See `references/layout-patterns.md` for coordinate grids and anchor points.
+ - **Standard Height:** 60px (Services); 80-120px (Large components)
+ - **Vertical Gap:** Minimum 40px between components
+ - **Message Buses:** Must be placed *in the gap* between services, not overlapping them
+ - **Legend Placement:** **CRITICAL.** Must be placed outside all boundary boxes. Calculate the lowest Y-coordinate of all boundaries and place the legend at least 20px below it.
++- **Canvas Height Estimation:** To avoid cutting off the legend, estimate the `viewBox` height as: `Base Height (~600px) + Legend Buffer (100-150px)`. For most standard architectures, a `viewBox` height of `750px` to `850px` is required.
++
++
++- **Legend Placement:** The most common failure. The legend MUST be entirely outside all boundary boxes. If you have a Region boundary, the legend's `y` must be greater than `Region.y + Region.height`. **CRITICAL:** Verify that the SVG `viewBox` height is sufficient to accommodate both the boundary boxes and the legend; increase the height (e.g., to 800px or more) if the legend is cut off.
++- **Boundary Leakage:** Ensure that external services (e.g., Auth0, Stripe, third-party APIs) are placed **outside** the Cloud Region boundary box. Placing a non-AWS service inside an AWS Region box is an architectural error.
++- **Coordinate Accuracy:** Do not "eyeball" arrow endpoints. Calculate `x2/y2` based on the target's `x, y, width, height` to ensure connections are mathematically correct.
++- **Connectivity Validation:** A diagram that "looks right" may fail automated validation checks. Rigorously verify that every described relationship in the prompt is represented by a matching SVG path.
++- **Z-Order/Transparency:** Arrows appearing "inside" components. Always draw arrows *before* the component boxes in the SVG.
++- **Masking:** Forgetting the double-rect technique. Ensure an opaque background rect (`#0f172a`) is drawn immediately before the semi-transparent styled rect to hide the grid and arrows.
++- **Alignment:** Arrows that don't quite reach the target. Double-check the `x2/y2` coordinates against the target's `x, y, width, height`.
+ 
+ ## Document Structure
+@@ -144,5 +167,6 @@
+ ```
+ skill_view(name="architecture-diagram", file_path="templates/template.html")
++skill_view(name="architecture-diagram", file_path="templates/aws-web-app-layout.html")
+ ```
+ 
+-The template contains working examples of every component type (frontend, backend, database, cloud, security), arrow styles (standard, dashed, curved), security groups, region boundaries, and the legend — use it as your structural reference when generating diagrams.
++The templates contain working examples of every component type (frontend, backend, database, cloud, security), arrow styles (standard, dashed, curved), security groups, region boundaries, and the legend — use them as your structural reference when generating diagrams.
+
+# files the arm added (not shown here):
+#   references/common-patterns.md (36 lines)
+#   references/layout-patterns.md (34 lines)
+#   references/service-mapping.md (19 lines)
+#   templates/aws-web-app-layout.html (225 lines)
+#   templates/aws-web-app-standard.html (216 lines)

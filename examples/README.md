@@ -27,7 +27,9 @@ are trimmed where marked `...`.
 
 The skill here is a toy, made to fail one way. For a real one — Hermes Agent's own
 `design-md` skill on Gemma 4 26B, from the failing step to an approved fix and the runs after —
-see [`hermes-design-md/`](hermes-design-md/README.md).
+see [`hermes-design-md/`](hermes-design-md/README.md). For an agent doing the work over MCP —
+Hermes with tuningfork's tools against Hermes's own self-improvement loop, on its
+`architecture-diagram` skill — see [`hermes-architecture-diagram/`](hermes-architecture-diagram/README.md).
 
 ## What is in this folder
 
