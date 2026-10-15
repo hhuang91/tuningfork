@@ -116,6 +116,9 @@
 - **The guides on Gemma 4 31B.** `examples/README.md` was run again as written on one 32 GB card,
   every output captured there, and every step of Parts 2 to 4 now has a "With Hermes Agent" block:
   Hermes's own edit validated three ways and approved.
+- **A benchmark driver** (`benchmark/driver/run.py`): Hermes's own self-improvement loop, as a
+  told chain, against Hermes with tuningfork's tools over MCP — the same task, model and server,
+  each arm's final skill judged by fresh runs — with one task, `benchmark/architecture-diagram/`.
 ## 0.1.0 — the first public release
 
 A step debugger and experiment lab for agent skills on local LLMs, pre-alpha. What it does:
