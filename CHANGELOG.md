@@ -113,6 +113,9 @@
 - **Fixed:** a line of the original that a longer line of the variant contains is no longer taken
   for a leak (it had voided twenty forks of one screen); a tally masks a hex colour whole; parsing
   a recorded script for its digest no longer prints its warnings.
+- **The guides on Gemma 4 31B.** `examples/README.md` was run again as written on one 32 GB card,
+  every output captured there, and every step of Parts 2 to 4 now has a "With Hermes Agent" block:
+  Hermes's own edit validated three ways and approved.
 ## 0.1.0 — the first public release
 
 A step debugger and experiment lab for agent skills on local LLMs, pre-alpha. What it does:
