@@ -379,6 +379,40 @@ class TestToEnd:
         assert "layout" not in launch_of(older.run_id).settings
         assert prepare_fork(stack.store, older.run_id, "1", base_url=f"{stack.url}/v1").adapter.layout == "flat"
 
+    def test_a_fork_is_set_up_as_its_source_was(self, stack, monkeypatch):
+        """A harness option changes what the model is told (Hermes's self_improvement: a
+        sentence of its system prompt), and a launch records its options: a fork of the run
+        takes them, or its replay departs at the first step. An MCP server is recorded by
+        name only, so a fork runs without it, and the plan says so."""
+        from tuningfork.harness import ADAPTERS
+        from tuningfork.runner import BatchRunner
+        from tests.helpers import FakeAgent
+
+        class SetUp(FakeAgent):
+            layouts = ("install", "flat")
+
+            def __init__(self, executable=None, *, layout="install", options=None):
+                self.layout, self.options = layout, dict(options or {})
+
+            @property
+            def settings(self):
+                return {"harness": dict(self.options)} if self.options else {}
+
+        monkeypatch.setitem(ADAPTERS, "fake", SetUp)
+        servers = {"tf": "http://127.0.0.1:1/mcp"}
+        quiet = SetUp(options={"self_improvement": False, "mcp_servers": servers})
+        runner = BatchRunner(stack.store, quiet, base_url=f"{stack.url}/v1", model="m",
+                             workdir=stack.tmp / "batches", settle=0.1)
+        (recorded,) = runner.run(stack.spec, stack.item, 1).outcomes
+        launch = stack.store.get_launch(stack.store.get_run(recorded.run_id).launch_id)
+        assert launch.settings["harness"] == {"self_improvement": False, "mcp_servers": servers}
+        plan = prepare_fork(stack.store, recorded.run_id, "1", base_url=f"{stack.url}/v1")
+        assert plan.adapter.options == {"self_improvement": False}
+        assert any("MCP server(s) tf" in warning and "without them" in warning for warning in plan.warnings), plan.warnings
+
+        plain = stack.record()  # recorded with no options: forked with none
+        assert prepare_fork(stack.store, plain.run_id, "1", base_url=f"{stack.url}/v1").adapter.options == {}
+
     def test_a_caller_inside_the_proxy_plans_a_fork_without_asking_it_over_http(self, stack, monkeypatch):
         from tuningfork.ops import launch
 

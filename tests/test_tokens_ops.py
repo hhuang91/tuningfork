@@ -140,3 +140,31 @@ class TestFrontEnds:
 
         none = runner.invoke(app, ["tokens", run_id[:8], "0", "--home", str(store.home)])
         assert "has not been scored yet" in none.output and "--score" in none.output
+
+
+class TestTheChoiceOfTool:
+    def test_a_scored_step_says_how_likely_each_tool_was(self, store):
+        """The step offered the tools its request names; the stream's call names one of them,
+        and the view says the chance of each — read by the CLI, the UI and an agent alike."""
+        from tuningfork.ops.tokens import step_choice
+
+        run_id = record_pilot(store)
+        step = store.step(run_id, 1)
+        answer = [*ANSWER[:8], entry(7, "write_file", 0.45, [(12, "execute_code", 0.55)]), *ANSWER[9:]]
+        store.add_token_stream(stream_json(answer), source="scored", step_id=step.id, method="grammar", exact=True)
+
+        view = step_tokens(store, run_id, "write_file").to_json()["view"]
+        # The pilot's step offers read_file alone: the name it wrote stands, and a name no
+        # offered tool begins is "other".
+        assert view["choice"]["chosen"] == "write_file" and view["choice"]["position"] == 8
+        assert view["choice"]["chance"] == {"other": pytest.approx(0.55, abs=1e-4), "write_file": pytest.approx(0.45, abs=1e-4)}
+        assert step_choice(store, step)["chance"] == view["choice"]["chance"]
+        assert step_choice(store, store.step(run_id, 0)) is None  # never scored
+
+    def test_a_reply_in_text_chooses_no_tool(self, store):
+        run_id = record_pilot(store)
+        step = store.step(run_id, 1)
+        reply = [entry(100, "<|channel>"), entry(1, "thought"), entry(2, "\n"), entry(101, "<channel|>"),
+                 entry(20, "Done"), entry(50, "")]
+        store.add_token_stream(stream_json(reply), source="scored", step_id=step.id, method="grammar", exact=True)
+        assert step_tokens(store, run_id, "1").to_json()["view"]["choice"] is None

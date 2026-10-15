@@ -95,6 +95,17 @@ class TestProposals:
         (entry,) = proposal.data["proposers"]
         assert entry["client"] == "claude-code" and entry["rationale"] == "the check wants these keys"
 
+    def test_an_edit_by_line_number_is_resolved_to_the_text_it_names(self, stack):
+        made = start(stack, a_run(stack))
+        proposal = refine.add_proposal(
+            stack.store, made.id, rationale="the check wants these keys", proposer={"via": "mcp"},
+            edits=[{"line": 7, "new": KEYS["new"]}, {"after": 7, "insert": "Check the counts against the input."}],
+        )
+        assert "row_count and amount_total" in proposal.text() and "Check the counts" in proposal.text()
+        (entry,) = proposal.data["proposers"]
+        assert [(e["lines"], e["old"]) for e in entry["edits"]] == [("line 7", KEYS["old"]), ("after line 7", "")]
+        assert entry["edits"][0]["given"] == {"line": 7, "new": KEYS["new"]}
+
     def test_the_same_text_twice_is_one_proposal_with_both_proposers(self, stack):
         made = start(stack, a_run(stack))
         first = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="a", proposer={"via": "mcp"})
@@ -116,6 +127,7 @@ class TestProposals:
             return error.value
 
         assert "frontmatter" in refused(edits=[{"old": "name: tally-report", "new": "name: tally"}]).message
+        assert "frontmatter" in refused(edits=[{"line": 2, "new": "name: tally"}]).message
         assert "at most 3 edits" in refused(edits=[KEYS] * 4).message
         many = baseline + "".join(f"line {k}\n" for k in range(12))
         assert "12 lines changed" in refused(text=many).message

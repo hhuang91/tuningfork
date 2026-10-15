@@ -11,6 +11,9 @@ class FormatError(ValueError):
 
 class Format(Protocol):
     name: str
+    #: What the model writes between a call's opening marker and the tool's name — Gemma 4's
+    #: `call:` — so the first token of the name can be found in a stream's tool-call part.
+    call_name_prefix: str
 
     def detect(self, template: str) -> bool:
         """Whether a chat template is this format's."""

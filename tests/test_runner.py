@@ -764,3 +764,41 @@ class TestCancel:
 
         assert stopped.value.reason == "shutdown"
         assert [launch["status"] for launch in self.launches(store)] == ["interrupted"]
+
+
+class TestRunsAsPartOfSomethingLarger:
+    """`BatchRunner.run`'s group, start, skill_dir, skill_snapshot and settings: what a chain
+    asks of a batch's runs."""
+
+    def test_a_given_skill_folder_and_a_group_number_the_runs_in_order(self, store, tmp_path):
+        spec, item = make_spec(tmp_path)
+        other = tmp_path / "other-skill"
+        other.mkdir()
+        (other / "SKILL.md").write_text("# other\n", encoding="utf-8")
+        runner = make_runner(store, tmp_path, GOOD_REPORT)
+
+        result = runner.run(
+            spec, item, 2, group="grp12345", start=3, skill_dir=other, skill_snapshot="skill-snapshot-3",
+            settings={"chain": {"id": "grp12345", "link": 3}},
+        )
+
+        assert [outcome.index for outcome in result.outcomes] == [3, 4]
+        launch = store.get_launch(store.get_run(result.outcomes[0].run_id).launch_id)
+        assert launch.label == "tally-report/1#grp12345.3"
+        assert launch.settings["chain"] == {"id": "grp12345", "link": 3} and launch.settings["breakpoints"]
+        snapshot = (tmp_path / "batches" / "grp12345" / "skill-snapshot-3" / "other-skill").resolve()
+        assert Path(launch.skill_dir) == snapshot
+        assert (runner.adapter.homes[0] / "skills" / "other-skill" / "SKILL.md").read_text() == "# other\n"
+        assert runner.adapter.workspaces[0] == tmp_path / "batches" / "grp12345" / "3" / "workspace"
+        assert store.get_run(result.outcomes[0].run_id).parity["skill_snapshot_dir"] == str(snapshot)
+
+    def test_an_adapters_settings_are_recorded_with_the_launch(self, store, tmp_path):
+        class Configured(RecordingHarness):
+            settings = {"harness": {"await_review": True}}
+
+        spec, item = make_spec(tmp_path)
+        runner = BatchRunner(store, Configured(GOOD_REPORT, store), base_url="http://127.0.0.1:8787/v1",
+                             model="m", workdir=tmp_path / "batches", settle=0)
+        (outcome,) = runner.run(spec, item, 1).outcomes
+        launch = store.get_launch(store.get_run(outcome.run_id).launch_id)
+        assert launch.settings["harness"] == {"await_review": True}

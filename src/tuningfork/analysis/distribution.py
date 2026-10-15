@@ -267,9 +267,23 @@ def target_by_rules(rules: Any, *, code: bool = True) -> Target:
     return Target(description, matches, spec)
 
 
+#: The task's own check as a target: judged by forks run to the end, never on an answer at
+#: the step. For a failure only the check can see — a computed property of what the run
+#: wrote, which no condition over an answer and no pattern expresses.
+CHECK_TARGET = {"kind": "check", "description": "the task's check passes"}
+
+
+def target_check() -> Target:
+    """The task's check as the target. It counts no answer at a step: a screen of it runs
+    each sample as a fork from the checkpoint to the end, and the check decides."""
+    return Target(CHECK_TARGET["description"], lambda outcome: False, dict(CHECK_TARGET))
+
+
 def target_from_spec(spec: dict[str, Any] | None) -> Target | None:
     if not spec:
         return None
+    if spec.get("kind") == "check":
+        return target_check()
     if spec.get("kind") == "key":
         return target_by_key(spec["value"], spec.get("description", spec["value"]))
     if spec.get("kind") == "pattern":

@@ -208,6 +208,30 @@ export function screenView(screen, { arms = {} } = {}) {
       : null);
 }
 
+/** What the checks said, counted: each group's findings, the most common first, each with the
+ *  failed runs (or forks) that said it. `only` keeps one condition of a task's tally. */
+export function tallyView(tally, { only = null } = {}) {
+  const groups = (tally?.groups || []).filter((group) => !only || group.condition?.id === only);
+  if (!groups.some((group) => group.failed)) return null;
+  const title = tally.scope === "screen" ? "What each arm's failed forks' checks said" : "What the failed runs' checks said";
+  return panel(title, [
+    ...groups.map((group) => h("div", { class: "stack", style: { gap: "6px", marginBottom: "12px" } },
+      h("div", null, h("strong", null, group.label), h("span", { class: "muted small" }, `  failed ${group.failed} of ${group.judged} judged`)),
+      group.failed
+        ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
+            h("thead", null, h("tr", null, h("th", null, "failed runs that said it"), h("th", null, "finding"))),
+            h("tbody", null, group.findings.slice(0, 12).map((found) =>
+              h("tr", null, h("td", null, rateBar(found.rate, "bad")), h("td", { class: "mono small" }, found.finding,
+                // Where the check was run along the runs: the call that made it, passing runs included.
+                found.made_text ? h("div", { class: "faint small" }, found.made_text) : null))))))
+        : h("p", { class: "muted small" }, "None failed."),
+      group.findings.length > 12 ? h("p", { class: "faint small" }, `+${group.findings.length - 12} more finding(s)`) : null,
+      group.silent ? h("p", { class: "faint small" }, `${plural(group.silent, "failed run")} whose check printed nothing`) : null)),
+    h("p", { class: "hint" }, "Each line a check printed is one finding, its numbers shown as # and its colours as <color>; a run counts once a finding. "
+      + "The most common first: the failure to fix first, rather than the first one read."),
+  ]);
+}
+
 export function formatP(value) {
   if (value === null || value === undefined) return "—";
   return value < 0.001 ? value.toExponential(1) : value.toFixed(3);

@@ -105,7 +105,7 @@ export function seenPreview({ run, idx, onTools = () => {} }) {
     if (!seen.behaviours.length) return h("p", { class: "muted small" }, "Nothing has been seen at this step yet to try the target on.");
     const total = seen.behaviours.reduce((sum, found) => sum + found.count, 0);
     const counted = seen.behaviours.filter((found) => found.matches).reduce((sum, found) => sum + found.count, 0);
-    return h("div", { class: "stack", style: { gap: "4px" } },
+    const parts = [
       h("div", { class: "label" }, seen.target === null
         ? "Behaviours seen at this step"
         : `What it would count, of the behaviours seen at this step: ${counted} of ${total}`),
@@ -114,7 +114,29 @@ export function seenPreview({ run, idx, onTools = () => {} }) {
           h("span", { class: "seen-mark", title: found.matches === null ? "" : found.matches ? "counts as the target" : "does not count" },
             found.matches === null ? "·" : found.matches ? "✓" : "✗"),
           outcome(found),
-          h("span", { class: "muted small" }, Object.entries(found.seen).map(([where, n]) => `${where} ${n}`).join(" · "))))),
-      h("p", { class: "form-help" }, "Seen before, and not the samples the test will draw: a check of what the target means, not a result."));
+          h("span", { class: "muted small" }, Object.entries(found.seen).map(([where, n]) => `${where} ${n}`).join(" · ") + fared(found))))),
+    ];
+    const judged = split(seen);
+    if (judged) parts.push(judged);
+    parts.push(h("p", { class: "form-help" }, "Seen before, and not the samples the test will draw: a check of what the target means, not a result."));
+    return h("div", { class: "stack", style: { gap: "4px" } }, ...parts);
+  }
+
+  // How the recorded runs that took a behaviour fared: a target should count the passing runs'.
+  function fared(found) {
+    const verdicts = found.verdicts || {};
+    const passed = verdicts.passed || 0, failed = verdicts.failed || 0;
+    return passed || failed ? ` · ${passed} passed, ${failed} failed` : "";
+  }
+
+  function split(seen) {
+    const found = seen.split;
+    if (!found || !found.passing || !found.failing || !(found.passing.of || found.failing.of)) return null;
+    const words = found.kind === "universal" ? "every answer seen satisfies it: an edit could only lower it"
+      : found.kind === "unseen" ? "no answer seen satisfies it"
+      : found.separates === true ? "it separates them" : found.separates === false ? "it does not go with passing" : "";
+    return h("p", { class: "muted small" },
+      `Counts the answers of ${found.passing.counted} of ${found.passing.of} passing runs and ${found.failing.counted} of ${found.failing.of} failing runs`
+      + (words ? ` — ${words}` : ""));
   }
 }

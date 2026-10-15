@@ -35,9 +35,10 @@ class McpRoute:
         health: Callable[[], dict[str, Any]],
         toolset: str = "evidence",
         max_wait: int = 50,
+        results: str = "both",
     ) -> None:
         self.store, self.runner, self.local, self.health = store, runner, local, health
-        self.toolset, self.max_wait = toolset, max_wait
+        self.toolset, self.max_wait, self.results = toolset, max_wait, results
         self._app: Any = None
         self._manager: Any = None
         self._task: asyncio.Task | None = None
@@ -73,7 +74,7 @@ class McpRoute:
         jobs = InProcessJobs(
             self.runner, status=self.health, attach=lambda: self.local.attach(self._loop, self._base_url)
         )
-        tools = ToolServer(self.store, jobs, toolset=self.toolset, max_wait=self.max_wait)
+        tools = ToolServer(self.store, jobs, toolset=self.toolset, max_wait=self.max_wait, results=self.results)
         # No security settings: the SDK's host check is off, and the proxy's guard does it.
         self._manager = StreamableHTTPSessionManager(app=tools.server(), security_settings=None)
         self._app = StreamableHTTPASGIApp(self._manager)

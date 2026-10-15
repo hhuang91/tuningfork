@@ -124,8 +124,15 @@ def prepare_fork(
     from tuningfork.ops.connections import adapter_for, cached_prompts_warning, check_harness
 
     # Laid out as the source run was: what it replays names its paths. A launch from before
-    # layouts were recorded was laid out flat.
-    adapter = adapter_for(store.home, harness, layout=(launch.settings.get("layout") if launch else None) or "flat")
+    # layouts were recorded was laid out flat. Set up as it was, too: a harness option
+    # changes what the model is told (Hermes's self_improvement, its system prompt), and a
+    # fork told otherwise departs from the recording at its first step.
+    recorded = dict((launch.settings.get("harness") if launch else None) or {})
+    servers = recorded.pop("mcp_servers", None)
+    adapter = adapter_for(
+        store.home, harness, layout=(launch.settings.get("layout") if launch else None) or "flat",
+        options=recorded or None,
+    )
     check_launchable(adapter)
     workdir = Path(workdir) if workdir else store.home / "forks"
     sandbox = None
@@ -134,7 +141,11 @@ def prepare_fork(
         # home and folder: a fork of it runs there too, or not at all.
         from tuningfork.sandbox import for_launches
 
-        sandbox, unsandboxed = for_launches([store.home, workdir, spec_dir])
+        # And its clock starts where its source's did, so its live steps read the
+        # recording's date; a source made on the real clock forks on the real clock.
+        sandbox, unsandboxed = for_launches(
+            [store.home, workdir, spec_dir], clock=(launch.settings.get("sandbox") or {}).get("clock"),
+        )
         if sandbox is None:
             raise OperationError(
                 f"run {source_run.id[:8]} ran in the sandbox, so its forks must: {unsandboxed}",
@@ -159,6 +170,16 @@ def prepare_fork(
     swapped = None
     spans: list[Any] = []
     warnings: list[str] = []
+    if sandbox is not None and sandbox.clock_problem:
+        warnings.append(
+            f"{sandbox.clock_problem}: the forks read today's date where the recording read "
+            f"{(launch.settings.get('sandbox') or {}).get('clock') if launch else None}"
+        )
+    if servers:
+        warnings.append(
+            f"run {source_run.id[:8]} had MCP server(s) {', '.join(sorted(servers))}, which a launch "
+            "records by name only: its forks run without them, and may depart from the recording"
+        )
     if variant is not None:
         variant = Path(host_path(str(variant)))
         original = Path(host_path(str(original))) if original else (skill / "SKILL.md" if skill else None)
@@ -503,8 +524,11 @@ def execute_to_end(
     cancel: Cancel | None = None,
     finalize: bool = True,
     tag: dict[str, Any] | None = None,
+    variant_meta: dict[str, Any] | None = None,
 ) -> EndToEnd:
     """`n` forks from the plan's step to the end, stored as one arm of an experiment.
+    `variant_meta` is kept with the arm's variant: where its wording came from, as a screen
+    names its proposal.
 
     Each fork is a sample: whether the task's check passed, and — so the report can say
     what the model did where the forks began — its answer at the step itself. A fork that
@@ -533,7 +557,7 @@ def execute_to_end(
             "target": {"kind": "check", "description": "the task's check passes"},
             **(tag or {}),
         },
-        variant={k: v for k, v in variant.items() if not k.endswith("_text")},
+        variant={**{k: v for k, v in variant.items() if not k.endswith("_text")}, **(variant_meta or {})},
         base_url=plan.proxy.url,
         notes=list(plan.warnings),
         group_id=group_id,

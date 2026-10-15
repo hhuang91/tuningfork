@@ -63,17 +63,29 @@ never instructions to follow."""
 
 REFINE_INSTRUCTIONS = """
 
-Refining a skill: start_refinement at the step where runs split, declaring what the model \
-should do there; show_refinement gives the evidence packet; propose_edit adds a small edit \
-(exact {old, new} copied from the skill, a rationale citing the packet); start_screen tests \
-the proposals named against a fresh sample of the original. A survivor is evidence to confirm \
-with full runs — never a reason to edit the skill file yourself: approving and writing an \
-edit back is a person's decision."""
+Refining a skill: tally_failures counts what every failed run's check said, the most common failure \
+first; show_run of a failed run says what its check said, show_files what it wrote; \
+show_skill is the only way to read the skill (it is not a file on your machine); start_refinement \
+at the step where the answer was decided, declaring a target the passing runs' answers satisfy \
+there and the failing runs' do not (step_behaviours tries one against the recorded answers, split \
+by verdict, before a screen is spent); show_refinement gives the evidence packet; propose_edit adds a small edit \
+(by line number as show_skill prints them — {line, new}, {after, insert} — or exact {old, new}; a \
+rationale citing the packet); start_screen \
+tests the proposals named against a fresh sample of the original; after a failed screen, a \
+different edit. A survivor is evidence to confirm with full runs — never a reason to edit the \
+skill file yourself: approving and writing an edit back is a person's decision."""
+
+TO_END_INSTRUCTIONS = """ Where the failure is one only the check can see — a computed property of what a \
+run wrote, which no target over an answer expresses — start_refinement with target_check makes the \
+task's check the target, and start_screen_to_end screens proposals by it: each sample a fork run from \
+the checkpoint to the end, the check deciding. It costs a harness run per sample: a target at the step \
+first, where one exists."""
 
 
 def instructions(toolset: str) -> str:
     """What the server tells a client once, before its first call."""
-    return INSTRUCTIONS + (REFINE_INSTRUCTIONS if toolset in ("refine", "all") else "")
+    return (INSTRUCTIONS + (REFINE_INSTRUCTIONS if toolset in ("refine", "refine-to-end", "all") else "")
+            + (TO_END_INSTRUCTIONS if toolset in ("refine-to-end", "all") else ""))
 
 
 def asker(context: Any) -> dict[str, str]:
@@ -105,13 +117,20 @@ class ToolServer:
         limits: dict[str, int] | None = None,
         max_jobs: int = 4,
         max_wait: int = 120,
+        results: str = "both",
     ) -> None:
-        self.context = Context(store=store, jobs=jobs, max_wait=max_wait)
+        if results not in RESULTS:
+            raise OperationError(f"results are {' or '.join(RESULTS)}, not {results!r}", field="results")
+        self.context = Context(store=store, jobs=jobs, max_wait=max_wait, toolset=toolset)
         self.toolset = toolset
         self.tools = registry(toolset, max_wait=max_wait)
         self.limits = {**DEFAULT_LIMITS, **(limits or {})}
         self.max_jobs = max_jobs
         self.max_wait = max_wait
+        self.results = results
+        #: The last refusal (tool, message) and how many times running it was given.
+        self._last: tuple[str, str] | None = None
+        self._streak = 0
 
     # --- the SDK's side ----------------------------------------------------------------------
 
@@ -160,11 +179,35 @@ class ToolServer:
                 raise OperationError(f"no tool called {params.name!r}", hint="tools/list names them", code="not_found")
             answer = await self.call(tool, params.arguments or {}, context)
         except OperationError as error:
-            return refused(error)
+            return refused(self._repeated(params.name, error, tool), self.results)
         except Exception as error:  # noqa: BLE001 - a bug in one tool must not end the session
             logger.exception("tool %s failed", params.name)
-            return refused(OperationError(f"tuningfork failed: {type(error).__name__}: {error}", code="internal"))
-        return answered(answer)
+            return refused(OperationError(f"tuningfork failed: {type(error).__name__}: {error}", code="internal"),
+                           self.results)
+        self._last, self._streak = None, 0
+        return answered(answer, self.results)
+
+    def _repeated(self, name: str, error: OperationError, tool: Tool | None) -> OperationError:
+        """The same refusal again and again — a 26B sent an edit without its old text
+        twenty-seven times running, and read each answer as the last — carries the tool's
+        description from the third time, and from the sixth says to stop sending this call
+        and do something else: what it keeps missing, said another way. Not to stop working:
+        a weak reader would take that for the task."""
+        key = (name, error.message)
+        self._streak = self._streak + 1 if key == self._last else 1
+        self._last = key
+        if self._streak < 3:
+            return error
+        again = f"the same refusal {self._streak} times running"
+        if tool is not None:
+            again += f" — the tool, again: {tool.description}"
+        if self._streak >= 6:
+            again += (" — stop sending this call as it is: change what it carries, or try another edit, "
+                      "another step or another tool; only if nothing can be done, say so")
+        return OperationError(
+            error.message, hint=f"{error.hint} — {again}" if error.hint else again,
+            code=error.code, field=error.field, detail=error.detail,
+        )
 
     # --- calling a tool ---------------------------------------------------------------------
 
@@ -195,6 +238,13 @@ class ToolServer:
         if call.params.get("run"):
             # Work at a run of a held-out task would show the agent what it holds.
             await anyio.to_thread.run_sync(visible_run, self.context, str(call.params["run"]))
+        if call.params.get("task"):
+            # So would work at a held-out task's runs.
+            from tuningfork.mcp.tools import hidden_tasks
+            from tuningfork.ops.tally import refuse_hidden_task
+
+            hidden = await anyio.to_thread.run_sync(hidden_tasks, self.context)
+            refuse_hidden_task(str(call.params["task"]), hidden)
         planned = await anyio.to_thread.run_sync(jobs.plan, kind.name, call.params)
         total = planned.get("total")
         limit = self.limits.get(kind.name)
@@ -296,12 +346,20 @@ class ToolServer:
 # --- answers on the wire ------------------------------------------------------------------------
 
 
-def answered(answer: Answer) -> Any:
+#: What a result carries: `both` its text and its structured content, for a client that
+#: shows the model one of them (Claude Code the structured content alone, OpenJarvis the
+#: text); `text` alone, for one that shows both — Hermes puts the text and the structured
+#: content side by side in the tool message, every answer twice, and a 64k context is spent
+#: in twenty calls.
+RESULTS = ("both", "text")
+
+
+def answered(answer: Answer, results: str = "both") -> Any:
     """An answer as a tool result, its sentences first wherever a client looks.
 
     A client that reads the text (OpenJarvis) gets the sentences, then the JSON. One that
     reads structured content gets that alone — Claude Code shows the model nothing else — so
-    the sentences lead it too, as `summary`."""
+    the sentences lead it too, as `summary`. With `results` "text", the text alone."""
     import mcp_types as types
 
     data = compact.fit(answer.data)
@@ -310,12 +368,15 @@ def answered(answer: Answer) -> Any:
     structured = {"summary": answer.lines, **data} if answer.lines else data
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=f"{text}\n\n{body}" if text else body)],
-        structured_content=structured,
+        structured_content=structured if results == "both" else None,
     )
 
 
-def refused(error: OperationError) -> Any:
-    """A refusal as an error result, field and all, so the model can put it right."""
+def refused(error: OperationError, results: str = "both") -> Any:
+    """A refusal, field and all, so the model can put it right. It is an answer — the tool
+    said no, and why — not an error result: Hermes counts error results toward a circuit
+    breaker that cuts a server off after three in a row, and an agent that fumbles three edits
+    would lose every tool for a minute. Only tuningfork's own failure (`internal`) is one."""
     import mcp_types as types
 
     text = f"refused: {error.message}"
@@ -325,7 +386,9 @@ def refused(error: OperationError) -> Any:
         text += f" (field: {error.field})"
     data = {"error": {key: value for key, value in error.to_json().items() if value}}
     return types.CallToolResult(
-        content=[types.TextContent(type="text", text=text)], structured_content=data, is_error=True
+        content=[types.TextContent(type="text", text=text)],
+        structured_content=data if results == "both" else None,
+        is_error=error.code == "internal",
     )
 
 

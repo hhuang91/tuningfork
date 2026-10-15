@@ -78,7 +78,9 @@ def job_json(
     first: int | None = None,
 ) -> dict[str, Any]:
     """A job as a front end sees it. `events`, when asked for, are those after the `seq` the
-    asker has; `first` is the oldest still kept — a gap before it cannot be filled."""
+    asker has; `first` is the oldest still kept — a gap before it cannot be filled. A running
+    job's progress says how long is left at its pace so far (`remaining_s`): an agent that
+    polls a forty-fork screen needs to know it is twenty minutes, not a few."""
     data = {
         "id": record.id,
         "kind": record.kind,
@@ -86,7 +88,7 @@ def job_json(
         "status": record.status,
         "params": record.params,
         "plan": record.plan,
-        "progress": record.progress,
+        "progress": remaining(record),
         "result": record.result,
         "error": record.error,
         "links": record.links,
@@ -102,6 +104,19 @@ def job_json(
         data["events"] = events
         data["first_seq"] = first
     return data
+
+
+def remaining(record: JobRecord) -> dict[str, Any] | None:
+    """The job's progress, with how many seconds are left at its pace so far while it runs
+    and has finished a unit: the units left at the mean time of those done."""
+    progress = record.progress
+    if record.status != "running" or not progress or not record.started_at:
+        return progress
+    done, total = progress.get("done") or 0, progress.get("total") or 0
+    if not done or not total or done >= total:
+        return progress
+    elapsed = max(0.0, time.time() - record.started_at)
+    return {**progress, "remaining_s": round(elapsed / done * (total - done))}
 
 
 def asked_by(value: Any) -> dict[str, str] | None:

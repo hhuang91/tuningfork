@@ -8,6 +8,7 @@ byte, and even when storage fails.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 from contextlib import asynccontextmanager
 
@@ -21,7 +22,7 @@ from starlette.routing import Route
 from tuningfork.analysis.normalize import outcome_for
 from tuningfork.analysis.tokens import TokenStream
 from tuningfork.breakpoints import Breakpoint
-from tuningfork.config import Settings
+from tuningfork.config import EXPERIMENT_HEADER, Settings
 from tuningfork.proxy.app import create_app, upstream_url
 from tuningfork.proxy.sse import CUT_OFF, ChunkAssembler
 from tests.helpers import all_steps, only_step
@@ -677,3 +678,47 @@ class TestUpstreamUrl:
 
     def test_query_is_appended(self):
         assert upstream_url("http://h", "/v1/models", "a=1") == "http://h/v1/models?a=1"
+
+
+class TestOutputCap:
+    """`serve --max-output`: every call a harness makes through the proxy is held to the cap.
+    The step is what the model was sent; what the harness asked is kept beside it, so the
+    harness's own request — what a fork's replay matches against — is still exact."""
+
+    @pytest.mark.parametrize("asked", [{"max_tokens": 65536}, {}], ids=["more", "no-limit"])
+    async def test_a_call_asking_for_more_is_sent_with_the_cap(self, settings, recorder, asked):
+        upstream = upstream_sending(
+            openai_chunk({"role": "assistant"}), openai_chunk({"content": "again and again"}),
+            openai_chunk({}, "length"), b"data: [DONE]\n\n",
+        )
+        async with proxy_before(upstream, dataclasses.replace(settings, max_output=100), recorder) as (_, harness):
+            response = await harness.post(CHAT, json=simple_request(**asked, stream=True))
+            health = (await harness.get("/_tuningfork/health")).json()
+
+        assert response.content == upstream.state.body  # the answer reaches the harness untouched
+        (sent,) = upstream.state.received
+        assert json.loads(sent)["max_tokens"] == 100
+        assert health["max_output"] == 100
+        step = only_step(recorder.store)
+        assert step.finish_reason == "length" and step.params["max_tokens"] == 100
+        assert step.params["output_cap"] == {"cap": 100, "asked": asked, "written": ["max_tokens"]}
+        assert recorder.store.rebuild_request(step)["max_tokens"] == 100  # what the model was sent
+        assert recorder.store.harness_request(step) == simple_request(**asked, stream=True)
+
+    async def test_a_call_within_the_cap_is_relayed_as_sent(self, settings, recorder):
+        upstream = upstream_sending(openai_chunk({"content": "hi"}, "stop"), b"data: [DONE]\n\n")
+        body = json.dumps(simple_request(max_tokens=64, stream=True)).encode()
+        async with proxy_before(upstream, dataclasses.replace(settings, max_output=100), recorder) as (_, harness):
+            await harness.post(CHAT, content=body, headers={"content-type": "application/json"})
+
+        assert upstream.state.received == [body]  # byte for byte
+        assert "output_cap" not in only_step(recorder.store).params
+
+    async def test_an_experiments_call_keeps_its_own_limit(self, settings, recorder):
+        """Experiment traffic is tuningfork's own measurement, recorded by its experiment: the
+        cap is for harnesses, and would change a sample without its record knowing."""
+        upstream = upstream_sending(openai_chunk({"content": "hi"}, "stop"), b"data: [DONE]\n\n")
+        async with proxy_before(upstream, dataclasses.replace(settings, max_output=100), recorder) as (_, harness):
+            await harness.post(CHAT, json=simple_request(max_tokens=65536), headers={EXPERIMENT_HEADER: "e1"})
+
+        assert json.loads(upstream.state.received[0])["max_tokens"] == 65536

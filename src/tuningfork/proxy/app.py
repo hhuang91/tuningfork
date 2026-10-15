@@ -47,6 +47,7 @@ from tuningfork.snapshots import SnapshotError, Snapshots
 from tuningfork.snapshots import available as git_available
 from tuningfork.ui import ui_routes
 from tuningfork.wire import wire_for
+from tuningfork.wire.base import cap_output
 
 # Headers that describe a single hop and must not be relayed to the next one.
 HOP_BY_HOP = frozenset(
@@ -395,6 +396,7 @@ def create_app(
                 "upstream": server_address.url,
                 "started_with": settings.upstream_base_url,
                 "max_inflight": gate.max_inflight,
+                "max_output": settings.max_output,
                 "inflight": gate.inflight,
                 "paused": gate.paused,
                 "home": str(settings.home),
@@ -568,6 +570,16 @@ def create_app(
                     harness_payload, payload = payload, sent
                     body = json.dumps(sent).encode()
 
+        # A proxy started with a cap holds every call a harness makes through it to that many
+        # output tokens — a retry asking for more included: a reply looping to the harness's own
+        # limit is cut there (an agent's ran to 65,536 tokens for 35 minutes, findings §31.58).
+        # What the harness asked is kept with the step, which records what the model was sent.
+        if settings.max_output is not None and recording and payload is not None and wire is not None:
+            capped, cap_note = cap_output(wire, payload, settings.max_output)
+            if cap_note is not None:
+                payload, body = capped, json.dumps(capped).encode()
+                notes["output_cap"] = cap_note
+
         if wire is not None and gate.paused:
             return JSONResponse(
                 wire.error(
@@ -643,6 +655,7 @@ def create_app(
                     harness_request=harness_payload,
                     replay=notes.get("replay"),
                     substitution=notes.get("substitution"),
+                    output_cap=notes.get("output_cap"),
                     workspace_commit=workspace_commit,
                 )
             message = f"tuningfork could not reach the upstream server: {exc}"
@@ -732,6 +745,7 @@ def create_app(
                 harness_request=harness_payload,
                 replay=notes.get("replay"),
                 substitution=notes.get("substitution"),
+                output_cap=notes.get("output_cap"),
                 workspace_commit=workspace_commit,
             )
 
@@ -749,7 +763,8 @@ def create_app(
 
         # The tools for an agent that connects (OpenJarvis's url, Claude Code's http): loaded
         # with the SDK on first use, behind the guard like everything under the prefix.
-        mcp = McpRoute(store=recorder.store, runner=jobs, local=local, health=health_json, toolset=settings.mcp_tools)
+        mcp = McpRoute(store=recorder.store, runner=jobs, local=local, health=health_json, toolset=settings.mcp_tools,
+                       results=settings.mcp_results, max_wait=settings.mcp_max_wait)
     served = [
         *([Route(f"{PREFIX}/mcp", mcp, methods=["GET", "POST", "DELETE"])] if mcp else []),
         *control_routes(engine=engine, gate=gate, bus=bus, access=access, jobs=jobs),

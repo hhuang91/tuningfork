@@ -2,7 +2,7 @@
 
 A step debugger and experiment lab for agent skills running on local LLMs.
 
-> Status: **pre-alpha, 0.1.0.** Recording, divergence localization, resampling from a
+> Status: **pre-alpha, 0.2.0.** Recording, divergence localization, resampling from a
 > checkpoint, wording A/B tests, live breakpoints, workspace snapshots, restarting a
 > recorded run from any step to measure it end to end, a web UI that starts all of it,
 > token-level analysis — how sure the model was of each token, and which token decided a
@@ -62,26 +62,33 @@ Model requests are stateless, so every request carries the model's complete cont
 proxy sees the full program state at every step without touching harness code, and works
 with any harness that accepts a custom base URL.
 
-### Start llama-server with `--swa-full`
+### Start llama-server for numbers that repeat
 
-> **Strongly recommended for any model with sliding-window attention layers — Gemma 2, 3
-> and 4 among them.** Without the flag, llama-server keeps only part of those layers' cache
-> and reuses saved states between requests. The same request can then behave differently
-> depending on what the server processed before it.
+> **Strongly recommended: one slot (`-np 1`), `--no-cache-prompt` (next), and, for a model with
+> sliding-window attention layers — Gemma 2, 3 and 4 among them — `--ctx-checkpoints 0` or
+> `--swa-full`.** A decision that hangs on a near-tie moves with how the server happens to
+> process its prompt, and each of these keeps that the same from one request to the next.
 >
-> We measured this on Gemma 4 26B-A4B. One step's request gave its target behaviour 1 time
-> in 40 right after a restart, and 22 times in 40 once a similar prompt had run. A screen
-> samples each proposal right after the original, so on such a server it favours the
-> proposals. With `--swa-full` that swing was gone in our repeated tests.
+> - **The server's history.** We measured, on Gemma 4 26B-A4B, one step's request give its
+>   target behaviour 1 time in 40 right after a restart and 22 times in 40 once a similar prompt
+>   had run, on a server that reused what it had cached. A screen samples each proposal right
+>   after the original, so on such a server it favours the proposals. With every prompt
+>   processed whole, at one slot, nothing a request gets depends on what ran before it.
+> - **Another request beside it.** With two slots, a request computed beside another got
+>   different numbers for the same prompt; one slot computes each request alone.
+> - **Which endpoint asks.** For sliding-window layers llama-server takes rollback checkpoints
+>   of their cache, which cut a prompt into batches at places that differ between the chat
+>   endpoint and the raw one tuningfork scores answers with: the same answer scored 0.70 at one
+>   token on one and 0.15 on the other. With `--ctx-checkpoints 0` no checkpoint is taken, and
+>   the two agree token for token; it costs nothing when prompts are not cached, since a
+>   checkpoint only rolls back a cached prompt. `--swa-full` takes none either, by keeping the
+>   whole sliding-window cache, at a cost in memory: the 26B with two 64k slots needed 27 GiB
+>   with it and 22 without, and the dense 31B at a 64k context does not fit a 32 GB card with it.
 >
-> The flag costs GPU memory. The 26B with two 64k slots and a q4_0 cache needed 27 GiB with
-> it and 22 GiB without. The dense 31B at a 64k context did not fit a 32 GB card with it.
-> llama-server does not report the setting, so tuningfork cannot check it for you.
->
-> Even with the flag, a decision that hangs on a near-tie can still change with how the
-> server happened to process the prompt. So tuningfork asks llama.cpp to process each
-> experiment sample's prompt whole (`cache_prompt: false`), where it can: on chat completions,
-> not on its Messages endpoint, which Claude Code uses.
+> llama-server reports neither `--ctx-checkpoints` nor `--swa-full`, so tuningfork cannot check
+> them for you. tuningfork also asks llama.cpp to process each experiment sample's prompt
+> whole (`cache_prompt: false`), where it can: on chat completions, not on its Messages
+> endpoint, which Claude Code uses.
 
 ### And with `--no-cache-prompt`
 
@@ -93,7 +100,7 @@ with any harness that accepts a custom base URL.
 > resamples of the same step gave it 1 time in 10 each.
 >
 > The flag makes every step process its whole prompt: about 1.5 s per 14,000 tokens of
-> Gemma 4 26B-A4B on one RTX 5090, so runs take a fifth to a third longer.
+> Gemma 4 26B-A4B on one RTX 5090, about 4 s of Gemma 4 31B, so runs take longer.
 > `tuningfork connections check` measures whether the server reuses prompts, and a batch's
 > plan warns when it does.
 
@@ -282,6 +289,12 @@ approval wrote.
 
 ### Refining a skill at a step
 
+Which failure to fix first? When a task's check prints what it found wrong, one finding a
+line, `tuningfork tally --task <id>` counts every failed run's findings at once, the most
+common first, each with how many failed runs said it and its interval. `--screen <id>` does
+the same for each arm of a screen run to the end, so what a proposal left failing shows
+beside what the original fails.
+
 Once the failing step is found, tuningfork can gather fixes and test each one there. A
 *refinement* names the step and what the model should do at it, before anything is
 proposed:
@@ -395,8 +408,9 @@ MCP tool approves, and an MCP client's token is refused where approving happens.
 
 `tuningfork mcp` serves tuningfork's operations to an agent — Claude Code, Hermes, an
 OpenJarvis teacher — over the Model Context Protocol. An agent can do what a person does:
-find where a task's runs split, read that step's context and the skill lines in it, measure
-how often each behaviour happens there, and A/B-test a wording it wrote.
+count what the failed runs' checks said, find where a task's runs split, read that step's
+context and the skill lines in it, measure how often each behaviour happens there, and
+A/B-test a wording it wrote.
 
 ```console
 $ claude mcp add --transport stdio tuningfork -- tuningfork mcp --home ~/recordings

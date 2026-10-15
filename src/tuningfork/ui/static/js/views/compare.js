@@ -6,6 +6,8 @@ import {
 } from "../dom.js";
 import { live } from "../live.js";
 import { responseView } from "../payload.js";
+import { tallyView } from "../results.js";
+import { whereForm } from "../where.js";
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -110,6 +112,8 @@ export async function divergenceView(root, [task, conditionId]) {
   const report = chosen
     ? await api.get(`/divergence${query({ runs: chosen.run_ids.slice(0, 50).join(",") })}`)
     : await api.get(`/divergence${query({ task, limit: 50 })}`);
+  // What the failed runs' checks said, counted: the condition chosen, or every one.
+  const tally = await api.get(`/tally${query({ task })}`).catch(() => null);
   const at = report.divergence_index;
   const split = at === null ? null : report.steps[at];
 
@@ -127,6 +131,10 @@ export async function divergenceView(root, [task, conditionId]) {
       split ? panel(`At step ${at}`, [groupsView(split, at), nextStep(split, at)], {
         meta: h("span", { class: "muted" }, "Intervals are Wilson 95%; with few runs they are wide."),
       }) : null,
+      tallyView(tally, { only: chosen?.id || null }),
+      panel("Where does it hold?", whereForm(task, { condition: chosen?.id || null }), {
+        meta: h("span", { class: "muted" }, "One question of every run: the call that made the difference."),
+      }),
       panel("Every step", stepsTable(report))),
   );
 }

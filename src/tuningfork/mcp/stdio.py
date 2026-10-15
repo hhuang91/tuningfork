@@ -52,6 +52,7 @@ def serve(
     limits: dict[str, int] | None = None,
     max_jobs: int = 4,
     max_wait: int = 120,
+    results: str = "both",
 ) -> None:
     import anyio
     from mcp.server.stdio import stdio_server
@@ -65,7 +66,8 @@ def serve(
     store = Store(found)
     jobs = HttpJobs(proxy_url, found)
     try:
-        tools = ToolServer(store, jobs, toolset=toolset, limits=limits, max_jobs=max_jobs, max_wait=max_wait)
+        tools = ToolServer(store, jobs, toolset=toolset, limits=limits, max_jobs=max_jobs, max_wait=max_wait,
+                           results=results)
         server = tools.server()
 
         async def main() -> None:

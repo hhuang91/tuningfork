@@ -154,8 +154,28 @@ def serve(
     mcp_tools: str = typer.Option(
         "evidence", "--mcp-tools", envvar="TUNINGFORK_MCP_TOOLS",
         help="The tools /_tuningfork/mcp offers an agent: evidence (reads, and work that only "
-        "calls the model), refine (the refinement loop: proposals and screens), all (also harness "
-        "runs and checks), or none (no MCP route).",
+        "calls the model), refine (the refinement loop: proposals and screens), refine-to-end (the "
+        "loop, and screens whose samples are forks run to the end through the harness on this "
+        "machine), all (also harness runs and checks), or none (no MCP route).",
+    ),
+    mcp_results: str = typer.Option(
+        "both", "--mcp-results", envvar="TUNINGFORK_MCP_RESULTS",
+        help="What a tool result carries: both its text and its structured content (a client shows "
+        "the model one of them: Claude Code the structured content, OpenJarvis the text), or text "
+        "alone, for a client that shows both — Hermes, which otherwise sees every answer twice.",
+    ),
+    mcp_max_wait: int = typer.Option(
+        50, "--mcp-max-wait", envvar="TUNINGFORK_MCP_MAX_WAIT", min=1, max=600,
+        help="How long one MCP call may wait for a job, at most, in seconds: under what the client "
+        "gives a tool call. 50 for OpenJarvis, which reads an answer for 60 s; about 110 for Hermes, "
+        "which gives a call 300 s, so a twenty-minute screen is a dozen polls, not twenty-five.",
+    ),
+    max_output: Optional[int] = typer.Option(
+        None, "--max-output", envvar="TUNINGFORK_MAX_OUTPUT", min=1,
+        help="Hold every call a harness makes through this proxy to at most this many output "
+        "tokens: one that asks for more, or names no limit, is sent with this one, and what it "
+        "asked is recorded with the step. For an agent whose reply can loop to its harness's own "
+        "limit (65,536 tokens, 35 minutes on one GPU); a retry asking for more is held too.",
     ),
 ) -> None:
     """Run the recording proxy. Point your harness at http://HOST:PORT/v1."""
@@ -174,9 +194,14 @@ def serve(
         token=os.environ.get(TOKEN_ENV) or None,
         mcp_token=os.environ.get(MCP_ENV) or None,
         mcp_tools=mcp_tools,
+        mcp_results=mcp_results,
+        mcp_max_wait=mcp_max_wait,
+        max_output=max_output,
     )
-    if mcp_tools not in ("evidence", "refine", "all", "none"):
-        _refuse(OperationError(f"--mcp-tools is evidence, refine, all or none, not {mcp_tools!r}"))
+    if mcp_tools not in ("evidence", "refine", "refine-to-end", "all", "none"):
+        _refuse(OperationError(f"--mcp-tools is evidence, refine, refine-to-end, all or none, not {mcp_tools!r}"))
+    if mcp_results not in ("both", "text"):
+        _refuse(OperationError(f"--mcp-results is both or text, not {mcp_results!r}"))
     try:
         check_endpoint(upstream, home=settings.home, purpose="the proxy")
     except OperationError as error:
@@ -193,10 +218,13 @@ def serve(
     console.print(f"  forwarding to {upstream}")
     console.print(f"  recording to  {settings.home}")
     console.print(f"  max in flight {max_inflight}")
+    if max_output is not None:
+        console.print(f"  output cap    {max_output} tokens a call (what a harness asks above it is recorded)")
     console.print(f"  web UI        http://{host}:{port}/_tuningfork/ui/?token={access.token}", soft_wrap=True)
     if mcp_tools != "none":
         console.print(
-            f"  MCP           http://{host}:{port}/_tuningfork/mcp  ({mcp_tools} tools; its own token, "
+            f"  MCP           http://{host}:{port}/_tuningfork/mcp  ({mcp_tools} tools"
+            f"{', text results' if mcp_results == 'text' else ''}; its own token, "
             "`tuningfork token --mcp`)", soft_wrap=True,
         )
     console.print(
@@ -268,8 +296,9 @@ def mcp_server(
     tools: str = typer.Option(
         "evidence", "--tools",
         help="evidence: reads, and work that only calls the model. refine: the refinement loop — "
-        "refinements, proposed edits, screens. all: everything, also work that runs a harness or a "
-        "check on this machine.",
+        "refinements, proposed edits, screens. refine-to-end: the loop, and screens whose samples are "
+        "forks run to the end (a harness on this machine). all: everything, also work that runs a "
+        "harness or a check on this machine.",
     ),
     limit: list[str] = typer.Option(
         [], "--limit", metavar="KIND=N",
@@ -278,6 +307,12 @@ def mcp_server(
     ),
     max_jobs: int = typer.Option(4, "--max-jobs", min=1, help="Jobs agents may have queued or running at once."),
     max_wait: int = typer.Option(120, "--max-wait", min=0, max=600, help="Longest a call waits for a job, in seconds."),
+    results: str = typer.Option(
+        "both", "--results",
+        help="What a tool result carries: both its text and its structured content (Claude Code shows "
+        "the model the structured content, OpenJarvis the text), or text alone, for a client that "
+        "shows both — Hermes, which otherwise sees every answer twice.",
+    ),
 ) -> None:
     """Serve tuningfork's tools to an agent over MCP, on stdio: for Claude Code, Hermes, OpenJarvis.
 
@@ -297,7 +332,7 @@ def mcp_server(
     try:
         serve(
             home=home, proxy_url=proxy or default_proxy(), toolset=tools,
-            limits=parse_limits(limit), max_jobs=max_jobs, max_wait=max_wait,
+            limits=parse_limits(limit), max_jobs=max_jobs, max_wait=max_wait, results=results,
         )
     except OperationError as error:
         typer.echo(f"tuningfork mcp: {error.message}" + (f" — {error.hint}" if error.hint else ""), err=True)
@@ -724,23 +759,36 @@ def show(
             parts.append("variant swapped in")
         if found.substitution.get("leaked"):
             parts.append("[yellow]the original wording reached the model[/yellow]")
+        cap = found.params.get("output_cap")
+        if cap and found.finish_reason == "length":
+            parts.append(f"[yellow]cut at the proxy's cap, {cap.get('cap')} tokens[/yellow]")
         return " ".join(part for part in parts if part)
 
+    from tuningfork.ops.inspect import hides_what_it_ran, ran_excerpt, step_changes
+
     notes = [annotate(found) for found in steps]
+    # What each call changed in the workspace: where the run did what its check saw.
+    changes = step_changes(store, target)
     columns = ["k", "outcome", "finish", "ms", "tokens", "think"]
+    if changes:
+        columns.append("changed")
     if any(notes):
         columns.append("note")
     table = Table(*columns, box=None)
     for line, note in zip(lines, notes):
         step, outcome = line.step, line.outcome
+        # A script's label is a digest of it: what it ran says which step did what.
+        said = (ran_excerpt(store.response(step)) if hides_what_it_ran(outcome.label) else None) or outcome.label
         row = [
             str(step.idx),
-            _clip(outcome.label, full=False, limit=70),
+            _clip(said, full=False, limit=70),
             step.finish_reason or "-",
             str(step.timings.get("total_ms") or "-"),
             str(step.usage.get("total_tokens") or "-"),
             "[yellow]none[/yellow]" if line.reasoning == "none" else str(step.reasoning_chars or "-"),
         ]
+        if changes:
+            row.append(escape(", ".join(path for _, path in changes.get(step.idx, []))[:40]) or "")
         if any(notes):
             row.append(note)
         table.add_row(*row)
@@ -819,6 +867,10 @@ def step(
     if found.wire:
         console.print(f"  wire    {found.wire}")
     console.print(f"  params  {json.dumps(found.params, sort_keys=True)}")
+    cap = found.params.get("output_cap")
+    if cap:
+        asked = ", ".join(f"{key} {value}" for key, value in (cap.get("asked") or {}).items()) or "no limit"
+        console.print(f"  capped  the harness asked {asked}; the proxy's cap sent {cap.get('cap')}")
     if found.server_defaults:
         console.print(f"  server  {json.dumps(found.server_defaults, sort_keys=True)}")
     console.print(f"  timings {json.dumps(found.timings)}")
@@ -1099,6 +1151,12 @@ def tokens(
     if view.sample:
         console.print(f"  sample {view.sample['idx']} of experiment {view.sample['experiment_id'][:8]}: "
                       f"{escape(view.sample['outcome'] or '')}")
+    choice = view.choice()
+    if choice is not None:
+        from tuningfork.ops.compact import choice_text
+
+        console.print(f"  choice of tool, at token {escape(f'[{choice.position}]')}: {escape(choice_text(choice.to_json()['chance']))}"
+                      "  [dim]the model's own chance of each, under the step's sampler[/dim]")
     console.print()
     _print_heatmap(view, color == "always" or (color == "auto" and console.is_terminal))
 
@@ -1327,6 +1385,224 @@ def diff(
 
 
 @app.command()
+def tally(
+    task: Optional[str] = typer.Option(None, help="A task id: what its failed runs' checks said, by condition."),
+    screen: Optional[str] = typer.Option(
+        None, help="A screen, or an A/B, run to the end (any arm's experiment id): what each arm's failed forks' "
+                   "checks said.",
+    ),
+    show: int = typer.Option(10, "--show", min=1, help="Findings shown per group, the most common first."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """Count what the checks said, across a task's failed runs or a screen's failed forks.
+
+    Each line a check prints is one finding, and lines that differ only in their numbers are
+    one. The most common finding comes first, with how many failed runs said it: the failure
+    to fix first, rather than the first one read.
+    """
+    from tuningfork.analysis.stats import rate
+    from tuningfork.ops.tally import made_text, tally_screen, tally_task
+
+    if (task is None) == (screen is None):
+        console.print("[red]give --task or --screen[/red]")
+        raise typer.Exit(code=1)
+    store = _store(home)
+    try:
+        found = tally_task(store, task) if task else tally_screen(store, screen)
+    except OperationError as error:
+        _refuse(error)
+    if found.scope == "screen":
+        console.print(f"screen {found.screen[:8]} from run {(found.run_id or '-')[:8]}"
+                      f"{f' of {escape(found.task_id)}' if found.task_id else ''}: each arm's forks run to the end")
+    else:
+        console.print(f"{escape(found.task_id)}: its runs, by condition")
+    for group in found.groups:
+        console.print()
+        console.print(f"[bold]{escape(group.label)}[/bold]  failed {group.failed} of {group.judged} judged")
+        if not group.failed:
+            continue
+        table = Table("failed runs said it", "finding", box=None)
+        for finding in group.findings[:show]:
+            table.add_row(rate(len(finding.run_ids), finding.of).format(), escape(finding.key))
+            if finding.made:
+                # Where the check was run along the runs: the call that made it, in each.
+                table.add_row("", f"[dim]{escape(made_text(finding.made))}[/dim]")
+        console.print(table)
+        if len(group.findings) > show:
+            console.print(f"  … and {len(group.findings) - show} more finding(s): --show")
+        if group.silent:
+            console.print(f"  [dim]{group.silent} failed run(s) whose check printed nothing[/dim]")
+    if found.scope == "task":
+        from tuningfork.ops.tally import finding_words, shared_mistakes
+
+        for finding in shared_mistakes(found.to_json())[:2]:
+            words = finding_words(finding["finding"])
+            console.print(
+                f"\n[yellow]every run made «{escape(finding['finding'])}»[/yellow] — the passing ones too, which "
+                "repaired it later — so no passing run shows the fix. Refine at the call that made it, each run's "
+                f"own: [bold]tuningfork refine start <run> 'made:{escape(words)}' --target-check[/bold]",
+                soft_wrap=True,
+            )
+        if (any(group.failed for group in found.groups)
+                and not any(finding.made for group in found.groups for finding in group.findings)):
+            console.print(f"\n[dim]For a check that reads the run's files, `tuningfork check-along --task "
+                          f"{escape(found.task_id or '<id>')}` runs it along each run, and the tally then says which "
+                          "call made each finding.[/dim]", soft_wrap=True)
+    console.print()
+    console.print("[dim]Each line a check printed is one finding, its numbers shown as # and its colours as "
+                  "<color>; a run counts once a finding. Intervals are Wilson 95%.[/dim]")
+
+
+@app.command("check-along")
+def check_along_command(
+    task: Optional[str] = typer.Option(None, help="A task id: run its check along each of its recorded runs."),
+    run: Optional[str] = typer.Option(None, help="Or one run."),
+    limit: int = typer.Option(50, "--limit", min=1, help="With --task: at most this many of its runs, the newest first."),
+    again: bool = typer.Option(False, "--again", help="Run it anew along runs it was run along before."),
+    timeout: float = typer.Option(60.0, "--timeout", min=1.0, help="Seconds the check may take, each time."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """Run a task's check along its runs: on each workspace as it started, after each call that
+    changed it, and at its end.
+
+    A check judges a run's end; run along it, it says when each thing it complains about was
+    made — a finding there from the start is work not done yet, one a call made is a mistake,
+    made at that call. `tuningfork tally` then says, for each finding, which call made it in how
+    many runs, the passing ones included: a mistake every run made, and some repaired later. Kept
+    with each run; its verdict is left as it was. Only a check that reads the files: a reply
+    check has nothing to read before the reply.
+    """
+    from tuningfork.ops.checks import execute_check_along_runs, prepare_check_along_runs
+
+    if (task is None) == (run is None):
+        console.print("[red]give --task or --run[/red]")
+        raise typer.Exit(code=1)
+    store = _store(home)
+    try:
+        plan = prepare_check_along_runs(store, task=task, run=run, limit=limit, again=again, timeout=timeout)
+    except OperationError as error:
+        _refuse(error)
+    for note in plan.skipped[:10]:
+        console.print(f"  [dim]passed over: {escape(note)}[/dim]")
+    if not plan.plans:
+        console.print("nothing to run the check along")
+        return
+    console.print(f"running the check along {len(plan.plans)} run(s), "
+                  f"{sum(len(each.states) for each in plan.plans)} state(s) of their workspaces")
+    done = execute_check_along_runs(store, plan)
+    for entry in done.runs:
+        verdict = {True: "passed", False: "failed"}.get(entry["passed"], "no verdict")
+        made = entry["made"]
+        console.print(f"[bold]{entry['run'][:8]}[/bold] {verdict}: {entry['states']} state(s)"
+                      + ("" if made else "; no call made a finding"))
+        for item in made[:6]:
+            gone = "" if item["at_end"] else "  [dim](gone by the end)[/dim]"
+            console.print(f"  step {item['made_by']}'s call made: {escape(item['line'])}{gone}", soft_wrap=True)
+    console.print(f"\n[dim]`tuningfork tally --task {escape(done.task_id or '<id>')}` says, for each finding, which "
+                  "call made it across the runs.[/dim]", soft_wrap=True)
+
+
+@app.command()
+def where(
+    task: Optional[str] = typer.Option(None, help="A task id: the question is asked of each of its runs."),
+    screen: Optional[str] = typer.Option(
+        None, "--screen", help="Or a screen run to the end: the question is asked of its forks, arm by arm — "
+                               "where none of the task's own runs passed, a proposal's passing forks are.",
+    ),
+    match: Optional[str] = typer.Option(
+        None, "--match", help="Of the model's answers: a regular expression over what each step did — a tool "
+                              "call's name and arguments, a script's code among them, or a reply's words.",
+    ),
+    rules: Optional[str] = typer.Option(
+        None, "--rules", help='Or the answer described, as JSON: [{"if": "calls", "value": "write_file"}] — '
+                              "calls, not_calls, contains, not_contains, all of which must hold.",
+    ),
+    file: Optional[str] = typer.Option(
+        None, "--file", help="Of what the runs wrote: a file in the workspace, by its path there or a glob "
+                             "(clean.csv, *.json).",
+    ),
+    contains: Optional[str] = typer.Option(
+        None, "--contains", help="With --file: a regular expression its text must match, ^ and $ at each line's "
+                                 "ends; without one, the file must exist.",
+    ),
+    at_least: int = typer.Option(1, "--at-least", min=1, help="With --contains: how many matches make it hold."),
+    limit: int = typer.Option(200, "--limit", min=1, help="At most this many of the task's runs, the newest first."),
+    show: int = typer.Option(20, "--show", min=0, help="Runs listed per condition."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """Ask one question of every run of a task, and line the answers up with the verdicts.
+
+    Of the model's answers (--match, --rules): the steps whose answer satisfies it, the first of
+    them. Of what the runs wrote (--file, --contains): whether it held at the start, which call
+    made it hold, which undid it, and whether it held at the end. Counted by verdict — in how many
+    passing and how many failing runs it held, by Fisher's exact test — with the step reference
+    that names that call in each run, a refinement's step. Where a check prints only its verdict,
+    or no finding of it names a call, this finds the call that made the difference.
+    """
+    from tuningfork.ops.where import reference_text, seen_text, split_text, where_it_holds
+
+    parsed_rules = None
+    if rules is not None:
+        try:
+            parsed_rules = json.loads(rules)
+        except ValueError:
+            console.print("[red]--rules is not JSON[/red]")
+            raise typer.Exit(code=1) from None
+    if (task is None) == (screen is None):
+        console.print("[red]give --task, or --screen for a screen run to the end's forks[/red]")
+        raise typer.Exit(code=1)
+    store = _store(home)
+    try:
+        found = where_it_holds(store, task, target_match=match, target_rules=parsed_rules, path=file,
+                               contains=contains, at_least=at_least, limit=limit, screen=screen)
+    except OperationError as error:
+        _refuse(error)
+    report = found.to_json()
+    kind = found.probe.kind
+    asked = sum(len(group.runs) for group in found.groups)
+    console.print(f"{escape(found.task_id)}: {escape(found.probe.description)}, asked of {asked} "
+                  + (f"fork(s) of screen {found.screen[:8]}" if found.screen else "run(s)"))
+    for note in found.skipped[:5]:
+        console.print(f"  [dim]passed over: {escape(note)}[/dim]")
+    for group in report["groups"]:
+        console.print()
+        console.print(f"[bold]{escape(group['label'])}[/bold]  {group['passed']} passed, {group['failed']} failed"
+                      + (f", {group['unjudged']} without a verdict that counts" if group["unjudged"] else ""))
+        for line in (split_text(group, kind), seen_text(group, kind), reference_text(group)):
+            if line:
+                console.print(f"  {escape(line)}", soft_wrap=True)
+        if not show:
+            continue
+        if kind == "file":
+            table = Table("run", "verdict", "start", "made by", "undone by", "end", "file", box=None)
+        else:
+            table = Table("run", "verdict", "first", "steps", box=None)
+        for entry in group["runs"][:show]:
+            at = "-" if entry["step"] is None else f"{entry['step']} {' '.join(entry['tools'])}".strip()
+            verdict = entry["verdict"] or "no verdict"
+            if kind == "file":
+                yes = {True: "yes", False: "no", None: "-"}
+                held_in = (f"{entry['file']}" + (f" ({entry['count']})" if entry.get("count") is not None else "")
+                           if entry.get("file") else "")
+                undone = "-" if entry["undone_by"] is None else str(entry["undone_by"])
+                table.add_row(entry["run"][:8], verdict, yes[entry["at_start"]], escape(at), undone,
+                              yes[entry["at_end"]], escape(held_in))
+            else:
+                steps = ", ".join(str(step) for step in entry["steps"]) or "-"
+                table.add_row(entry["run"][:8], verdict, escape(at), steps)
+        console.print(table)
+        if len(group["runs"]) > show:
+            console.print(f"  … and {len(group['runs']) - show} more run(s): --show")
+        reference = (group.get("reference") or {}).get("step")
+        if reference:
+            console.print(f"  [dim]That call in a run: tuningfork step <run> '{escape(reference)}'; a refinement "
+                          f"there: tuningfork refine start <run> '{escape(reference)}' …[/dim]", soft_wrap=True)
+    console.print()
+    console.print("[dim]A lead to read, never a verdict: a split is said to go one way under p 0.2. Intervals are "
+                  "Wilson 95%.[/dim]")
+
+
+@app.command()
 def divergence(
     runs_or_task: list[str] = typer.Argument(
         None, help="Run ids, or omit and pass --task to compare a whole batch."
@@ -1412,6 +1688,18 @@ def _print_divergence(
             row.append(escape(group_passed.format()) if group_passed else "-")
         table.add_row(*row)
     console.print(table)
+    # The tool each run used, at whatever step: a split no step index shows.
+    from tuningfork.ops.inspect import tool_split
+
+    by_tool = tool_split(store, report.run_ids, results).get("best")
+    if by_tool is not None:
+        called, never = by_tool["called"], by_tool["never"]
+        goes = "goes with passing" if by_tool.get("with_passing") else "goes with failing"
+        console.print(
+            f"\n[bold]by tool[/bold]  runs that called {escape(by_tool['tool'])} passed "
+            f"{called['passed']}/{called['total']}, runs that never did {never['passed']}/{never['total']} "
+            f"(Fisher p = {by_tool['p']:.2f}): the tool {goes}, at whatever step each run called it"
+        )
     console.print(
         "\n[dim]Intervals are Wilson 95%. With this many runs they are wide; "
         f"separating 60% from 80% takes about {samples_needed(0.6, 0.8)} runs per arm."
@@ -1429,6 +1717,13 @@ def label_next(
     store = _store(home)
     store.label_next(label, task)
     console.print(f"next run will be labelled [bold]{label}[/bold]")
+
+
+HARNESS_OPTION_HELP = (
+    "An option the harness takes, as key=value (a JSON value where it is one: true, 3, {...}), "
+    "recorded with each run. Hermes: self_improvement, await_review, review_every_turn, "
+    "mcp_servers. Repeatable."
+)
 
 
 @app.command()
@@ -1458,6 +1753,10 @@ def batch(
         help="Run a held-out eval named with --eval anyway. Its runs are recorded here, where "
         "agents reading the recordings can see them.",
     ),
+    harness_option: list[str] = typer.Option([], "--harness-option", "-o", help=HARNESS_OPTION_HELP),
+    skill_dir: Optional[Path] = typer.Option(
+        None, "--skill-dir", help="A skill folder to give every run instead of the spec's: a chain's final skill, evaluated."
+    ),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """Run a task N times through a headless harness, each in a fresh workspace and home."""
@@ -1469,7 +1768,8 @@ def batch(
         plan = prepare_batch(
             store, spec_path, eval_id=eval_id, n=n, model=model, harness=harness,
             skill_file=skill_file, workdir=workdir, concurrency=concurrency, base_url=base_url,
-            include_held_out=include_held_out,
+            include_held_out=include_held_out, harness_options=_harness_options(harness_option) or None,
+            skill_dir=skill_dir,
         )
     except OperationError as error:
         _refuse(error)
@@ -1485,13 +1785,12 @@ def batch(
         if plan.skill_file:
             replaced = f"  [bold]SKILL.md replaced by {escape(str(plan.skill_file))}[/bold]"
         console.print(f"  skill:  {escape(_shown_path(plan.skill_dir))}{replaced}")
+    if plan.harness_options:
+        console.print(f"  harness options: {escape(json.dumps(plan.to_json()['harness_options']))}", soft_wrap=True)
     if plan.sandbox is not None:
         console.print(f"  sandbox: every run works in {_sandbox_seen(plan.sandbox)}")
     for note in plan.notes:
-        if note.level == "warning":
-            console.print(f"  [bold yellow]warning:[/bold yellow] {escape(note.message)}")
-        else:
-            console.print(f"  [yellow]note:[/yellow] {escape(note.message)}")
+        _print_note(note)
     console.print()
 
     def report(event) -> None:
@@ -1528,6 +1827,306 @@ def batch(
         if named:
             heading += f", compared under {', '.join(lens)}"
         _print_divergence(result.divergence, heading, store)
+
+
+def _harness_options(pairs: list[str]) -> dict[str, Any]:
+    """`key=value` pairs as a harness's options: a value is read as JSON where it is JSON
+    (true, 3, {"a": 1}), else as text. The adapter refuses what it does not take."""
+    found: dict[str, Any] = {}
+    for pair in pairs:
+        key, separator, value = pair.partition("=")
+        if not separator or not key.strip():
+            _refuse(OperationError(f"a harness option is key=value, not {pair!r}", field="harness_options"))
+        try:
+            found[key.strip()] = json.loads(value)
+        except ValueError:
+            found[key.strip()] = value
+    return found
+
+
+def _print_note(note) -> None:
+    if note.level == "warning":
+        console.print(f"  [bold yellow]warning:[/bold yellow] {escape(note.message)}")
+    else:
+        console.print(f"  [yellow]note:[/yellow] {escape(note.message)}")
+
+
+# --- a chain: the skill carried from each run to the next ----------------------------------
+
+chain_app = typer.Typer(
+    no_args_is_help=True,
+    help="Run a task in a chain: each run starts from the skill the run before it left.",
+)
+app.add_typer(chain_app, name="chain")
+
+
+def _link_line(link: dict) -> str:
+    """One link, as the chain prints it: its verdict, and what became of the skill."""
+    passed = link.get("passed")
+    if passed is None:
+        verdict = "[dim]no check[/dim]"
+    else:
+        verdict = "[green]pass[/green]" if passed else "[red]fail[/red]"
+    why = link.get("exclusion")
+    flags = f"  [yellow]{escape(why)} — not counted[/yellow]" if why else ""
+    before, after = link.get("skill_before") or "?", link.get("skill_after") or "?"
+    skill = f"skill {before}" if before == after else f"skill {before} → {after}"
+    if link.get("changed"):
+        by = link.get("callers") or []
+        who = f" by the {' and the '.join(by)}" if by else ""
+        skill += f"  [bold]{escape(', '.join(link['changed']))} changed{who}[/bold]"
+    review = link.get("review")
+    if review and not review.get("ended"):
+        skill += "  [yellow]its review was cut off[/yellow]"
+    if link.get("told"):
+        skill += "  [dim]told[/dim]"
+    if link.get("cap_seconds"):
+        skill += f"  [yellow]cut to {link['cap_seconds']:.0f} s by the budget[/yellow]"
+    return f"  link {link['index']}  {verdict}  {link.get('duration_s', 0):.1f}s  {skill}{flags}"
+
+
+def _print_chain(found: dict, *, diff: bool = False) -> None:
+    console.print(
+        f"[bold]chain {found['id'][:8]}[/bold] — {found['status']}  "
+        f"({escape(found.get('task_id') or '?')} · {found.get('harness')} · {escape(str(found.get('model')))})"
+    )
+    links = found.get("links") or []
+    elapsed = found.get("elapsed") or 0
+    console.print(
+        f"  started {_when(found['started_at'])}, {len(links)} of {found.get('n')} link(s) in "
+        f"{elapsed / 60:.1f} min" if found.get("started_at") else f"  {len(links)} link(s)"
+    )
+    console.print(f"  skill   {escape(_shown_path(Path(found['skill_start'])))}", soft_wrap=True)
+    if found.get("harness_options"):
+        console.print(f"  options {escape(json.dumps(found['harness_options']))}", soft_wrap=True)
+    if found.get("tell"):
+        console.print("  told    after each run, the check's verdict and output as the user's next turn")
+    for link in links:
+        console.print(_link_line(link))
+        if diff and link.get("diff"):
+            _print_hunks(link["diff"])
+    _print_chain_end(found)
+
+
+def _print_hunks(diff: dict) -> None:
+    for hunk in diff.get("hunks") or []:
+        console.print(f"    [dim]@@ line {hunk.get('old_start')} @@[/dim]")
+        for line in hunk.get("lines") or []:
+            op = line.get("op", " ")
+            style = {"+": "green", "-": "red"}.get(op, "dim")
+            console.print(f"    [{style}]{op} {escape(line.get('text', ''))}[/{style}]", soft_wrap=True)
+
+
+def _print_chain_end(found: dict) -> None:
+    versions = found.get("versions") or []
+    if versions:
+        parts = []
+        for version in versions:
+            if version.get("from") == "start":
+                parts.append(f"{version.get('skill') or '?'} (given)")
+            else:
+                by = version.get("by") or []
+                who = f", by the {' and the '.join(by)}" if by else ""
+                parts.append(f"{version.get('skill') or '?'} (link {version.get('link')}{who})")
+        console.print(f"\n[bold]{len(versions)} version(s) of the skill:[/bold] {escape(' → '.join(parts))}", soft_wrap=True)
+    rate = found.get("rate")
+    if rate:
+        console.print(
+            f"counted: {rate['successes']}/{rate['total']} passed [{rate['low']:.0%}-{rate['high']:.0%}]"
+            + (f"; {found['not_counted']} run(s) not counted" if found.get("not_counted") else "")
+        )
+    elif found.get("links"):
+        console.print("no run can be counted" + (" (the skill changed in every one)" if found.get("not_counted") else ""))
+    spent = found.get("spent_seconds")
+    if spent is not None:
+        budget = found.get("budget_seconds")
+        line = f"model calls: {spent:.0f} s at the proxy"
+        if budget:
+            line += f" of {budget:g} s allowed" + (" — stopped at the budget" if found.get("stopped") == "budget" else "")
+        console.print(line)
+    if found.get("final_skill"):
+        console.print(f"final skill: {escape(_shown_path(Path(found['final_skill'])))}", soft_wrap=True)
+        if any(link.get("diff") for link in found.get("links") or []):
+            console.print(f"[dim]`tuningfork chain show {found['id'][:8]} --diff` shows the lines each link changed[/dim]")
+
+
+@chain_app.command("run")
+def chain_run(
+    spec_path: Path = typer.Argument(..., help="Task spec JSON (evals.json convention)."),
+    n: int = typer.Option(10, "-n", help="Links: runs in order, each starting from the skill the one before left."),
+    eval_id: Optional[str] = typer.Option(None, "--eval", help="Which eval to run."),
+    base_url: Optional[str] = typer.Option(
+        None, help="Proxy URL the harness should talk to. Default: TUNINGFORK_PROXY + /v1."
+    ),
+    model: Optional[str] = typer.Option(
+        None, help="Model id the harness should request. Default: the one model the server lists."
+    ),
+    harness: str = typer.Option("hermes", help="Harness adapter to drive."),
+    harness_option: list[str] = typer.Option([], "--harness-option", "-o", help=HARNESS_OPTION_HELP),
+    skill_dir: Optional[Path] = typer.Option(
+        None, "--skill-dir", help="Start from this skill folder instead of the spec's: a chain continued."
+    ),
+    tell: bool = typer.Option(
+        False, "--tell",
+        help="After each run, tell the harness the check's verdict and output as the user's next "
+        "turn of the same session, before its review: what a person who looked would say.",
+    ),
+    budget_seconds: Optional[float] = typer.Option(
+        None, "--budget-seconds",
+        help="Stop before a link once the links' model calls have taken this many seconds at the "
+        "proxy: the same budget as another loop's.",
+    ),
+    workdir: Optional[Path] = typer.Option(None, help="Where run workspaces are created."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """Run a task N times in order, the skill carried forward: what the harness's own loop makes of it."""
+    from tuningfork.ops.chain import execute_chain, prepare_chain
+    from tuningfork.specs import describe_check
+
+    store = _store(home)
+    try:
+        plan = prepare_chain(
+            store, spec_path, eval_id=eval_id, n=n, model=model, harness=harness, workdir=workdir,
+            base_url=base_url, harness_options=_harness_options(harness_option) or None,
+            skill_dir=skill_dir, tell=tell, budget_seconds=budget_seconds,
+        )
+    except OperationError as error:
+        _refuse(error)
+    item = plan.batch.item
+
+    console.print(f"[bold]{plan.task_id}[/bold] — a chain of {n} run{'' if n == 1 else 's'} ({plan.id})")
+    console.print(f"  prompt: {_clip(item.prompt, full=False, limit=100)}")
+    described = describe_check(item.tuningfork.check)
+    console.print(f"  check:  {escape(described) if described else '[yellow]none defined[/yellow]'}")
+    console.print(f"  skill:  {escape(_shown_path(plan.skill_dir))}, carried from each run to the next")
+    if plan.tell:
+        console.print("  told:   after each run, the check's verdict and output as the user's next turn")
+    if plan.batch.harness_options:
+        console.print(f"  harness options: {escape(json.dumps(plan.batch.to_json()['harness_options']))}", soft_wrap=True)
+    if plan.batch.sandbox is not None:
+        console.print(f"  sandbox: every run works in {_sandbox_seen(plan.batch.sandbox)}")
+    for note in [*plan.batch.notes, *plan.notes]:
+        _print_note(note)
+    console.print()
+
+    def report(event) -> None:
+        if event.kind == "link":
+            console.print(_link_line(event.data))
+        elif event.kind == "budget":
+            console.print(
+                f"  [yellow]stopped at the budget: {event.data['spent_seconds']:.0f} s of model calls after "
+                f"{event.data['links']} link(s), {event.data['budget_seconds']:g} s allowed[/yellow]"
+            )
+
+    try:
+        result = execute_chain(store, plan, progress=report)
+    except OperationError as error:
+        _refuse(error)
+    _print_chain_end(result.to_json())
+
+
+@chain_app.command("list")
+def chain_list(
+    n: int = typer.Option(20, "-n", help="How many, newest first."),
+    quiet: bool = typer.Option(False, "-q", "--quiet", help="Ids only."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """The chains kept, newest first."""
+    from tuningfork.ops.chain import list_chains
+
+    store = _store(home)
+    found = list_chains(store, limit=n)
+    if quiet:
+        for chain in found:
+            console.print(chain["id"][:8])
+        return
+    if not found:
+        console.print("no chains yet: `tuningfork chain run <spec.json> -n 10` makes one")
+        return
+    table = Table(show_header=True, header_style="bold")
+    for column in ("chain", "status", "task", "harness", "links", "versions", "counted", "started"):
+        table.add_column(column)
+    for chain in found:
+        rate = chain.get("rate")
+        counted = f"{rate['successes']}/{rate['total']}" if rate else "-"
+        table.add_row(
+            chain["id"][:8], str(chain.get("status")), escape(str(chain.get("task_id"))),
+            str(chain.get("harness")), f"{len(chain.get('links') or [])}/{chain.get('n')}",
+            str(len(chain.get("versions") or [])), counted,
+            _when(chain["started_at"], seconds=False) if chain.get("started_at") else "-",
+        )
+    console.print(table)
+
+
+@chain_app.command("show")
+def chain_show(
+    reference: str = typer.Argument(..., help="The chain, by id or a prefix of it."),
+    diff: bool = typer.Option(False, "--diff", help="Show the lines each link changed in SKILL.md."),
+    as_json: bool = typer.Option(False, "--json", help="The chain's record as JSON."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """A chain link by link: each run's verdict, who changed the skill, and the versions."""
+    from tuningfork.ops.chain import get_chain
+
+    store = _store(home)
+    try:
+        found = get_chain(store, reference)
+    except OperationError as error:
+        _refuse(error)
+    if as_json:
+        console.print_json(json.dumps(found))
+        return
+    _print_chain(found, diff=diff)
+
+
+@app.command()
+def spend(
+    run: list[str] = typer.Option([], "--run", help="A run, by id, a prefix of it, or its label."),
+    experiment: list[str] = typer.Option([], "--experiment", help="An experiment, by id."),
+    job: list[str] = typer.Option([], "--job", help="A job, by id: what it launched and sampled."),
+    chain: list[str] = typer.Option([], "--chain", help="A chain, by id: every link."),
+    task: list[str] = typer.Option([], "--task", help="Every run of a task, by its id (skill/eval)."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """What work cost: model calls, tokens in and out, and time, counted from the records."""
+    from tuningfork.ops.spend import spend_report
+
+    store = _store(home)
+    try:
+        rows = spend_report(store, runs=run, experiments=experiment, jobs=job, chains=chain, tasks=task)
+    except OperationError as error:
+        _refuse(error)
+    if not rows:
+        console.print("name what to count: --run, --experiment, --job, --chain or --task")
+        return
+    table = Table(show_header=True, header_style="bold")
+    for column, justify in (("what", "left"), ("calls", "right"), ("failed", "right"), ("prompt tokens", "right"),
+                            ("completion tokens", "right"), ("wall s", "right"), ("server s", "right")):
+        table.add_column(column, justify=justify)
+    total = None
+    for row in rows:
+        found = row.spend
+        total = found if total is None else total + found
+        table.add_row(escape(row.what), *_spend_cells(found))
+    if len(rows) > 1 and total is not None:
+        table.add_row("[bold]total[/bold]", *_spend_cells(total))
+    console.print(table)
+    console.print(
+        "[dim]wall: each call's time at the proxy (or the experiment); server: what the server said it "
+        "spent, where it did — a dash where no call reported it. Replayed steps cost nothing.[/dim]",
+        soft_wrap=True,
+    )
+
+
+def _spend_cells(found) -> list[str]:
+    data = found.to_json()
+    server = "-" if data["server_s"] is None else f"{data['server_s']:.1f}"
+    if data["server_s"] is not None and data["unmeasured"]:
+        server += f" ({data['unmeasured']} unmeasured)"
+    return [
+        str(data["calls"]), str(data["failed"]), f"{data['prompt_tokens']:,}", f"{data['completion_tokens']:,}",
+        f"{data['wall_s']:.1f}", server,
+    ]
 
 
 # --- Phase 2: resampling and wording A/B -------------------------------------------------
@@ -1688,10 +2287,14 @@ def _print_screen(report, arms: dict) -> None:
     named = any(proposal and not proposal.startswith(name) for name, proposal in proposals.items())
     table = Table("", *(["proposal"] if named else []), "target", "p", "Holm", "", box=None, pad_edge=False)
     base = report.baseline
-    table.add_row("original", *([""] if named else []), escape(_fmt_rate(base.target)), "", "", "")
+    reused = getattr(report, "reused", 0)
+    table.add_row("original", *([""] if named else []), escape(_fmt_rate(base.target)), "", "",
+                  f"[dim]{reused} counted again from an earlier screen[/dim]" if reused else "")
     survivors, worse = {arm.name for arm in report.survivors()}, {arm.name for arm in report.worse()}
     for arm in report.arms:
-        if not report.complete:
+        if getattr(report, "quick", False):
+            verdict = "[dim]a quick look: no verdict[/dim]"
+        elif not report.complete:
             verdict = "[yellow]no verdict yet[/yellow]"
         elif arm.name in survivors:
             verdict = "[bold green]survives[/bold green]"
@@ -1711,10 +2314,18 @@ def _print_screen(report, arms: dict) -> None:
         f"[dim]p: Fisher's exact test of each proposal against the original arm; Holm: corrected "
         f"over the {report.family} planned before sampling (α={report.alpha}).[/dim]"
     )
-    if not report.complete:
+    if getattr(report, "quick", False):
+        console.print("a quick look: rates only — a lead for the next edit; only a full screen can keep one")
+    elif not report.complete:
         console.print("[yellow]unfinished: rates only — no verdict until every arm has drawn what was planned[/yellow]")
     elif not survivors:
         console.print("no proposal survived the correction")
+    checkpoints = getattr(report, "checkpoints", None) or []
+    if len(checkpoints) > 1:
+        from tuningfork.ops.compact import checkpoint_lines
+
+        for line in checkpoint_lines(report.to_json()):
+            console.print(escape(line), soft_wrap=True)
     console.print("[dim]A screen at one step is evidence, not proof: confirm a survivor with full runs.[/dim]")
 
 
@@ -2015,10 +2626,12 @@ def files(
     run: str = typer.Argument(..., help="Run id, prefix, or label."),
     where: str = typer.Argument(
         ..., metavar="step",
-        help="The step whose call found the workspace — its number, or a tool called there — "
-        "or `start` or `end`.",
+        help="The step whose call found the workspace — its number, a tool called there, or "
+        "changed:<path> for the call that first changed that file — or `start` or `end`.",
     ),
-    diff: bool = typer.Option(False, "--diff", help="Show what changed since the snapshot before."),
+    diff: bool = typer.Option(
+        False, "--diff", help="Show what changed: before a step, since the step before; at `end`, since the start.",
+    ),
     path: Optional[str] = typer.Option(None, "--path", help="With --diff: only this file."),
     out: Optional[Path] = typer.Option(None, "--out", help="Write the snapshot's files here."),
     home: Optional[Path] = typer.Option(None),
@@ -2040,11 +2653,12 @@ def files(
         mark = {"A": "[green]+[/green]", "M": "[yellow]~[/yellow]"}.get(changed.get(entry.path, ""), "")
         table.add_row(mark, escape(entry.path), "-" if entry.size is None else str(entry.size))
     console.print(table)
+    since = view.since or "the snapshot before"
     gone = [p for s, p in view.changes if s == "D"]
     if gone:
-        console.print(f"  [red]deleted since the snapshot before:[/red] {escape(', '.join(gone))}")
+        console.print(f"  [red]deleted since {since}:[/red] {escape(', '.join(gone))}")
     if view.changes:
-        console.print("  [dim]+ new, ~ changed since the snapshot before[/dim]")
+        console.print(f"  [dim]+ new, ~ changed since {since}[/dim]")
     if diff:
         patch = workspace_patch(store, view, path)
         console.print(escape(patch) if patch else "  [dim]no changes[/dim]", soft_wrap=True)
@@ -2059,7 +2673,8 @@ def files(
 def _sandbox_seen(sandbox) -> str:
     """Where a sandboxed launch works, and its home, as the harness sees them."""
     seen = sandbox.to_json() if hasattr(sandbox, "to_json") else dict(sandbox)
-    return f"{seen['workspace']}, its home {seen['home']}"
+    clock = f", its clock started at {seen['clock']}" if seen.get("clock") else ""
+    return f"{seen['workspace']}, its home {seen['home']}{clock}"
 
 
 def _print_fork_plan(plan, n: int = 1, arms: int = 1) -> None:
@@ -2503,9 +3118,10 @@ def _screen_verdict(verdict: dict) -> str:
         word = "not significant"
     rate, base = verdict["target"], verdict["baseline"]
     adjusted = f", Holm p {_fmt_p(verdict['adjusted_p'])}" if verdict.get("adjusted_p") is not None else ""
+    by = ", forks to the end by the task's check" if verdict.get("reach") == "end" else ""
     return (
         f"{word} — {rate['successes']}/{rate['total']} against the original's "
-        f"{base['successes']}/{base['total']}{adjusted} (screen {verdict['screen'][:8]})"
+        f"{base['successes']}/{base['total']}{adjusted}{by} (screen {verdict['screen'][:8]})"
     )
 
 
@@ -2523,6 +3139,11 @@ def refine_start(
         None, "--target-rules",
         help='Conditions that must all hold, as JSON: [{"if": "calls", "value": "write_file"}, '
         '{"if": "contains", "value": "row_count"}]. Conditions: calls, not_calls, contains, not_contains.',
+    ),
+    target_check: bool = typer.Option(
+        False, "--target-check",
+        help="The task's own check as the target, for a failure only the check can see: its screens run "
+        "forks to the end (refine screen --to-end).",
     ),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
@@ -2542,7 +3163,7 @@ def refine_start(
     try:
         made = refine.create(
             store, run, reference, target=target, target_match=target_match, target_rules=rules,
-            created_by={"via": "person"},
+            target_check=target_check, created_by={"via": "person"},
         )
     except OperationError as error:
         _refuse(error)
@@ -2551,9 +3172,15 @@ def refine_start(
         f"\nnext: ask for proposals — or give your own wording — then screen them:\n"
         f"  tuningfork refine propose {made.id[:8]} --builtin\n"
         f"  tuningfork refine propose {made.id[:8]} --file SKILL.md --why '…'\n"
-        f"  tuningfork refine screen {made.id[:8]}",
+        f"  tuningfork refine screen {made.id[:8]}{' --to-end' if target_check else ''}",
         soft_wrap=True,
     )
+    if target_check:
+        from tuningfork.ops.inspect import replay_warning
+
+        warning = replay_warning(store, store.get_run(made.run_id), made.step_idx)
+        if warning:
+            console.print(f"[yellow]note:[/yellow] {escape(warning)}", soft_wrap=True)
 
 
 @refine_app.command("list")
@@ -2651,9 +3278,10 @@ def refine_show(
             f"; [red]{', '.join(worse)} worse[/red]" if worse else ""
         )
         state = survivors if report["complete"] else "[yellow]unfinished: no verdict[/yellow]"
+        by = " · by the task's check, forks to the end" if screen.get("reach") == "end" else ""
         console.print(
             f"  {screen['experiment'][:8]}  {screen['status']}  {report['family']} proposal"
-            f"{'s' if report['family'] != 1 else ''}, n={report['baseline']['planned']} an arm — {state}"
+            f"{'s' if report['family'] != 1 else ''}, n={report['baseline']['planned']} an arm{by} — {state}"
         )
     if not shown["screens"] and shown["proposals"]:
         if shown["refinement"]["status"] == "open":
@@ -2845,14 +3473,40 @@ def refine_screen(
     max_tokens: int = typer.Option(4096, help="Cap per sample; hitting it counts as truncated."),
     seed_base: Optional[int] = typer.Option(None, help=SEED_HELP),
     prompt_cache: bool = typer.Option(False, "--prompt-cache", help=CACHE_HELP),
+    to_end: bool = typer.Option(
+        False, "--to-end",
+        help="Each arm's samples forks run from the checkpoint to the end through the harness, the task's "
+        "check deciding: the screen for a refinement toward the check, open to any other.",
+    ),
+    proxy: Optional[str] = typer.Option(None, "--proxy", help="With --to-end: the running proxy the forks go through."),
+    spec: Optional[Path] = typer.Option(None, "--spec", help="With --to-end: the task spec, for a run recorded before launches kept it."),
+    checkpoints: int = typer.Option(
+        4, "--checkpoints", min=1, max=10,
+        help="With --to-end: runs the forks are drawn from — the refinement's own, and others of its task at the "
+        "same step, passing and failing by turns, each arm's n spread evenly over them (fewer where fewer serve). "
+        "An effect that holds across checkpoints is one fresh runs keep. 1 forks the refinement's run alone.",
+    ),
+    quick: bool = typer.Option(
+        False, "--quick",
+        help="With --to-end: a quick look — 8 forks of each proposal and none of the original, beside the original's "
+        "forks this refinement drew before. Rates only, never a verdict: a full screen decides.",
+    ),
+    fresh_original: bool = typer.Option(
+        False, "--fresh-original",
+        help="With --to-end: draw the original's forks anew, rather than count those this refinement's earlier "
+        "screens drew at the same checkpoints.",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show the plan and what could survive; sample nothing."),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
-    """Screen proposals at the checkpoint, each against a fresh arm of the original.
+    """Screen proposals at the checkpoint, each against an arm of the original.
 
-    Holm-corrected over the proposals named, a family fixed before the first sample."""
+    Holm-corrected over the proposals named, a family fixed before the first sample. With
+    --to-end, the arms are forks run to the end and the task's check decides each, drawn
+    from several checkpoints by default; the original's forks an earlier screen of the
+    refinement drew there count again, and only what n still needs is drawn."""
     from tuningfork.ops import refine
-    from tuningfork.ops.screen import MAX_ARMS, execute_screen
+    from tuningfork.ops.screen import MAX_ARMS, execute_screen, execute_screen_to_end
 
     store = _store(home)
     try:
@@ -2865,13 +3519,61 @@ def refine_screen(
                     f"the refinement has {len(chosen)} proposals; a screen holds at most {MAX_ARMS}",
                     hint="name the ones to screen with --proposals",
                 )
-        prepared = refine.prepare_refinement_screen(
-            store, reference, chosen, base_url=base_url, alpha=alpha, n=n, concurrency=concurrency,
-            max_tokens=max_tokens, seed_base=seed_base, prompt_cache=prompt_cache,
-        )
+        if to_end:
+            prepared = refine.prepare_refinement_screen(
+                store, reference, chosen, to_end=True, alpha=alpha, n=n, concurrency=concurrency,
+                base_url=f"{proxy.rstrip('/')}/v1" if proxy else None, spec=spec, checkpoints=checkpoints,
+                quick=quick, fresh_original=fresh_original,
+            )
+        else:
+            prepared = refine.prepare_refinement_screen(
+                store, reference, chosen, base_url=base_url, alpha=alpha, n=n, concurrency=concurrency,
+                max_tokens=max_tokens, seed_base=seed_base, prompt_cache=prompt_cache,
+                quick=quick, fresh_original=fresh_original,
+            )
     except OperationError as error:
         _refuse(error)
     plan = prepared.to_json()
+    if to_end:
+        n = prepared.n
+        _print_fork_plan(prepared.baseline, n, arms=prepared.family + 1)
+        console.print("  target    the task's check passes [dim](declared by the task, before any fork ran)[/dim]")
+        for arm in plan["arms"]:
+            console.print(f"  arm       {arm['name']}: {arm['changed_lines']} line{'s' if arm['changed_lines'] != 1 else ''} changed")
+        if prepared.quick:
+            console.print("            [dim]a quick look: rates only, no verdict[/dim]")
+        else:
+            console.print(f"            Holm over {plan['family']} proposal{'s' if plan['family'] != 1 else ''}, α={alpha}")
+        original = plan["original"]
+        if original["reused"]:
+            console.print(f"  original  {original['reused']} fork(s) drawn by an earlier screen of this refinement, counted "
+                          f"again; {original['drawn']} to draw")
+        if len(plan["checkpoints"]) > 1:
+            drawn = ", ".join(f"{each['run'][:8]} step {each['step']} ({each['verdict'] or 'unjudged'}, {each['n']} an arm)"
+                              for each in plan["checkpoints"])
+            console.print(f"  from      {len(plan['checkpoints'])} checkpoints: {escape(drawn)}", soft_wrap=True)
+        for note in plan.get("notes") or []:
+            console.print(f"  [dim]passed over: {escape(note)}[/dim]", soft_wrap=True)
+        for warning in plan["warnings"]:
+            console.print(f"  [yellow]{escape(warning)}[/yellow]")
+        console.print(f"  forks     {plan['total']} in all: "
+                      + ("the original first, then each arm" if plan["original"]["drawn"]
+                         else "the proposals' — the original's counted from before" if not prepared.quick
+                         else "the proposals' alone"))
+        if dry_run:
+            return
+        console.print()
+        try:
+            result = execute_screen_to_end(store, prepared, progress=_fork_progress(n, show_arm=True))
+        except OperationError as error:
+            _refuse(error)
+        _print_screen(result.report, result.experiments)
+        own = next((arm for arms in result.by_arm.values() for arm in arms if arm.group_id == result.group_id), None)
+        console.print(
+            f"[dim]screen {(own.id if own else result.group_id)[:8]} · {result.elapsed / 60:.1f} min · forks to the "
+            f"end, the task's check deciding · `tuningfork refine show {prepared.refinement[:8]}`[/dim]"
+        )
+        return
     _print_checkpoint(prepared.checkpoint, prepared.plan, prepared.base_url, per_arm=True, arms=prepared.family + 1)
     console.print(f"  target    {escape(prepared.target.description)}", soft_wrap=True)
     console.print("            [dim]declared when the refinement began[/dim]")
@@ -3413,6 +4115,9 @@ def _job_state(job: dict) -> str:
         progress = job.get("progress") or {}
         done, total = progress.get("done"), progress.get("total")
         shown = f"running {done}/{total}" if total else "running"
+        left = progress.get("remaining_s")
+        if isinstance(left, (int, float)):
+            shown += f", about {max(1, round(left / 60))} min left at its pace so far"
         return f"{shown}, {progress['waiting']}" if progress.get("waiting") else shown
     tone = _JOB_TONES.get(status)
     return f"[{tone}]{status}[/{tone}]" if tone else status

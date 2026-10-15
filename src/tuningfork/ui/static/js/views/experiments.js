@@ -1,11 +1,11 @@
 // Resamples and wording A/B tests: behaviour distributions at a checkpoint.
 
-import { api } from "../api.js";
+import { api, query } from "../api.js";
 import {
   ago, chip, crumbs, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
 } from "../dom.js";
 import { live } from "../live.js";
-import { comparisonView, distributionView, forkingView, formatP, screenView } from "../results.js";
+import { comparisonView, distributionView, forkingView, formatP, screenView, tallyView } from "../results.js";
 import { trashButton, trashedBanner } from "../trash.js";
 
 export async function experimentsView(root) {
@@ -80,7 +80,17 @@ export async function experimentView(root, [id], scope) {
   let experiment = await api.get(`/experiments/${encodeURIComponent(id)}`);
   // A probe's answer, as tokens: read once, however often a running probe is drawn again.
   let base;
+  // Forks run to the end: what their checks said, counted by arm, read again as forks finish.
+  let tally = null;
+  const loadTally = () => {
+    if (experiment.reach !== "end") return;
+    api.get(`/tally${query({ screen: experiment.id })}`)
+      .then((data) => { tally = data; })
+      .catch(() => { tally = null; })
+      .then(() => { if (scope.active) draw(); });
+  };
   draw();
+  loadTally();
   if (experiment.kind === "forking-tokens" && experiment.run_id && experiment.settings?.base_stream) {
     const stream = experiment.settings.base_stream;
     api.get(`/runs/${encodeURIComponent(experiment.run_id)}/steps/${experiment.step_idx}/tokens?stream=${encodeURIComponent(stream)}`)
@@ -105,6 +115,7 @@ export async function experimentView(root, [id], scope) {
     timer = setTimeout(async () => {
       experiment = await api.get(`/experiments/${encodeURIComponent(id)}`);
       if (scope.active) draw();
+      loadTally();
     }, event.type === "job" ? 50 : 500);
   });
   scope.onLeave(() => clearTimeout(timer));
@@ -156,6 +167,7 @@ export async function experimentView(root, [id], scope) {
         experiment.forking ? forkingView(experiment.forking, { experiment, view: base }) : null,
         experiment.screen ? screenView(experiment.screen, { arms: experiment.arms }) : null,
         experiment.to_end ? toEndView(experiment) : null,
+        tally ? tallyView(tally) : null,
         experiment.distribution ? distributionView(experiment.distribution) : null,
         experiment.settings?.logprobs && checkpoint
           ? h("p", { class: "hint" }, "Each sample kept its tokens: ",

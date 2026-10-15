@@ -119,6 +119,7 @@ def _written(value: Any) -> str:
 
 class Gemma4:
     name = "gemma4"
+    call_name_prefix = CALL_PREFIX[len(CALL):]
 
     def detect(self, template: str) -> bool:
         # llama.cpp's own rule for choosing this parser.

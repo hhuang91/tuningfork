@@ -270,12 +270,15 @@ class Recorder:
         workspace_commit: str | None = None,
         served_by: str | None = None,
         holds: list[str] | None = None,
+        output_cap: dict[str, Any] | None = None,
     ) -> Step | None:
         """Store one exchange. The edit arguments are only set when a breakpoint changed it.
 
         Responses arrive in the call's own wire format and are stored in the common shape;
         the raw bytes are kept too. `assignment` places a launched call where it was
-        assigned when it arrived (see `tuningfork.launches`).
+        assigned when it arrived (see `tuningfork.launches`). `output_cap` is what the proxy's
+        cap changed in the request (`wire.base.cap_output`), kept with its parameters: the
+        request is stored as the model was sent it.
         """
         if not request_payload:
             return None
@@ -296,6 +299,8 @@ class Recorder:
 
         params = summarize_params(request_payload)
         params["streamed"] = streamed
+        if output_cap:
+            params["output_cap"] = output_cap
 
         async with self._in_order:
             raw_blob = None

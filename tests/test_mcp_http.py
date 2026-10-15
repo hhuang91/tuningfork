@@ -149,3 +149,19 @@ def test_stopping_does_not_wait_on_a_connected_client(proxy):
     assert ended and ended[0] < 5, "the stream outlived the stop"
     again = httpx.post(f"{url}{MCP}", headers=headers, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     assert again.status_code == 503
+
+
+def test_the_route_waits_as_long_as_the_proxy_was_told(tmp_path):
+    """How long one call may wait for a job is the proxy's setting (`serve --mcp-max-wait`):
+    50 s unless told, for a client that reads an answer for 60 s; a client that gives a call
+    300 s (Hermes) may be given about 110, so a twenty-minute screen is a dozen polls."""
+    from tuningfork.config import Settings
+    from tuningfork.proxy.app import create_app
+
+    default = create_app(Settings(upstream_base_url="http://upstream.test", home=tmp_path / "a"))
+    patient = create_app(Settings(upstream_base_url="http://upstream.test", home=tmp_path / "b", mcp_max_wait=110))
+    try:
+        assert default.state.mcp.max_wait == 50 and patient.state.mcp.max_wait == 110
+    finally:
+        default.state.recorder.store.close()
+        patient.state.recorder.store.close()

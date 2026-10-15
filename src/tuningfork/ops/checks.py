@@ -214,3 +214,213 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan) -> CheckTrial:
 def try_check(store: Store, check: Any = None, **options: Any) -> CheckTrial:
     """Prepare a trial and run it: what the CLI does in one go."""
     return execute_check_trial(store, prepare_check_trial(store, check, **options))
+
+
+# --- the check along a run -------------------------------------------------------------------
+#
+# A check judges a run's end. Run on the workspace as each call left it, it says when each thing
+# it complains about came to be: a finding there from the start is work not done yet; one a call
+# made is a mistake, and that call is where it was made. Where every run made the same mistake
+# and some repaired it later, comparing passing with failing runs points at the repair; this
+# points at the mistake (findings §31.42: all ten runs booked a delivery's first drop again, and
+# the four that passed had noticed later, by accident). A diagnostic, never a verdict: part-way
+# through a run a check fails on work not done yet, and nothing here changes a run's own verdict.
+
+#: Where the check along a run is kept, in the run's result.
+ALONG = "check_along"
+
+
+@dataclass(slots=True)
+class CheckAlongPlan:
+    """A run, and the states of its workspace its check will be run on: the start, each that a
+    call left changed, and the end."""
+
+    trial: CheckTrialPlan
+    #: (the step whose call found the workspace like this — 0 the start, the number of steps the
+    #: end — and its snapshot), each a change from the one before, the start and the end always.
+    states: list[tuple[int, str]]
+    steps: int
+
+    def to_json(self) -> dict[str, Any]:
+        return {**self.trial.to_json(), "states": len(self.states), "steps": self.steps}
+
+
+def prepare_check_along(store: Store, run: str, *, timeout: float = DEFAULT_TIMEOUT) -> CheckAlongPlan:
+    """What the run's own check will be run on, checked before anything runs: a shell check — a
+    reply check has nothing to read before the reply — and a run whose workspace was snapshotted
+    at each call."""
+    from tuningfork.specs import check_kind
+
+    trial = prepare_check_trial(store, run=run, timeout=timeout)
+    found = trial.run
+    if check_kind(trial.check) != "shell":
+        raise OperationError(
+            f"run {found.id[:8]}'s check reads the reply alone, and there is no reply before the end: only a "
+            "check that reads the files can be run along a run",
+            code="bad_params", field="run",
+        )
+    from tuningfork.ops.inspect import workspace_states
+
+    states = workspace_states(store, found)
+    if states is None:
+        raise OperationError(f"run {found.id[:8]} kept no snapshots of its workspace to run the check on",
+                             field="run")
+    # The last state is the end, which the run's last step left: its number is the run's steps.
+    return CheckAlongPlan(trial=trial, states=states, steps=states[-1][0])
+
+
+def execute_check_along(
+    store: Store, plan: CheckAlongPlan, *, progress: Any = None, cancel: Any = None,
+) -> dict[str, Any]:
+    """Run the check on each state, and keep what it printed with the run (`ALONG` in its
+    result): its own verdict is left as it was."""
+    import time
+    from dataclasses import replace
+
+    from tuningfork.ops.common import emit
+
+    states = []
+    seen: dict[tuple[str, bool], CheckTrial] = {}
+    for index, (before, commit) in enumerate(plan.states):
+        if cancel is not None:
+            cancel.check()
+        end = index == len(plan.states) - 1
+        key = (commit, end)
+        if key not in seen:
+            # The reply is the run's own at the end; before it, there is none.
+            reply = plan.trial.reply if end else ""
+            seen[key] = execute_check_trial(store, replace(plan.trial, commit=commit, reply=reply))
+        trial = seen[key]
+        states.append({"before_step": before, "end": end, "commit": commit, "passed": trial.passed,
+                       "output": trial.output[-2000:]})
+        emit(progress, "state", done=index + 1, total=len(plan.states))
+    record = {"states": states, "steps": plan.steps, "at": time.time()}
+    run = store.get_run(plan.trial.run.id)
+    store.annotate_run(run.id, result={**(run.result or {}), ALONG: record})
+    return {"run": run.id, **record, "made": made_by_calls(record)}
+
+
+def check_along(store: Store, run: str, *, timeout: float = DEFAULT_TIMEOUT) -> dict[str, Any]:
+    """Prepare and run the check along one run."""
+    return execute_check_along(store, prepare_check_along(store, run, timeout=timeout))
+
+
+@dataclass(slots=True)
+class CheckAlongRunsPlan:
+    """The runs the check will be run along — a task's, or one — and those passed over, and why."""
+
+    task_id: str | None
+    plans: list[CheckAlongPlan]
+    skipped: list[str] = field(default_factory=list)
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "runs": [plan.trial.run.id for plan in self.plans],
+            "states": sum(len(plan.states) for plan in self.plans),
+            "skipped": self.skipped[:20],
+            "skipped_more": max(0, len(self.skipped) - 20),
+        }
+
+
+@dataclass(slots=True)
+class CheckAlongRuns:
+    """What the check said along each run: the findings a call made, with the step that made each."""
+
+    task_id: str | None
+    runs: list[dict[str, Any]]
+    skipped: list[str]
+
+    def to_json(self) -> dict[str, Any]:
+        return {"task_id": self.task_id, "runs": self.runs, "skipped": self.skipped[:20],
+                "skipped_more": max(0, len(self.skipped) - 20)}
+
+
+def prepare_check_along_runs(
+    store: Store,
+    *,
+    task: str | None = None,
+    run: str | None = None,
+    limit: int = 50,
+    again: bool = False,
+    timeout: float = DEFAULT_TIMEOUT,
+    hidden: Sequence[str] = (),
+) -> CheckAlongRunsPlan:
+    """The runs of a task — its own, not forks or threads, the newest first, each not run along
+    before unless `again` — or one run, each checked before anything runs. `hidden` are tasks an
+    agent may not reach (the held-out ones)."""
+    from tuningfork.ops.tally import refuse_hidden_task
+
+    if (task is None) == (run is None):
+        raise OperationError("give a task, or one run", code="bad_params", field="task")
+    if run is not None:
+        plan = prepare_check_along(store, run, timeout=timeout)
+        refuse_hidden_task(plan.trial.run.task_id, hidden)
+        return CheckAlongRunsPlan(task_id=plan.trial.run.task_id, plans=[plan])
+    refuse_hidden_task(task, hidden)
+    runs = [found for found in store.runs(limit=limit, task_id=task) if not found.is_thread and not found.is_fork]
+    if not runs:
+        raise OperationError(f"no runs of task {task!r}", code="not_found", field="task")
+    plans, skipped = [], []
+    for found in runs:
+        if not again and (found.result or {}).get(ALONG):
+            skipped.append(f"run {found.id[:8]}: run along before (again runs it anew)")
+            continue
+        try:
+            plans.append(prepare_check_along(store, found.id, timeout=timeout))
+        except OperationError as error:
+            skipped.append(f"run {found.id[:8]}: {error.message}")
+    return CheckAlongRunsPlan(task_id=task, plans=plans, skipped=skipped)
+
+
+def execute_check_along_runs(
+    store: Store, plan: CheckAlongRunsPlan, *, progress: Any = None, cancel: Any = None,
+) -> CheckAlongRuns:
+    """Run the check along each planned run, one after another, keeping each with its run."""
+    from tuningfork.ops.common import emit
+
+    done = []
+    for index, each in enumerate(plan.plans):
+        if cancel is not None:
+            cancel.check()
+        record = execute_check_along(store, each, cancel=cancel)
+        done.append({
+            "run": each.trial.run.id,
+            "passed": (each.trial.run.result or {}).get("passed"),
+            "states": len(record["states"]),
+            "made": [entry for entry in record["made"] if entry["made_by"] is not None][:20],
+        })
+        emit(progress, "run", done=index + 1, total=len(plan.plans), run=each.trial.run.id)
+    return CheckAlongRuns(task_id=plan.task_id, runs=done, skipped=plan.skipped)
+
+
+def made_by_calls(record: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Each line the check printed along a run, with the step whose call first made it — None
+    when it was there from the start: work not done yet — and whether it was still there at the
+    end. Lines are followed by their exact text: masked as the tally masks them, "SKU-310: 15 in
+    stock" (not booked yet) and "SKU-100: 28 in stock" (booked twice) would be one finding."""
+    from tuningfork.ops.tally import MAX_LINE, finding_key, finding_lines
+
+    states = (record or {}).get("states") or []
+    if not states:
+        return []
+    first: dict[str, int] = {}
+    for index, state in enumerate(states):
+        for line in finding_lines(state.get("output")):
+            first.setdefault(line, index)
+    end = set(finding_lines(states[-1].get("output")))
+    made = []
+    for line, index in first.items():
+        # A line first seen in a state a call made: the call at the step before that state.
+        by = None if index == 0 else int(states[index]["before_step"]) - 1
+        made.append({"line": line[:MAX_LINE], "finding": finding_key(line), "made_by": by, "at_end": line in end})
+    return made
+
+
+def first_made(run: Run, words: str) -> int | None:
+    """The step whose call first made a finding with these words (case aside) along `run`, from
+    its check along the run; None when none did, or the check was not run along it."""
+    wanted = words.strip().lower()
+    steps = [entry["made_by"] for entry in made_by_calls((run.result or {}).get(ALONG))
+             if entry["made_by"] is not None and wanted in f"{entry['line']}\n{entry['finding']}".lower()]
+    return min(steps) if steps else None

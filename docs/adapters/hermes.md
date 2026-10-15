@@ -14,6 +14,7 @@ Implementation: `tuningfork/harness/hermes.py`. Template for other harnesses:
 | Machine-readable output | `-Q` — suppresses banner, spinner and tool previews |
 | Bound the run | `--max-turns N` |
 | Preload skills | `-s name1,name2` |
+| One more turn of the session just run | `hermes chat --continue -q "<message>"` resumes the most recent session in the home, its whole conversation with it — how a told chain gives Hermes the check's result (`continue_launch`) |
 | No TTY to approve tools | `--yolo` — only acceptable in a disposable workspace |
 | Skip injected memory and rules | `--ignore-rules`, `--ignore-user-config` |
 | Git isolation | `--worktree` |
@@ -259,3 +260,32 @@ step.
 
 - The context-compaction signature
 - Whether `--pass-session-id` puts the session id in the system prompt
+
+## Options a launch takes
+
+Beside the seam's own arguments, a batch or a chain can give Hermes options
+(`--harness-option k=v` on the CLI, `harness_options` in a job's parameters, the "Harness
+options" field of the Run a task form), read strictly by the adapter (`HermesOptions`) and
+recorded in each launch's settings under `harness`:
+
+| Option | What it does |
+|---|---|
+| `self_improvement` | On (the default), Hermes is as shipped: its system prompt tells the model to patch a skill it finds wanting with `skill_manage`, and its background review may do the same after the answer. Off, the plugin below removes `skill_manage` from Hermes's tool registry at start-up (`registry.deregister`), so nothing in the run can change the skill it is measured with: Hermes injects the patching guidance only when the tool is there, and the skill review's trigger needs it too; `skill_view` and `skills_list` stay, so the skill reaches the model as before; the skills index block, which Hermes writes whenever skill tools exist, keeps its one sentence naming `skill_manage` ("If a skill has issues, fix it with skill_manage(action='patch')") — seen on a real run, where the model never tried the missing tool. Hermes loads plugins before it imports its built-in tool modules, so the plugin imports them itself before removing the tool; without that the removal found nothing and the tool was registered afterwards. Hermes turns tools off only by whole toolset (`disabled_toolsets`, `hermes tools disable`), and `skill_manage` shares the `skills` toolset with `skill_view`; a plugin removing a tool it does not own needs the opt-in Hermes asks for, `plugins.entries.<plugin>.allow_tool_override: true`, which the adapter writes. |
+| `await_review` | Lets Hermes's background review finish before the process exits. After a turn Hermes may replay the conversation on a daemon thread named `bg-review` with a review prompt (memory, skills, or both) and patch a skill from it; in one-shot mode (`chat -q`) the interpreter's exit cuts that thread off, and a 30 s exit watchdog (`HERMES_EXIT_WATCHDOG_S`) would end it anyway. The plugin joins the thread from Hermes's own `on_session_end` and `on_session_finalize` hooks — both fire before the exit path arms its watchdog. Nothing of Hermes is patched; the process waits as an open session would. The review's calls are the launch's side thread, as before. Seen on the real stack: the review can run to Hermes's own output limit (the whole context) — one took 733 s — so a chain's link can take as long as the task's timeout allows. |
+| `review_every_turn` | `skills.creation_nudge_interval: 1` in the launch's `config.yaml`: the skill review is due after every turn. By default (10) it is due once ten model calls have passed in the session, which a short task never reaches. |
+| `mcp_servers` | MCP servers for the launch's `config.yaml`, by name, as Hermes takes them (`command`, `args`, `env`, `timeout`, or `url`): how a launched Hermes gets tuningfork's own tools (`tuningfork mcp --home … --proxy … --tools refine`). Written as one JSON flow mapping, which is YAML. Needs Hermes's `mcp` extra (`hermes-agent[mcp]`); the settings record each server's command, never its environment. |
+
+What the review needs of a skill: it refuses (`tools/skill_manager_tool.py`) a pinned skill,
+one in `skills.external_dirs`, a protected built-in, a hub-installed or a bundled one — bundled
+meaning listed in `~/.hermes/skills/.bundled_manifest`, which Hermes's start-up sync writes
+from the bundled skills folder its install ships. The uv tool install of 0.18.2 ships none, so
+a skill tuningfork places counts as the user's own and the review may patch it; a git install
+ships them, and there a bundled skill is off-limits to the review (the model may still patch
+it during the task). The review also refuses to patch a file it has not loaded with
+`skill_view` in the same review turn.
+
+The plugin is one folder in the launch's home, `~/.hermes/plugins/tuningfork-launch/`, with
+`options.json` beside it saying what the launch was asked; it is written only when an option
+needs it. A chain (`tuningfork chain run`) notes, before it starts, which of the options its
+links need are off: without `await_review` and `review_every_turn` Hermes's own loop never
+acts in a one-shot launch, and with `self_improvement` off nothing can change the skill.

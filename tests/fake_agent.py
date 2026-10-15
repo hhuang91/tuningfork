@@ -18,6 +18,7 @@ import json
 import os
 import random
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -108,7 +109,11 @@ def main() -> None:
         {"role": "system", "content": system_prompt(home)},
         {"role": "user", "content": sys.argv[1]},
     ]
+    # Seconds to wait before each model call: a test's slow harness.
+    delay = float(os.environ.get("FAKE_DELAY", "0"))
     for _ in range(turns):
+        if delay:
+            time.sleep(delay)
         message = call(
             base_url,
             {"model": model, "messages": messages, "tools": TOOLS, "stream": True,

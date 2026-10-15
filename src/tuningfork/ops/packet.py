@@ -98,18 +98,28 @@ def _continuations(store: Store, refinement: Any, checkpoint: Any, target: Any) 
     for experiment in store.experiments(run_id=refinement.run_id, step_idx=refinement.step_idx, kind="screen", limit=200):
         if experiment.arm == "original" and experiment.settings.get("refinement") == refinement.id:
             sources.append(experiment)
+    # The task's check as the target is judged by forks' verdicts, never at the step: an
+    # answer reached it when its fork passed; one sampled at the step alone says nothing.
+    by_check = (refinement.target or {}).get("kind") == "check"
     good, bad = [], []
     for experiment in sources:
         samples = store.samples(experiment.id)
         for sample, outcome in zip(samples, experiment_outcomes(store, experiment, refinement.normalizers)):
             if outcome.is_error:
                 continue
+            if by_check:
+                if sample.exclusion or sample.passed is None:
+                    continue
+                reached = bool(sample.passed)
+            else:
+                reached = target.matches(outcome)
             answer = _answer(store.sample_response(sample), outcome, source=f"{experiment.kind} {experiment.id[:8]}")
-            (good if target.matches(outcome) else bad).append(answer)
+            (good if reached else bad).append(answer)
     own = recorded_outcome(store.response(checkpoint.step), checkpoint.step.error, refinement.normalizers)
-    if not own.is_error:
+    verdict = (checkpoint.run.result or {}).get("passed")
+    if not own.is_error and (not by_check or verdict is not None):
         answer = _answer(store.response(checkpoint.step), own, source="the recorded run")
-        (good if target.matches(own) else bad).insert(0, answer)
+        (good if (bool(verdict) if by_check else target.matches(own)) else bad).insert(0, answer)
     sampled = len(good) + len(bad)
     if not sampled:
         summary = "no answers at this checkpoint yet: sample it to see what the model does here"

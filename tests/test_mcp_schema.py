@@ -50,7 +50,10 @@ def test_no_kind_has_its_own_dry_run_or_wait():
 def test_the_tool_list_is_small_and_always_in_one_order():
     server = ToolServer(store=None, jobs=None)
     listed = [tool.model_dump(by_alias=True, exclude_none=True, mode="json") for tool in server.listed()]
-    assert len(json.dumps(listed)) <= 24_000, len(json.dumps(listed))
+    # Grew by where_it_holds' 1,800 characters: one question of every run, the way to the step when a
+    # check prints only its verdict; and by 650 for reading a file or a message page by page, and asking
+    # a screen's forks (findings §31.57: a 12,000-character file was cut where the check failed it).
+    assert len(json.dumps(listed)) <= 29_300, len(json.dumps(listed))
     names = [tool["name"] for tool in listed]
     assert names[0] == "list_tasks" and names[-1] == "cancel_job"
     assert names == [tool.name for tool in ToolServer(store=None, jobs=None).listed()]
@@ -120,7 +123,20 @@ class TestTheRefineToolset:
             assert "start_propose" not in registry(toolset)
         assert "person" in schema.EXCLUDED["propose"]
 
-    @pytest.mark.parametrize("toolset, budget", [("refine", 24_000), ("all", 40_000)])
+    def test_the_loop_with_screens_to_the_end_is_its_own_toolset(self):
+        from tuningfork.mcp.server import instructions
+
+        offered = registry("refine-to-end")
+        assert [name for name in offered if name.startswith("start_")] == [
+            "start_refinement", "start_resample", "start_ab", "start_screen", "start_screen_to_end"]
+        assert offered["start_screen_to_end"].machine and "start_screen_to_end" not in registry("refine")
+        assert "start_screen_to_end" in registry("all") and schema.DEFAULT_LIMITS["screen-to-end"] == 60
+        assert "target_check" in instructions("refine-to-end") and "target_check" not in instructions("refine")
+
+    # `all` grew by start_check_along's 1,500 characters, the check run along a task's runs, and by
+    # where_it_holds' 1,800, one question of every run; the loops took it within theirs. Each grew again
+    # by 350 to 1,250 for paging a file or a message, a screen's forks asked, and the quick look.
+    @pytest.mark.parametrize("toolset, budget", [("refine", 30_400), ("refine-to-end", 33_700), ("all", 54_400)])
     def test_each_toolset_stays_small(self, toolset, budget):
         listed = [tool.model_dump(by_alias=True, exclude_none=True, mode="json")
                   for tool in ToolServer(store=None, jobs=None, toolset=toolset).listed()]

@@ -77,3 +77,27 @@ def test_what_an_arm_must_reach_to_survive(baseline, family, needed):
     if needed:
         p = fisher_exact(needed - 1, 20 - needed + 1, baseline, 20 - baseline)
         assert p * family >= 0.05  # one fewer would not have done
+
+
+class TestForksToTheEnd:
+    def test_each_arm_is_judged_by_the_check_with_the_same_correction(self):
+        """A screen run to the end: a fork that passed is a hit, one that failed a miss, and one
+        left out counts for neither — then the test is the step screen's."""
+        from types import SimpleNamespace
+
+        from tuningfork.analysis.screen import compare_verdicts
+
+        def forks(passed: int, failed: int, excluded: int = 0) -> list:
+            return ([SimpleNamespace(passed=True, exclusion=None)] * passed
+                    + [SimpleNamespace(passed=False, exclusion=None)] * failed
+                    + [SimpleNamespace(passed=None, exclusion="timed out")] * excluded)
+
+        report = compare_verdicts(forks(2, 8), {"p1": forks(9, 1), "p2": forks(3, 6, 1)}, planned=10)
+        raw = [fisher_exact(9, 1, 2, 8), fisher_exact(3, 6, 2, 8)]
+        assert report.reach == "end" and report.target == "the task's check passes" and report.complete
+        assert [arm.p_value for arm in report.arms] == raw and [arm.adjusted_p for arm in report.arms] == holm(raw)
+        assert [arm.name for arm in report.survivors()] == ["p1"]
+        assert report.arms[1].errors == 1 and report.arms[1].target.total == 9 and report.arms[1].drawn == 10
+        assert report.to_json()["reach"] == "end" and report.baseline.target.successes == 2
+        short = compare_verdicts(forks(2, 8), {"p1": forks(5, 0)}, planned=10)
+        assert not short.complete and short.survivors() == []

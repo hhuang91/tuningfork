@@ -464,6 +464,16 @@ def hash_tree(roots: Iterable[Path]) -> dict[str, str]:
     return hashes
 
 
+def fingerprint(hashes: dict[str, str]) -> str | None:
+    """A short fingerprint of a skill's files from their hashes (`hash_tree`): the same for
+    two folders whose files match byte for byte, and None for no files. How a run names the
+    skill version it was given (`Run.skill_version`)."""
+    if not hashes:
+        return None
+    signature = json.dumps(hashes, sort_keys=True)
+    return hashlib.sha256(signature.encode()).hexdigest()[:8]
+
+
 def skill_bodies(roots: Iterable[Path]) -> dict[str, dict[str, Any]]:
     """For each SKILL.md under `roots`: the hash of its body with the frontmatter removed,
     and the file line the body starts on, keyed like `hash_tree`.

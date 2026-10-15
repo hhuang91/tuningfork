@@ -43,3 +43,26 @@ def test_the_original_in_the_system_prompt_is_a_leak_when_it_is_not_swapped():
     anthropic = {**request(), "system": [{"type": "text", "text": f"Remember: {LINE}"}]}
     _, info = Variant(ORIGINAL, VARIANT).apply(anthropic)
     assert info["leaked"] == [LINE]
+
+
+def test_a_line_the_variant_extends_is_not_a_leak_of_itself():
+    """Found on the real stack: an edit made "- explicit commitments" into "- explicit
+    commitments (including those found in questions, blockers, or risks)", and every one of
+    the screen's twenty forks was marked unusable — the original's line found inside the
+    variant's own — so the proposal got no verdict at all."""
+    from tuningfork.replay import leaked, unique_lines
+
+    original = "---\nname: m\n---\n\nExtract into distinct lists:\n\n- decisions actually made\n- explicit commitments\n"
+    variant = original.replace("- explicit commitments", "- explicit commitments (including those found in questions, blockers, or risks)")
+    assert unique_lines(original, variant) == []
+    sent, info = Variant(original, variant).apply({"model": "m", "messages": [
+        {"role": "user", "content": "go"},
+        {"role": "user", "content": "Base directory for this skill: /x\n\n" + original.split("---\n\n", 1)[1]},
+    ]})
+    assert info["spans"] == 1 and "leaked" not in info
+    # A line reworded rather than extended still tells a leak when the harness sends it again.
+    reworded = original.replace("- explicit commitments", "- commitments stated in so many words")
+    assert unique_lines(original, reworded) == ["- explicit commitments"]
+    assert leaked({"messages": [{"role": "tool", "content": "SKILL.md:8: - explicit commitments"}]},
+                  unique_lines(original, reworded)) == ["- explicit commitments"]
+

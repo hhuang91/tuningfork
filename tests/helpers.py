@@ -156,17 +156,20 @@ def record_run(
     *,
     prompt: str = "do the task",
     task_id: str | None = None,
+    tools: Sequence[str] = (),
 ) -> str:
     """Record a synthetic multi-step run and return its id.
 
     Each assistant message is followed by a user turn, so successive requests extend the
-    same path through the tree exactly as a real conversation would.
+    same path through the tree exactly as a real conversation would. `tools` are offered
+    in every request, by name.
     """
     store.begin_run(label, task_id)
     messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+    offered = {"tools": [{"type": "function", "function": {"name": name}} for name in tools]} if tools else {}
     for message in assistant_messages:
         store.record_step(
-            request={"model": "m", "messages": list(messages)},
+            request={"model": "m", "messages": list(messages), **offered},
             response=as_response(message),
         )
         messages.append(message)
@@ -281,7 +284,14 @@ class FakeAgent:
         }
         if os.environ.get("FAKE_NOISE"):
             env["FAKE_NOISE"] = os.environ["FAKE_NOISE"]
+        if os.environ.get("FAKE_DELAY"):
+            env["FAKE_DELAY"] = os.environ["FAKE_DELAY"]
         return LaunchSpec(argv=(sys.executable, str(FAKE_AGENT), prompt), env=env, cwd=Path(workspace))
+
+    def continue_launch(self, prompt, *, home, workspace, max_turns=30):
+        """One more turn: the fake agent keeps no session, so it is a fresh conversation in
+        the same home and workspace — enough for what the runner does with it."""
+        return self.launch(prompt, home=home, workspace=workspace, max_turns=max_turns)
 
     def skill_roots(self, home) -> tuple[Path, ...]:
         return (Path(home) / "skills",)

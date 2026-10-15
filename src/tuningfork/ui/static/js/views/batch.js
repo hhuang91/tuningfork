@@ -1,4 +1,5 @@
-// Run a task N times through its harness: a batch, started from the browser.
+// Run a task N times through its harness: a batch, started from the browser — or a chain,
+// where each run starts from the skill the run before it left.
 //
 // A task's check is a shell command from its spec, run in every run's workspace — shown
 // whole, always, before anything starts — or a check of the final reply, said in words.
@@ -30,7 +31,7 @@ export async function batchView(root, _, scope) {
   }
 
   const head = h("div", { class: "page-head" }, h("div", null, h("h1", null, "Run a task"),
-    h("p", { class: "sub" }, "Each run gets a fresh workspace and home, with the skill frozen for the whole batch.")));
+    h("p", { class: "sub" }, "Each run gets a fresh workspace and home: in a batch with the skill frozen for every run, in a chain with the skill each run left handed to the next.")));
   if (live.mode !== "live") {
     replace(root, crumbs([["Runs", "#/runs"], ["run a task"]]), head,
       panel("From a terminal", h("div", { class: "stack", style: { gap: "8px" } },
@@ -66,6 +67,10 @@ export async function batchView(root, _, scope) {
         { help: "A task kept in the recordings folder." }),
       field("Task spec", input("spec", { value: prefill.spec, placeholder: "/path/to/evals.json", oninput: anotherSpec }), { help: "Or an evals.json on the proxy's machine.", wide: true }),
       field("Task in the spec", task, { help: "A spec can hold several tasks (its evals). Each run does this one.", wide: true }),
+      field("Run as", h("select", { class: "field", name: "mode" },
+        h("option", { value: "batch" }, "a batch: every run given the skill fresh"),
+        h("option", { value: "chain" }, "a chain: each run starts from the skill the one before left")),
+        { help: "A chain measures the harness's own self-improvement, link by link; its runs are not independent samples.", wide: true }),
       field("Runs", input("n", { type: "number", value: 5, min: 1, max: 200 })),
       field("Harness", h("select", { class: "field", name: "harness" },
         harnesses.map((name) => h("option", { value: name, selected: name === prefill.harness }, name)))),
@@ -74,27 +79,42 @@ export async function batchView(root, _, scope) {
         h("option", { value: "" }, "the spec's own"),
         saved.map((variant) => h("option", { value: variant.path }, `${variant.skill}/${variant.name} (saved variant)`))),
         { help: "A saved variant replaces the skill's SKILL.md in every run: confirming a wording with full runs." }),
-      field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "On one GPU, 1 is fastest." })),
+      field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "On one GPU, 1 is fastest. A chain's runs go one at a time." }),
+      field("Harness options", h("textarea", { class: "field", name: "harness_options", rows: 2, placeholder: '{"await_review": true, "review_every_turn": true}' }),
+        { help: "As JSON, recorded with each run. Hermes: await_review (let its background review finish before it exits), review_every_turn (its skill review after every run), mcp_servers.", wide: true })),
   ];
+  const modeOf = (form) => (textOf(form, "mode") === "chain" ? "chain" : "batch");
   const { element } = planForm({
-    kind: "batch",
+    kind: modeOf,
     fields,
     read: (form) => {
       const scenario = textOf(form, "scenario");
       const spec = textOf(form, "spec").trim();
       if (!scenario && !spec) throw Object.assign(new Error("Choose a scenario, or name a task spec."), { field: "scenario" });
+      const chain = modeOf(form) === "chain";
       const params = {
         ...(scenario ? { scenario } : { spec }),
         n: numberOf(form, "n") ?? 5,
         harness: textOf(form, "harness"),
-        concurrency: numberOf(form, "concurrency") ?? 1,
       };
+      if (!chain) params.concurrency = numberOf(form, "concurrency") ?? 1;
       const evalId = textOf(form, "eval").trim();
       if (evalId) params.eval = evalId;
       const model = textOf(form, "model").trim();
       if (model) params.model = model;
       const skill = textOf(form, "skill_file");
-      if (skill) params.skill_file = skill;
+      if (skill && !chain) params.skill_file = skill;
+      const options = textOf(form, "harness_options").trim();
+      if (options) {
+        let parsed;
+        try {
+          parsed = JSON.parse(options);
+        } catch {
+          throw Object.assign(new Error("Harness options must be a JSON object."), { field: "harness_options" });
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw Object.assign(new Error("Harness options must be a JSON object."), { field: "harness_options" });
+        params.harness_options = parsed;
+      }
       return params;
     },
     render: (plan) => {
@@ -103,6 +123,11 @@ export async function batchView(root, _, scope) {
     },
     startLabel: "Start the runs",
     onStarted: (job) => (location.hash = `#/jobs/${job.id}`),
+  });
+  element.querySelector('[name="mode"]').addEventListener("change", () => {
+    const chain = modeOf(element) === "chain";
+    element.querySelector('[name="concurrency"]').disabled = chain;
+    element.querySelector('[name="skill_file"]').disabled = chain;
   });
   replace(root, crumbs([["Runs", "#/runs"], ["run a task"]]), head, panel("The task", element, { className: "start-panel" }));
 }
@@ -123,11 +148,16 @@ function batchPreview(plan) {
     kv([
       ["task", h("span", { class: "mono" }, plan.task_id)],
       ["spec", plan.spec ? h("span", { class: "mono" }, plan.spec) : null],
-      ["runs", `${plural(plan.n, "run")} of ${plan.harness}, ${plan.concurrency} at a time`],
+      ["runs", plan.kind === "chain"
+        ? `a chain of ${plural(plan.n, "run")} of ${plan.harness}, one at a time, each starting from the skill the one before left`
+        : `${plural(plan.n, "run")} of ${plan.harness}, ${plan.concurrency} at a time`],
       ["model", h("span", { class: "mono" }, plan.model)],
       ["skill", plan.skill_file
         ? h("span", null, h("span", { class: "mono" }, plan.skill_dir || "—"), ", its SKILL.md replaced by ", h("span", { class: "mono" }, plan.skill_file))
         : plan.skill_dir ? h("span", { class: "mono" }, plan.skill_dir) : "none named"],
+      ["harness options", plan.harness_options && Object.keys(plan.harness_options).length
+        ? h("span", { class: "mono" }, JSON.stringify(plan.harness_options))
+        : null],
       ["where", plan.workdir
         ? h("span", null, "each run in a fresh folder under ", h("span", { class: "mono" }, plan.workdir), ", its workspace holding the eval's input files")
         : "—"],

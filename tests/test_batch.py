@@ -237,3 +237,38 @@ def test_the_cli_prints_the_plan_and_the_rate(stack, monkeypatch):
     assert lines[2] == f"  check:  {stack.item.tuningfork.check}"
     assert any(line.startswith("  run 0  fail") for line in lines)
     assert "0/1" in result.output and "passed" in result.output
+
+
+class TestHarnessOptionsAndSkillFolder:
+    def test_options_are_refused_for_a_harness_that_takes_none(self, stack):
+        with pytest.raises(OperationError) as refused:
+            prepare(stack, harness_options={"await_review": True})
+        assert refused.value.field == "harness_options" and "takes no harness options" in refused.value.message
+        assert launches(stack.store) == 0
+
+    def test_a_servers_headers_and_environment_are_shown_masked(self):
+        from tuningfork.ops.batch import shown_options
+
+        given = {"self_improvement": False, "mcp_servers": {
+            "tf": {"url": "http://127.0.0.1:1/_tuningfork/mcp", "headers": {"Authorization": "Bearer s3cret"}, "timeout": 300},
+            "gh": {"command": "npx", "args": ["-y", "x"], "env": {"TOKEN": "ghp_x"}},
+        }}
+        shown = shown_options(given)
+        assert shown["mcp_servers"]["tf"] == {"url": "http://127.0.0.1:1/_tuningfork/mcp", "headers": {"Authorization": "…"}, "timeout": 300}
+        assert shown["mcp_servers"]["gh"] == {"command": "npx", "args": ["-y", "x"], "env": {"TOKEN": "…"}}
+        assert shown["self_improvement"] is False and "s3cret" not in json.dumps(shown)
+        # What was given is untouched: the launch is given the real header.
+        assert given["mcp_servers"]["tf"]["headers"]["Authorization"] == "Bearer s3cret"
+        assert shown_options(None) == {} and shown_options({"await_review": True}) == {"await_review": True}
+
+    def test_a_skill_folder_other_than_the_specs_can_be_given(self, stack):
+        other = stack.tmp / "other"
+        other.mkdir()
+        (other / "SKILL.md").write_text("# other\n", encoding="utf-8")
+        plan = prepare(stack, skill_dir=other)
+        assert plan.skill_dir == other and plan.to_json()["skill_dir"] == str(other)
+        assert plan.to_json()["harness_options"] == {}
+        with pytest.raises(OperationError) as refused:
+            prepare(stack, skill_dir=stack.tmp / "missing")
+        assert refused.value.field == "skill_dir" and "does not exist" in refused.value.message
+        assert launches(stack.store) == 0

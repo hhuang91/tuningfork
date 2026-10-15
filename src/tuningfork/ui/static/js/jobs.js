@@ -15,6 +15,7 @@ export const KIND_LABEL = {
   "ab-to-end": "Wording A/B to the end",
   fork: "Fork",
   batch: "Batch",
+  chain: "Chain",
   "server-check": "Server check",
   "check-trial": "Check tried",
   "hold-sample": "Held call sampled",

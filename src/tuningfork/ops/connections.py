@@ -75,10 +75,16 @@ def set_override(home: Path | str, name: str, executable: str | None) -> None:
     write_home_config(home, config)
 
 
-def adapter_for(home: Path | str, name: str, *, layout: str | None = None) -> Any:
+def adapter_for(
+    home: Path | str, name: str, *, layout: str | None = None, options: Any = None
+) -> Any:
     """The adapter for a harness, running the executable the recordings folder names, and
     laying its launches out as `layout` says — a fork's as its source's were — when the
-    harness has layouts; new launches are laid out as installed."""
+    harness has layouts; new launches are laid out as installed. `options` are the harness's
+    own, which its adapter reads strictly (`HermesAdapter`'s `OPTIONS`); a harness that takes
+    none refuses them."""
+    import inspect
+
     from tuningfork.harness import ADAPTERS
 
     if name not in ADAPTERS:
@@ -87,8 +93,16 @@ def adapter_for(home: Path | str, name: str, *, layout: str | None = None) -> An
         )
     cls = ADAPTERS[name]
     executable = overrides(home).get(name)
-    options = {"layout": layout} if layout and layout in getattr(cls, "layouts", ()) else {}
-    return cls(executable, **options) if executable else cls(**options)
+    arguments: dict[str, Any] = (
+        {"layout": layout} if layout and layout in getattr(cls, "layouts", ()) else {}
+    )
+    if options:
+        if "options" not in inspect.signature(cls.__init__).parameters:
+            raise OperationError(
+                f"{name} takes no harness options", code="bad_params", field="harness_options"
+            )
+        arguments["options"] = options
+    return cls(executable, **arguments) if executable else cls(**arguments)
 
 
 @dataclass(slots=True)

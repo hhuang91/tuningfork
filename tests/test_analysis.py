@@ -295,3 +295,17 @@ class TestFailedCalls:
 
         kinds = {group.outcome.kind for group in report.steps[0].groups}
         assert kinds == {"text", "error"}
+
+
+def test_a_recorded_script_with_an_invalid_escape_is_digested_without_a_warning():
+    """The source is the model's: its `"\\s"` is a SyntaxWarning in Python 3.12, and whoever reads
+    the recording must not print it (the benchmark's driver did, three times in one stage)."""
+    import warnings
+
+    from tuningfork.analysis.normalize import python_ast_digest
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        digest = python_ast_digest('import re\nprint(re.sub("\\s+", " ", "a  b"))\n')
+    assert digest
+

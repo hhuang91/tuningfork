@@ -134,6 +134,17 @@ class Settings:
     #: The tools the proxy's MCP route offers (`tuningfork.mcp`): evidence, all, or none —
     #: no route at all.
     mcp_tools: str = "evidence"
+    #: What a tool result carries: "both" its text and its structured content, or the "text"
+    #: alone, for a client that shows the model both (Hermes).
+    mcp_results: str = "both"
+    #: How long one MCP call may wait for a job, at most, in seconds: under what the client
+    #: gives a tool call. OpenJarvis reads an HTTP answer for 60 s, Hermes gives a call 300 s
+    #: by default — for it, about 110 keeps a twenty-minute screen to a dozen polls.
+    mcp_max_wait: int = 50
+    #: The most output tokens any call a harness makes through this proxy may ask for: one that
+    #: asks for more, or names no limit, is sent with this one (`wire.base.cap_output`), and what
+    #: it asked is recorded with the step. None leaves every call as its harness sent it.
+    max_output: int | None = None
 
     @property
     def blob_dir(self) -> Path:
