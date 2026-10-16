@@ -6,7 +6,6 @@ which fix works — on local LLMs.**
 [![tests](https://github.com/hhuang91/tuningfork/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/hhuang91/tuningfork/actions/workflows/tests.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python 3.12 | 3.13 | 3.14](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](pyproject.toml)
-[![Version](https://img.shields.io/github/v/tag/hhuang91/tuningfork?sort=semver&label=version)](CHANGELOG.md)
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)](CHANGELOG.md)
 
 <p>
