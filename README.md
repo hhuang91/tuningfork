@@ -9,10 +9,12 @@ which fix works — on local LLMs.**
 [![Version](https://img.shields.io/github/v/tag/hhuang91/tuningfork?sort=semver&label=version)](CHANGELOG.md)
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)](CHANGELOG.md)
 
+<p>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
   <img alt="A recorded run that fails at its write step, where the model names the report's keys count and total. That step, sent to the model twenty times with everything before it held fixed: as written, 0 of 20 name the keys the check wants; with an edit that names them, 20 of 20, Fisher's exact p = 1.5e-11. Full runs with the edit: 8 of 8 pass, against 0 of 8 before." src="docs/images/hero-light.svg">
 </picture>
+</p>
 
 tuningfork sits between your agent and your local model, and records every call the agent
 makes. When a skill fails, it finds the step where the runs go wrong and sends that step to the
@@ -190,8 +192,8 @@ flowchart LR
 
 ## What you can do
 
-Grouped by the question each answers. Every command takes `--help`, and
-[`docs/commands.md`](docs/commands.md) lists them all with their main options. The
+Grouped by the question each answers; each is run as `tuningfork <command>`. Every command takes
+`--help`, and [`docs/commands.md`](docs/commands.md) lists them all with their main options. The
 [web UI](#the-web-ui) does nearly all of it with a click, and an agent can do the reading,
 measuring and refining itself, over MCP ([`docs/agents.md`](docs/agents.md)).
 
@@ -199,38 +201,38 @@ measuring and refining itself, over MCP ([`docs/agents.md`](docs/agents.md)).
 
 | Command | What it tells you |
 |---|---|
-| `tuningfork batch spec.json -n 8` | Runs a task N times through the harness, each run in a fresh workspace, judged by the task's check |
-| `tuningfork tasks` | The pass rates with their intervals: one row per harness, model and version of the skill |
-| `tuningfork runs --failed` | The recorded runs, newest first: here the failed ones, to pick one to study |
-| `tuningfork recheck <run> --check '…'` | Tries a check on a recorded run before you trust it, recording nothing |
+| `batch spec.json -n 8` | Runs a task N times through the harness, each run in a fresh workspace, judged by the task's check |
+| `tasks` | The pass rates with their intervals: one row per harness, model and version of the skill |
+| `runs --failed` | The recorded runs, newest first: here the failed ones, to pick one to study |
+| `recheck <run>` | Judges a recorded run again, by its own check or one you are trying out (`--check`), recording nothing |
 
 ### What happened in a run?
 
 | Command | What it tells you |
 |---|---|
-| `tuningfork show <run>` | Its steps, and what the model did at each |
-| `tuningfork timeline <run>` | The run as one conversation, each step's answer where it happened, reasoning included |
-| `tuningfork step <run> <step>` | One step: the exact context the model saw, and what it did |
-| `tuningfork files <run> <step>` | The workspace as that step's call found it (`end`: as the run left it; `--diff`) |
-| `tuningfork diff <runA> <runB>` | Two runs, step by step |
+| `show <run>` | Its steps, and what the model did at each |
+| `timeline <run>` | The run as one conversation, each step's answer where it happened, reasoning included |
+| `step <run> <step>` | One step: the exact context the model saw, and what it did |
+| `files <run> <step>` | The workspace as that step's call found it (`end`: as the run left it; `--diff`) |
+| `diff <runA> <runB>` | Two runs, step by step |
 
 ### Where do the runs go wrong?
 
 | Command | What it tells you |
 |---|---|
-| `tuningfork divergence --task <id>` | The first step where a task's runs stop agreeing, and how the runs that did each thing fared |
-| `tuningfork tally --task <id>` | What the failed runs' checks said, counted: the most common failure first |
-| `tuningfork check-along --task <id>` | The check run again after every call that changed the files: which call made each finding |
-| `tuningfork where --task <id> --file F --contains RE` | One question asked of every run, lined up with the verdicts: the call that made the difference |
+| `divergence --task <id>` | The first step where a task's runs stop agreeing, and how the runs that did each thing fared |
+| `tally --task <id>` | What the failed runs' checks said, counted: the most common failure first |
+| `check-along --task <id>` | The check run again after every call that changed the files: which call made each finding |
+| `where --task <id> --file F` | One question asked of every run — of a file it wrote (`--contains`), or of what the model did (`--match`) — lined up with the verdicts: the call that made the difference |
 
 ### Bad luck, or the wording?
 
 | Command | What it tells you |
 |---|---|
-| `tuningfork resample <run> <step> -n 20` | The step sent again N times, its history held fixed: how often the model does each thing there |
-| `tuningfork ab <run> <step> --variant SKILL.v2.md --target-match RE` | Your edit against the original at that step, toward a target declared before sampling |
-| `tuningfork ab … --to-end` | The same, each sample a fork run to the end and judged by the task's check |
-| `tuningfork fork <run> <step>` | The run replayed up to the step and live from there, with breakpoints armed |
+| `resample <run> <step> -n 20` | The step sent again N times, its history held fixed: how often the model does each thing there |
+| `ab <run> <step> --variant SKILL.v2.md --target-match RE` | Your edit against the original at that step, toward a target declared before sampling |
+| `ab … --to-end` | The same, each sample a fork run to the end and judged by the task's check |
+| `fork <run> <step>` | The run replayed up to the step and live from there, with breakpoints armed |
 
 A step is named by its number, or by what the model did there: `write_file` is the first step
 where it called that tool.
@@ -241,16 +243,16 @@ These need llama.cpp, and a model whose raw output tuningfork reads: Gemma 4 tod
 
 | Command | What it tells you |
 |---|---|
-| `tuningfork tokens <run> <step> --score` | The answer as the model's tokens: how sure it was of each, as a heatmap |
-| `tuningfork forking-tokens <run> <step>` | Each likely alternative forced at the uncertain tokens: which ones change what the model does |
+| `tokens <run> <step> --score` | The answer as the model's tokens: how sure it was of each, as a heatmap |
+| `forking-tokens <run> <step>` | Each likely alternative forced at the uncertain tokens: which ones change what the model does |
 
 ### What is the model doing right now?
 
 | Command | What it tells you |
 |---|---|
-| `tuningfork break add --tool write_file --path '*.json'` | Stops a live call after the model answers, before the harness acts; `--from-step 2` stops before the model sees step 2 |
-| `tuningfork hold wait` | Waits for a held call and shows it: `hold continue` (`--edited f.json`), `hold step` or `hold drop` decides it |
-| `tuningfork pause` | Refuses model calls until `tuningfork resume` |
+| `break add --tool write_file --path '*.json'` | Stops a live call after the model answers, before the harness acts; `--from-step 2` stops before the model sees step 2 |
+| `hold wait` | Waits for a held call and shows it: `hold continue` (`--edited f.json`), `hold step` or `hold drop` decides it |
+| `pause` | Refuses model calls until `resume` |
 
 ### How do I fix the skill?
 
@@ -260,24 +262,24 @@ writes it into the skill only when you approve it.
 
 | Command | What it tells you |
 |---|---|
-| `tuningfork refine start <run> <step> --target-rules '[…]'` | Names the step, and what the model should do there |
-| `tuningfork refine propose <id> --file SKILL.md --why '…'` | Your own edit; `--builtin` asks a model for edits from the evidence |
-| `tuningfork refine screen <id> -n 20` | Each edit against a fresh arm of the original, Holm-corrected; `--to-end` lets the check decide |
-| `tuningfork refine validate <id> <proposal>` | Full runs: forks to the end, the task from its first step, and each held-out task |
-| `tuningfork refine approve <id> <proposal>` | Writes the edit into the skill's file once you type the code it shows, the old file and a changelog beside it |
-| `tuningfork skills` | Every skill the recordings know; `skill <name>` gives each version with its pass rates |
+| `refine start <run> <step> --target-rules '[…]'` | Names the step, and what the model should do there |
+| `refine propose <id> --file SKILL.md --why '…'` | Your own edit; `--builtin` asks a model for edits from the evidence |
+| `refine screen <id> -n 20` | Each edit against a fresh arm of the original, Holm-corrected; `--to-end` lets the check decide |
+| `refine validate <id> <proposal>` | Full runs: forks to the end, the task from its first step, and each held-out task |
+| `refine approve <id> <proposal>` | Writes the edit into the skill's file once you type the code it shows, the old file and a changelog beside it |
+| `skills` | Every skill the recordings know; `skill <name>` gives each version with its pass rates |
 
 ### Setting up, and keeping things tidy
 
 | Command | What it does |
 |---|---|
-| `tuningfork serve --upstream URL` | The recording proxy, with its web UI, its jobs and its MCP route |
-| `tuningfork connections check` | Measures whether the server can do what the harnesses and experiments need |
-| `tuningfork ui --home DIR` | The web UI, read-only, over recordings with no proxy running |
-| `tuningfork jobs list` | Work running inside `serve`, started from the web UI or by an agent |
-| `tuningfork spend --run <run>` | What work cost: model calls, tokens and time |
-| `tuningfork trash run <run>` | Sets runs aside, out of every list and rate; `trash purge` deletes them for good |
-| `tuningfork glossary [word]` | tuningfork's words, each defined once |
+| `serve --upstream URL` | The recording proxy, with its web UI, its jobs and its MCP route |
+| `connections check` | Measures whether the server can do what the harnesses and experiments need |
+| `ui --home DIR` | The web UI, read-only, over recordings with no proxy running |
+| `jobs list` | Work running inside `serve`, started from the web UI or by an agent |
+| `spend --run <run>` | What work cost: model calls, tokens and time |
+| `trash run <run>` | Sets runs aside, out of every list and rate; `trash purge` deletes them for good |
+| `glossary [word]` | tuningfork's words, each defined once |
 
 ## The web UI
 
