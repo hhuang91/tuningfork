@@ -190,7 +190,9 @@ class TestRefining:
 
     def test_proposing_screening_and_validating_are_planned_jobs(self):
         refine = source("js/views/refine.js")
-        assert 'kind: "propose"' in refine and 'kind: "screen"' in refine and 'kind: "validate"' in refine
+        # The screen form plans a screen at the step or one whose forks run to the end, as chosen.
+        assert 'kind: "propose"' in refine and 'kind: "validate"' in refine
+        assert '"screen-to-end" : "screen"' in refine
         assert refine.count("planForm({") == 3
         # A person's own wording, closing, approving and repairing change state: marked and guarded.
         assert refine.count('"data-control": true') >= 7 and refine.count("guard(") >= 5

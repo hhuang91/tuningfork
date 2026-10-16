@@ -301,7 +301,9 @@ def divergence_report(
             hint="run the task again: `tuningfork batch <spec> -n 5`",
         )
     report, results = divergence(store, run_ids, lens)
-    return {**report.to_json(results), "tool_split": tool_split(store, run_ids, results)}
+    out = {**report.to_json(results), "tool_split": tool_split(store, run_ids, results)}
+    out["verdict_split"] = verdict_split(out)
+    return out
 
 
 def behaviour_pass_rates(comparison: Any, results: dict[str, dict[str, Any]]) -> list[Any]:

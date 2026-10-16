@@ -175,6 +175,35 @@ class TestDataAPI:
         report = (await proxy_client.get(f"{API}/divergence", params={"task": "t/1"})).json()
         assert report["divergence_index"] == 1
         assert len(report["steps"][1]["groups"]) == 2
+        # What goes with passing, for the page beside the first split: no verdicts here, so nothing.
+        assert report["verdict_split"] == {"judged": 0, "best": None}
+        assert report["tool_split"]["best"] is None
+
+    async def test_what_work_cost(self, proxy_client, recorder):
+        run_id = record_pilot(recorder.store)
+
+        found = (await proxy_client.get(f"{API}/spend", params={"run": run_id[:8]})).json()
+
+        (row,) = found["rows"]
+        assert row["what"].startswith(f"run {run_id[:8]}")
+        assert row["calls"] == 2 and row["failed"] == 0
+        assert (await proxy_client.get(f"{API}/spend")).status_code == 400
+        assert (await proxy_client.get(f"{API}/spend", params={"run": "nothing"})).status_code == 404
+
+    async def test_a_chain_link_by_link(self, proxy_client, recorder):
+        from tuningfork.ops.chain import root
+
+        folder = root(recorder.store.home)
+        folder.mkdir(parents=True, exist_ok=True)
+        record = {"id": "c0ffee11" + "0" * 24, "status": "done", "task_id": "t/1", "harness": "hermes", "n": 2,
+                  "started_at": 1.0, "rate": None, "links": [{"index": 0, "passed": False}, {"index": 1, "passed": True}]}
+        (folder / f"{record['id']}.json").write_text(json.dumps(record), encoding="utf-8")
+
+        (listed,) = (await proxy_client.get(f"{API}/chains")).json()
+        assert (listed["id"], listed["links"], listed["task_id"]) == (record["id"], 2, "t/1")
+        shown = (await proxy_client.get(f"{API}/chains/c0ffee11")).json()
+        assert [link["passed"] for link in shown["links"]] == [False, True]
+        assert (await proxy_client.get(f"{API}/chains/deadbeef")).status_code == 404
 
     async def test_tasks_carry_a_pass_rate_with_its_interval(self, proxy_client, recorder):
         store = recorder.store

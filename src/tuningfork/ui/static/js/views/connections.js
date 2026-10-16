@@ -355,6 +355,9 @@ export async function connectionsView(root, _, scope) {
         ["recordings", h("span", { class: "mono" }, proxy.home)],
         ["listening on", h("span", { class: "mono" }, `${proxy.host}:${proxy.port}`)],
         ["calls at once", String(proxy.max_inflight)],
+        ["output a call", proxy.max_output
+          ? `at most ${proxy.max_output} tokens: a harness that asks for more is sent this, and what it asked is recorded`
+          : "as each harness asks"],
         ["jobs at once", String(proxy.jobs)],
         ["never forwards to", proxy.protected.length ? h("span", { class: "mono" }, proxy.protected.join(", ")) : "nothing protected"],
       ]),

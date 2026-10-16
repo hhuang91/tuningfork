@@ -326,3 +326,21 @@ def test_a_server_check_measures_what_the_harnesses_need(tmp_path, mock_server):
     assert shown["server"]["checks"]["results"]["anthropic_messages"]["support"] == "yes"
     # The check's calls went through the proxy as an experiment's: never recorded as a run.
     assert [r for r in mock_server.requests if r.get("tools")] and store is not None
+
+
+def test_the_restart_command_keeps_what_the_proxy_was_started_with(tmp_path):
+    """The Connections page's "these change only with a restart": a restart from it keeps the
+    cap on output and the MCP route as they were, and names no setting left at its default."""
+    import dataclasses
+
+    from tuningfork.api.connections import restart_command
+    from tuningfork.config import Settings
+
+    plain = Settings(upstream_base_url="http://u.test", home=tmp_path)
+    command = restart_command(plain, "http://u.test")
+    assert "--max-output" not in command and "--mcp-" not in command
+
+    started = dataclasses.replace(plain, max_output=8192, mcp_tools="refine-to-end", mcp_results="text", mcp_max_wait=110)
+    command = restart_command(started, "http://u.test")
+    for part in ("--max-output 8192", "--mcp-tools refine-to-end", "--mcp-results text", "--mcp-max-wait 110"):
+        assert part in command

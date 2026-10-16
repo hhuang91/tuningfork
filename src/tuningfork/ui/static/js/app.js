@@ -9,6 +9,7 @@ import { failure, h, replace, toast } from "./dom.js";
 import { live, start, subscribe } from "./live.js";
 import { leaving, place, unsaved } from "./nav.js";
 import { batchView } from "./views/batch.js";
+import { chainsView, chainView } from "./views/chains.js";
 import { diffView, divergenceView } from "./views/compare.js";
 import { connectionsView } from "./views/connections.js";
 import { scenariosView, scenarioView } from "./views/scenarios.js";
@@ -40,6 +41,8 @@ const ROUTES = [
   [/^\/skills$/, skillsView, "skills"],
   [/^\/skills\/([^/]+)$/, skillView, "skills"],
   [/^\/batch$/, batchView, "runs"],
+  [/^\/chains$/, chainsView, "runs"],
+  [/^\/chains\/([0-9a-f]+)$/, chainView, "runs"],
   [/^\/connections$/, connectionsView, "connections"],
   [/^\/scenarios$/, scenariosView, "scenarios"],
   [/^\/scenarios\/([a-z0-9][a-z0-9_-]*)$/, scenarioView, "scenarios"],

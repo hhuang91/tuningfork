@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.1 — the web UI catches up
+
+- **Screens run to the end, from the refinement page.** Its screen form asks how each sample
+  is judged — an answer at the step, or a fork run from the step to the end, the task's check
+  deciding — and to the end takes the runs to fork from, a quick look, and drawing the
+  original anew. A refinement can be started with the task's check as its target. A quick look
+  reads as one wherever it shows — the refinement's page and its screens, the screen's own page,
+  `refine show` — its rates and never a verdict, not "not significant" against an original of
+  0/0. A screen to the end shows each run it forked from, with each arm's passes there and
+  whether the effect held at every one; its page asks Where does it hold? of its forks, arm by
+  arm, and folds away the step's behaviours, which are each fork's own. A proposal's chip says
+  it survived when any screen found so: it showed the oldest screen's verdict.
+- **What goes with passing**, on the divergence page: the step whose behaviour best predicts
+  the verdict, and the tool whose use does, at whatever step a run called it — or that no run
+  passed, and where to look then. The divergence report carries the step's split for every
+  front end (`verdict_split`).
+- **The check run along the runs**, started from the divergence page (the `check-along` job):
+  the tally beside it then names the call that made each finding.
+- **A chain, link by link** (the Chains page, `GET /chains`, `/chains/{id}`): how it ran, what
+  each link's harness was told, its verdict, who changed the skill after it and the lines they
+  changed. A chain job's page leads to it.
+- **What work cost** beside a run, a job and an experiment (`GET /spend`).
+- **A run's sandbox** on its page: where its harness worked, the folders hidden from it, the
+  instant its clock started at, and how the harness was set up.
+- A running job says about how long it has left. The Connections page shows the cap on output,
+  and its restart command keeps the cap and the MCP route's settings.
+
 ## 0.2.0 — agents that refine skills, and loops to compare them with
 
 - **A chain of runs** (`tuningfork chain run`, the Run a task form, the `chain` job kind):

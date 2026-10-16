@@ -4,9 +4,11 @@ import { api, query } from "../api.js";
 import {
   ago, chip, crumbs, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
 } from "../dom.js";
+import { costOf } from "../cost.js";
 import { live } from "../live.js";
 import { comparisonView, distributionView, forkingView, formatP, screenView, tallyView } from "../results.js";
 import { trashButton, trashedBanner } from "../trash.js";
+import { whereForm } from "../where.js";
 
 export async function experimentsView(root) {
   replace(root, loading());
@@ -168,6 +170,13 @@ export async function experimentView(root, [id], scope) {
         experiment.screen ? screenView(experiment.screen, { arms: experiment.arms }) : null,
         experiment.to_end ? toEndView(experiment) : null,
         tally ? tallyView(tally) : null,
+        // A screen run to the end: one question asked of its forks, arm by arm — what the passing
+        // forks wrote that the failing ones did not.
+        experiment.screen && experiment.reach === "end"
+          ? panel("Where does it hold?", whereForm(null, { screen: experiment.id }), {
+              meta: h("span", { class: "muted" }, "One question of every fork, arm by arm: what the passing forks have that the failing lack."),
+            })
+          : null,
         experiment.distribution ? distributionView(experiment.distribution) : null,
         experiment.settings?.logprobs && checkpoint
           ? h("p", { class: "hint" }, "Each sample kept its tokens: ",
@@ -288,6 +297,7 @@ function notesPanel(experiment) {
   const settings = experiment.settings || {};
   const scalars = Object.entries(settings).filter(([, value]) => value === null || typeof value !== "object");
   return panel("How it was sampled", [
+    kv([["cost", costOf({ experiment: experiment.id })]]),
     kv(scalars.map(([key, value]) => [key, h("span", { class: "mono" }, String(value))])),
     experiment.variant ? h("div", null, h("div", { class: "label" }, "Variant"),
       kv([

@@ -191,6 +191,55 @@ def data_routes(*, store: Store, adapters: Sequence[Any]) -> list[Route]:
 
         return await threaded(build)
 
+    async def chains(request: Request) -> Response:
+        """The chains kept, newest first: each one's task, harness, links and rate."""
+        from tuningfork.ops.chain import list_chains
+
+        keys = ("id", "status", "task_id", "harness", "model", "n", "tell", "started_at", "elapsed", "rate",
+                "not_counted", "stopped", "budget_seconds", "spent_seconds")
+
+        def build() -> Any:
+            limit = int(request.query_params.get("limit") or 50)
+            return [{**{key: data.get(key) for key in keys}, "links": len(data.get("links") or [])}
+                    for data in list_chains(store, limit=limit)]
+
+        return await threaded(build)
+
+    async def chain(request: Request) -> Response:
+        """One chain, link by link: each run's verdict, who changed the skill, the lines changed."""
+        from tuningfork.ops.chain import get_chain
+
+        def build() -> Any:
+            try:
+                return get_chain(store, request.path_params["id"])
+            except OperationError as error:
+                if error.code == "not_found":
+                    raise LookupError(error.message) from None
+                raise ValueError(error.message) from None
+
+        return await threaded(build)
+
+    async def spend(request: Request) -> Response:
+        """What work cost, counted from the records: `?run=`, `?experiment=`, `?job=`, `?chain=` or
+        `?task=`, each one id or several, comma-separated — a row for each, in that order."""
+        from tuningfork.ops.spend import spend_report
+
+        def build() -> Any:
+            named = {key: [part for part in (request.query_params.get(key) or "").split(",") if part]
+                     for key in ("run", "experiment", "job", "chain", "task")}
+            if not any(named.values()):
+                raise ValueError("pass ?run=, ?experiment=, ?job=, ?chain= or ?task=")
+            try:
+                rows = spend_report(store, runs=named["run"], experiments=named["experiment"], jobs=named["job"],
+                                    chains=named["chain"], tasks=named["task"])
+            except OperationError as error:
+                if error.code == "not_found":
+                    raise LookupError(error.message) from None
+                raise ValueError(error.message) from None
+            return {"rows": [row.to_json() for row in rows]}
+
+        return await threaded(build)
+
     async def where(request: Request) -> Response:
         """Where a question holds along a task's runs: `?task=<id>` with `target_match` or
         `target_rules` (JSON) for the model's answers, or `path` with `contains` and `at_least` for
@@ -369,6 +418,9 @@ def data_routes(*, store: Store, adapters: Sequence[Any]) -> list[Route]:
         Route(f"{prefix}/diff", diff, methods=["GET"]),
         Route(f"{prefix}/divergence", divergence, methods=["GET"]),
         Route(f"{prefix}/tally", tally, methods=["GET"]),
+        Route(f"{prefix}/spend", spend, methods=["GET"]),
+        Route(f"{prefix}/chains", chains, methods=["GET"]),
+        Route(f"{prefix}/chains/{{id}}", chain, methods=["GET"]),
         Route(f"{prefix}/where", where, methods=["GET"]),
         Route(f"{prefix}/experiments", experiments, methods=["GET"]),
         Route(f"{prefix}/experiments/{{id}}", experiment, methods=["GET"]),

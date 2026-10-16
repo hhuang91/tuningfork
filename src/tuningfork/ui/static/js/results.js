@@ -1,7 +1,7 @@
 // What experiments found: behaviour distributions and comparisons, shown the same on an
 // experiment's page and on the page of the job that ran it.
 
-import { chip, h, loading, outcome, panel, plural, rateBar } from "./dom.js";
+import { chip, h, loading, outcome, panel, plural, rateBar, short } from "./dom.js";
 import { heatmap, probeMarks } from "./tokens.js";
 
 export function distributionView(distribution, title = "What the model did") {
@@ -159,12 +159,15 @@ function forkRow(label, arm, tested) {
  *  unfinished screen shows its rates and no verdict. */
 export function screenView(screen, { arms = {} } = {}) {
   const survivors = new Set(screen.survivors);
-  const [headline, tone] = !screen.complete
-    ? ["Unfinished: rates only, no verdict", "not-significant"]
-    : survivors.size
-      ? [`${plural(survivors.size, "proposal")} shifted the target`, "significant"]
-      : ["No proposal shifted the target past the correction", "not-significant"];
+  const [headline, tone] = screen.quick
+    ? ["A quick look: rates only, never a verdict", "not-significant"]
+    : !screen.complete
+      ? ["Unfinished: rates only, no verdict", "not-significant"]
+      : survivors.size
+        ? [`${plural(survivors.size, "proposal")} shifted the target`, "significant"]
+        : ["No proposal shifted the target past the correction", "not-significant"];
   const verdict = (arm) => {
+    if (screen.quick) return chip("quick look", "muted");
     if (!screen.complete) return chip("no verdict", "warn");
     if (arm.survives) return chip("survives", "ok");
     if (arm.worse) return chip("worse", "bad");
@@ -175,37 +178,83 @@ export function screenView(screen, { arms = {} } = {}) {
     ? h("a", { class: "mono", href: `#/experiments/${arms[arm.name].id}` }, arm.name)
     : h("span", { class: "mono" }, arm.name));
   const names = ["original", ...screen.arms.map((arm) => arm.name)];
+  // Where the original's samples came from: none, for a quick look the refinement had drawn no
+  // original for; partly an earlier screen's, for a screen to the end that reused them.
+  const originalNote = screen.quick && !screen.baseline.target.total
+    ? "none drawn: a quick look forks the proposals alone"
+    : screen.reused
+      ? `${screen.reused} of its forks drawn by this refinement's earlier screens`
+      : "sampled fresh, first";
+  // At the step, the behaviours by arm are what moved; to the end, each fork's first live call
+  // is its own — a table as long as the forks, kept folded.
+  const behaviours = screen.behaviours?.length
+    ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
+        h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "behaviour"), names.map((arm) => h("th", { class: "num mono" }, arm)))),
+        h("tbody", null, screen.behaviours.map((found) => h("tr", null,
+          h("td", null, h("span", { class: "chip tone-accent" }, found.letter)),
+          h("td", null, outcome(found.outcome)),
+          names.map((arm) => h("td", { class: "num" }, String(found.by_arm?.[arm] ?? 0))))))))
+    : null;
   return h("div", { class: "stack" },
-    panel("Each proposal against the original", [
+    panel(screen.quick ? "Each proposal's forks" : "Each proposal against the original", [
       h("div", { class: ["verdict-block", tone] },
         h("div", null,
           h("div", { class: "verdict-big" }, headline),
           h("div", { class: "muted small" }, `Target declared before sampling: ${screen.target}`)),
-        h("div", { class: "mono small" }, `Fisher exact against the original, Holm-corrected over the ${plural(screen.family, "proposal")} planned; α = ${screen.alpha}`)),
+        h("div", { class: "mono small" }, screen.quick
+          ? "No test: a lead for the next edit — only a full screen can keep one"
+          : `Fisher exact against the original, Holm-corrected over the ${plural(screen.family, "proposal")} planned; α = ${screen.alpha}`)),
       screen.complete ? null : h("div", { class: "banner banner-warn" }, h("strong", null, "Not every arm drew what was planned. "),
         "Its rates are over what was drawn, and there is no verdict: stopping when one looks good is how false discoveries are made."),
       h("div", { class: "table-wrap" }, h("table", { class: "table screen-table" },
         h("thead", null, h("tr", null, h("th", null, "arm"), h("th", null, "reached the target"), h("th", { class: "num" }, "p"),
           h("th", { class: "num" }, "Holm p"), h("th", null, ""))),
         h("tbody", null,
-          h("tr", null, h("td", null, name({ name: "original" })), h("td", null, rateBar(screen.baseline.target), drawn(screen.baseline)),
-            h("td", null, ""), h("td", null, ""), h("td", { class: "muted small" }, "sampled fresh, first")),
+          h("tr", null, h("td", null, name({ name: "original" })),
+            h("td", null, screen.baseline.target.total ? rateBar(screen.baseline.target) : h("span", { class: "muted" }, "none drawn"),
+              screen.quick ? null : drawn(screen.baseline)),
+            h("td", null, ""), h("td", null, ""), h("td", { class: "muted small" }, originalNote)),
           screen.arms.map((arm) => h("tr", null,
             h("td", null, name(arm)),
             h("td", null, arm.target.total ? rateBar(arm.target, "response") : h("span", { class: "muted" }, "none drawn"), drawn(arm)),
             h("td", { class: "num mono" }, formatP(arm.p_value)),
             h("td", { class: "num mono" }, formatP(arm.adjusted_p)),
             h("td", null, verdict(arm))))))),
-      h("p", { class: "hint" }, "A screen at one step keeps the history written under the original wording: it is evidence, not proof. Confirm a survivor with full runs."),
+      h("p", { class: "hint" }, screen.reach === "end"
+        ? "Each fork replays its run as recorded up to the step, the workspace included, and runs live from there to the end, where the task's check decides. Confirm a survivor with fresh runs."
+        : "A screen at one step keeps the history written under the original wording: it is evidence, not proof. Confirm a survivor with full runs."),
     ]),
-    screen.behaviours?.length
-      ? panel("What the model did, by arm", h("div", { class: "table-wrap" }, h("table", { class: "table" },
-          h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "behaviour"), names.map((arm) => h("th", { class: "num mono" }, arm)))),
-          h("tbody", null, screen.behaviours.map((found) => h("tr", null,
-            h("td", null, h("span", { class: "chip tone-accent" }, found.letter)),
-            h("td", null, outcome(found.outcome)),
-            names.map((arm) => h("td", { class: "num" }, String(found.by_arm?.[arm] ?? 0)))))))))
-      : null);
+    checkpointsView(screen, names),
+    !behaviours ? null : screen.reach === "end"
+      ? h("details", { class: "fold" },
+          h("summary", null, `What each fork's model did at the step: ${plural(screen.behaviours.length, "behaviour")}, by arm`),
+          behaviours)
+      : panel("What the model did, by arm", behaviours));
+}
+
+/** A screen to the end drawn from several runs, run by run: each arm's passes at each, and for
+ *  each proposal at how many it beat the original there. The pooled test is the verdict; an
+ *  effect at one checkpoint alone lived in that run's prefix, which fresh runs draw anew. */
+function checkpointsView(screen, names) {
+  const rows = screen.checkpoints || [];
+  if (!rows.length) return null;
+  const across = screen.across_checkpoints || {};
+  return panel("Run by run", [
+    h("div", { class: "table-wrap" }, h("table", { class: "table" },
+      h("thead", null, h("tr", null, h("th", null, "forked from"), h("th", null, "that run"),
+        names.map((arm) => h("th", { class: "num mono" }, arm)))),
+      h("tbody", null, rows.map((entry) => h("tr", null,
+        h("td", null, h("a", { class: "mono", href: `#/runs/${entry.run}/${entry.step}` }, `run ${short(entry.run)}, step ${entry.step}`)),
+        h("td", null, entry.verdict ? chip(entry.verdict, entry.verdict === "passed" ? "ok" : "bad") : null),
+        names.map((arm) => {
+          const counts = entry.arms?.[arm];
+          return h("td", { class: "num mono" }, counts ? `${counts.passed}/${counts.of}` : "—");
+        })))))),
+    Object.entries(across).map(([arm, tally]) => h("p", { class: "small" },
+      h("span", { class: "mono" }, arm), `: above the original at ${tally.above} of ${tally.of} checkpoints`,
+      tally.of > 1 && tally.above === tally.of ? " — an effect that holds across prefixes"
+        : tally.above === 1 ? " — at one alone: it may have lived in that run's prefix" : "")),
+  ]);
 }
 
 /** What the checks said, counted: each group's findings, the most common first, each with the
