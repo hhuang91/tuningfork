@@ -438,8 +438,8 @@ def test_the_refine_toolset_orients_an_agent_in_its_descriptions():
 def test_the_step_whose_behaviour_predicts_the_verdict():
     from tuningfork.ops.inspect import verdict_split
 
-    def group(label: str, passed: int, total: int) -> dict:
-        return {"outcome": {"label": label}, "run_ids": [f"r{i}" for i in range(total)],
+    def group(label: str, passed: int, total: int, kind: str = "tool_call") -> dict:
+        return {"outcome": {"label": label, "kind": kind}, "run_ids": [f"{label}-{i}" for i in range(total)],
                 "passed": {"successes": passed, "total": total}}
 
     report = {"divergence_index": 0, "steps": [
@@ -449,6 +449,14 @@ def test_the_step_whose_behaviour_predicts_the_verdict():
     found = verdict_split(report)
     assert found["judged"] == 9 and found["best"]["index"] == 3 and found["best"]["label"] == "write_file(row_count)"
     assert found["best"]["passed"] == 5 and found["best"]["others_passed"] == 0 and found["best"]["p"] < 0.01
+    # A run that took the behaviour, to look at — never just the first run compared.
+    assert (found["best"]["run_id"], found["best"]["kind"]) == ("write_file(row_count)-0", "tool_call")
+    # Where having ended is what predicts the verdict, the run is shown, there being no step to show.
+    ended = {"divergence_index": 0, "steps": [
+        {"index": 4, "groups": [group("run ended", 0, 4, "ended"), group("write_file(rows)", 5, 5)]},
+    ]}
+    best = verdict_split(ended)["best"]  # the two split alike; the first found stands
+    assert (best["index"], best["kind"], best["run_id"]) == (4, "ended", "run ended-0")
     # Every run's answer its own: no behaviour predicts anything; the difference is in the content.
     singles = {"divergence_index": 0, "steps": [{"index": 0, "groups": [group(f"w{i}", i % 2, 1) for i in range(6)]}]}
     assert verdict_split(singles) == {"judged": 6, "best": None}

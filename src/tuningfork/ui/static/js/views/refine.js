@@ -107,6 +107,11 @@ export async function refineStartForm(step) {
     : null,
   h("p", { class: "hint" }, "The skill as this run was given it is copied into the refinement, and every proposal edits that copy. The skill's own folder is never written."),
   picker,
+  // A target no answer at this step can express: what the run wrote, as the task's check reads it.
+  h("label", { class: "target-choice" },
+    h("input", { type: "radio", name: "target_kind", value: "check" }),
+    h("span", null, h("strong", null, "The task's check passes"),
+      h("span", { class: "muted small" }, " — for a failure only the check can see, a property of what the run wrote: its screens fork the run from here to the end, the check deciding"))),
   error,
   h("div", { class: "form-actions" }, button));
   return form;
@@ -115,8 +120,9 @@ export async function refineStartForm(step) {
 function readRefineTarget(form) {
   const kind = form.querySelector('[name="target_kind"]:checked')?.value;
   if (!kind) {
-    throw Object.assign(new Error("Choose what the model should do here: a behaviour, one you describe, or a pattern."), { field: "target_kind" });
+    throw Object.assign(new Error("Choose what the model should do here: a behaviour, one you describe, a pattern, or the task's check."), { field: "target_kind" });
   }
+  if (kind === "check") return { target_check: true };
   if (kind === "letter") {
     const letter = form.querySelector('[name="target"]:checked')?.value;
     if (!letter) throw Object.assign(new Error("Choose the behaviour."), { field: "target" });
@@ -328,7 +334,8 @@ export async function refinementView(root, [id], scope) {
         })
       : null;
     const first = item.proposers[0] || {};
-    const latest = item.screens[item.screens.length - 1];
+    // Screens come newest first: the chip says it survived if any screen found so, else the newest.
+    const latest = item.screens.find((verdict) => verdict.complete && verdict.survives) || item.screens[0];
     return h("div", { class: ["proposal", ticked && "selected"], dataset: { proposal: item.id } },
       h("div", { class: "proposal-head" },
         box,
@@ -341,9 +348,7 @@ export async function refinementView(root, [id], scope) {
       diffView(item.diff),
       item.screens.length
         ? h("ul", { class: "small proposal-screens" }, item.screens.map((verdict) =>
-            h("li", null, verdictChip(verdict), " ",
-              `${verdict.target.successes}/${verdict.target.total} against the original's ${verdict.baseline.successes}/${verdict.baseline.total}`,
-              verdict.adjusted_p !== null && verdict.adjusted_p !== undefined ? `, Holm p ${formatP(verdict.adjusted_p)}` : "",
+            h("li", null, verdictChip(verdict), " ", screenLine(verdict),
               " — ", h("a", { href: `#/experiments/${verdict.screen}` }, `screen ${short(verdict.screen)}`))))
         : null,
       h("p", { class: "faint small" }, "Saved as the variant ", h("span", { class: "mono" }, item.variant),
@@ -464,21 +469,51 @@ export async function refinementView(root, [id], scope) {
   }
 
   function screenPanel() {
+    // A refinement whose target is the task's check can only be screened to the end: the check
+    // reads what the run wrote, which only a run's end shows.
+    const checkTarget = shown.refinement.target?.kind === "check";
+    const toEnd = (element) => element.querySelector('[name="reach"]:checked')?.value === "end";
+    const checked = (element, name) => element.querySelector(`[name="${name}"]`)?.checked === true;
+    const endOnly = h("div", { class: "form-grid", hidden: !checkTarget },
+      field("Runs to fork from", input("checkpoints", { type: "number", value: 4, min: 1, max: 10 }),
+        { help: "This refinement's run and others of its task at the same step, passing and failing by turns: an effect that holds across them is one fresh runs keep." }),
+      h("label", { class: "check-choice" }, h("input", { type: "checkbox", name: "quick" }),
+        " A quick look: 8 forks of each proposal and none of the original — rates, never a verdict"),
+      h("label", { class: "check-choice" }, h("input", { type: "checkbox", name: "fresh_original" }),
+        " Draw the original's forks anew, rather than count those this refinement drew before"));
+    const stepOnly = h("div", { class: "form-grid", hidden: checkTarget },
+      field("Max tokens", input("max_tokens", { type: "number", value: 4096, min: 1 }), { help: "Hitting it counts as truncated." }),
+      seedField(),
+      cacheField());
+    const reachChanged = (event) => {
+      const end = toEnd(event.target.form);
+      endOnly.hidden = !end;
+      stepOnly.hidden = end;
+    };
     const form = planForm({
-      kind: "screen",
+      kind: (element) => (toEnd(element) ? "screen-to-end" : "screen"),
       fields: [
+        h("fieldset", { class: "target-picker" }, h("legend", null, "How each sample is judged"),
+          h("label", { class: "target-choice" },
+            h("input", { type: "radio", name: "reach", value: "step", checked: !checkTarget, disabled: checkTarget, onchange: reachChanged }),
+            h("span", null, h("strong", null, "At this step"), h("span", { class: "muted small" }, checkTarget
+              ? " — not for this refinement: its target is the task's check, which only a run's end can show"
+              : " — each sample an answer here, judged by the target; each proposal against a fresh arm of the original"))),
+          h("label", { class: "target-choice" },
+            h("input", { type: "radio", name: "reach", value: "end", checked: checkTarget, onchange: reachChanged }),
+            h("span", null, h("strong", null, "To the end"), h("span", { class: "muted small" },
+              " — each sample a fork run from here to the end through the harness, the task's check deciding")))),
         h("div", { class: "form-grid" },
           field("Samples", input("n", { type: "number", value: 20, min: 2, max: 200 }), { help: "Per arm, the original's included." }),
           field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 64 }), { help: "The proxy's --max-inflight still caps the server." })),
+        endOnly,
         h("details", { class: "fold more-settings" },
           h("summary", null, "More settings"),
           h("div", { class: "form-grid" },
-            field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" }), { help: "Family-wise, Holm-corrected." }),
-            field("Max tokens", input("max_tokens", { type: "number", value: 4096, min: 1 }), { help: "Hitting it counts as truncated." }),
-            seedField(),
-            cacheField())),
+            field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" }), { help: "Family-wise, Holm-corrected." })),
+          stepOnly),
       ],
-      read: (form) => {
+      read: (element) => {
         const proposals = shown.proposals.filter((each) => selected.has(each.id)).map((each) => each.id);
         if (!proposals.length) {
           throw Object.assign(new Error("Tick the proposals to screen, above: the family the correction counts is fixed before sampling."), { field: "proposals" });
@@ -486,22 +521,28 @@ export async function refinementView(root, [id], scope) {
         const params = {
           refinement: shown.refinement.id,
           proposals,
-          n: numberOf(form, "n") ?? 20,
-          concurrency: numberOf(form, "concurrency") ?? 1,
-          max_tokens: numberOf(form, "max_tokens") ?? 4096,
-          ...samplingChoices(form),
+          n: numberOf(element, "n") ?? 20,
+          concurrency: numberOf(element, "concurrency") ?? 1,
         };
-        const alpha = numberOf(form, "alpha", { integer: false });
+        if (toEnd(element)) {
+          params.checkpoints = numberOf(element, "checkpoints") ?? 4;
+          if (checked(element, "quick")) params.quick = true;
+          if (checked(element, "fresh_original")) params.fresh_original = true;
+        } else {
+          params.max_tokens = numberOf(element, "max_tokens") ?? 4096;
+          Object.assign(params, samplingChoices(element));
+        }
+        const alpha = numberOf(element, "alpha", { integer: false });
         if (alpha !== null) params.alpha = alpha;
         return params;
       },
-      render: screenPreview,
+      render: (plan) => (plan.reach === "end" ? screenToEndPreview(plan) : screenPreview(plan)),
       startLabel: "Start the screen",
       onStarted: opened,
     });
     return {
       element: panel("Screen the ticked proposals", form.element,
-        { meta: h("span", { class: "muted" }, "each against a fresh arm of the original"), className: "screen-panel" }),
+        { meta: h("span", { class: "muted" }, "each against the original"), className: "screen-panel" }),
       refresh: form.refresh,
     };
   }
@@ -708,8 +749,9 @@ export async function refinementView(root, [id], scope) {
           h("td", null, h("a", { class: "mono", href: `#/experiments/${screen.experiment}` }, short(screen.experiment))),
           h("td", null, chip(screen.status, screen.status === "done" ? "ok" : screen.status === "running" ? "accent" : "warn")),
           h("td", { class: "mono" }, report.arms.map((arm) => arm.name).join(", ")),
-          h("td", null, rateBar(report.baseline.target)),
-          h("td", null, !report.complete ? chip("unfinished: no verdict", "warn") : [
+          // A quick look draws no original arm: the original's forks drawn before, if any.
+          h("td", null, report.baseline.target.total ? rateBar(report.baseline.target) : h("span", { class: "faint" }, "none drawn here")),
+          h("td", null, report.quick ? chip("quick look: rates only, no verdict", "muted") : !report.complete ? chip("unfinished: no verdict", "warn") : [
             report.survivors.length ? chip(`${report.survivors.join(", ")} survived`, "ok") : chip("none survived", "muted"),
             // A wording that made it significantly worse is a finding too.
             report.arms.some((arm) => arm.worse)
@@ -758,7 +800,21 @@ function validatePreview(plan) {
     h("p", { class: "hint" }, "Each arm is drawn fresh, the original's included. Held-out runs are recorded in a temporary folder outside the recordings folder and deleted after: their verdicts are shown on this page, and to no agent."));
 }
 
+/** A screen's numbers for one proposal: against the original's arm, or — a quick look, which
+ *  forks the proposal alone — its rate, beside the original's forks drawn before, if any. */
+function screenLine(verdict) {
+  const rate = `${verdict.target.successes}/${verdict.target.total}`;
+  const base = verdict.baseline || {};
+  const toEnd = verdict.reach === "end" ? ", forks to the end" : "";
+  if (verdict.quick) {
+    return `${rate} forks passed${toEnd}: rates, never a verdict${base.total ? `; the original's ${base.successes}/${base.total} drawn before` : ""}`;
+  }
+  return `${rate} against the original's ${base.successes}/${base.total}${toEnd}`
+    + (verdict.adjusted_p !== null && verdict.adjusted_p !== undefined ? `, Holm p ${formatP(verdict.adjusted_p)}` : "");
+}
+
 function verdictChip(verdict) {
+  if (verdict.quick) return chip("quick look: rates only", "muted");
   if (!verdict.complete) return chip("screen unfinished", "warn");
   if (verdict.survives) return chip("survived a screen", "ok");
   if (verdict.worse) return chip("worse in a screen", "bad");
@@ -810,6 +866,43 @@ function proposePreview(plan) {
     ]),
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
     h("p", { class: "hint" }, "One call. Each proposal it makes is checked — its edits must match the skill exactly, leave the frontmatter alone and change at most ten lines — and kept with the model, the packet and the prompt it came from."));
+}
+
+/** A screen to the end, as it would run: the runs its forks are drawn from, the original's
+ *  forks — counted from this refinement's earlier screens where they can be — and whether it can
+ *  give a verdict at all (a quick look never does). */
+function screenToEndPreview(plan) {
+  const original = plan.original || {};
+  const names = plan.arms.map((arm, index) => [index ? ", " : "", h("span", { class: "mono" }, arm.name)]);
+  const from = plan.checkpoints?.length
+    ? plan.checkpoints.map((entry, index) => [index ? "; " : "",
+        h("span", { class: "mono" }, `run ${short(entry.run)}, step ${entry.step}`),
+        ` (${entry.verdict || "no verdict"}, ${plural(entry.n, "fork")} an arm)`])
+    : h("span", { class: "mono" }, `run ${short(plan.checkpoint.run_id)}, step ${plan.checkpoint.step}`);
+  let theOriginal;
+  if (plan.quick) {
+    theOriginal = original.reused
+      ? `none drawn now: its ${original.reused} forks this refinement drew before stand beside the rates`
+      : "none drawn: a quick look's rates stand alone";
+  } else {
+    theOriginal = original.reused
+      ? `${original.reused} of its ${plan.n} forks drawn before, by this refinement's earlier screens; ${original.drawn} drawn now`
+      : `${plural(original.drawn, "fork")} drawn now`;
+  }
+  return h("div", { class: "stack", style: { gap: "8px" } },
+    kv([
+      ["forks from", from],
+      ["target", plan.target],
+      ["arms", plan.quick ? h("span", null, "each proposal alone: ", names) : h("span", null, "the original, then ", names)],
+      ["the original", theOriginal],
+      ["forks", `${plan.forks} in all, each the harness run from its checkpoint to the end`],
+      ["verdict", plan.quick
+        ? "none: a quick look gives rates, a lead for the next edit — only a full screen can keep one"
+        : `Fisher's exact test against the original, Holm over ${plural(plan.family, "proposal")}, α = ${plan.alpha}`],
+    ]),
+    (plan.notes || []).map((note) => h("p", { class: "faint small" }, note)),
+    (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
+    h("p", { class: "hint" }, "Each fork replays its run as recorded up to the step — the model's answers and what its tools did to the files — then runs live to the end, where the task's check decides."));
 }
 
 function screenPreview(plan) {

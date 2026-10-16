@@ -3108,6 +3108,14 @@ def _print_diff(hunks: list[dict]) -> None:
 
 
 def _screen_verdict(verdict: dict) -> str:
+    if verdict.get("quick"):
+        # A quick look forks the proposal alone: its rate, beside the original's forks the
+        # refinement drew before, if any — never a test, so never a verdict.
+        rate, base = verdict["target"], verdict["baseline"]
+        before = (f"; the original's {base['successes']}/{base['total']} drawn before"
+                  if base.get("total") else "")
+        return (f"quick look — {rate['successes']}/{rate['total']} forks passed: rates, never a verdict"
+                f"{before} (screen {verdict['screen'][:8]})")
     if not verdict.get("complete"):
         word = "[yellow]no verdict yet[/yellow]"
     elif verdict.get("survives"):
@@ -3279,6 +3287,13 @@ def refine_show(
         )
         state = survivors if report["complete"] else "[yellow]unfinished: no verdict[/yellow]"
         by = " · by the task's check, forks to the end" if screen.get("reach") == "end" else ""
+        if report.get("quick"):
+            forks = max((arm.get("planned") or 0 for arm in report["arms"]), default=0)
+            console.print(
+                f"  {screen['experiment'][:8]}  {screen['status']}  quick look at {report['family']} proposal"
+                f"{'s' if report['family'] != 1 else ''}, {forks} forks each{by} — rates only, no verdict"
+            )
+            continue
         console.print(
             f"  {screen['experiment'][:8]}  {screen['status']}  {report['family']} proposal"
             f"{'s' if report['family'] != 1 else ''}, n={report['baseline']['planned']} an arm{by} — {state}"

@@ -10,9 +10,12 @@ import { failure, h, loading, plural, rateBar, replace, short } from "./dom.js";
 import { field, input, textOf } from "./forms.js";
 import { formatP } from "./results.js";
 
-/** The question's form and, once asked, its answer: `condition` keeps one condition's runs. */
-export function whereForm(task, { condition = null } = {}) {
+/** The question's form and, once asked, its answer: `condition` keeps one condition's runs;
+ *  `screen`, a screen run to the end, asks its forks instead, arm by arm — where no run of the
+ *  task passed, a screen's passing forks are the passing runs there are. */
+export function whereForm(task, { condition = null, screen = null } = {}) {
   const result = h("div", { class: "stack" });
+  const of = screen ? "fork" : "run";
   const pick = (kind) => {
     const radio = form.querySelector(`[name="where_kind"][value="${kind}"]`);
     if (radio) radio.checked = true;
@@ -27,7 +30,7 @@ export function whereForm(task, { condition = null } = {}) {
   async function ask(event) {
     event.preventDefault();
     const kind = form.querySelector('[name="where_kind"]:checked')?.value || "file";
-    const params = { task };
+    const params = screen ? { screen } : { task };
     if (kind === "answer") {
       params.target_match = textOf(form, "target_match").trim();
     } else {
@@ -35,19 +38,19 @@ export function whereForm(task, { condition = null } = {}) {
       params.contains = textOf(form, "contains");
       params.at_least = textOf(form, "at_least");
     }
-    replace(result, loading("Asking every run…"));
+    replace(result, loading(`Asking every ${of}…`));
     try {
-      replace(result, whereResult(await api.get(`/where${query(params)}`), { only: condition }));
+      replace(result, whereResult(await api.get(`/where${query(params)}`), { only: condition, of }));
     } catch (error) {
-      replace(result, failure(error, "Could not ask the runs"));
+      replace(result, failure(error, `Could not ask the ${of}s`));
     }
   }
 
   const form = h("form", { class: "stack", onsubmit: ask },
-    h("fieldset", { class: "target-picker" }, h("legend", null, "The question, asked of every run"),
+    h("fieldset", { class: "target-picker" }, h("legend", null, screen ? "The question, asked of every fork, arm by arm" : "The question, asked of every run"),
       h("label", { class: "target-choice" },
         h("input", { type: "radio", name: "where_kind", value: "file", checked: true }),
-        h("span", null, h("strong", null, "Of what the runs wrote"),
+        h("span", null, h("strong", null, `Of what the ${of}s wrote`),
           h("span", { class: "muted small" }, " — at the start, after each call that changed the files, and at the end"))),
       h("div", { class: "form-grid" },
         field("File", file),
@@ -58,20 +61,20 @@ export function whereForm(task, { condition = null } = {}) {
         h("span", null, h("strong", null, "Of the model's answers"),
           h("span", { class: "muted small" }, " — tried at every step: a tool call's name and arguments, a script's code, a reply's words"))),
       field("Pattern", pattern, { wide: true })),
-    h("div", null, h("button", { class: "btn btn-primary", type: "submit" }, "Ask every run")),
+    h("div", null, h("button", { class: "btn btn-primary", type: "submit" }, `Ask every ${of}`)),
     result);
   return form;
 }
 
-/** Where it held: each condition's runs by verdict, where it was first seen or made, the step
- *  that names that call in each run, and the runs one by one. */
-export function whereResult(found, { only = null } = {}) {
+/** Where it held: each condition's runs — or each arm's forks — by verdict, where it was first
+ *  seen or made, the step that names that call in each run, and the runs one by one. */
+export function whereResult(found, { only = null, of = "run" } = {}) {
   const kind = found.probe?.kind;
   const groups = (found.groups || []).filter((group) => !only || group.condition?.id === only);
   const asked = groups.reduce((total, group) => total + group.runs.length, 0);
   return h("div", { class: "stack" },
-    h("p", null, h("strong", null, found.probe?.description || ""), h("span", { class: "muted small" }, `  asked of ${plural(asked, "run")}`)),
-    groups.length ? groups.map((group) => groupView(group, kind)) : h("p", { class: "muted" }, "No run of this condition was asked."),
+    h("p", null, h("strong", null, found.probe?.description || ""), h("span", { class: "muted small" }, `  asked of ${plural(asked, of)}`)),
+    groups.length ? groups.map((group) => groupView(group, kind)) : h("p", { class: "muted" }, `No ${of} was asked.`),
     found.skipped?.length ? h("p", { class: "faint small" }, `Passed over: ${found.skipped.slice(0, 3).join("; ")}`) : null,
     h("p", { class: "hint" }, "A lead to read, never a verdict: a split is said to go one way under p 0.2. Intervals are Wilson 95%."));
 }

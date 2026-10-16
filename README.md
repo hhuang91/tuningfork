@@ -2,7 +2,7 @@
 
 A step debugger and experiment lab for agent skills running on local LLMs.
 
-> Status: **pre-alpha, 0.2.0.** Recording, divergence localization, resampling from a
+> Status: **pre-alpha, 0.2.1.** Recording, divergence localization, resampling from a
 > checkpoint, wording A/B tests, live breakpoints, workspace snapshots, restarting a
 > recorded run from any step to measure it end to end, a web UI that starts all of it,
 > token-level analysis — how sure the model was of each token, and which token decided a
@@ -247,11 +247,13 @@ Everything above is also in a local web UI, served by the proxy itself at
 conversation, top to bottom, with each step's answer — reasoning included — where it
 happened, and the skill marked inside it and mapped to its file line by line; each answer
 as a heatmap of its tokens, a click showing what else the model weighed there; a step's
-exact context on a page of its own; divergence and diff views, experiment results, and a
-Live page that edits held calls in place. A tool call the model made without any reasoning —
-in a run that reasons elsewhere, often right after a tool call failed — is marked wherever a
-step is shown, and an experiment says how many of a behaviour's samples reasoned where some
-did not; `break add --no-reasoning` stops there live.
+exact context on a page of its own; divergence and diff views — with what the failed runs'
+checks said and what goes with passing — experiment results, a chain of runs link by link,
+what each piece of work cost, and a Live page that edits held calls in place. A tool call
+the model made without any reasoning — in a run that reasons elsewhere, often right after a
+tool call failed — is marked wherever a step is shown, and an experiment says how many of a
+behaviour's samples reasoned where some did not; `break add --no-reasoning` stops there
+live.
 
 The front page says what is set up and where you left off, draws how the pieces fit — one
 loop, from a skill through its runs, the experiments at a step and a refinement, to the
@@ -347,11 +349,12 @@ fa63747b  20/20 100% [84%-100%]  1.5e-11  4.4e-11  survives
 95ebcd3c  20/20 100% [84%-100%]  1.5e-11  4.4e-11  survives
 ```
 
-The web UI does the same from a step's **Refine the skill here…**, and an agent with
-`tuningfork mcp --tools refine`. A screen at one step is evidence, not proof: its arms
-inherit the history the original wording wrote, and a wording can reach the target without
-fixing the task. In a later run, an edit that told the model to skip the file and write the
-training task's answers survived its screen exactly as the fix did.
+The web UI does the same from a step's **Refine the skill here…** — a screen at the step,
+or one whose forks run to the end with the task's check as the target, a quick look among
+them — and an agent with `tuningfork mcp --tools refine`. A screen at one step is evidence,
+not proof: its arms inherit the history the original wording wrote, and a wording can reach
+the target without fixing the task. In a later run, an edit that told the model to skip the
+file and write the training task's answers survived its screen exactly as the fix did.
 
 So a survivor is validated with full runs, each arm against a fresh arm of the original:
 forks from the step to the end, runs of the task with the edit from the first step, and runs

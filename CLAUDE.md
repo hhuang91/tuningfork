@@ -52,8 +52,10 @@ Inspecting and experimenting (all take `--home <recordings dir>`):
                                           #   --budget-seconds N: stop once the links' model calls took
                                           #   N s; the link that could outrun it is cut to what is left
     tuningfork chain list | show <id> [--diff]   # each link: verdict, who changed the skill, the lines
+                                          #   (the web UI's Chains page; GET /chains, /chains/{id})
     tuningfork spend --chain <id> | --job <id> | --run <id> | --experiment <id> | --task <id>
                                           # what work cost: calls, tokens, time, from the records
+                                          #   (GET /spend; beside a run, a job and an experiment)
     tuningfork tasks                      # pass rates: one per harness, model, skill, server
     tuningfork resample <run> <k> -n 20   # re-run step k N times, history held fixed
     tuningfork resample ... --logprobs 8  # ... keeping each sample's tokens (chat-completions steps)

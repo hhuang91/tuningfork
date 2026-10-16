@@ -6,6 +6,7 @@ import { ago, crumbs, h, kv, loading, panel, plural, pretty, rateBar, replace, s
 import {
   ACTIVE, cancelButton, duration, kindLabel, logLine, originChip, progressBar, stateChip, subject, watchJob,
 } from "../jobs.js";
+import { costOf } from "../cost.js";
 import { launcher } from "../launcher.js";
 import { live } from "../live.js";
 import { comparisonView, distributionView, forkingView, screenView } from "../results.js";
@@ -205,9 +206,15 @@ function jobSummary(job) {
     if (result.distribution) parts.push(distributionView(result.distribution));
     if (result.comparison) parts.push(comparisonView(result));
     if (result.forking) parts.push(forkingView(result.forking));
-    if (job.kind === "screen" && result.screen) {
+    if ((job.kind === "screen" || job.kind === "screen-to-end") && result.screen) {
       const arms = Object.fromEntries(Object.entries(result.experiments || {}).map(([name, id]) => [name, { id }]));
       parts.push(screenView(result.screen, { arms }));
+    }
+    if (job.kind === "chain" && result.id) {
+      parts.push(panel("What it made", h("div", { class: "made" },
+        h("a", { class: "btn btn-primary", href: `#/chains/${enc(result.id)}` }, "See the chain, link by link"),
+        h("span", { class: "muted small" }, `${plural((result.links || []).length, "link")}`
+          + (result.rate ? `, ${result.rate.successes} of ${result.rate.total} counted passed` : "")))));
     }
     if (job.kind === "propose") parts.push(proposedView(result));
     if (job.kind === "validate") parts.push(validatedView(result));
@@ -282,5 +289,7 @@ function madeView(job) {
       h("a", { class: "btn btn-primary", href: `#/experiments/${report}` }, job.status === "done" ? "See the result" : "Open the experiment"),
       h("span", { class: "muted small" }, experiments.length > 1 ? `experiments ${experiments.map(short).join(", ")}` : `experiment ${short(report)}`)) : null,
     runs.length ? h("div", { class: "muted small" }, `${plural(runs.length, "run")}: `,
-      runs.slice(0, 20).map((run, index) => [index ? ", " : "", h("a", { class: "mono", href: `#/runs/${enc(run)}` }, short(run))])) : null))];
+      runs.slice(0, 20).map((run, index) => [index ? ", " : "", h("a", { class: "mono", href: `#/runs/${enc(run)}` }, short(run))])) : null,
+    // Counted from the records of what it made: once nothing is still being added to them.
+    job.status === "running" || job.status === "queued" ? null : kv([["cost", costOf({ job: job.id })]])))];
 }

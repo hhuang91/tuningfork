@@ -4,6 +4,7 @@ import { api, enc, query } from "../api.js";
 import {
   chip, command, crumbs, h, loading, outcome, panel, plural, rateBar, replace, short, verdict,
 } from "../dom.js";
+import { field, input, numberOf, planForm } from "../forms.js";
 import { live } from "../live.js";
 import { responseView } from "../payload.js";
 import { tallyView } from "../results.js";
@@ -131,12 +132,77 @@ export async function divergenceView(root, [task, conditionId]) {
       split ? panel(`At step ${at}`, [groupsView(split, at), nextStep(split, at)], {
         meta: h("span", { class: "muted" }, "Intervals are Wilson 95%; with few runs they are wide."),
       }) : null,
+      predictorsView(report),
       tallyView(tally, { only: chosen?.id || null }),
+      live.mode === "live" ? alongPanel(task) : null,
       panel("Where does it hold?", whereForm(task, { condition: chosen?.id || null }), {
         meta: h("span", { class: "muted" }, "One question of every run: the call that made the difference."),
       }),
       panel("Every step", stepsTable(report))),
   );
+}
+
+/** The task's check run along its runs (the `check-along` job): on each run's workspace as it
+ *  started, after each call that changed it, and at its end — so the tally names the call that
+ *  made each finding, and a mistake every run made is named as one. */
+function alongPanel(task) {
+  const form = planForm({
+    kind: "check-along",
+    fields: [h("div", { class: "form-grid" },
+      field("Runs", input("limit", { type: "number", value: 50, min: 1, max: 500 }), { help: "The task's latest recorded runs, at most." }))],
+    read: (element) => ({ task, limit: numberOf(element, "limit") ?? 50 }),
+    render: (plan) => h("div", { class: "stack" },
+      plan.runs.length
+        ? h("p", null, `The check, on ${plural(plan.runs.length, "run")}: ${plural(plan.states, "workspace state")}, each as a call left it.`)
+        : h("p", null, "No run here to run the check along: each is passed over, below."),
+      plan.skipped?.length
+        ? h("p", { class: "faint small" }, `Passed over: ${plan.skipped.slice(0, 3).join("; ")}${plan.skipped.length + (plan.skipped_more || 0) > 3 ? ", and more" : ""}`)
+        : null),
+    startLabel: "Run the check along",
+    onStarted: (job) => (location.hash = `#/jobs/${job.id}`),
+  });
+  return panel("Run the check along the runs", form.element, {
+    meta: h("span", { class: "muted" }, "Which call made each finding, in each run: what the tally then says."),
+  });
+}
+
+/** What goes with passing, over the runs that have a verdict: the step whose behaviour best
+ *  predicts it, and the tool whose use does, wherever in a run it was called — the first split
+ *  is often neither. Fisher's exact test, a lead under p 0.2, never a verdict. */
+function predictorsView(report) {
+  const byStep = report.verdict_split?.best;
+  const byTool = report.tool_split?.best;
+  const judged = report.verdict_split?.judged || report.tool_split?.judged || 0;
+  if (judged < 2) return null;
+  // How many of the judged runs passed: every run took some behaviour at the first step.
+  const passed = (report.steps?.[0]?.groups || []).reduce((sum, group) => sum + (group.passed?.successes || 0), 0);
+  if (passed === 0 || passed === judged) {
+    return panel("What goes with passing", h("p", { class: "hint" }, passed === 0
+      ? `None of the ${judged} judged runs passed: nothing here can separate passing from failing. A screen run to the end has passing forks to compare — its page asks Where does it hold? of them.`
+      : `All ${judged} judged runs passed: there is no failure here to separate.`));
+  }
+  const lines = [];
+  if (byStep) {
+    // A run that took the behaviour: its step — or, for runs that had ended before it, the run.
+    const ended = byStep.kind === "ended";
+    const href = byStep.run_id && (ended ? `#/runs/${byStep.run_id}` : `#/runs/${byStep.run_id}/${byStep.index}`);
+    lines.push(h("p", null, href ? h("a", { href }, `Step ${byStep.index}`) : `Step ${byStep.index}`,
+      ended ? ": the runs that had ended before it" : `: the runs that did “${byStep.label}”`,
+      ` passed ${byStep.passed} of ${byStep.total}, the others ${byStep.others_passed} of ${byStep.others_total} `,
+      h("span", { class: "muted" }, `(p ${byStep.p})`), " — the step whose behaviour best predicts the verdict."));
+  }
+  if (byTool) {
+    lines.push(h("p", null, "The runs that called ", h("span", { class: "mono" }, byTool.tool),
+      ` passed ${byTool.called.passed} of ${byTool.called.total}; those that never did, ${byTool.never.passed} of ${byTool.never.total} `,
+      h("span", { class: "muted" }, `(p ${byTool.p})`),
+      byTool.with_passing ? " — its use goes with passing, at whatever step a run called it." : " — its use goes with failing."));
+  }
+  if (!lines.length) {
+    lines.push(h("p", { class: "hint" }, `No behaviour at any step, and no tool called, separates the passing runs from the failing ones (of ${judged} judged): the difference is in what they wrote. What the checks said, and Where does it hold?, look there.`));
+  }
+  return panel("What goes with passing", lines, {
+    meta: h("span", { class: "muted" }, "Fisher's exact test over the judged runs: a lead under p 0.2, never a verdict."),
+  });
 }
 
 function groupsView(step, index) {

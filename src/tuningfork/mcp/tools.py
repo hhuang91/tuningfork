@@ -658,7 +658,7 @@ def find_divergence(context: Context, args: DivergenceArgs) -> Answer:
     report = inspect.divergence_report(
         context.store, refs=args.runs, task=args.task, normalizers=args.normalizers, limit=args.limit
     )
-    split = inspect.verdict_split(report)
+    split = report["verdict_split"]
     view = compact.divergence(report, all_steps=args.all_steps)
     if view.get("task_id") in hidden or view.get("task") in hidden:
         raise OperationError("those runs are of a held-out task: the person's evidence, never an agent's",

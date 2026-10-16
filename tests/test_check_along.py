@@ -120,6 +120,8 @@ def test_a_run_shows_what_each_call_changed_and_a_fork_after_it_is_warned(stack)
     run = one_run(stack)
     detail = run_detail(stack.store, run.id)
     assert [step["changed"] for step in detail["steps"]] == [[], [{"status": "A", "path": "report.json"}], []]
+    # What the run page says of its launch: here unsandboxed (the suite turns the sandbox off).
+    assert detail["launch"]["sandbox"] is None and "harness_settings" in detail["launch"]
     # At the end, what the whole run changed; before a step, what the step before changed.
     end = workspace_at(stack.store, run.id, "end")
     assert (end.since, end.changes) == ("the start", [("A", "report.json")])

@@ -60,6 +60,7 @@ def launch_json(launch: Launch | None) -> dict[str, Any] | None:
     from tuningfork.specs import check_kind, describe_check
 
     check = ((launch.eval or {}).get("tuningfork") or {}).get("check")
+    settings = launch.settings or {}
     return {
         "id": launch.id,
         "kind": launch.kind,
@@ -73,6 +74,10 @@ def launch_json(launch: Launch | None) -> dict[str, Any] | None:
         "workspace": launch.workspace,
         "check": describe_check(check),
         "check_kind": check_kind(check),
+        # What the harness saw of the machine: the sandbox's paths, the folders hidden from it and
+        # the instant its clock started at — and how it was set up (Hermes's options).
+        "sandbox": settings.get("sandbox"),
+        "harness_settings": settings.get("harness"),
     }
 
 

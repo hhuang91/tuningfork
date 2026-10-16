@@ -4,6 +4,7 @@
 
 import { api, enc } from "../api.js";
 import { ago, chip, copyButton, crumbs, h, kv, loading, longText, plural, replace, short, verdict, when } from "../dom.js";
+import { costOf } from "../cost.js";
 import { live } from "../live.js";
 import { timeline } from "../timeline.js";
 import { trashButton, trashedBanner } from "../trash.js";
@@ -97,6 +98,14 @@ function changedBanner({ steps }) {
   return h("div", { class: "banner banner-edit" }, h("strong", null, "tuningfork changed this run's history: "), `${parts.join("; ")}.`);
 }
 
+/** Where a launch's harness worked, as it saw it: the sandbox's own paths, the same in every
+ *  run — or, with no sandbox, the machine as it is. */
+function sandboxWords(sandbox) {
+  if (!sandbox) return h("span", { class: "muted" }, "none: the harness saw the machine as it is");
+  return [h("span", { class: "mono" }, sandbox.workspace), h("span", { class: "muted" }, ", its home "),
+    h("span", { class: "mono" }, sandbox.home), h("span", { class: "muted" }, ` — ${sandbox.kind || "a sandbox"}, the rest of the machine read-only`)];
+}
+
 function aboutRun({ run, launch, threads }) {
   const skills = Object.entries(run.skill_hashes || {});
   const result = run.result;
@@ -128,7 +137,19 @@ function aboutRun({ run, launch, threads }) {
             : [launch.check, h("span", { class: "muted" }, " — judged on the final reply")]
           : launch ? h("span", { class: "muted" }, "no check: no verdict") : null],
         ["verdict", result ? [verdict(result), h("span", { class: "muted" }, `  harness exit ${result.returncode ?? "—"} · ${result.duration_s ?? "—"} s`)] : null],
+        ["cost", costOf({ run: run.id })],
         ["workspace", launch?.workspace ? h("span", { class: "mono" }, launch.workspace) : null],
+        ["sandbox", launch ? sandboxWords(launch.sandbox) : null],
+        ["its clock", launch?.sandbox?.clock
+          ? [h("span", { class: "mono" }, launch.sandbox.clock), h("span", { class: "muted" }, " — started there, whichever day the run was made")]
+          : null],
+        ["hidden from it", launch?.sandbox?.hidden?.length
+          ? h("span", { class: "mono small" }, launch.sandbox.hidden.join(", "))
+          : null],
+        ["set up with", launch?.harness_settings && Object.keys(launch.harness_settings).length
+          ? h("span", { class: "mono small" }, Object.entries(launch.harness_settings)
+              .map(([key, value]) => `${key}=${typeof value === "object" ? JSON.stringify(value) : value}`).join(" · "))
+          : null],
         ["run id", h("span", { class: "mono" }, run.id)],
       ]),
       skills.length

@@ -63,11 +63,20 @@ def _preflight(home: Any, name: str, server: dict[str, Any], checks: dict[str, A
 
 
 def restart_command(settings: Any, upstream: str) -> str:
+    """`tuningfork serve` as this proxy was started: a setting left at its default is left out."""
     parts = [
         "tuningfork", "serve", "--upstream", upstream, "--host", settings.host,
         "--port", str(settings.port), "--max-inflight", str(settings.max_inflight),
         "--jobs", str(settings.jobs), "--home", str(settings.home),
     ]
+    if settings.mcp_tools != "evidence":
+        parts += ["--mcp-tools", settings.mcp_tools]
+    if settings.mcp_results != "both":
+        parts += ["--mcp-results", settings.mcp_results]
+    if settings.mcp_max_wait != 50:
+        parts += ["--mcp-max-wait", str(settings.mcp_max_wait)]
+    if settings.max_output is not None:
+        parts += ["--max-output", str(settings.max_output)]
     return shlex.join(parts)
 
 
@@ -107,6 +116,7 @@ def connection_routes() -> list[Route]:
                 "host": settings.host,
                 "port": settings.port,
                 "max_inflight": state.gate.max_inflight,
+                "max_output": settings.max_output,
                 "jobs": settings.jobs,
                 "protected": [str(endpoint) for endpoint in protected(settings.home)],
                 "restart": restart_command(settings, state.upstream.url),

@@ -79,7 +79,16 @@ export function progressBar(job) {
   const share = total ? done / total : job.status === "done" ? 1 : 0;
   return h("div", { class: ["job-progress", job.status === "running" && "running", progress.waiting && "waiting"] },
     h("div", { class: "job-progress-track" }, h("div", { class: "job-progress-fill", style: { width: `${(share * 100).toFixed(1)}%` } })),
-    h("span", { class: "muted small" }, total ? `${done} of ${total}` : ""));
+    h("span", { class: "muted small" }, total ? `${done} of ${total}${timeLeft(job)}` : ""));
+}
+
+/** About how long a running job has left, at the pace of what it has done so far (the
+ *  proxy's estimate, `remaining_s`), or nothing before it has finished a unit. */
+function timeLeft(job) {
+  const seconds = job.status === "running" ? job.progress?.remaining_s : null;
+  if (seconds === null || seconds === undefined) return "";
+  const minutes = Math.round(seconds / 60);
+  return minutes < 1 ? ", under a minute left" : `, about ${minutes} min left`;
 }
 
 /** How long it has run, or ran: live while it runs or waits (a page calls `tick` each

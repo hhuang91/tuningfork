@@ -61,6 +61,14 @@ class TestOverHttp:
             late = http.post(f"{API}/{rid}/proposals", json={"edits": [KEYS], "rationale": "r"})
             assert late.status_code == 409 and late.json()["error"]["field"] == "refinement"
 
+    def test_the_check_as_a_refinements_target(self, stack):
+        """From the page as from the terminal: the task's check, for a failure only it can see."""
+        with client(stack) as http:
+            made = http.post(API, json={"run": stack.run_id, "step": "write_file", "target_check": True})
+            assert made.status_code == 201, made.text
+            shown = http.get(f"{API}/{made.json()['id']}").json()
+        assert shown["refinement"]["target"]["kind"] == "check"
+
     def test_a_persons_whole_text_may_change_more_but_is_warned(self, stack):
         made = refine.create(stack.store, stack.run_id, "write_file", target_rules=RULES)
         text = made.baseline_text() + "".join(f"\nA new line {i}." for i in range(12))
