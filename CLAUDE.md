@@ -440,7 +440,8 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     tests/browser/            opt-in browser tests (Edge/Chromium over DevTools) and demo servers
     examples/                 a skill that mostly fails, and a step-by-step guide (README.md);
                                hermes-design-md/, Hermes's own design-md skill fixed from the
-                               failing step to an approved edit, with its guide
+                               failing step to an approved edit, with its guide; find-the-file/,
+                               a step where the model wavers: the runs behind the README's figure
     docs/                     what the README links to: setup.md (install, the server's flags and
                                why, the harnesses, the sandbox, a task's format), commands.md
                                (every command by the question it answers), agents.md (the MCP

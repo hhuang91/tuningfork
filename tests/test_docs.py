@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 COMMANDS = ROOT / "docs" / "commands.md"
 #: The pages a newcomer reads first, and what they link to. The README's screenshots are added
 #: by hand (docs/images/README.md lists them), so an image may be missing; a page may not.
-PAGES = ("README.md", "docs/setup.md", "docs/commands.md", "docs/agents.md", "docs/images/README.md")
+PAGES = ("README.md", "docs/setup.md", "docs/commands.md", "docs/agents.md", "docs/images/README.md",
+         "examples/find-the-file/README.md")
 
 
 def command_paths(group, prefix: str = "") -> list[str]:
