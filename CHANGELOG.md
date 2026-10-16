@@ -15,12 +15,12 @@
 - **What goes with passing**, on the divergence page: the step whose behaviour best predicts
   the verdict, and the tool whose use does, at whatever step a run called it — or that no run
   passed, and where to look then. The divergence report carries the step's split for every
-  front end (`verdict_split`).
+  front end (`verdict_split`), with a run that took the behaviour to look at.
 - **The check run along the runs**, started from the divergence page (the `check-along` job):
   the tally beside it then names the call that made each finding.
 - **A chain, link by link** (the Chains page, `GET /chains`, `/chains/{id}`): how it ran, what
-  each link's harness was told, its verdict, who changed the skill after it and the lines they
-  changed. A chain job's page leads to it.
+  each link's harness was told, its verdict (or none, where the check never ran), who changed
+  the skill after it and the lines they changed. A chain job's page leads to it.
 - **What work cost** beside a run, a job and an experiment (`GET /spend`).
 - **A run's sandbox** on its page: where its harness worked, the folders hidden from it, the
   instant its clock started at, and how the harness was set up.

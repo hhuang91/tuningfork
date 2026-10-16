@@ -183,8 +183,12 @@ function predictorsView(report) {
   }
   const lines = [];
   if (byStep) {
-    lines.push(h("p", null, h("a", { href: `#/runs/${report.run_ids[0]}/${byStep.index}` }, `Step ${byStep.index}`),
-      `: the runs that did “${byStep.label}” passed ${byStep.passed} of ${byStep.total}, the others ${byStep.others_passed} of ${byStep.others_total} `,
+    // A run that took the behaviour: its step — or, for runs that had ended before it, the run.
+    const ended = byStep.kind === "ended";
+    const href = byStep.run_id && (ended ? `#/runs/${byStep.run_id}` : `#/runs/${byStep.run_id}/${byStep.index}`);
+    lines.push(h("p", null, href ? h("a", { href }, `Step ${byStep.index}`) : `Step ${byStep.index}`,
+      ended ? ": the runs that had ended before it" : `: the runs that did “${byStep.label}”`,
+      ` passed ${byStep.passed} of ${byStep.total}, the others ${byStep.others_passed} of ${byStep.others_total} `,
       h("span", { class: "muted" }, `(p ${byStep.p})`), " — the step whose behaviour best predicts the verdict."));
   }
   if (byTool) {

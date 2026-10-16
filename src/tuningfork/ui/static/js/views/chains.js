@@ -63,8 +63,12 @@ export async function chainView(root, [id]) {
 }
 
 function linkView(link) {
+  // A link whose check never ran — the task has none, or the run ended before it — has no
+  // verdict: "failed" is for a check that said so.
   const verdictChip = link.exclusion === "timed out" ? chip("timed out", "warn")
-    : link.passed ? chip("passed", "ok") : chip("failed", "bad");
+    : link.passed === true ? chip("passed", "ok")
+    : link.passed === false ? chip("failed", "bad")
+    : chip("no verdict", "muted", link.exclusion || undefined);
   const changed = (link.changed || []).map((path) => path.split("/").slice(1).join("/") || path);
   const hunks = link.diff?.hunks || [];
   return h("div", { class: "stack", style: { gap: "6px", marginBottom: "14px" } },

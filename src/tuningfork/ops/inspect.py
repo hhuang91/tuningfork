@@ -322,7 +322,8 @@ def verdict_split(report: dict[str, Any], *, alpha: float = 0.2, minimum: int = 
     rest, by Fisher's exact test on passes and fails; the smallest p wins when it is under
     `alpha`. `judged` is how many runs had a verdict; `best` is None when no behaviour
     separates them — the difference is then in what the runs wrote, not in which behaviour
-    they chose, which the first split never shows."""
+    they chose, which the first split never shows. `best` names a run that took the behaviour,
+    to look at (`run_id`), and its kind: "ended" for runs that had ended before the step."""
     from tuningfork.analysis.stats import fisher_exact
 
     best: dict[str, Any] | None = None
@@ -339,8 +340,10 @@ def verdict_split(report: dict[str, Any], *, alpha: float = 0.2, minimum: int = 
                 continue
             p = fisher_exact(passed, total - passed, others_passed, others_total - others_passed)
             if best is None or p < best["p"]:
+                outcome = group.get("outcome") or {}
                 best = {
-                    "index": step.get("index"), "label": (group.get("outcome") or {}).get("label"),
+                    "index": step.get("index"), "label": outcome.get("label"), "kind": outcome.get("kind"),
+                    "run_id": (group.get("run_ids") or [None])[0],
                     "passed": passed, "total": total, "others_passed": others_passed,
                     "others_total": others_total, "p": round(p, 4),
                 }
