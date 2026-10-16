@@ -419,7 +419,7 @@ That is one slot of 131,072 tokens: Hermes needs 64,000.
 
 **Keep `-np 1`, `--ctx-checkpoints 0` and `--no-cache-prompt`.** With them, a request gets the
 same numbers whatever the server ran before it and whichever of its endpoints it goes to (see
-the [README](../README.md#start-llama-server-for-numbers-that-repeat)):
+[the setup page](../docs/setup.md#numbers-that-repeat), with what we measured without them):
 
 - With two slots, a request computed beside another in the second one gets other numbers.
   One slot computes each request alone.
