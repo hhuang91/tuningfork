@@ -295,3 +295,87 @@ class TestGenericHarness:
 
     def test_registry_lists_known_adapters(self):
         assert set(ADAPTERS) == {"hermes", "claude-code", "generic"}
+
+
+class TestOptions:
+    """What a launch of Hermes may be asked beside the seam's own arguments (`OPTIONS`)."""
+
+    def test_the_review_is_awaited_through_a_plugin_in_the_launch_home(self, tmp_path):
+        adapter = HermesAdapter(options={"await_review": True})
+        home = adapter.prepare_home(tmp_path / "home", base_url="http://p/v1", model="m")
+        config = (home / ".hermes" / "config.yaml").read_text(encoding="utf-8")
+        assert "plugins:\n  enabled:\n  - tuningfork-launch\n" in config
+        assert "allow_tool_override" not in config
+        plugin = home / ".hermes" / "plugins" / "tuningfork-launch"
+        assert (plugin / "plugin.yaml").read_text(encoding="utf-8").startswith("name: tuningfork-launch\n")
+        module = (plugin / "__init__.py").read_text(encoding="utf-8")
+        assert "def register(ctx)" in module and '"bg-review"' in module
+        assert "on_session_end" in module and "on_session_finalize" in module
+        asked = json.loads((plugin / "options.json").read_text(encoding="utf-8"))
+        assert asked == {"self_improvement": True, "await_review": True}
+        assert adapter.settings == {"harness": {"await_review": True}}
+        (note,) = adapter.chain_notes()
+        assert "review_every_turn" in note
+
+    def test_self_improvement_off_removes_the_skill_editing_tool_through_the_plugin(self, tmp_path):
+        """Hermes turns tools off by whole toolset, and skill_manage shares one with skill_view,
+        which runs need: the plugin removes the one tool, with the opt-in Hermes asks for."""
+        adapter = HermesAdapter(options={"self_improvement": False})
+        home = adapter.prepare_home(tmp_path / "home", base_url="http://p/v1", model="m")
+        config = (home / ".hermes" / "config.yaml").read_text(encoding="utf-8")
+        assert (
+            "plugins:\n  enabled:\n  - tuningfork-launch\n  entries:\n    tuningfork-launch:\n"
+            "      allow_tool_override: true\n"
+        ) in config
+        plugin = home / ".hermes" / "plugins" / "tuningfork-launch"
+        asked = json.loads((plugin / "options.json").read_text(encoding="utf-8"))
+        assert asked == {"self_improvement": False, "await_review": False}
+        module = (plugin / "__init__.py").read_text(encoding="utf-8")
+        assert 'SKILL_TOOL = "skill_manage"' in module and "registry.deregister(SKILL_TOOL)" in module
+        assert adapter.settings == {"harness": {"self_improvement": False}}
+        assert any("self_improvement off" in note for note in adapter.chain_notes())
+
+    def test_the_review_can_be_due_every_turn(self, tmp_path):
+        adapter = HermesAdapter(options={"review_every_turn": True})
+        home = adapter.prepare_home(tmp_path / "home", base_url="http://p/v1", model="m")
+        config = (home / ".hermes" / "config.yaml").read_text(encoding="utf-8")
+        assert "skills:\n" in config and "  creation_nudge_interval: 1\n" in config
+        assert not (home / ".hermes" / "plugins").exists()
+        assert adapter.settings == {"harness": {"review_every_turn": True}}
+        (note,) = adapter.chain_notes()
+        assert "await_review" in note
+
+    def test_mcp_servers_go_in_as_yaml_and_the_settings_keep_only_their_commands(self, tmp_path):
+        servers = {"tuningfork": {
+            "command": "/v/bin/tuningfork", "args": ["mcp", "--home", "/h", "--tools", "refine"],
+            "env": {"KEY": "secret"}, "timeout": 300,
+        }}
+        adapter = HermesAdapter(options={"mcp_servers": servers})
+        home = adapter.prepare_home(tmp_path / "home", base_url="http://p/v1", model="m")
+        config = (home / ".hermes" / "config.yaml").read_text(encoding="utf-8")
+        line = next(line for line in config.splitlines() if line.startswith("mcp_servers: "))
+        assert json.loads(line[len("mcp_servers: "):]) == servers  # JSON is YAML
+        assert adapter.settings == {"harness": {"mcp_servers": {"tuningfork": "/v/bin/tuningfork"}}}
+        assert "secret" not in json.dumps(adapter.settings)
+
+    @pytest.mark.parametrize("options, said", [
+        ({"nope": 1}, "no option called 'nope'"),
+        ({"await_review": "yes"}, "true or false"),
+        ({"self_improvement": "off"}, "true or false"),
+        ({"mcp_servers": {"x": {}}}, "needs a command"),
+        ({"mcp_servers": {"bad name": {"command": "c"}}}, "maps each server"),
+        ("x", "must be an object"),
+    ])
+    def test_what_hermes_does_not_take_is_refused(self, options, said):
+        from tuningfork.ops.common import OperationError
+
+        with pytest.raises(OperationError) as refused:
+            HermesAdapter(options=options)
+        assert refused.value.field == "harness_options" and said in refused.value.message
+
+    def test_without_options_nothing_changes(self, adapter, tmp_path):
+        home = adapter.prepare_home(tmp_path / "home", base_url="http://p/v1", model="m")
+        config = (home / ".hermes" / "config.yaml").read_text(encoding="utf-8")
+        assert "plugins" not in config and "mcp_servers" not in config and "skills:" not in config
+        assert not (home / ".hermes" / "plugins").exists()
+        assert adapter.settings == {} and len(adapter.chain_notes()) == 2

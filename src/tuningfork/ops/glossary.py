@@ -99,7 +99,12 @@ TERMS: tuple[Term, ...] = (
          "tasks", see=("spec",), where="Scenarios page"),
     Term("check", "How a run is judged when the harness ends: a script run in the run's workspace, or a test of its "
          "final reply. Tried on a recorded run before it is trusted.",
-         "tasks", see=("pass rate", "task"), where="a scenario's check; tuningfork recheck <run>"),
+         "tasks", see=("pass rate", "task", "check along"), where="a scenario's check; tuningfork recheck <run>"),
+    Term("check along", "A task's check run on a run's workspace as it started, after each call that changed it, "
+         "and at its end: when each thing the check complains about was made, and by which call. Never a verdict. "
+         "A finding every run made, the passing ones too, is a mistake they all made — and refined where it was "
+         "made, not where the runs that repaired it later differ.",
+         "tasks", see=("check", "checkpoint"), where="a task's tally; tuningfork check-along --task <id>"),
     Term("batch", "A task run N times through the harness, each run in a fresh workspace and home: the pass rate "
          "of one skill version, with its interval.",
          "tasks", see=("launch", "pass rate"), where="Runs → Run a task…; tuningfork batch <spec> -n 8"),
@@ -124,6 +129,13 @@ TERMS: tuple[Term, ...] = (
          "tasks", aka=("held out",), see=("validation", "gate")),
     Term("divergence", "The first step where runs of one task stopped doing the same thing: where to look first.",
          "tasks", see=("run",), where="Runs → Where do they diverge?; tuningfork divergence --task <id>"),
+    Term("where it holds", "One question asked of every run of a task — of what the model did, at every step, or of "
+         "a file the runs wrote, at each state of the workspace — and the answers lined up with the verdicts: in how "
+         "many passing and failing runs it held, the call that first did it or made it in each, and the step that "
+         "names that call in every run. Where a check prints only its verdict, the way to the call that made the "
+         "difference. A lead to read, never a verdict.",
+         "tasks", aka=("where",), see=("check along", "divergence", "target"),
+         where="Runs → Where do they diverge? → Where does it hold?; tuningfork where --task <id>"),
     Term("trash", "Where things set aside wait, out of every list and pass rate, until restored as they went. "
          "Deleting from the trash is for good, with everything tied to the item.",
          "tasks", see=(), where="Trash page; tuningfork trash"),
@@ -166,10 +178,13 @@ TERMS: tuple[Term, ...] = (
          "against the original wording, validated with full runs, and approved by a person.",
          "refining", see=("proposal", "screen", "validation", "approval"),
          where="at a step: Refine the skill here…; Refine page; tuningfork refine"),
-    Term("checkpoint", "The run and step a refinement studies: where the model went wrong.",
-         "refining", see=("refinement",)),
-    Term("proposal", "An edit of the skill for a refinement — at most three exact replacements, changing at most ten "
-         "lines — with who proposed it and why.",
+    Term("checkpoint", "The run and step a refinement studies: the first step where the model went wrong. Everything "
+         "before it is replayed as recorded — the model's answers and what its tools did to the files — so an edit "
+         "is measured only from there on.",
+         "refining", see=("refinement", "check along")),
+    Term("proposal", "An edit of the skill for a refinement — at most three edits, each a line replaced by its "
+         "number, lines added after one, or exact text replaced, changing at most ten lines in all — with who "
+         "proposed it and why.",
          "refining", aka=("edit",), see=("proposer", "screen")),
     Term("proposer", "Who proposes edits: a person, an agent over MCP, or the built-in proposer — the proxy's own "
          "model, or an endpoint you name.",
@@ -193,6 +208,18 @@ TERMS: tuple[Term, ...] = (
     Term("job", "Work started from the web UI or over MCP, run inside `serve` on a worker thread: a batch, a "
          "resample, a screen. A record of the work; what it made is kept on its own.",
          "working", see=("experiment", "batch"), where="Jobs page; tuningfork jobs"),
+    Term("chain", "A task run N times in order, each run given the skill as the run before left it — patched "
+         "by the model during the task, or by the harness's own review after it. How a harness's "
+         "self-improvement accumulates, measured link by link: each version of the skill, who changed it, and "
+         "the last link's folder as what the loop made. Told (`--tell`), each link's harness also gets the "
+         "check's verdict and output as the user's next turn, before its review. Its runs are not "
+         "independent samples.",
+         "working", aka=("link",), see=("batch", "launch", "spend"),
+         where="Runs → Run a task, as a chain; tuningfork chain run"),
+    Term("spend", "What work cost, counted from the records: model calls, tokens in and out, and time — each "
+         "call's wall time at the proxy, and the server's own where it reported it. The same count for a "
+         "harness's runs, side threads included, and an experiment's samples, so two arms' budgets compare.",
+         "working", aka=("budget", "cost"), see=("chain", "experiment"), where="tuningfork spend"),
     Term("breakpoint", "A condition on model calls — before the model sees a step, or after it answers with a "
          "matching tool call — that holds the call where it is met.",
          "working", see=("hold",), where="Live → Add a breakpoint; tuningfork break add"),

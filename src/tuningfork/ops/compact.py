@@ -173,6 +173,9 @@ def run_detail(detail: dict[str, Any]) -> dict[str, Any]:
                 {
                     "idx": step.get("idx"),
                     "did": outcome(step.get("outcome")),
+                    # What its calls ran, where `did` shows a digest of it; the files they changed.
+                    "ran": clip(step.get("ran"), 240),
+                    "changed": [change.get("path") for change in step.get("changed") or []][:8] or None,
                     "finish_reason": step.get("finish_reason"),
                     "tokens": usage(step.get("usage")),
                     "reasoning_chars": step.get("reasoning_chars") or None,
@@ -389,9 +392,15 @@ def behaviours(seen: dict[str, Any], targets: dict[str, Any] | None = None) -> d
         "tools": seen.get("tools"),
         "normalizers": seen.get("normalizers"),
         "target": seen.get("target"),
+        "judged": seen.get("judged") or None,
+        "split": seen.get("split"),
+        "aligned": seen.get("aligned"),
+        "not_aligned": seen.get("not_aligned") or None,
+        "choices": _choices(seen.get("choices")),
         "behaviours": capped(
             [
-                {**(outcome(found) or {}), "count": found.get("count"), "seen": found.get("seen"), "matches": found.get("matches")}
+                {**(outcome(found) or {}), "count": found.get("count"), "seen": found.get("seen"),
+                 "matches": found.get("matches"), "verdicts": found.get("verdicts") or None}
                 for found in seen.get("behaviours") or []
             ],
             30,
@@ -409,6 +418,27 @@ def behaviours(seen: dict[str, Any], targets: dict[str, Any] | None = None) -> d
 
 
 # --- experiments --------------------------------------------------------------------------------
+
+
+def _choices(found: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The scored runs' tool choices: the mean chance of each tool, and each run's, capped."""
+    if not found or not found.get("scored"):
+        return None
+    return {
+        "scored": found.get("scored"),
+        "of": found.get("of"),
+        "chance": found.get("chance"),
+        "runs": capped([
+            {"run": short(entry.get("run")), "verdict": entry.get("verdict"), "chosen": entry.get("chosen"),
+             "chance": entry.get("chance")}
+            for entry in found.get("runs") or []
+        ], 10),
+    }
+
+
+def choice_text(chance: dict[str, Any] | None) -> str:
+    """Each tool's chance, likeliest first: `execute_code 58%, write_file 40%`."""
+    return ", ".join(f"{name} {float(p):.0%}" for name, p in (chance or {}).items())
 
 
 def target(found: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -559,12 +589,21 @@ def screen(found: dict[str, Any] | None) -> dict[str, Any] | None:
         return None
     return {
         "target": found.get("target"),
+        "reach": found.get("reach"),
         "alpha": found.get("alpha"),
         "family": found.get("family"),
         "complete": found.get("complete"),
+        "quick": found.get("quick") or None,
+        "reused": found.get("reused") or None,
         "baseline": _screen_arm(found.get("baseline")),
         "arms": [_screen_arm(arm) for arm in found.get("arms") or []],
         "survivors": found.get("survivors"),
+        "checkpoints": [
+            {"run": short(entry.get("run")), "step": entry.get("step"), "verdict": entry.get("verdict"),
+             "arms": entry.get("arms")}
+            for entry in found.get("checkpoints") or []
+        ] or None,
+        "across_checkpoints": found.get("across_checkpoints") or None,
         "behaviours": capped(
             [
                 {"letter": entry.get("letter"), **(outcome(entry.get("outcome")) or {}),
@@ -672,6 +711,7 @@ def tokens(found: dict[str, Any], *, positions: Sequence[int] = (), hotspots: in
         "same_server": view.get("same_server"),
         "format": view.get("format"),
         "sampler": view.get("sampler"),
+        "choice": view.get("choice"),
         "text": clip(view.get("text"), 1500),
         "hotspots": [
             {
@@ -818,10 +858,33 @@ def screen_lines(found: dict[str, Any] | None) -> list[str]:
     if not found:
         return []
     family, complete = found.get("family"), found.get("complete")
+    measure = (
+        "by the task's check, each arm's samples forks run from the checkpoint to the end"
+        if found.get("reach") == "end" else f"on target {found.get('target')!r}"
+    )
+    baseline = (found.get("baseline") or {}).get("target") or {}
+    reused = found.get("reused") or 0
+    if found.get("quick"):
+        lines = [
+            f"quick look at {family} proposal(s) {measure}: rates only, no verdict — a lead for the next edit, and "
+            "only a full screen can keep one",
+            (f"  original {rate_text(baseline)}, the forks this refinement drew before" if baseline.get("total")
+             else "  original: none of its forks drawn in this refinement yet — set the rates beside the task's "
+                  "recorded runs (list_tasks)"),
+        ]
+        for arm in found.get("arms") or []:
+            lines.append(f"  {arm.get('name')} {rate_text(arm.get('target'))}"
+                         + ("" if complete else " so far"))
+        if not complete:
+            lines.append("  unfinished: rates so far")
+        lines.extend(checkpoint_lines(found))
+        return lines
+    against = "the original's forks" if found.get("reach") == "end" else "a fresh baseline"
     lines = [
-        f"screen of {family} proposal(s) on target {found.get('target')!r}, each against a fresh "
-        f"baseline: Fisher's exact test, Holm-corrected over the {family} planned (alpha {found.get('alpha')})",
-        f"  original {rate_text((found.get('baseline') or {}).get('target'))}",
+        f"screen of {family} proposal(s) {measure}, each against {against}: Fisher's exact test, "
+        f"Holm-corrected over the {family} planned (alpha {found.get('alpha')})",
+        f"  original {rate_text(baseline)}"
+        + (f" ({reused} of its forks drawn by an earlier screen of this refinement, counted again)" if reused else ""),
     ]
     for arm in found.get("arms") or []:
         if not complete:
@@ -839,6 +902,43 @@ def screen_lines(found: dict[str, Any] | None) -> list[str]:
         lines.append("  unfinished: rates only — there is no verdict until every arm has drawn what was planned")
     elif not found.get("survivors"):
         lines.append("  no proposal survived the correction")
+        baseline = (found.get("baseline") or {}).get("target") or {}
+        if found.get("reach") != "end" and baseline.get("total") and baseline["successes"] / baseline["total"] >= 0.8:
+            # Nothing can beat an original arm at the ceiling: the checkpoint is where the model
+            # went right, usually a passing run's step.
+            lines.append(
+                f"  the original reaches the target {baseline['successes']}/{baseline['total']} at this checkpoint: "
+                "no edit can show a gain here — a failed run's step, or a screen to the end from several "
+                "checkpoints, measures it where the model went wrong"
+            )
+    lines.extend(checkpoint_lines(found))
+    return lines
+
+
+def checkpoint_lines(found: dict[str, Any]) -> list[str]:
+    """Where a screen to the end drew its forks from, when from several checkpoints, and
+    whether each arm's effect held at every one of them."""
+    checkpoints = found.get("checkpoints") or []
+    if len(checkpoints) < 2:
+        return []
+    verdicts = [entry.get("verdict") for entry in checkpoints]
+    where = ", ".join(f"{entry.get('run')} step {entry.get('step')} ({entry.get('verdict') or 'unjudged'})" for entry in checkpoints)
+    lines = [f"  forks drawn from {len(checkpoints)} checkpoints — the same step of {verdicts.count('passed')} passing and "
+             f"{verdicts.count('failed')} failing run(s): {where}"]
+    for entry in checkpoints:
+        arms = entry.get("arms") or {}
+        counts = ", ".join(f"{name} {found_['passed']}/{found_['of']}" for name, found_ in arms.items())
+        lines.append(f"    at {entry.get('run')} step {entry.get('step')}: {counts}")
+    for name, tally in (found.get("across_checkpoints") or {}).items():
+        of = tally.get("of") or 0
+        if tally.get("above") == of:
+            held = "above the original at every checkpoint: an effect that holds across prefixes"
+        elif tally.get("above", 0) <= 1 and of > 1:
+            held = (f"above the original at {tally.get('above', 0)} of {of} checkpoints: an effect of one prefix, which "
+                    "fresh runs draw anew")
+        else:
+            held = f"above the original at {tally.get('above', 0)} of {of} checkpoints, below at {tally.get('below', 0)}"
+        lines.append(f"    {name}: {held}")
     return lines
 
 
@@ -888,9 +988,128 @@ def task_lines(found: dict[str, Any]) -> list[str]:
     return lines
 
 
+def tally(report: dict[str, Any], show: int = 10) -> dict[str, Any]:
+    """A tally of what the checks said, small enough for an agent: each group's most common
+    findings, each with its count over the failed runs and its interval, and a few of the runs."""
+    groups = []
+    for group in report.get("groups") or []:
+        findings = group.get("findings") or []
+        groups.append({
+            "label": group.get("label"),
+            "arm": group.get("arm"),
+            "condition": short((group.get("condition") or {}).get("id")),
+            "judged": group.get("judged"),
+            "failed": group.get("failed"),
+            "silent": group.get("silent"),
+            "findings": capped([{
+                "finding": clip(finding.get("finding"), LABEL),
+                "rate": rate(finding.get("rate")),
+                "runs": [short(run_id) for run_id in (finding.get("run_ids") or [])[:3]],
+                # Where the check was run along the runs: which call made it, passing runs included.
+                "made": made(finding.get("made")),
+            } for finding in findings], show),
+        })
+    return {"scope": report.get("scope"), "task_id": report.get("task_id"), "screen": short(report.get("screen")),
+            "run_id": short(report.get("run_id")), "groups": groups}
+
+
+def made(found: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Where the check along the runs says a finding was made: in how many of the runs it was run
+    along, at which steps, gone by the end in how many, and whether every run made it."""
+    if not found:
+        return None
+    from tuningfork.ops.tally import made_steps, made_text
+
+    return {"runs": len(found.get("runs") or []), "of": found.get("checked"), "steps": made_steps(found),
+            "repaired": found.get("repaired"), "passing": found.get("passing"), "every_run": found.get("every_run"),
+            "text": made_text(found)}
+
+
+def tally_lines(view: dict[str, Any]) -> list[str]:
+    """The tally in sentences: each group, then its findings, the most common first — with, where
+    the check was run along the runs, which call made each."""
+    if view.get("scope") == "screen":
+        lines = [f"screen {view.get('screen')} from run {view.get('run_id')}: what each arm's failed forks' "
+                 "checks said, the most common first"]
+    else:
+        lines = [f"{view.get('task_id')}: what its failed runs' checks said, the most common first"]
+    for group in view.get("groups") or []:
+        lines.append(f"{group.get('label')}: {group.get('failed')} of {group.get('judged')} judged failed")
+        found = group.get("findings") or []
+        shown = found.get("shown") if isinstance(found, dict) else found
+        for finding in shown:
+            lines.append(f"  {rate_text(finding.get('rate'))} of the failed runs: {finding.get('finding')}")
+            along = finding.get("made")
+            if along:
+                lines.append(f"    {along['text']}")
+        if isinstance(found, dict):
+            lines.append(f"  … {found['total'] - len(shown)} more finding(s)")
+        if group.get("silent"):
+            lines.append(f"  {group['silent']} failed run(s) whose check printed nothing")
+    lines.append("each line a check printed is one finding, numbers shown as #, colours as <color>; a run counts once a finding")
+    return lines
+
+
+def where(report: dict[str, Any], show: int = 12) -> dict[str, Any]:
+    """Where a question held along a task's runs, small enough for an agent: each condition's split
+    by verdict with its intervals, where it was first seen or made, the step that names that call in
+    each run, and a few of the runs."""
+    kind = (report.get("probe") or {}).get("kind")
+    groups = []
+    for group in report.get("groups") or []:
+        split = group.get("split") or {}
+        runs = []
+        for found in group.get("runs") or []:
+            entry = {"run": short(found.get("run")), "verdict": found.get("verdict"), "held": found.get("held"),
+                     "step": found.get("step"), "tools": found.get("tools"), "reference": found.get("reference")}
+            if kind == "file":
+                entry.update({key: found.get(key) for key in ("at_start", "undone_by", "at_end", "file", "count")})
+            else:
+                entry["steps"] = (found.get("steps") or [])[:5]
+            runs.append(entry)
+        groups.append({
+            "label": group.get("label"),
+            "condition": short((group.get("condition") or {}).get("id")),
+            "passed": group.get("passed"),
+            "failed": group.get("failed"),
+            "unjudged": group.get("unjudged"),
+            "split": {"passing": rate(split.get("passing")), "failing": rate(split.get("failing")),
+                      "p": split.get("p"), "goes_with": split.get("goes_with")},
+            "seen_at": group.get("seen_at"),
+            "reference": group.get("reference"),
+            "made": group.get("made"),
+            "runs": capped(runs, show),
+        })
+    return {"task_id": report.get("task_id"), "screen": short(report.get("screen")), "probe": report.get("probe"),
+            "groups": groups, "skipped": report.get("skipped"), "skipped_more": report.get("skipped_more")}
+
+
+def where_lines(view: dict[str, Any]) -> list[str]:
+    """Where a question held, in sentences: the question, then each condition's split by verdict,
+    where it was first seen or made, and the step that names that call in each run."""
+    from tuningfork.ops.where import reference_text, seen_text, split_text
+
+    probe = view.get("probe") or {}
+    kind = probe.get("kind")
+    lines = [f"{view.get('task_id')}: {probe.get('description')}, asked of each "
+             + (f"fork of screen {view['screen']}, arm by arm" if view.get("screen") else "run")]
+    for group in view.get("groups") or []:
+        lines.append(f"{group.get('label')}: {group.get('passed')} passed, {group.get('failed')} failed"
+                     + (f", {group['unjudged']} without a verdict that counts" if group.get("unjudged") else ""))
+        for line in (split_text(group, kind), seen_text(group, kind), reference_text(group)):
+            if line:
+                lines.append(f"  {line}")
+    if view.get("skipped"):
+        lines.append("passed over: " + "; ".join(view["skipped"][:3]))
+    lines.append("a lead to read, never a verdict: a split is said to go one way under p 0.2; intervals are Wilson 95%")
+    return lines
+
+
 #: The sentences for each view, by name: what an MCP result's text opens with.
 LINES: dict[str, Callable[[Any], list[str]]] = {
     "experiment": experiment_lines,
     "divergence": divergence_lines,
     "task": task_lines,
+    "tally": tally_lines,
+    "where": where_lines,
 }

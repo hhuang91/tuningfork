@@ -98,6 +98,10 @@ class HarnessAdapter(Protocol):
       the task's conversation without being its next step — Hermes's background review —
       or None. Such a call starts a side thread of its launch instead of extending the task's
       run, and a run's final reply is never one (see `tuningfork.launches`).
+    - `continue_launch(prompt, *, home, workspace, max_turns)`: the command that gives the
+      session the launch just ran one more user turn, in the same home and workspace — how a
+      chain tells the harness what the task's check made of its result, as a person who
+      looked would (`ops.chain`, `tell`). Hermes resumes its most recent session.
     """
 
     name: str

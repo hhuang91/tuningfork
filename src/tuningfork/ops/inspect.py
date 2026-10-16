@@ -6,6 +6,8 @@ own, so the two cannot disagree about one.
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
@@ -75,16 +77,78 @@ def runs_calling(
     return [run for run in store.runs(limit=1_000_000, task_id=task) if called(run)][:limit]
 
 
+#: How much of what a step's calls ran a run's view shows: enough to tell one script from another.
+RAN_LIMIT = 240
+#: Lines of a script or a command that say nothing of what it does.
+_QUIET = re.compile(r"^(#|import\s|from\s\S+\s+import\s|[\[\](){},;]+$)")
+#: Arguments that hold what a call runs or writes, by the names harnesses give them, in order of
+#: preference; a call with none of them shows its longest value.
+_RUNS = ("code", "command", "cmd", "script", "content", "text", "patch")
+
+
+def hides_what_it_ran(label: str) -> bool:
+    """Whether a step's label shows what its call ran only as a digest (a script's syntax tree,
+    `<ast:…>`; a long text, `<text:…>`) or cut short — where the run's view adds `ran`."""
+    return "<ast:" in label or "<text:" in label or label.endswith("…)") or label.endswith("…")
+
+
+def ran_excerpt(response: dict[str, Any] | None, limit: int = RAN_LIMIT) -> str | None:
+    """What a step's calls ran, in short: each call's tool, then what it ran or wrote — its code,
+    command or content (`_RUNS`), else its longest value — imports, comments and blank lines left
+    out, its lines run together. A call's label keeps a script only as a digest, so steps that ran different scripts
+    looked alike (findings §31.42: the step that booked a delivery and the step that tried a test
+    entry were both `execute_code(code='<ast:…>')`). None for a step without calls."""
+    from tuningfork.analysis.normalize import mask_workspace
+
+    message = ((response or {}).get("choices") or [{}])[0].get("message") or {}
+    calls = message.get("tool_calls") or []
+    if not calls:
+        return None
+    parts = []
+    for call in calls:
+        function = call.get("function") or {}
+        raw = function.get("arguments")
+        try:
+            arguments: Any = json.loads(raw) if isinstance(raw, str) else raw
+        except ValueError:
+            arguments = raw
+        values: list[str] = []
+
+        def collect(value: Any) -> None:
+            if isinstance(value, dict):
+                for item in value.values():
+                    collect(item)
+            elif isinstance(value, list):
+                for item in value:
+                    collect(item)
+            elif isinstance(value, str):
+                values.append(value)
+
+        collect(arguments)
+        named = [arguments[key] for key in _RUNS if isinstance(arguments, dict) and isinstance(arguments.get(key), str)]
+        longest = named[0] if named else max(values, key=len, default="")
+        kept = [line.strip() for line in longest.splitlines() if line.strip() and not _QUIET.match(line.strip())]
+        body = " ".join(" ".join(kept or [longest]).split())
+        name = str(function.get("name") or "?")
+        parts.append(f"{name}: {body}" if body else name)
+    text = mask_workspace(" · ".join(parts))
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def run_detail(store: Store, reference: str) -> dict[str, Any]:
-    """A run as its page shows it: each step with what the model did there, its threads and
-    the launch that made it."""
+    """A run as its page shows it: each step with what the model did there — what its calls ran,
+    where the label shows only a digest of it, and the files they changed — its threads and the
+    launch that made it."""
     from tuningfork.ops.timeline import launch_json, run_json
 
     found = resolve_run(store, reference)
+    changed = step_changes(store, found)
     steps = [
         {
             "idx": line.step.idx,
             "outcome": line.outcome.to_json(),
+            "ran": ran_excerpt(store.response(line.step)) if hides_what_it_ran(line.outcome.label) else None,
+            "changed": [{"status": status, "path": path} for status, path in changed.get(line.step.idx, [])],
             "finish_reason": line.step.finish_reason,
             "timings": line.step.timings,
             "usage": line.step.usage,
@@ -237,7 +301,7 @@ def divergence_report(
             hint="run the task again: `tuningfork batch <spec> -n 5`",
         )
     report, results = divergence(store, run_ids, lens)
-    return report.to_json(results)
+    return {**report.to_json(results), "tool_split": tool_split(store, run_ids, results)}
 
 
 def behaviour_pass_rates(comparison: Any, results: dict[str, dict[str, Any]]) -> list[Any]:
@@ -248,6 +312,90 @@ def behaviour_pass_rates(comparison: Any, results: dict[str, dict[str, Any]]) ->
         pass_rate(results.get(run_id, {}) for run_id in group.run_ids)
         for group in comparison.groups
     ]
+
+
+def verdict_split(report: dict[str, Any], *, alpha: float = 0.2, minimum: int = 2) -> dict[str, Any]:
+    """The step whose behaviour best predicts the runs' verdicts, from a divergence report's
+    JSON: at each step, each behaviour that at least `minimum` judged runs took, against the
+    rest, by Fisher's exact test on passes and fails; the smallest p wins when it is under
+    `alpha`. `judged` is how many runs had a verdict; `best` is None when no behaviour
+    separates them — the difference is then in what the runs wrote, not in which behaviour
+    they chose, which the first split never shows."""
+    from tuningfork.analysis.stats import fisher_exact
+
+    best: dict[str, Any] | None = None
+    judged = 0
+    for step in report.get("steps") or []:
+        groups = [group for group in step.get("groups") or [] if (group.get("passed") or {}).get("total")]
+        all_passed = sum(group["passed"]["successes"] for group in groups)
+        all_total = sum(group["passed"]["total"] for group in groups)
+        judged = max(judged, all_total)
+        for group in groups:
+            passed, total = group["passed"]["successes"], group["passed"]["total"]
+            others_passed, others_total = all_passed - passed, all_total - total
+            if total < minimum or others_total < minimum:
+                continue
+            p = fisher_exact(passed, total - passed, others_passed, others_total - others_passed)
+            if best is None or p < best["p"]:
+                best = {
+                    "index": step.get("index"), "label": (group.get("outcome") or {}).get("label"),
+                    "passed": passed, "total": total, "others_passed": others_passed,
+                    "others_total": others_total, "p": round(p, 4),
+                }
+    return {"judged": judged, "best": best if best is not None and best["p"] < alpha else None}
+
+
+def tool_split(
+    store: Store, run_ids: Sequence[str], results: dict[str, dict[str, Any]] | None = None,
+    *, alpha: float = 0.2, minimum: int = 2,
+) -> dict[str, Any]:
+    """By the tool each run used, anywhere in it: for every tool some of these runs called,
+    the runs that called it against the runs that never did, on their verdicts, by Fisher's
+    exact test. A split no step index shows — the step where a run calls a tool depends on
+    the path it took, and a run that wrote with a script never called the write tool at
+    all — and the one the write path hides: on meeting-action-items the runs that called
+    write_file passed 35 of 41, and the runs that scripted the file through execute_code
+    58 of 104, whichever step each did it at. `best` is the tool that best predicts the
+    verdict, when one does (p under `alpha`, at least `minimum` judged runs on each side),
+    with which way it goes: `with_passing`, or the tool of the runs that failed."""
+    from tuningfork.analysis.stats import fisher_exact
+    from tuningfork.ops.experiments import tools_called
+    from tuningfork.ops.targets import verdict_from
+
+    judged: dict[str, str] = {}
+    callers: dict[str, set[str]] = {}
+    for run_id in run_ids:
+        result = results.get(run_id) if results is not None else getattr(store.get_run(run_id), "result", None)
+        verdict = verdict_from(result)
+        if verdict is None:
+            continue
+        judged[run_id] = verdict
+        for step in store.steps(run_id):
+            for name in tools_called(store, step):
+                if name:
+                    callers.setdefault(name, set()).add(run_id)
+    passed_all = sum(1 for verdict in judged.values() if verdict == "passed")
+    tools = []
+    for name in sorted(callers):
+        called = [run_id for run_id in judged if run_id in callers[name]]
+        passed = sum(1 for run_id in called if judged[run_id] == "passed")
+        never = len(judged) - len(called)
+        entry: dict[str, Any] = {
+            "tool": name,
+            "called": {"passed": passed, "total": len(called)},
+            "never": {"passed": passed_all - passed, "total": never},
+            "p": None,
+            "with_passing": None,
+        }
+        if len(called) >= minimum and never >= minimum:
+            entry["p"] = round(fisher_exact(passed, len(called) - passed, passed_all - passed, never - (passed_all - passed)), 4)
+            entry["with_passing"] = passed / len(called) > (passed_all - passed) / never
+        tools.append(entry)
+    tested = [entry for entry in tools if entry["p"] is not None]
+    # Two tools that split the runs the same way have the same p: the one the passing runs
+    # used is the one a target names, since a target is a behaviour to raise.
+    best = min(tested, key=lambda entry: (entry["p"], not entry["with_passing"], entry["tool"])) if tested else None
+    return {"judged": len(judged), "tools": tools, "best": best if best is not None and best["p"] < alpha else None}
 
 
 # --- experiments ----------------------------------------------------------------------------
@@ -555,7 +703,10 @@ START, END = ("start", "initial"), ("end", "final")
 
 @dataclass(slots=True)
 class WorkspaceView:
-    """A run's workspace at one point, and what changed since the snapshot before it."""
+    """A run's workspace at one point, and what changed since the snapshot it is compared with:
+    before a step, the one the step before found — what that step's call changed; at the end, the
+    start — what the whole run changed (findings §31.42: an end view of the last step's changes
+    read "changed: []", and hid that the run had booked a delivery a second time)."""
 
     run: Run
     #: The step whose call found the workspace like this; None at the start or the end.
@@ -564,9 +715,11 @@ class WorkspaceView:
     where: str
     commit: str
     files: list[Any]
-    #: The snapshot before this one, and each file that changed since, as (status, path).
+    #: The snapshot compared with, and each file that changed since, as (status, path).
     before: str | None = None
     changes: list[tuple[str, str]] = field(default_factory=list)
+    #: What `before` is, in words: "the step before", "the start"; None at the start.
+    since: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -576,13 +729,15 @@ class WorkspaceView:
             "commit": self.commit,
             "files": [{"path": e.path, "mode": e.mode, "size": e.size} for e in self.files],
             "before": self.before,
+            "since": self.since,
             "changes": [{"status": s, "path": p} for s, p in self.changes],
         }
 
 
 def workspace_at(store: Store, run: str, where: str) -> WorkspaceView:
-    """The workspace a run's call at `where` found — a step, by number or tool — or the one
-    it started with (`start`) or ended with (`end`)."""
+    """The workspace a run's call at `where` found — a step, by number, tool or what its call
+    did (`ops.experiments.step_index`) — or the one it started with (`start`) or ended with
+    (`end`). Its changes are since the step before; at the end, since the start."""
     from tuningfork.snapshots import Snapshots, SnapshotError, available
 
     found = resolve_run(store, run)
@@ -591,16 +746,13 @@ def workspace_at(store: Store, run: str, where: str) -> WorkspaceView:
     if not available():
         raise OperationError("workspace snapshots need git, which is not on PATH")
     step: int | None = None
+    since: str | None = "the step before"
     if where in START:
-        commit, before, words = (launch.initial_commit if launch else None), None, "at the start"
+        commit, before, words, since = (launch.initial_commit if launch else None), None, "at the start", None
     elif where in END:
-        steps = store.steps(found.id)
         commit = launch.final_commit if launch else None
-        before = next(
-            (s.workspace_commit for s in reversed(steps) if s.workspace_commit),
-            launch.initial_commit if launch else None,
-        )
-        words = "at the end"
+        before = launch.initial_commit if launch else None
+        words, since = "at the end", "the start"
     else:
         step = step_index(store, found, where)
         recorded = store.step(found.id, step)
@@ -608,9 +760,10 @@ def workspace_at(store: Store, run: str, where: str) -> WorkspaceView:
             raise OperationError(f"run {found.id[:8]} has no step {step}")
         commit, words = recorded.workspace_commit, f"before step {step}"
         previous = store.step(found.id, step - 1) if step > 0 else None
-        before = (previous.workspace_commit if previous else None) or (
-            launch.initial_commit if launch else None
-        )
+        if previous is not None and previous.workspace_commit:
+            before = previous.workspace_commit
+        else:
+            before, since = (launch.initial_commit if launch else None), "the start"
     if not commit:
         raise OperationError(f"run {found.id[:8]} has no snapshot of its workspace {words}", hint=hint)
     snapshots = Snapshots(store.home)
@@ -623,16 +776,116 @@ def workspace_at(store: Store, run: str, where: str) -> WorkspaceView:
             files=snapshots.files(commit),
             before=before,
             changes=snapshots.diff(before, commit) if before else [],
+            since=since if before else None,
         )
     except SnapshotError as exc:
         raise OperationError(f"cannot read the snapshot: {exc}") from None
 
 
 def workspace_patch(store: Store, view: WorkspaceView, path: str | None = None) -> str:
-    """What changed since the snapshot before, as a unified diff."""
+    """What changed since the snapshot the view is compared with (`view.since`), as a unified
+    diff."""
     from tuningfork.snapshots import Snapshots
 
     return Snapshots(store.home).patch(view.before, view.commit, path)
+
+
+def workspace_states(store: Store, run: Run) -> list[tuple[int, str]] | None:
+    """The states of a run's workspace, each a change from the one before — the start, each that a
+    call left changed, and the end — as (the step whose call found the workspace like this, its
+    snapshot): 0 the start, the number of steps the end, the start and the end always. What a state
+    at step k shows changed was changed by the call at step k − 1. None for a run that kept no
+    snapshots of its workspace."""
+    from tuningfork.snapshots import Snapshots, SnapshotError
+
+    launch = store.get_launch(run.launch_id) if run.launch_id else None
+    if launch is None or not launch.initial_commit or not launch.final_commit:
+        return None
+    steps = store.steps(run.id)
+    # A snapshot is taken at every call, a new commit each time: the files are what tell one state
+    # from the next.
+    snapshots = Snapshots(store.home)
+
+    def files_of(commit: str) -> str:
+        try:
+            return snapshots.tree_of(commit)
+        except SnapshotError:
+            return commit
+
+    states: list[tuple[int, str]] = [(0, launch.initial_commit)]
+    last = files_of(launch.initial_commit)
+    for step in steps:
+        if step.idx > 0 and step.workspace_commit:
+            tree = files_of(step.workspace_commit)
+            if tree != last:
+                states.append((step.idx, step.workspace_commit))
+                last = tree
+    states.append((len(steps), launch.final_commit))
+    return states
+
+
+def step_changes(store: Store, run: Run) -> dict[int, list[tuple[str, str]]]:
+    """What each step's call changed in the workspace, as (status, path) by the step's index:
+    the snapshot its call found beside the next one (the run's end, after its last step). Only
+    steps that changed something; nothing for a run with no snapshots, or without git."""
+    from tuningfork.snapshots import Snapshots, SnapshotError, available
+
+    launch = store.get_launch(run.launch_id) if run.launch_id else None
+    if launch is None or not available():
+        return {}
+    steps = store.steps(run.id)
+    commits = [step.workspace_commit for step in steps] + [launch.final_commit]
+    snapshots = Snapshots(store.home)
+    changed: dict[int, list[tuple[str, str]]] = {}
+    for index, step in enumerate(steps):
+        before = commits[index]
+        after = next((commit for commit in commits[index + 1:] if commit), None)
+        if not before or not after or before == after:
+            continue
+        try:
+            found = snapshots.diff(before, after)
+        except SnapshotError:
+            continue
+        if found:
+            changed[step.idx] = found
+    return changed
+
+
+def first_change(store: Store, run: Run, pattern: str = "*") -> int | None:
+    """The step whose call first changed a file matching `pattern` (a path, or a glob: "*.json")
+    in the run's workspace; None when no call did."""
+    from fnmatch import fnmatchcase
+
+    for index, changes in sorted(step_changes(store, run).items()):
+        if any(fnmatchcase(path, pattern) for _, path in changes):
+            return index
+    return None
+
+
+def replayed_changes(store: Store, run: Run, step: int) -> tuple[int, list[str]] | None:
+    """The first call before `step` that changed the run's workspace, and the files it changed:
+    what a fork from `step` replays as recorded, so that an edit can change only what happens
+    from `step` on. None when no call before it changed a file."""
+    changes = step_changes(store, run)
+    earlier = sorted(index for index in changes if index < step)
+    if not earlier:
+        return None
+    return earlier[0], [path for _, path in changes[earlier[0]]]
+
+
+def replay_warning(store: Store, run: Run, step: int) -> str | None:
+    """A sentence for a person or an agent about to measure an edit from `step` of `run`, when a
+    call before it changed the workspace (findings §31.42: a screen from the step after a
+    delivery was booked could see neither an edit to the booking's gain nor its harm)."""
+    found = replayed_changes(store, run, step)
+    if found is None:
+        return None
+    first, paths = found
+    shown = ", ".join(paths[:3]) + (", …" if len(paths) > 3 else "")
+    return (f"run {run.id[:8]}: step {first}'s call changed {shown} before step {step}; a fork from step {step} "
+            f"replays that as recorded, so an edit can change only what happens from step {step} on — to measure "
+            f"one to what step {first} did, start there (or name the step changed:{paths[0]}, each run's own "
+            "first change of it)")
 
 
 def restore_workspace(store: Store, view: WorkspaceView, target: Path) -> None:

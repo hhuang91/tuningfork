@@ -9,7 +9,7 @@ positions where the step's sampler could most easily have drawn another token.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Sequence
 
 from tuningfork.ops.common import OperationError
 from tuningfork.ops.trash import refuse_trashed
@@ -31,12 +31,19 @@ class TokensView:
     same_server: bool | None = None
     #: For a sample's stream: which experiment and sample, and what it did.
     sample: dict[str, Any] | None = None
+    #: The tools the step offered, for the choice among them.
+    tools: list[str] = field(default_factory=list)
 
     def hotspots(self, n: int = 10) -> list[Any]:
         """The positions whose runner-up the step's sampler would most likely have drawn."""
         from tuningfork.analysis.tokens import candidates
 
         return candidates(self.stream, self.sampler, top=n, region="all", min_p=0.01, alternatives=3)
+
+    def choice(self) -> Any:
+        """The model's choice of tool at the step as a number (`analysis.tokens.tool_choice`),
+        or None for an answer that called none."""
+        return stream_choice(self.stream, self.sampler, self.tools)
 
     def tokens_json(self) -> list[dict[str, Any]]:
         from tuningfork.analysis.tokens import CLOSENESS_EDGES, display_groups, heat, probability
@@ -69,6 +76,7 @@ class TokensView:
         return out
 
     def to_json(self, *, hotspots: int = 10) -> dict[str, Any]:
+        choice = self.choice()
         return {
             "stream": self.record.to_json(),
             "sample": self.sample,
@@ -81,7 +89,37 @@ class TokensView:
             "parts": [list(part) for part in self.stream.parts],
             "redacted": [list(span) for span in self.stream.redacted],
             "hotspots": [candidate.to_json() for candidate in self.hotspots(hotspots)],
+            "choice": choice.to_json() if choice is not None else None,
         }
+
+
+def stream_choice(stream: Any, sampler: Any, tools: Sequence[str]) -> Any:
+    """`analysis.tokens.tool_choice` for a stream, the name's prefix taken from the format
+    that marked its parts."""
+    from tuningfork.analysis.tokens import tool_choice
+    from tuningfork.backends.formats import get_format
+
+    fmt = get_format(stream.format)
+    if fmt is None:
+        return None
+    return tool_choice(stream, sampler, tools=tools, prefix=getattr(fmt, "call_name_prefix", ""))
+
+
+def step_choice(store: Store, step: Any, request: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """A recorded step's tool choice as a number, from the latest stream of its own answer —
+    scored, or recorded with logprobs — if it has one; else None. `request` is the step's
+    (rebuilt when not given), for the tools it offered and the sampler it ran under."""
+    from tuningfork.analysis.tokens import Sampler, TokenStream
+    from tuningfork.ops.targets import offered_tools
+
+    records = store.token_streams(step_id=step.id)
+    if not records:
+        return None
+    if request is None:
+        request = store.rebuild_request(step)
+    stream = TokenStream.from_json(store.token_stream_data(records[0]))
+    found = stream_choice(stream, Sampler.of(request, step.server_defaults), offered_tools(request))
+    return found.to_json() if found is not None else None
 
 
 @dataclass(slots=True)
@@ -185,6 +223,8 @@ def step_tokens(store: Store, run: str, step: str, *, stream: str | None = None)
         chosen = own[0]
     view = None
     if chosen is not None:
+        from tuningfork.ops.targets import offered_tools
+
         view = TokensView(
             record=chosen,
             stream=TokenStream.from_json(store.token_stream_data(chosen)),
@@ -194,6 +234,7 @@ def step_tokens(store: Store, run: str, step: str, *, stream: str | None = None)
                 else chosen.server_id == checkpoint.step.server_id
             ),
             sample=sample_info,
+            tools=offered_tools(checkpoint.request),
         )
     return StepTokens(
         run_id=checkpoint.run.id,

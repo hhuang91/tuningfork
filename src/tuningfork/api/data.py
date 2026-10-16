@@ -172,6 +172,60 @@ def data_routes(*, store: Store, adapters: Sequence[Any]) -> list[Route]:
 
         return await threaded(build)
 
+    async def tally(request: Request) -> Response:
+        """What the checks said, counted: `?task=<id>` for a task's failed runs by condition, or
+        `?screen=<experiment id>` for each arm's failed forks of a screen run to the end."""
+        from tuningfork.ops.tally import tally_screen, tally_task
+
+        def build() -> Any:
+            task, screen = request.query_params.get("task"), request.query_params.get("screen")
+            if bool(task) == bool(screen):
+                raise ValueError("pass ?task=<task id> or ?screen=<experiment id>")
+            try:
+                found = tally_task(store, task) if task else tally_screen(store, screen)
+            except OperationError as error:
+                if error.code == "not_found":
+                    raise LookupError(error.message) from None
+                raise ValueError(error.message) from None
+            return found.to_json()
+
+        return await threaded(build)
+
+    async def where(request: Request) -> Response:
+        """Where a question holds along a task's runs: `?task=<id>` with `target_match` or
+        `target_rules` (JSON) for the model's answers, or `path` with `contains` and `at_least` for
+        what the runs wrote; `?screen=<id>` instead asks it of a screen run to the end's forks."""
+        from tuningfork.ops.where import where_it_holds
+
+        query = request.query_params
+
+        def build() -> Any:
+            if bool(query.get("task")) == bool(query.get("screen")):
+                raise ValueError("pass ?task=<task id> or ?screen=<screen id>")
+            rules = None
+            if query.get("target_rules"):
+                try:
+                    rules = json.loads(query["target_rules"])
+                except ValueError:
+                    raise ValueError("target_rules is not JSON") from None
+            try:
+                at_least = int(query.get("at_least") or 1)
+            except ValueError:
+                raise ValueError("at_least must be a whole number") from None
+            try:
+                found = where_it_holds(
+                    store, query.get("task") or None, target_match=query.get("target_match") or None,
+                    target_rules=rules, path=query.get("path") or None, contains=query.get("contains") or None,
+                    at_least=at_least, limit=_limit(request, 200), screen=query.get("screen") or None,
+                )
+            except OperationError as error:
+                if error.code == "not_found":
+                    raise LookupError(error.message) from None
+                raise ValueError(error.message) from None
+            return found.to_json()
+
+        return await threaded(build)
+
     async def experiments(request: Request) -> Response:
         def build() -> list[dict[str, Any]]:
             reference = request.query_params.get("run")
@@ -314,6 +368,8 @@ def data_routes(*, store: Store, adapters: Sequence[Any]) -> list[Route]:
         Route(f"{prefix}/experiments/{{id}}/samples/{{idx:int}}/answer", sample_answer, methods=["GET"]),
         Route(f"{prefix}/diff", diff, methods=["GET"]),
         Route(f"{prefix}/divergence", divergence, methods=["GET"]),
+        Route(f"{prefix}/tally", tally, methods=["GET"]),
+        Route(f"{prefix}/where", where, methods=["GET"]),
         Route(f"{prefix}/experiments", experiments, methods=["GET"]),
         Route(f"{prefix}/experiments/{{id}}", experiment, methods=["GET"]),
     ]

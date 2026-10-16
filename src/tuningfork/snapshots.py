@@ -59,6 +59,8 @@ class Entry:
     path: str
     mode: str
     size: int | None
+    #: The file's content, by its object id: the same text in two snapshots is one object.
+    sha: str | None = None
 
 
 class Snapshots:
@@ -199,10 +201,10 @@ class Snapshots:
             if not record:
                 continue
             meta, path = record.split(b"\t", 1)
-            mode, _kind, _sha, size = meta.split()
-            entries.append(
-                Entry(path=path.decode(), mode=mode.decode(), size=None if size == b"-" else int(size))
-            )
+            mode, _kind, sha, size = meta.split()
+            entries.append(Entry(
+                path=path.decode(), mode=mode.decode(), size=None if size == b"-" else int(size), sha=sha.decode(),
+            ))
         return entries
 
     def diff(self, before: str | None, after: str) -> list[tuple[str, str]]:
@@ -223,6 +225,10 @@ class Snapshots:
 
     def read(self, commit: str, path: str) -> bytes:
         return self._git("cat-file", "blob", f"{commit}:{path}")
+
+    def blob(self, sha: str) -> bytes:
+        """A file's content by its object id (`Entry.sha`), whichever snapshot holds it."""
+        return self._git("cat-file", "blob", sha)
 
     def restore(self, commit: str, target: Path) -> None:
         """Write a snapshot's files into `target`, which is created if need be."""

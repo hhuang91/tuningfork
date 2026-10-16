@@ -98,7 +98,7 @@ async def test_with_no_proxy_reads_answer_and_work_says_what_to_do(proxy):
             step = await client.call_tool("show_step", {"run": run_id[:8], "step": 1})
             assert not step.is_error
             started = await client.call_tool("start_resample", {"run": run_id[:8], "step": 1, "n": 4})
-            assert started.is_error
+            assert not started.is_error and "error" in started.structured_content  # a refusal, answered
             assert "tuningfork serve --home" in started.content[0].text
 
 
@@ -111,7 +111,7 @@ async def test_a_proxy_recording_elsewhere_is_refused(proxy, tmp_path):
     with anyio.fail_after(60):
         async with Client(server(other, url), client_info=AGENT) as client:
             started = await client.call_tool("start_resample", {"run": "pilot", "step": 1, "n": 4})
-            assert started.is_error and "records into" in started.content[0].text
+            assert not started.is_error and "records into" in started.content[0].text  # a refusal, answered
 
 
 def test_a_2025_client_that_reads_only_text_gets_counts_and_intervals(proxy):
@@ -184,7 +184,9 @@ async def test_the_refinement_loop_over_stdio(proxy, tmp_path):
             "new": "Write the totals to report.json, using the keys row_count and amount_total."}
     with anyio.fail_after(90):
         async with Client(server(home, app_url, "--tools", "refine"), client_info=AGENT) as client:
-            started = await client.call_tool("start_refinement", {"run": run_id[:8], "step": 1, "target_rules": rules})
+            # The fixture's one recorded answer does none of this: the target is new behaviour, said so.
+            started = await client.call_tool("start_refinement",
+                                              {"run": run_id[:8], "step": 1, "target_rules": rules, "unseen_ok": True})
             assert not started.is_error, started.content[0].text
             rid = started.structured_content["refinement"]
             shown = await client.call_tool("show_refinement", {"refinement": rid})

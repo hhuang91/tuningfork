@@ -256,3 +256,56 @@ class TestHolm:
 
     def test_empty(self):
         assert holm([]) == []
+
+
+class TestToolChoice:
+    """The model's choice of tool as a number: at the first token of the call's name, each
+    offered tool's sampled chance. The write path on meeting-action-items — a script through
+    execute_code, or write_file — was decided at this one position."""
+
+    TOOLS = ("read_file", "write_file", "execute_code", "search_files")
+
+    def stream(self, name_entry):
+        from tuningfork.backends.formats import get_format
+
+        return from_entries([
+            entry(100, "<|channel>", 1.0), entry(1, "thought", 1.0), entry(2, "\n", 1.0),
+            entry(3, "Write", 0.7, [(4, "Save", 0.3)]),
+            entry(101, "<channel|>", 1.0), entry(48, "<|tool_call>", 1.0), entry(5, "call", 1.0), entry(6, ":", 1.0),
+            name_entry,
+            entry(8, "{", 1.0), entry(9, "path", 1.0), entry(11, ":x}", 1.0), entry(49, "<tool_call|>", 1.0), entry(50, "", 1.0),
+        ]).mark_parts(get_format("gemma4"))
+
+    def test_each_tools_chance_at_the_names_first_token(self):
+        from tuningfork.analysis.tokens import tool_choice
+
+        stream = self.stream(entry(7, "write", 0.4, [(12, "execute", 0.55), (13, "read", 0.03), (14, "{", 0.02)]))
+        found = tool_choice(stream, Sampler(), tools=self.TOOLS, prefix="call:")
+        assert found is not None and found.position == 8 and found.chosen == "write_file"
+        assert found.chance["write_file"] == pytest.approx(0.4) and found.chance["execute_code"] == pytest.approx(0.55)
+        assert found.chance["read_file"] == pytest.approx(0.03) and found.chance["other"] == pytest.approx(0.02)
+        shown = found.to_json()
+        assert list(shown["chance"]) == ["execute_code", "write_file", "read_file", "other"]
+        # The step's sampler shapes it: greedy, the likeliest token is the only one drawn.
+        greedy = tool_choice(stream, Sampler(temperature=0.0), tools=self.TOOLS, prefix="call:")
+        assert greedy.chance == {"execute_code": pytest.approx(1.0)}
+
+    def test_a_name_no_tool_begins_and_a_whole_name_in_one_token(self):
+        from tuningfork.analysis.tokens import tool_choice
+
+        whole = tool_choice(self.stream(entry(7, "write_file", 0.9, [(12, "execute_code", 0.1)])),
+                            Sampler(), tools=self.TOOLS, prefix="call:")
+        assert whole.chosen == "write_file" and whole.chance == {"write_file": pytest.approx(0.9), "execute_code": pytest.approx(0.1)}
+        made_up = tool_choice(self.stream(entry(7, "summon", 0.9, [(12, "write", 0.1)])),
+                              Sampler(), tools=self.TOOLS, prefix="call:")
+        assert made_up.chosen == "summon" and made_up.chance == {"summon": pytest.approx(0.9), "write_file": pytest.approx(0.1)}
+        unknown_tools = tool_choice(self.stream(entry(7, "write", 0.6, [(12, "execute", 0.4)])), Sampler(), prefix="call:")
+        assert unknown_tools.chosen == "write" and set(unknown_tools.chance) == {"write", "execute"}
+
+    def test_no_call_or_no_parts_is_no_choice(self):
+        from tuningfork.analysis.tokens import tool_choice
+
+        reply = from_entries([entry(1, "Done", 1.0), entry(50, "", 1.0)])
+        assert tool_choice(reply, Sampler(), tools=self.TOOLS, prefix="call:") is None
+        unmarked = from_entries([entry(48, "<|tool_call>", 1.0), entry(5, "call", 1.0), entry(6, ":", 1.0), entry(7, "write", 1.0)])
+        assert tool_choice(unmarked, Sampler(), tools=self.TOOLS, prefix="call:") is None

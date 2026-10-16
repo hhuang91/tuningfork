@@ -52,6 +52,9 @@ class WireFormat(Protocol):
     name: str
     #: Where an experiment sends a request of this format, relative to the server root.
     endpoint: str
+    #: The request fields that limit how many tokens the model may write, the first the one
+    #: written into a request that names none (`cap_output`).
+    output_limits: tuple[str, ...]
 
     def matches(self, method: str, path: str) -> bool:
         """Whether a request to `path` is a model call in this format."""
@@ -122,3 +125,38 @@ class WireFormat(Protocol):
 
     def error_event(self, error: dict[str, Any]) -> bytes:
         """The same error as a stream event, for a call whose response has begun."""
+
+
+def cap_output(
+    wire: WireFormat, request: dict[str, Any], cap: int
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """`request` held to at most `cap` output tokens, and a note of what was done: each limit
+    it names above `cap`, or as no limit at all, lowered to `cap` — or, when it names none, the
+    format's own limit written. A request that already asks for no more comes back as it was,
+    with no note. The note keeps what the harness asked, so `uncapped` can give it back."""
+    asked = {key: request[key] for key in wire.output_limits if key in request}
+    over = [key for key, value in asked.items() if not _within(value, cap)]
+    if asked and not over:
+        return request, None
+    written = over or [wire.output_limits[0]]
+    return {**request, **dict.fromkeys(written, cap)}, {"cap": cap, "asked": asked, "written": written}
+
+
+def _within(value: Any, cap: int) -> bool:
+    """A limit of at most `cap` tokens. A negative one is none at all (llama.cpp's -1), and so
+    is null or a value that is not a whole number."""
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= cap
+
+
+def uncapped(request: dict[str, Any], note: dict[str, Any] | None) -> dict[str, Any]:
+    """The request as its harness sent it, before `cap_output` wrote what `note` says."""
+    if not note:
+        return request
+    asked = note.get("asked") or {}
+    restored = dict(request)
+    for key in note.get("written") or ():
+        if key in asked:
+            restored[key] = asked[key]
+        else:
+            restored.pop(key, None)
+    return restored

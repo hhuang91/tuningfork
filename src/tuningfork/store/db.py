@@ -289,10 +289,9 @@ class Run:
         differ in it measure different wordings, and a rate pooled across them measures
         neither.
         """
-        if not self.skill_hashes:
-            return None
-        signature = json.dumps(self.skill_hashes, sort_keys=True)
-        return hashlib.sha256(signature.encode()).hexdigest()[:8]
+        from tuningfork.specs import fingerprint
+
+        return fingerprint(self.skill_hashes)
 
 
 @dataclass(slots=True)
@@ -1922,10 +1921,14 @@ class Store:
 
     def harness_request(self, step: Step) -> dict[str, Any]:
         """The request as the harness sent it: the model's view unless a breakpoint edited
-        it, or a fork swapped a variant wording into it."""
+        it, a fork swapped a variant wording into it, or the proxy's cap lowered its limit on
+        output — what a fork's replay matches its own harness's requests against."""
+        from tuningfork.wire.base import uncapped
+
         request = self.rebuild_request(step)
+        cap = step.params.get("output_cap")
         if not step.harness_request_node_id:
-            return request
+            return uncapped(request, cap)
         changed = step.edits.get("request") or step.substitution or {}
         original_extras = changed.get("original_extras")
         extras = original_extras if original_extras is not None else {
@@ -1934,7 +1937,7 @@ class Store:
         messages = self.messages_for_node(step.harness_request_node_id)
         for index, exact in (changed.get("harness_overrides") or {}).items():
             messages[int(index)] = exact
-        return {**extras, "messages": messages}
+        return uncapped({**extras, "messages": messages}, cap)
 
     def response(self, step: Step) -> dict[str, Any] | None:
         return self.blobs.get_json(step.response_blob) if step.response_blob else None

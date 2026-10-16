@@ -75,13 +75,15 @@ const newId = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
 
 /**
- * kind      the job kind, as `GET /jobs/kinds` names it
+ * kind      the job kind, as `GET /jobs/kinds` names it — or (form) => kind, for a form that
+ *           starts one of several
  * fields    the form's controls
  * read      (form) => parameters; throws { message, field } for what the form can tell itself
  * render    (plan) => the preview of the server's plan
  * onStarted (job) => what to do once the job is queued
  */
 export function planForm({ kind, fields, read, render, startLabel = "Start", onStarted }) {
+  const kindOf = typeof kind === "function" ? kind : () => kind;
   const status = h("div", { class: "plan-status" });
   const preview = h("div", { class: "plan-preview" });
   const start = h("button", { class: "btn btn-primary", type: "submit", disabled: true, "data-control": true }, startLabel);
@@ -134,7 +136,7 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     sync();
     replace(status, h("span", { class: "muted small waiting-inline" }, h("span", { class: "spinner" }), "checking…"));
     try {
-      const answer = await api.post("/jobs", { kind, params, dry_run: true });
+      const answer = await api.post("/jobs", { kind: kindOf(form), params, dry_run: true });
       if (mine !== asked) return; // the form changed while this was asked
       shown = JSON.stringify(params);
       mark(null);
@@ -169,7 +171,7 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     start.disabled = true;
     note.textContent = "starting…";
     try {
-      const job = await api.post("/jobs", { kind, params, request_id: requestId });
+      const job = await api.post("/jobs", { kind: kindOf(form), params, request_id: requestId });
       requestId = newId();
       note.textContent = "";
       onStarted(job);

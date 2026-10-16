@@ -134,13 +134,15 @@ def private_home(home: Path) -> Path:
 
 @contextmanager
 def private_proxy(
-    store: Store, proxy_url: str, *, concurrency: int = 1, keep: Path | None = None
+    store: Store, proxy_url: str, *, concurrency: int = 1, keep: Path | None = None,
+    max_output: int | None = None,
 ) -> Iterator[PrivateProxy]:
     """A private proxy for held-out runs, for as long as the block lasts; its folder is gone
     afterwards, whatever happened — unless `keep` asks for a copy of it.
 
     `proxy_url` is the main proxy's root: the relay launch is made in `store`, and the
-    private proxy sends every call through it."""
+    private proxy sends every call through it. The main proxy records none of the relay's
+    calls, and so caps none: `max_output` is its cap, held here, where they are recorded."""
     import uvicorn
 
     from tuningfork.config import Settings
@@ -155,7 +157,7 @@ def private_proxy(
     try:
         settings = Settings(
             upstream_base_url=launch_url(proxy_root(proxy_url), relay.id), home=folder,
-            max_inflight=max(1, concurrency), mcp_tools="none",
+            max_inflight=max(1, concurrency), mcp_tools="none", max_output=max_output,
         )
         app = create_app(settings, api=False)
         port = _free_port()
@@ -202,16 +204,18 @@ def run_verdict_only(
     skill_file: Path | None = None,
     concurrency: int = 1,
     keep: Path | None = None,
+    max_output: int | None = None,
     label: str = "held-out",
     progress: Progress | None = None,
     cancel: Cancel | None = None,
 ) -> list[Verdict]:
-    """Run a held-out eval n times, privately, and return only how each run ended.
+    """Run a held-out eval n times, privately, and return only how each run ended — each held
+    to `max_output` tokens a call, the main proxy's cap, as the runs it is compared with are.
 
     The progress events say a run ended, never how: they reach whoever follows the job."""
     from tuningfork.ops.batch import execute_batch, prepare_batch
 
-    with private_proxy(store, proxy_url, concurrency=concurrency, keep=keep) as private:
+    with private_proxy(store, proxy_url, concurrency=concurrency, keep=keep, max_output=max_output) as private:
         plan = prepare_batch(
             private.store, spec, eval_id=item.id, n=n, model=model, harness=harness,
             skill_file=skill_file, workdir=private.home / "batches", concurrency=concurrency,

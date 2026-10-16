@@ -94,6 +94,9 @@ class RunOutcome:
     reached: bool = True
     #: For a fork: what the model did at the step it went live at.
     live_outcome: dict[str, Any] | None = None
+    #: What the harness was told after the check, when it was (`Launcher.tell`): the message,
+    #: and how that turn's process ended.
+    told: dict[str, Any] | None = None
 
     @property
     def usable(self) -> bool:
@@ -172,7 +175,16 @@ class RunOutcome:
                 live_outcome=self.live_outcome,
                 exclusion=self.exclusion,
             )
+        if self.told is not None:
+            result["told"] = self.told
         return result
+
+
+def told_message(template: str, check: CheckResult) -> str:
+    """What the harness is told of the check: the template with the verdict and the check's
+    output, as a person who ran the check would put it."""
+    verdict = "It passed." if check.passed else "It failed."
+    return template.format(verdict=verdict, output=(check.output or "").strip()).rstrip()
 
 
 def final_reply(store: Store, run_id: str) -> str:
@@ -275,12 +287,24 @@ class Launcher:
         settle: float = 0.25,
         concurrency: int = 1,
         sandbox: Any = None,
+        tell: str | None = None,
+        launch_seconds: float | None = None,
     ) -> None:
         self.store = store
         self.adapter = adapter
         #: Where each launch runs: a `tuningfork.sandbox.Sandbox`, in which every launch sees
         #: the same home and folder, or None for each in its own folders.
         self.sandbox = sandbox
+        #: A template with `{verdict}` and `{output}`: after the check, the harness is given
+        #: its result as one more user turn of the same session (`continue_launch`), before
+        #: its own review — what a person who looked at the result would say. The verdict
+        #: stays the task's: judged before the turn.
+        self.tell = tell
+        #: The most seconds a launch's processes may take together — its run, and the told
+        #: turn after it — when something larger has a budget for it (a chain's last link):
+        #: each process's timeout is cut to what is left of this. The processes' wall time
+        #: bounds their model calls' time from above.
+        self.launch_seconds = launch_seconds
         #: The proxy's base URL as a harness would be given it; each launch gets its own
         #: token inserted into it (see `tuningfork.launches.launch_url`).
         self.base_url = base_url
@@ -454,7 +478,7 @@ class Launcher:
             )
             if self.sandbox is not None:
                 spec_ = self.sandbox.wrap(spec_, home=home, workspace=workspace)
-            exited = self._execute(spec_, workspace, item)
+            exited = self._execute(spec_, workspace, item, timeout=self._limit(item, started))
         except Cancelled as stopped:
             self._stopped(launch, workspace, stopped.reason, time.monotonic() - started, annotate)
             raise
@@ -469,9 +493,27 @@ class Launcher:
         returncode, stdout, stderr, timed_out = (
             exited.returncode, exited.stdout, exited.stderr, exited.timed_out
         )
+        # Every step recorded before the check, which may judge the final reply.
+        self._settle(launch.id)
+        reply = self._final_reply(self.store.launch_runs(launch.id))
+        # Beside the workspace, not in it: in no snapshot, and not among the run's files.
+        reply_file = workspace.parent / "reply.txt"
+        reply_file.write_text(reply, encoding="utf-8")
+        check = run_check(item.tuningfork.check, workspace, reply=reply, reply_file=reply_file, spec_dir=spec_dir)
+        told = None
+        if (
+            self.tell and item.tuningfork.check and not timed_out
+            and getattr(self.adapter, "continue_launch", None) is not None
+        ):
+            told = self._tell(launch, item, check, home, workspace, annotate, started)
+            duration = time.monotonic() - started
         self.store.end_launch(
             launch.id,
-            exit={"returncode": returncode, "timed_out": timed_out, "duration_s": round(duration, 2)},
+            exit={
+                "returncode": returncode, "timed_out": timed_out, "duration_s": round(duration, 2),
+                **({"told": told} if told else {}),
+                **({"cap_seconds": self.launch_seconds} if self.launch_seconds is not None else {}),
+            },
         )
         self.store.set_launch_snapshots(
             launch.id, final_commit=self._snap(workspace, launch, "final")
@@ -481,22 +523,61 @@ class Launcher:
         changed = sorted(
             {name for name in set(before) | set(after) if before.get(name) != after.get(name)}
         )
-        # Every step recorded before the check, which may judge the final reply.
         self._settle(launch.id)
         self.store.finalize_threads(launch.id, getattr(self.adapter, "subagent_tools", ()))
         runs = self.store.launch_runs(launch.id)
-        reply = self._final_reply(runs)
-        # Beside the workspace, not in it: in no snapshot, and not among the run's files.
-        reply_file = workspace.parent / "reply.txt"
-        reply_file.write_text(reply, encoding="utf-8")
-        check = run_check(item.tuningfork.check, workspace, reply=reply, reply_file=reply_file, spec_dir=spec_dir)
         parity = {**(annotate.pop("parity", None) or {}), "skill_bodies": bodies}
         return self._outcome(
             launch, index, check, duration, returncode, stdout, stderr, timed_out, changed,
             runs=runs,
             checked=bool(item.tuningfork.check),
             annotate={**annotate, "skill_hashes": before, "parity": parity},
+            told=told,
         )
+
+    def _tell(
+        self,
+        launch: Launch,
+        item: Eval,
+        check: CheckResult,
+        home: Path,
+        workspace: Path,
+        annotate: dict[str, Any],
+        started: float,
+    ) -> dict[str, Any]:
+        """One more turn of the launch's session: the check's verdict and output as the
+        user's next message, run by the harness as it resumes the session it just ended.
+        Paths in the check's output are written as the sandbox shows them."""
+        message = told_message(self.tell or "", check)
+        if self.sandbox is not None:
+            from tuningfork.sandbox import HOME, WORKSPACE, translate
+
+            message = translate(message, [(Path(workspace), WORKSPACE), (Path(home), HOME)])
+        turn_started = time.monotonic()
+        try:
+            self.cancel.check()
+            spec_ = self.adapter.continue_launch(
+                message, home=home, workspace=workspace, max_turns=item.tuningfork.max_turns,
+            )
+            if self.sandbox is not None:
+                spec_ = self.sandbox.wrap(spec_, home=home, workspace=workspace)
+            exited = self._execute(spec_, workspace, item, timeout=self._limit(item, started))
+        except Cancelled as stopped:
+            self._stopped(launch, workspace, stopped.reason, time.monotonic() - started, annotate)
+            raise
+        except BaseException:
+            self.store.end_launch(launch.id, status="interrupted")
+            raise
+        if exited.cancelled:
+            reason = self.cancel.reason or "cancelled"
+            self._stopped(launch, workspace, reason, time.monotonic() - started, annotate)
+            raise Cancelled(reason)
+        return {
+            "message": message,
+            "returncode": exited.returncode,
+            "timed_out": exited.timed_out,
+            "duration_s": round(time.monotonic() - turn_started, 2),
+        }
 
     def _final_reply(self, runs: list[Any]) -> str:
         main = next((run for run in runs if not run.is_thread), None)
@@ -556,6 +637,7 @@ class Launcher:
         runs: list[Any],
         checked: bool,
         annotate: dict[str, Any],
+        told: dict[str, Any] | None = None,
     ) -> RunOutcome:
         """How a finished launch went, filed on its main run. `runs` are the launch's runs,
         every step recorded (`_settle`) and its threads classified."""
@@ -587,6 +669,7 @@ class Launcher:
             ],
             thread_trouble=trouble,
             launch_id=launch.id,
+            told=told,
         )
         if launch.kind == "fork" and launch.source_step is not None:
             k = launch.source_step
@@ -612,13 +695,22 @@ class Launcher:
             )
         return outcome
 
-    def _execute(self, launch: LaunchSpec, workspace: Path, item: Eval) -> Exit:
+    def _limit(self, item: Eval, started: float) -> float | None:
+        """The timeout for one of a launch's processes: the eval's, cut to what is left of
+        `launch_seconds` since the launch `started` — never under a second, so the process
+        runs and its end is recorded as a timeout."""
+        if self.launch_seconds is None:
+            return None
+        return max(1.0, min(item.tuningfork.timeout, self.launch_seconds - (time.monotonic() - started)))
+
+    def _execute(self, launch: LaunchSpec, workspace: Path, item: Eval, *, timeout: float | None = None) -> Exit:
         """Run the harness once, and say how it ended.
 
         The harness gets a process group of its own, and a timeout or a cancel kills the
         whole group: a harness's children — a shell it started, a subagent's tool — would
         otherwise outlive it, still writing into the workspace.
         """
+        limit = item.tuningfork.timeout if timeout is None else timeout
         group = {"start_new_session": True} if os.name == "posix" else {}
         try:
             process = subprocess.Popen(
@@ -643,12 +735,12 @@ class Launcher:
                 _kill(process)
         try:
             try:
-                stdout, stderr = process.communicate(timeout=item.tuningfork.timeout)
+                stdout, stderr = process.communicate(timeout=limit)
             except subprocess.TimeoutExpired:
                 _kill(process)
                 stdout, _ = process.communicate()
                 return Exit(
-                    -1, stdout or "", f"timed out after {item.tuningfork.timeout}s",
+                    -1, stdout or "", f"timed out after {limit:g}s",
                     timed_out=True, cancelled=self._was_killed(process),
                 )
             return Exit(
@@ -717,10 +809,11 @@ class BatchRunner(Launcher):
         settle: float = 0.25,
         concurrency: int = 1,
         sandbox: Any = None,
+        tell: str | None = None,
     ) -> None:
         super().__init__(
             store, adapter, base_url=base_url, model=model, workdir=workdir, settle=settle,
-            concurrency=concurrency, sandbox=sandbox,
+            concurrency=concurrency, sandbox=sandbox, tell=tell,
         )
         self.keep_workspaces = keep_workspaces
         #: Installed as the skill's SKILL.md in every run, in place of the spec's own — how
@@ -735,7 +828,20 @@ class BatchRunner(Launcher):
         *,
         parity: dict[str, Any] | None = None,
         on_progress: Callable[[RunOutcome], None] | None = None,
+        group: str | None = None,
+        start: int = 0,
+        skill_dir: Path | None = None,
+        skill_snapshot: str = "skill-snapshot",
+        settings: dict[str, Any] | None = None,
+        launch_seconds: float | None = None,
     ) -> BatchResult:
+        """Run the eval `n` times. The rest is for an operation that runs a batch's runs as
+        part of something larger — a chain gives each of its links a skill folder of its own
+        (`skill_dir`, frozen under `skill_snapshot`) in one group folder, numbered in order
+        from `start`, with `settings` recorded on each launch beside the batch's own, and
+        `launch_seconds` the most each launch's processes may take together (a budget's
+        last link)."""
+        self.launch_seconds = launch_seconds
         task_id = f"{spec.skill_name}/{item.id}"
         missing = missing_files(item, spec.directory)
         if missing:
@@ -743,8 +849,8 @@ class BatchRunner(Launcher):
                 f"eval {item.id} names input files that are not next to the spec "
                 f"({spec.directory}): {', '.join(missing)}"
             )
-        batch = uuid.uuid4().hex[:8]
-        skill = self._snapshot_skill(spec, batch)
+        batch = group or uuid.uuid4().hex[:8]
+        skill = self._snapshot_skill(spec, batch, source=skill_dir, name=skill_snapshot)
         parity = {**(parity or {}), "skill_snapshot": hash_tree([skill]) if skill else {}}
         if skill:
             # The frozen copy every run was given: the true "original" for a later A/B,
@@ -754,19 +860,29 @@ class BatchRunner(Launcher):
             parity["skill_file"] = str(self.skill_file)
 
         def one(index: int) -> RunOutcome:
-            return self._run_once(spec, item, index, task_id, batch, parity, skill)
+            return self._run_once(
+                spec, item, start + index, task_id, batch, parity, skill, settings or {}
+            )
 
         return BatchResult(task_id=task_id, outcomes=self._many(n, one, on_progress))
 
-    def _snapshot_skill(self, spec: TaskSpec, batch: str) -> Path | None:
+    def _snapshot_skill(
+        self,
+        spec: TaskSpec,
+        batch: str,
+        *,
+        source: Path | None = None,
+        name: str = "skill-snapshot",
+    ) -> Path | None:
         """Freeze the skill for the whole batch.
 
         Every run copies from this snapshot rather than from the source. Editing the skill
         while a batch runs — easy to do, and done during Phase 1 — would otherwise put
         different wordings into different runs of what claims to be one sample, and the
-        pass rate would describe neither.
+        pass rate would describe neither. `source` is a folder other than the spec's, given
+        by the operation running the batch.
         """
-        source = spec.resolved_skill_dir()
+        source = Path(source) if source else spec.resolved_skill_dir()
         if not source or not source.exists():
             if self.skill_file:
                 raise ValueError(
@@ -774,7 +890,7 @@ class BatchRunner(Launcher):
                     "replacement SKILL.md to go in"
                 )
             return None
-        snapshot = self.workdir / batch / "skill-snapshot" / source.name
+        snapshot = self.workdir / batch / name / source.name
         shutil.copytree(source, snapshot, dirs_exist_ok=True)
         if self.skill_file:
             shutil.copyfile(self.skill_file, snapshot / "SKILL.md")
@@ -789,6 +905,7 @@ class BatchRunner(Launcher):
         batch: str,
         parity: dict[str, Any] | None,
         skill: Path | None,
+        settings: dict[str, Any],
     ) -> RunOutcome:
         root = self.workdir / batch / str(index)
         workspace, home = root / "workspace", root / "home"
@@ -803,7 +920,7 @@ class BatchRunner(Launcher):
             skill_dir=str(skill.resolve()) if skill else None,
             workspace=str(workspace.resolve()),
             home=str(home.resolve()),
-            settings={"breakpoints": True, **layout_setting(self.adapter, self.sandbox)},
+            settings={"breakpoints": True, **layout_setting(self.adapter, self.sandbox), **settings},
         )
         if self.on_launch:
             self.on_launch(launch, index)
@@ -933,11 +1050,13 @@ def skill_places(adapter: Any, home: Path, skill: Path) -> list[Path]:
 
 
 def layout_setting(adapter: Any, sandbox: Any = None) -> dict[str, Any]:
-    """How a launch is laid out, for its settings: how the adapter lays out its files, and
-    the sandbox it ran in, if any. A fork of the run is laid out the same way, so the paths
-    it replays exist (see `HermesAdapter.layout`, `tuningfork.sandbox`)."""
+    """How a launch is laid out, for its settings: how the adapter lays out its files, how
+    its harness was set up (an adapter's `settings`: Hermes's options), and the sandbox it
+    ran in, if any. A fork of the run is laid out the same way, so the paths it replays
+    exist (see `HermesAdapter.layout`, `tuningfork.sandbox`)."""
     layout = getattr(adapter, "layout", None)
     found: dict[str, Any] = {"layout": layout} if layout else {}
+    found.update(getattr(adapter, "settings", None) or {})
     if sandbox is not None:
         found["sandbox"] = sandbox.to_json()
     return found

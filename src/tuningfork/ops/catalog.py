@@ -455,6 +455,11 @@ def execute_fork_job(context: JobContext, prepared: ForkJob, *, progress: Any, c
 
 # --- a batch: a task run N times through its harness ---------------------------------------
 
+HARNESS_OPTIONS_HELP = (
+    "Harness options, recorded with each run (Hermes: self_improvement, await_review, "
+    "review_every_turn, mcp_servers)."
+)
+
 
 @dataclass
 class BatchParams:
@@ -465,8 +470,20 @@ class BatchParams:
     harness: str = field(default="hermes", metadata=_help("The harness to launch."))
     model: str | None = field(default=None, metadata=_help("The model the harness requests; default the one the server lists."))
     skill_file: str | None = field(default=None, metadata=_help("A file to use as the skill's SKILL.md in every run: to confirm a wording with full runs."))
+    skill_dir: str | None = field(default=None, metadata=_help("A skill folder for every run instead of the spec's."))
     concurrency: int = field(default=1, metadata=_help("Runs at once. On one GPU, one at a time is fastest.", minimum=1, maximum=16))
     include_held_out: bool = field(default=False, metadata=_help("Run a held-out eval named in `eval` anyway: its runs are then recorded where agents can read them."))
+    harness_options: dict[str, Any] = field(default_factory=dict, metadata=_help(HARNESS_OPTIONS_HELP))
+
+
+def _spec_of(context: JobContext, params: Any) -> Any:
+    from pathlib import Path
+
+    from tuningfork.ops.scenarios import spec_path
+
+    if bool(params.spec) == bool(params.scenario):
+        raise OperationError("name a scenario, or a task spec — one of them", code="bad_params", field="scenario")
+    return spec_path(context.home, params.scenario) if params.scenario else Path(params.spec)
 
 
 def prepare_batch_job(context: JobContext, params: BatchParams) -> Any:
@@ -474,17 +491,14 @@ def prepare_batch_job(context: JobContext, params: BatchParams) -> Any:
 
     from tuningfork.ops.batch import prepare_batch
 
-    from tuningfork.ops.scenarios import spec_path
-
-    if bool(params.spec) == bool(params.scenario):
-        raise OperationError("name a scenario, or a task spec — one of them", code="bad_params", field="scenario")
-    spec = spec_path(context.home, params.scenario) if params.scenario else Path(params.spec)
+    spec = _spec_of(context, params)
     proxy = context.proxy.status()
     return prepare_batch(
         context.store, spec, eval_id=params.eval, n=params.n, model=params.model,
         harness=params.harness, skill_file=Path(params.skill_file) if params.skill_file else None,
         concurrency=params.concurrency, base_url=f"{proxy.url}/v1", proxy=proxy,
-        include_held_out=params.include_held_out,
+        include_held_out=params.include_held_out, harness_options=params.harness_options or None,
+        skill_dir=Path(params.skill_dir) if params.skill_dir else None,
     )
 
 
@@ -492,6 +506,41 @@ def execute_batch_job(context: JobContext, prepared: Any, *, progress: Any, canc
     from tuningfork.ops.batch import execute_batch
 
     return execute_batch(context.store, prepared, progress=progress, cancel=cancel)
+
+
+# --- a chain: a task run N times in order, the skill carried from each run to the next -----
+
+
+@dataclass
+class ChainParams:
+    scenario: str | None = field(default=None, metadata=_help("A scenario kept in the recordings folder, by name."))
+    spec: str | None = field(default=None, metadata=_help("Or a task spec (evals.json), a path on the proxy's machine."))
+    eval: str | None = field(default=None, metadata=_help("Which eval of the spec; default the first that is not held out."))
+    n: int = field(default=10, metadata=_help("Links: runs in order, the skill carried forward.", minimum=1, maximum=200))
+    harness: str = field(default="hermes", metadata=_help("The harness to launch."))
+    model: str | None = field(default=None, metadata=_help("The model the harness requests; default the one the server lists."))
+    harness_options: dict[str, Any] = field(default_factory=dict, metadata=_help(HARNESS_OPTIONS_HELP))
+    tell: bool = field(default=False, metadata=_help("Tell the harness each run's check result as the user's next turn."))
+    budget_seconds: float | None = field(default=None, metadata=_help("Stop once the links' calls have taken this many seconds.", minimum=1))
+
+
+def prepare_chain_job(context: JobContext, params: ChainParams) -> Any:
+    from tuningfork.ops.chain import prepare_chain
+
+    spec = _spec_of(context, params)
+    proxy = context.proxy.status()
+    return prepare_chain(
+        context.store, spec, eval_id=params.eval, n=params.n, model=params.model,
+        harness=params.harness, base_url=f"{proxy.url}/v1", proxy=proxy,
+        harness_options=params.harness_options or None, tell=params.tell,
+        budget_seconds=params.budget_seconds,
+    )
+
+
+def execute_chain_job(context: JobContext, prepared: Any, *, progress: Any, cancel: Any) -> Any:
+    from tuningfork.ops.chain import execute_chain
+
+    return execute_chain(context.store, prepared, progress=progress, cancel=cancel)
 
 
 # --- a server check: what a harness needs, measured -------------------------------------------
@@ -541,6 +590,30 @@ def execute_check_trial_job(context: JobContext, prepared: Any, *, progress: Any
     from tuningfork.ops.checks import execute_check_trial
 
     return execute_check_trial(context.store, prepared)
+
+
+@dataclass(slots=True)
+class CheckAlongParams:
+    task: str | None = field(default=None, metadata=_help("A task id: its recorded runs, not forks, newest first."))
+    run: str | None = field(default=None, metadata=_help("Or one run."))
+    limit: int = field(default=50, metadata=_help("With a task: at most this many runs.", minimum=1, maximum=500))
+    again: bool = field(default=False, metadata=_help("Anew along runs it was run along before."))
+    timeout: float = field(default=60.0, metadata=_help("Seconds the check may take, each time.", minimum=1, maximum=600))
+
+
+def prepare_check_along_job(context: JobContext, params: CheckAlongParams) -> Any:
+    from tuningfork.ops.checks import prepare_check_along_runs
+
+    return prepare_check_along_runs(
+        context.store, task=params.task, run=params.run, limit=params.limit, again=params.again,
+        timeout=params.timeout,
+    )
+
+
+def execute_check_along_job(context: JobContext, prepared: Any, *, progress: Any, cancel: Any) -> Any:
+    from tuningfork.ops.checks import execute_check_along_runs
+
+    return execute_check_along_runs(context.store, prepared, progress=progress, cancel=cancel)
 
 
 # --- tools at a held call: evidence, and hypotheses ------------------------------------------
@@ -627,7 +700,7 @@ def execute_propose_job(context: JobContext, prepared: Any, *, progress: Any, ca
 class ScreenParams:
     refinement: str = field(metadata=_help("The refinement, by its id or a prefix of it."))
     proposals: list[str] = field(default_factory=list, metadata=_help("The proposals to screen, by id or prefix: the family the correction counts, fixed before sampling."))
-    n: int = field(default=20, metadata=_help("Samples per arm, the original's included.", minimum=2, maximum=200))
+    n: int = field(default=20, metadata=_help("Samples per arm, the original's included: 20 by default; fewer than 10 can show only a large shift.", minimum=2, maximum=200))
     alpha: float = field(default=0.05, metadata=_help("Family-wise significance level.", minimum=0.0001, maximum=0.5))
     concurrency: int = field(default=1, metadata=_help("Samples in flight at once; the proxy's --max-inflight still caps them.", minimum=1, maximum=64))
     max_tokens: int = field(default=4096, metadata=_help("Cap per sample; hitting it counts as truncated.", minimum=1, maximum=262144))
@@ -649,6 +722,40 @@ def execute_screen_job(context: JobContext, prepared: Any, *, progress: Any, can
     from tuningfork.ops.screen import execute_screen
 
     return execute_screen(context.store, prepared, progress=progress, cancel=cancel)
+
+
+@dataclass
+class ScreenToEndParams:
+    refinement: str = field(metadata=_help("The refinement, by its id or a prefix of it."))
+    proposals: list[str] = field(default_factory=list, metadata=_help("The proposals to screen, by id or prefix: the family the correction counts, fixed before any fork runs."))
+    n: int = field(default=20, metadata=_help("Forks per arm, each run from the checkpoint to the end, the original's included: 20 by default; fewer than 10 can show only a large shift.", minimum=2, maximum=100))
+    alpha: float = field(default=0.05, metadata=_help("Family-wise significance level.", minimum=0.0001, maximum=0.5))
+    concurrency: int = field(default=1, metadata=_help("Forks at once; no more than the proxy's --max-inflight. On one GPU, one at a time is fastest.", minimum=1, maximum=16))
+    checkpoints: int = field(default=4, metadata=_help(
+        "Runs the forks are drawn from: the refinement's own, and others of its task at the same step, passing and "
+        "failing by turns, each arm's n spread evenly over them (4 by default; fewer where fewer serve). A fork "
+        "measures the edit given the prefix it replays, and one prefix is one draw of the path: an effect that holds "
+        "across checkpoints is one fresh runs keep. 1 forks the refinement's run alone.", minimum=1, maximum=10))
+    quick: bool = field(default=False, metadata=_help(
+        "A quick look: 8 forks of each proposal alone, beside the original's forks drawn before; rates, no verdict."))
+    fresh_original: bool = field(default=False, metadata=_help(
+        "Draw the original's forks anew, rather than count those this refinement drew before."))
+
+
+def prepare_screen_to_end_job(context: JobContext, params: ScreenToEndParams) -> Any:
+    from tuningfork.ops.refine import prepare_refinement_screen
+
+    return prepare_refinement_screen(
+        context.store, params.refinement, params.proposals, to_end=True, alpha=params.alpha,
+        n=params.n, concurrency=params.concurrency, proxy=context.proxy.status(), checkpoints=params.checkpoints,
+        quick=params.quick, fresh_original=params.fresh_original,
+    )
+
+
+def execute_screen_to_end_job(context: JobContext, prepared: Any, *, progress: Any, cancel: Any) -> Any:
+    from tuningfork.ops.screen import execute_screen_to_end
+
+    return execute_screen_to_end(context.store, prepared, progress=progress, cancel=cancel)
 
 
 @dataclass
@@ -735,6 +842,15 @@ CATALOG: dict[str, Kind] = {
             total=lambda prepared: prepared.total,
         ),
         Kind(
+            name="screen-to-end",
+            lane=BACKGROUND,
+            summary="Screen proposals by the task's check: every arm's forks run from the checkpoint to the end, each against the original, Holm-corrected.",
+            params=ScreenToEndParams,
+            prepare=prepare_screen_to_end_job,
+            execute=execute_screen_to_end_job,
+            total=lambda prepared: prepared.total,
+        ),
+        Kind(
             name="validate",
             lane=BACKGROUND,
             summary="Validate a screened proposal with full runs: forks from its checkpoint to the end, the training task, and each held-out task — verdicts only.",
@@ -780,6 +896,15 @@ CATALOG: dict[str, Kind] = {
             total=lambda prepared: prepared.n,
         ),
         Kind(
+            name="chain",
+            lane=BACKGROUND,
+            summary="Run a task N times in order, each run starting from the skill the one before left: what the harness's own self-improvement makes of it.",
+            params=ChainParams,
+            prepare=prepare_chain_job,
+            execute=execute_chain_job,
+            total=lambda prepared: prepared.n,
+        ),
+        Kind(
             name="server-check",
             lane=INTERACTIVE,
             summary="Measure what the harnesses need of the server — a streaming tool call, /v1/messages — and what token heatmaps and forking tokens need.",
@@ -795,6 +920,15 @@ CATALOG: dict[str, Kind] = {
             params=CheckTrialParams,
             prepare=prepare_check_trial_job,
             execute=execute_check_trial_job,
+        ),
+        Kind(
+            name="check-along",
+            lane=BACKGROUND,
+            summary="Run a task's check along its runs — at the start, after each call that changed the files, at the end — so the tally says which call made each finding. Kept with each run; no verdict changes.",
+            params=CheckAlongParams,
+            prepare=prepare_check_along_job,
+            execute=execute_check_along_job,
+            total=lambda prepared: len(prepared.plans),
         ),
         Kind(
             name="hold-sample",

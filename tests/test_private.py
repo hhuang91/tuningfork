@@ -15,6 +15,7 @@ import pytest
 from tuningfork.ops.common import Cancel, Cancelled
 from tuningfork.ops.private import OWNER, PREFIX, run_verdict_only, sweep_stale
 from tuningfork.specs import Eval, TuningforkOptions
+from tuningfork.store.db import Store
 from tests.helpers import CHECK, VARIANT, task_stack
 
 MARKER = "HELD-OUT-MARKER"
@@ -92,6 +93,23 @@ def test_kept_for_the_person_it_is_a_recordings_folder_of_its_own(stack):
     assert (keep / "tuningfork.db").is_file() and not (keep / OWNER).exists()
     assert list(stack.temp.glob(f"{PREFIX}*")) == []
     assert mentions(stack.store.home, MARKER) == []
+
+
+def test_held_out_runs_are_held_to_the_main_proxys_cap(stack):
+    """The main proxy records none of a relay's calls, and so caps none: the private proxy holds
+    them to its cap, and records each as the model was sent it — as the training runs are."""
+    keep = stack.tmp / "kept"
+    run_verdict_only(stack.store, stack.spec, stack.held, n=1, harness="fake", model="m",
+                     proxy_url=stack.url, keep=keep, max_output=50)
+    held = [request for request in stack.mock.requests if MARKER in str(request)]
+    assert held and all(request["max_tokens"] == 50 for request in held)
+    private = Store(keep)
+    try:
+        steps = [step for run in private.runs(limit=10) for step in private.steps(run.id)]
+        assert steps and all(step.params["output_cap"] == {"cap": 50, "asked": {}, "written": ["max_tokens"]}
+                             for step in steps)
+    finally:
+        private.close()
 
 
 def test_a_folder_whose_owner_died_is_swept(tmp_path):

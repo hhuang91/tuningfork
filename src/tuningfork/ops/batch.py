@@ -48,6 +48,9 @@ class BatchPlan:
     #: The sandbox every run is launched in (`tuningfork.sandbox.Sandbox`), or None: each
     #: run then sees its own folders, and a note says why.
     sandbox: Any = None
+    #: The harness's own options, as given; what the adapter made of them is in each
+    #: launch's settings.
+    harness_options: dict[str, Any] = field(default_factory=dict)
 
     @property
     def task_id(self) -> str:
@@ -82,8 +85,34 @@ class BatchPlan:
             "skill_file": str(self.skill_file) if self.skill_file else None,
             # What every run sees as its home and folder, when they run in the sandbox.
             "sandbox": self.sandbox.to_json() if self.sandbox is not None else None,
+            "harness_options": shown_options(self.harness_options),
             "notes": [note.to_json() for note in self.notes],
         }
+
+
+#: Keys of an MCP server's options whose values are secrets: a bearer token in its headers,
+#: a key in its environment. Shown and recorded masked; the launch itself is given them.
+SECRET_KEYS = ("headers", "env")
+
+
+def shown_options(options: dict[str, Any] | None) -> dict[str, Any]:
+    """The harness options as a plan shows and a record keeps them: every value under an
+    MCP server's `headers` or `env` replaced by an ellipsis. What the launch records of
+    them is the adapter's own, stricter view (Hermes: a server's command or URL alone)."""
+    found = dict(options or {})
+    servers = found.get("mcp_servers")
+    if isinstance(servers, dict):
+        found["mcp_servers"] = {
+            name: (
+                {
+                    key: ({inner: "…" for inner in value} if key in SECRET_KEYS and isinstance(value, dict) else value)
+                    for key, value in server.items()
+                }
+                if isinstance(server, dict) else server
+            )
+            for name, server in servers.items()
+        }
+    return found
 
 
 def prepare_batch(
@@ -101,12 +130,17 @@ def prepare_batch(
     proxy: ProxyStatus | None = None,
     include_held_out: bool = False,
     hide: Sequence[Path] = (),
+    skill_dir: Path | None = None,
+    harness_options: dict[str, Any] | None = None,
 ) -> BatchPlan:
     """Everything a batch needs, checked before any run is launched: a missing input file or
     an unknown harness is refused before a single launch is recorded.
 
     `spec` is a path to an `evals.json`, or an already-loaded `TaskSpec`. `proxy` is for a
-    caller inside the proxy itself, which knows it without asking over HTTP.
+    caller inside the proxy itself, which knows it without asking over HTTP. `skill_dir`
+    gives every run a skill folder other than the spec's — how a chain hands a link the skill
+    the one before left. `harness_options` are the harness's own (Hermes: `await_review`,
+    `review_every_turn`, `mcp_servers`), read by its adapter and recorded with each run.
 
     A held-out eval judges an edit, so its runs must stay where no agent can read them: it
     runs here only with `include_held_out`, and is never the default (`refine validate` runs
@@ -136,7 +170,7 @@ def prepare_batch(
         skill_file = Path(host_path(str(skill_file)))
         if not skill_file.is_file():
             raise OperationError(f"no such skill file: {skill_file}", field="skill_file")
-    adapter = adapter_for(store.home, harness)
+    adapter = adapter_for(store.home, harness, options=harness_options)
     check_launchable(adapter)
 
     base_url = base_url or f"{default_proxy()}/v1"
@@ -165,16 +199,26 @@ def prepare_batch(
             "--include-held-out records this one here anyway",
             code="held_out", field="eval",
         )
-    skill_dir = spec.resolved_skill_dir()
-    if skill_dir is not None and not (skill_dir / "SKILL.md").is_file():
+    spec_skill = spec.resolved_skill_dir()
+    if spec_skill is not None and not (spec_skill / "SKILL.md").is_file():
         # Refused here: the runner would copy nothing and every run would go without the skill.
         raise OperationError(
-            f"the spec's skill folder, {skill_dir}, "
-            + ("holds no SKILL.md" if skill_dir.is_dir() else "does not exist"),
+            f"the spec's skill folder, {spec_skill}, "
+            + ("holds no SKILL.md" if spec_skill.is_dir() else "does not exist"),
             hint=f"tuningfork.skill_dir is {spec.skill_dir!r}, resolved against the spec's "
             f"folder, {spec.directory}",
             field="spec",
         )
+    if skill_dir is not None:
+        skill_dir = Path(host_path(str(skill_dir)))
+        if not (skill_dir / "SKILL.md").is_file():
+            raise OperationError(
+                f"the skill folder given, {skill_dir}, "
+                + ("holds no SKILL.md" if skill_dir.is_dir() else "does not exist"),
+                field="skill_dir",
+            )
+    else:
+        skill_dir = spec_skill
     if skill_file is not None and not (skill_dir and skill_dir.exists()):
         raise OperationError(
             "--skill replaces the skill's SKILL.md, but the spec names no skill folder "
@@ -215,6 +259,10 @@ def prepare_batch(
             f"runs are not sandboxed: {unsandboxed}. Each sees its own folders, whose paths "
             "differ from run to run, and the model reads them",
         ))
+    if sandbox is not None and sandbox.clock_problem:
+        notes.append(Note(
+            "warning", f"{sandbox.clock_problem}: each run's date is the day it is made, which the model reads",
+        ))
     if item.tuningfork.held_out:
         notes.append(Note(
             "warning",
@@ -251,11 +299,14 @@ def prepare_batch(
         "harness": harness,
         "server_defaults": server.get("defaults") or _server_defaults(base_url, store.home),
     }
+    harness_settings = (getattr(adapter, "settings", None) or {}).get("harness")
+    if harness_settings:
+        parity["harness_options"] = harness_settings
     return BatchPlan(
         spec=spec, item=item, n=n, harness=harness, model=model, base_url=base_url,
         proxy=proxy, workdir=workdir, concurrency=concurrency, skill_dir=skill_dir,
         skill_file=Path(skill_file) if skill_file else None, parity=parity, notes=notes,
-        adapter=adapter, sandbox=sandbox,
+        adapter=adapter, sandbox=sandbox, harness_options=dict(harness_options or {}),
     )
 
 
@@ -328,10 +379,20 @@ def execute_batch(
     *,
     progress: Progress | None = None,
     cancel: Cancel | None = None,
+    group: str | None = None,
+    start: int = 0,
+    skill_dir: Path | None = None,
+    skill_snapshot: str = "skill-snapshot",
+    settings: dict[str, Any] | None = None,
+    tell: str | None = None,
+    launch_seconds: float | None = None,
 ) -> BatchReport:
     """Run the batch. Reports `launch` as each run's harness is launched and `run` as each
     finishes. Cancelled, it raises `Cancelled` whose `partial` is the report over the runs
-    that finished."""
+    that finished. The rest is for an operation running the batch as part of something larger
+    (`BatchRunner.run`): a chain's links share one group, numbered in order, each given a
+    skill folder of its own, told the check's result (`tell`, a template) as one more turn, and
+    given at most `launch_seconds` for each launch's processes together."""
     from tuningfork.harness import ADAPTERS
     from tuningfork.harness.base import HarnessError
     from tuningfork.runner import BatchRunner
@@ -345,6 +406,7 @@ def execute_batch(
         skill_file=plan.skill_file,
         concurrency=plan.concurrency,
         sandbox=plan.sandbox,
+        tell=tell,
     )
     runner.on_launch = lambda launch, index: emit(
         progress, "launch", subject=launch, launch_id=launch.id, index=index, label=launch.label
@@ -357,8 +419,10 @@ def execute_batch(
     started = time.monotonic()
     try:
         result = runner.run(
-            plan.spec, plan.item, plan.n, parity=plan.parity,
+            plan.spec, plan.item, plan.n, parity=plan.parity, launch_seconds=launch_seconds,
             on_progress=lambda outcome: emit(progress, "run", subject=outcome, **outcome.to_json()),
+            group=group, start=start, skill_dir=skill_dir or plan.skill_dir,
+            skill_snapshot=skill_snapshot, settings=settings,
         )
     except Cancelled as stopped:
         partial = _report(store, plan, stopped.partial or [], time.monotonic() - started)

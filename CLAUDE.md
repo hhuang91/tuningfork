@@ -4,11 +4,15 @@ A step debugger and experiment lab for agent skills on local LLMs. What belongs 
 machine — its safety rules, its paths, its notes — goes in an untracked `CLAUDE.local.md`
 beside this file (ignored by `.gitignore`), never here: this file is public.
 
-Experiments run against llama.cpp's `llama-server`, by default on port 8081. For Gemma 4 (or
-any model with sliding-window layers) start it with `--swa-full`. Without it, the same
-request's behaviour depends on what the server processed before it, and a screen favours its
-proposals. It costs memory: the 26B-A4B with two 64k slots fits a 32 GB card with it, and the
-31B at 64k does not. Start it with `--no-cache-prompt` too: otherwise a Claude Code step's
+Experiments run against llama.cpp's `llama-server`, by default on port 8081, with one slot
+(`-np 1`): a request computed beside another gets other numbers. For Gemma 4 (or any model
+with sliding-window layers) start it with `--ctx-checkpoints 0` or with `--swa-full`: without
+one of them the server takes rollback checkpoints of the sliding-window cache that cut a prompt
+into batches at places that differ between the chat endpoint and the raw one, so the same
+answer scores differently on each; with either, the two agree token for token. `--swa-full`
+costs memory (the 31B at 64k does not fit a 32 GB card with it); checkpoints off costs none,
+and a checkpoint is only ever used to roll back a cached prefix, which `--no-cache-prompt`
+never keeps. Start it with `--no-cache-prompt` too: otherwise a Claude Code step's
 samples share the first one's cached processing (its Messages endpoint ignores
 `cache_prompt`), and so do forks with matching prompts — every fork, in the sandbox. The
 server check measures it (`fresh_prompts`).
@@ -17,6 +21,8 @@ server check measures it (`fresh_prompts`).
 
     uv run pytest                # the test suite — no GPU or model required
     uv run tuningfork serve --upstream http://127.0.0.1:8081   # the recording proxy; prints the UI address
+    uv run tuningfork serve ... --max-output 8192              # every call a harness makes held to that many
+                                                               #   output tokens, what it asked kept with the step
     uv run tuningfork probe <base-url> [--out profile.json]    # what a server can do
 
 Inspecting and experimenting (all take `--home <recordings dir>`):
@@ -27,10 +33,27 @@ Inspecting and experimenting (all take `--home <recordings dir>`):
     tuningfork step <run> <k>             # one step: exact context in, behaviour out
     tuningfork diff <runA> <runB>         # two runs side by side
     tuningfork divergence --task <id>     # first step where runs stopped agreeing
+    tuningfork tally --task <id>          # what the failed runs' checks said, counted (--screen <id>: by arm)
+    tuningfork check-along --task <id>    # the check at each state of each run: which call made each finding
+    tuningfork where --task <id> --file F --contains RE   # one question of every run, lined up with the
+                                          #   verdicts: what the runs wrote (or --match RE: what the model
+                                          #   did, at every step), the call that made it in each run
+                                          #   (--screen <id>: of a screen's forks, arm by arm)
     tuningfork batch <spec.json> -n 8     # run a task N times through the harness
     tuningfork batch ... --skill <file>   # the same, with <file> as SKILL.md: confirm an A/B
     tuningfork batch ... --concurrency 4  # runs at once; each is its own launch
     tuningfork batch ... --eval 2 --include-held-out   # a held-out eval: never the default
+    tuningfork batch ... -o self_improvement=false   # a harness option (Hermes: self_improvement,
+                                          #   await_review, review_every_turn, mcp_servers), recorded with each run
+    tuningfork chain run <spec.json> -n 10 --tell -o await_review=true -o review_every_turn=true
+                                          # runs in order, the skill each leaves given to the next:
+                                          #   what the harness's own self-improvement makes of it;
+                                          #   --tell: the check's result as the user's next turn;
+                                          #   --budget-seconds N: stop once the links' model calls took
+                                          #   N s; the link that could outrun it is cut to what is left
+    tuningfork chain list | show <id> [--diff]   # each link: verdict, who changed the skill, the lines
+    tuningfork spend --chain <id> | --job <id> | --run <id> | --experiment <id> | --task <id>
+                                          # what work cost: calls, tokens, time, from the records
     tuningfork tasks                      # pass rates: one per harness, model, skill, server
     tuningfork resample <run> <k> -n 20   # re-run step k N times, history held fixed
     tuningfork resample ... --logprobs 8  # ... keeping each sample's tokens (chat-completions steps)
@@ -39,7 +62,8 @@ Inspecting and experimenting (all take `--home <recordings dir>`):
     tuningfork tokens <run> <k> --score   # the answer as tokens: how sure the model was of each
     tuningfork forking-tokens <run> <k>   # force alternatives at uncertain tokens: which flip it
     tuningfork fork <run> <k>             # replay a run up to k, live from there (breakpoints on)
-    tuningfork files <run> <k|start|end>  # the workspace as a call found it (--diff, --out)
+    tuningfork files <run> <k|start|end>  # the workspace as a call found it (--diff: since the step
+                                          #   before; at the end, since the start; --out)
     tuningfork recheck <run> [--check …]  # try a check on a run's end state; records nothing
     tuningfork experiments / experiment   # list, or re-report without new samples
     tuningfork servers                    # which servers answered, and what each was
@@ -62,8 +86,23 @@ was and takes no new work (`refine.refuse_closed`).
 
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
-agent's sight). A batch interrupted — Ctrl-C, or a SIGTERM, which the runner turns into one —
-kills the harness it was waiting on: each runs in a session of its own.
+agent's sight). A check that prints what it found wrong, one finding a line, gets a tally
+(`ops/tally.py`; `tuningfork tally`, MCP's tally_failures, the divergence and experiment pages):
+each finding counted across a task's failed runs by condition, or a screen's failed forks by
+arm, its numbers and colours masked and a run counted once, the most common first — the failure to fix
+first, not the first one read. Run along a run (`ops.checks.check_along`; `tuningfork check-along`, the
+`check-along` job kind; the benchmark's driver does it for the baseline before T starts) — on its
+workspace as it started, after each call that changed it, and at its end, kept in the run's result and
+never a verdict — a check that reads the files says when each finding came to be: there from the start
+is work not done yet; made by a call is a mistake, made there (each line followed by its exact text:
+masked, "not booked yet" and "booked twice" would be one finding). Each state keeps its findings whole
+(`kept_findings`), never from its output's end alone, where a finding there from the start can fall
+off and come back as made by a later call; a state with more than `MAX_FINDINGS` places none of its
+run's findings. The tally then gives each finding
+the step that made it in each run, the passing ones included, and names a mistake every run made and
+some repaired later (`made_along`, `shared_mistakes`): comparing passing with failing runs points at the
+repair there, never at the mistake (findings §31.42). A batch interrupted — Ctrl-C, or a SIGTERM, which
+the runner turns into one — kills the harness it was waiting on: each runs in a session of its own.
 
 Resampling sends straight to the inference server (`TUNINGFORK_UPSTREAM`, default :8081) —
 never a protected endpoint (`endpoints.py`: none until a person lists one). An A/B must declare its target before sampling
@@ -80,10 +119,14 @@ Refining a skill at a step — the target first, then proposed edits, each scree
 validated with full runs, and approved by a person:
 
     tuningfork refine start <run> <k> --target-rules '[…]'    # or --target <letter>, --target-match
+    tuningfork refine start <run> <k> --target-check          # the task's check: a failure only it can see
     tuningfork refine show <id> [--packet]                    # proposals as diffs, verdicts; the evidence
     tuningfork refine propose <id> --builtin [-m 3] [--no-task]   # the proposer's edits ...
     tuningfork refine propose <id> --file SKILL.md --why '…'      # ... or a person's own wording
     tuningfork refine screen <id> -n 20 [--proposals a,b]     # each against a fresh original arm
+    tuningfork refine screen <id> --to-end [-n 20] [--checkpoints 4]   # the arms forks run to the end, the
+                                          #   check deciding, drawn from the same step of several runs
+                                          #   (--quick: 8 forks a proposal, no verdict; --fresh-original)
     tuningfork refine validate <id> <proposal> [-n 5 --runs 5] [--dry-run] [--keep-private DIR]
     tuningfork refine approve <id> <proposal> [--validation v] [--spec S | --target F] [--confirm CODE]
     tuningfork refine show <id> --repair                      # finish an interrupted approval
@@ -92,13 +135,42 @@ validated with full runs, and approved by a person:
 
 A refinement (`ops/refine.py`) is a folder, `<home>/refinements/<id>/`, written once wherever
 it can be: the checkpoint, the run's copy of the skill, its target, and every proposal. A
-proposal is at most 3 exact `{old, new}` edits (`ops/diff.py`) changing at most 10 lines —
-a person's whole text only warns — never the frontmatter, and it must change what the model
+proposal is at most 3 edits (`ops/diff.py`: a line named by its number as show_skill prints
+it and the line as it should read, lines added after one, or exact `{old, new}` text — each
+resolved to an exact replacement of the text as shown, so none shifts another) changing at
+most 10 lines — a person's whole text only warns — never the frontmatter, and it must change what the model
 saw at the step; it is saved as a variant, with who proposed it, why, and the packet they
 were shown (`ops/packet.py`: built from the run's own task's records only, never sampled
 for). A screen (`ops/screen.py`; `analysis/screen.py`) draws a fresh original arm first,
 then each proposal, and tests each against it — Fisher, Holm over the proposals named
-before sampling; an unfinished screen has rates and no verdict. The built-in proposer
+before sampling; an unfinished screen has rates and no verdict. Run to the end
+(`prepare_screen_to_end`, `refine screen --to-end`, the `screen-to-end` job kind), each
+arm's samples are forks from the checkpoint through the harness and the task's check decides
+each (`compare_verdicts`): the only screen for a refinement whose target is the check
+(`--target-check`: a failure only the check can see, a computed property of what the run
+wrote), open to any other, and the record says which measured (`reach`). A fork measures the
+edit given the prefix it replays — the model's answers and what its tools did to the files — so
+an edit to a call before the step shows nothing there: a refinement toward the check, and a
+screen's plan, say when a call before the step changed the workspace (`inspect.replay_warning`;
+findings §31.42: a screen after a delivery was booked saw neither an edit's gain nor its harm).
+And one prefix is one draw of the model's path, so the forks
+are drawn from several checkpoints by default (`--checkpoints`, `choose_checkpoints`): the
+refinement's own run and others of its task at the same step — each run's own such step when
+the step was named by what the run did there (`ops.experiments.find_step`: the first call of a
+tool, `write_file`, or `write_file|execute_code` for whichever came first; `changed:<path>`, the
+call that first changed that file; `made:<words>`, the call that first made a finding of the
+check run along it; `step_named` in the refinement), else the same index — passing and failing by turns,
+each arm's n spread evenly, one experiment per arm per checkpoint in one group. The pooled
+test is the verdict; the report says each arm's passes at each checkpoint, and whether the
+effect held at every one (`across_checkpoints`), since one that lived in a single prefix is
+one fresh runs draw anew. Run to the end, a refinement's original is forked once: its later
+screens draw from the checkpoints its latest drew from (`earlier_checkpoints`), count the
+original's forks its earlier screens drew there — ended, same harness, model and proxy
+(`original_forks`, `original_reused` in the plan) — and draw only what their n still needs
+(`--fresh-original` draws anew; findings §31.57: two screens of a broken skill spent forty forks
+measuring its original at 0/20 twice). A quick look (`--quick`, `quick`) forks each proposal
+`QUICK_N` times and the original not at all, its rates set beside the original's forks drawn
+before: never a verdict (`ScreenReport.verdict`), a lead for the next edit. The built-in proposer
 (`ops/proposer.py`) asks the proxy's own server through the proxy (gated, never recorded)
 unless `config.json` names another endpoint; one that is not this machine needs
 `allow_remote`, and its key is `TUNINGFORK_PROPOSER_KEY` or `<home>/.proposer-key` (0600),
@@ -151,14 +223,22 @@ from the recording (`tuningfork.replay`); the proxy's `--max-inflight` must be a
 (an adapter's layout "install": Hermes in `~/.hermes`, a skill in the category folder it
 declares; Claude Code in `~/.claude`), because the model reads those paths; each launch
 records its layout, and a fork is laid out as its source was ("flat" before layouts were
-recorded). Where bubblewrap runs, every launch runs in a sandbox (`sandbox.py`): it sees
+recorded) and set up as it was (a harness option changes what the model is told: a fork
+told otherwise departs from the recording at its first step; an MCP server, recorded by
+name only, is not carried, and the plan warns). Where bubblewrap runs, every launch runs in a sandbox (`sandbox.py`): it sees
 its home as `/home/user` and works in `/home/user/project`, the same in every run, because
 a few digits of a launch's own folder name were seen to change what the model did; the
 rest of the machine read-only, `/tmp` and its processes its own, and the recordings folder,
 the runs' folder and the spec's folder empty inside. A launch records its sandbox, a fork of
 a sandboxed run is refused without one, and a batch's plan warns when there is none.
-`TUNINGFORK_SANDBOX=off` turns it off — the suite's `conftest.py` does, and
-`tests/test_sandbox.py` turns it back on where bubblewrap can run. The normalizer masks the
+`TUNINGFORK_SANDBOX_HIDE` names folders every launch sees empty besides tuningfork's own, as
+PATH is written — where a benchmark keeps its checks' keys, which an agent given the file
+system would otherwise read. `TUNINGFORK_SANDBOX=off` turns it off — the suite's `conftest.py` does, and
+`tests/test_sandbox.py` turns it back on where bubblewrap can run. `TUNINGFORK_CLOCK=YYYY-MM-DD
+HH:MM:SS` starts every launch's clock at that instant (libfaketime under `LD_PRELOAD`, monotonic
+clocks left real): the harness reads the same date whichever day a run is made — the model
+reads it, and at a knife edge it decides — a fork reads its source's, the launch records it,
+and a plan warns where the library is missing (`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere). The normalizer masks the
 sandbox's paths as it masks a launch's own (`NORMALIZER_VERSION` 3).
 
 Live breakpoints talk to a running proxy (`--proxy`, or `TUNINGFORK_PROXY`, default :8787):
@@ -185,6 +265,7 @@ extra, `tuningfork[mcp]`; nothing else imports it):
 
     tuningfork mcp --home <dir> [--proxy URL] [--tools evidence|refine|all]   # stdio
     tuningfork serve ... --mcp-tools evidence|refine|all|none                 # also at /_tuningfork/mcp
+    tuningfork serve ... --mcp-results text   # or mcp --results text: each answer once, for Hermes
 
 Reads answer from the recordings in the MCP process; `start_*` tools are job kinds, sent to
 the proxy recording into the same folder. Every job kind needs a decision in
@@ -192,11 +273,55 @@ the proxy recording into the same folder. Every job kind needs a decision in
 the machine: `--tools all`) or `EXCLUDED` with a reason — or `tests/test_mcp_schema.py`
 fails. The default toolset is the evidence kinds but `screen`; `--tools refine` is the
 refinement loop: start_refinement, show_refinement and propose_edit (which act in the MCP
-process and call no model), resample, A/B and screen. No agent is offered the built-in
+process and call no model), resample, A/B and screen; `--tools refine-to-end` adds the screen
+run to the end, a HARNESS kind. Every tool's description carries what an
+agent must know, since a client may show the model no server instructions (Hermes shows none):
+the skill is read with show_skill, never from a file; tally_failures counts every failed run's
+check output at once, the most common failure first (never of a held-out task) — and says so when
+the check printed only its verdict, where where_it_holds asks one question of every run instead
+(`ops.where`: a target tried at every step of every run, or a file's pattern at each state of its
+workspace, lined up with the verdicts; the call that made the difference, and the step that names it
+in each run, for start_refinement; where no run of the task passed, of a screen's forks, arm by arm —
+`where_in_screen`, and the answer names a screen whose forks passed, `passing_screens`) — and, where the
+check was run along the runs, which call made each finding — a mistake every run made named as one,
+with where to refine it (its call, toward the check); a failed run's check output (show_run: what
+each step's calls ran, `inspect.ran_excerpt`, where a label shows a script only as its digest, and
+the files each changed) and what it wrote (show_files: at the end, what the whole run changed since
+it started, with a diff) are where to look — a long file, or a long message of a step (show_step's
+`message`), read page by page from `offset` (`mcp.tools.page`, `FILE_PAGE`; findings §31.57: a cut
+with no way past it hid the legend the check failed); the step to refine is the first whose call made what
+the check complains about — never named as the last call, which sent an agent two steps past a
+mistake (findings §31.42) — since a screen replays everything before its step, the files included
+(start_refinement and the screen tools say so); a target is what the passing runs' answers
+have that the failing runs' lack — the tool they call, when find_divergence says a tool goes
+with passing (`ops.inspect.tool_split`: runs that called it against runs that never did, at
+whatever step, since a run that scripted its file never called the write tool at all), or
+words their answers contain — and step_behaviours tries one against the recorded answers
+split by verdict (`ops.targets`: each behaviour with how the runs that took it fared) before a
+screen is spent. A step named by what the run did there (`write_file`, or `write_file|execute_code`
+for whichever came first; `changed:<path>`; `made:<words>`) is compared across runs at each run's
+own such step; an index is the
+same number, another point in a run that took another path. Where the recorded answers were
+scored (`tuningfork tokens --score`; the benchmark's driver scores the baseline runs before
+the agent starts, and runs the check along them), step_behaviours says the model's own chance of each tool at the step
+(`analysis.tokens.tool_choice`: at the first token of the call's name, under the step's
+sampler) — a choice near even is one a few words move; start_refinement refuses a target no recorded answer at the step satisfies
+unless `unseen_ok` says the behaviour is new, one every recorded answer satisfies (five or
+more seen), since a screen could only show it falling, and one the failing runs' answers
+satisfy as readily as the passing runs', since moving it would not move the verdict, and says when
+the checkpoint run passed its check, since a step screen there starts near the ceiling (a step screen
+whose original arm reaches the target four times in five says so too); and
+find_divergence also names the step whose behaviour best predicts the verdict, when one does
+(`ops.inspect.verdict_split`). No agent is offered the built-in
 proposer — sending recordings to an endpoint is the person's decision — nor anything that
 approves an edit. An answer is a compact view (`ops/compact.py`) whose
 sentences lead both its text and its structured content (`summary`): Claude Code shows the
-model only the structured content. Point a driving agent's own model at the inference
+model only the structured content, OpenJarvis the text, and Hermes both side by side — every
+answer twice, so for it `--mcp-results text` (`mcp --results text`) sends the text alone
+(`mcp.server.RESULTS`). The same refusal three times running carries the tool's description
+again, and from the sixth time says to stop sending that call and try another edit, step or
+tool (`ToolServer._repeated`): a weak reader reads each as the first, and one told to stop
+would take it for the task. Point a driving agent's own model at the inference
 server, never at the proxy it studies.
 
 A tool call made without reasoning is marked only where the same run reasons at another step
@@ -225,7 +350,18 @@ function is meant to be reachable from each: logic a second front end would need
 belong in `cli.py`, `api/` or `ui/`. The job kinds a front end can start are listed once,
 in `ops/catalog.py`, with strict parameters (`GET /jobs/kinds` serves them). Only a call a
 breakpoint could apply to leaves the proxy's ordinary streaming path, so nothing changes for
-traffic while no breakpoint is armed.
+traffic while no breakpoint is armed — but a cap the proxy was started with: `--max-output N`
+(`Settings.max_output`) holds every call a harness makes through it to N output tokens
+(`wire.base.cap_output`, by the limits each format names, `output_limits`: a limit above N, or
+none, is sent as N). The step records the request as the model was sent it, and what the
+harness asked in its params (`output_cap`), from which `Store.harness_request` gives the
+harness's own back — what a fork's replay matches against. A call a person edits at a
+breakpoint is held to N again (the edit's own ask in the step's `edits`), and a validation's
+held-out runs, which the main proxy relays unrecorded, are held to it by their private proxy
+(`ValidatePlan.max_output`). Experiment traffic keeps its own limit. The cap belongs in the proxy because Hermes answers a reply cut at its own limit by asking
+again for more (a tool call dropped and resent, text continued; four or five times, the limit
+doubled each time): an agent's reply looped to Hermes's 65,536 tokens for 35 minutes of one GPU
+(findings §31.58).
 
 The test suite must always pass with no GPU and no model loaded. That is the contribution
 gate for an outside PR, so a test that needs real inference belongs behind a marker, not in
@@ -237,9 +373,13 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     src/tuningfork/ops/        every operation, once: experiments, forks, batch, holds (tools at
                                a held call), scenarios, variants, connections, inspect, timeline
                                (a run as one conversation; a step's detail), checks (a check
-                               tried before it is trusted), tokens (an answer as tokens, scored),
+                               tried before it is trusted; run along a run, which call made each
+                               finding), tokens (an answer as tokens, scored),
                                forking (the forking-token probe), targets (what a target would
-                               count among the behaviours seen at a step), trash (set aside,
+                               count among the behaviours seen at a step), tally (what the failed
+                               runs' checks said, counted), where (one question of every run —
+                               of its answers or its files — lined up with the verdicts: the call
+                               that made the difference), trash (set aside,
                                restored, deleted for good), compact (results small enough for an
                                agent, intervals intact), refine (a skill refined at a step: its
                                target, proposals and screens), packet (the evidence a proposer

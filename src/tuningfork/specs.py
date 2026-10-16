@@ -464,6 +464,16 @@ def hash_tree(roots: Iterable[Path]) -> dict[str, str]:
     return hashes
 
 
+def fingerprint(hashes: dict[str, str]) -> str | None:
+    """A short fingerprint of a skill's files from their hashes (`hash_tree`): the same for
+    two folders whose files match byte for byte, and None for no files. How a run names the
+    skill version it was given (`Run.skill_version`)."""
+    if not hashes:
+        return None
+    signature = json.dumps(hashes, sort_keys=True)
+    return hashlib.sha256(signature.encode()).hexdigest()[:8]
+
+
 def skill_bodies(roots: Iterable[Path]) -> dict[str, dict[str, Any]]:
     """For each SKILL.md under `roots`: the hash of its body with the frontmatter removed,
     and the file line the body starts on, keyed like `hash_tree`.
@@ -507,6 +517,10 @@ class CheckResult:
 REPLY_QUOTED = 500
 
 
+#: The end of a check's output a verdict keeps, in characters.
+CHECK_KEPT = 2000
+
+
 def run_check(
     command: str | dict[str, str] | None,
     workspace: Path,
@@ -515,13 +529,15 @@ def run_check(
     reply: str | None = None,
     reply_file: Path | None = None,
     spec_dir: Path | None = None,
+    keep: int | None = CHECK_KEPT,
 ) -> CheckResult:
     """Judge a finished run: a shell command run in its workspace, or a reply check.
 
     `reply` is the agent's final reply (empty when it ended without one). A reply check
     judges it here, in Python; a shell command finds it in the file `REPLY_ENV` names, and
     its spec's folder in `SPEC_DIR_ENV` — where a check script can sit, out of the agent's
-    sight: `python3 "$TUNINGFORK_SPEC_DIR/checks/report.py"`.
+    sight: `python3 "$TUNINGFORK_SPEC_DIR/checks/report.py"`. Its output is kept to its last
+    `keep` characters; None keeps it whole, for a caller that reads every line of it.
 
     No check means no verdict — recorded as `None`-ish rather than silently passing, since
     a check that does not run must never look like a success.
@@ -551,10 +567,10 @@ def run_check(
         )
     except subprocess.TimeoutExpired:
         return CheckResult(passed=False, output=f"check timed out after {timeout}s")
-    output = (completed.stdout or "") + (completed.stderr or "")
+    output = ((completed.stdout or "") + (completed.stderr or "")).strip()
     return CheckResult(
         passed=completed.returncode == 0,
-        output=output.strip()[-2000:],
+        output=output[-keep:] if keep is not None else output,
         returncode=completed.returncode,
     )
 

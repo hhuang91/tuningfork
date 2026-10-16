@@ -1,0 +1,27 @@
+--- original/SKILL.md
++++ X/SKILL.md
+@@ -40,6 +40,6 @@
+ 
+ 1. User describes their system architecture (components, connections, technologies)
+-2. Generate the HTML file following the design system below
+-3. Save with `write_file` to a `.html` file (e.g. `~/architecture-diagram.html`)
++2. Plan before you write: list every component and boundary box with its x, y, width and height (boxes 60px tall, 80-120px if large; stacked boxes at least 40px apart), then work out the legend's position and the viewBox height by the Legend Placement rule; generate the HTML file from that plan, following the design system below
++3. Save with `write_file` to a `.html` file (e.g. `~/architecture-diagram.html`), then read it back and check it: the legend's top at least 20px below every boundary's bottom edge, its last row inside the viewBox, and the four template fixes under Template Reference in place; fix anything missing and save again
+ 4. User opens in any browser — works offline, no dependencies
+ 
+@@ -108,5 +108,5 @@
+ - **Vertical Gap:** Minimum 40px between components
+ - **Message Buses:** Must be placed *in the gap* between services, not overlapping them
+-- **Legend Placement:** **CRITICAL.** Must be placed outside all boundary boxes. Calculate the lowest Y-coordinate of all boundaries and place the legend at least 20px below it.
++- **Legend Placement:** **CRITICAL.** Must be placed outside all boundary boxes. Take the largest bottom edge (y + height) of all boundaries, place the legend's top at least 20px below it, and make the viewBox tall enough to show the legend's last row.
+ 
+ ## Document Structure
+@@ -146,3 +146,7 @@
+ ```
+ 
+-The template contains working examples of every component type (frontend, backend, database, cloud, security), arrow styles (standard, dashed, curved), security groups, region boundaries, and the legend — use it as your structural reference when generating diagrams.
++The template contains working examples of every component type (frontend, backend, database, cloud, security), arrow styles (standard, dashed, curved), security groups, region boundaries, and the legend — use it as your structural reference when generating diagrams, but where it breaks the rules above, follow the rules:
++- **Legend:** below every boundary box by the Legend Placement rule, in a viewBox tall enough to hold it — not inside the region box, where the template puts it.
++- **Masking:** an opaque `#0f172a` rect under every component box (not under boundaries) — the template has none.
++- **Z-order:** every arrow drawn right after the grid, before any box — the template draws them after its boxes.
++- **Type:** in the SVG, 12px names and only 9, 8 or 7px for other text — not the template's 11px and 10px.

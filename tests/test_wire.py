@@ -16,6 +16,7 @@ from tuningfork.analysis.normalize import outcome_for
 from tuningfork.proxy.sse import CUT_OFF, SSEParser
 from tuningfork.wire import get_wire, wire_for
 from tuningfork.wire.anthropic import AnthropicMessages
+from tuningfork.wire.base import cap_output, uncapped
 from tuningfork.wire.openai import OpenAIChat
 
 ANTHROPIC = AnthropicMessages()
@@ -474,3 +475,50 @@ class TestOpenAI:
     )
     def test_a_body_is_a_failure_by_status_or_by_shape(self, status, body, expected):
         assert OPENAI.failure(status, body) == expected
+
+
+class TestOutputCap:
+    """A proxy's cap on output tokens (`serve --max-output`), as each format names the limit."""
+
+    def test_a_limit_above_the_cap_is_lowered_and_what_was_asked_kept(self):
+        request = {"model": "m", "max_tokens": 65536, "messages": [], "stream": True}
+
+        capped, note = cap_output(OPENAI, request, 8192)
+
+        assert capped == {**request, "max_tokens": 8192}
+        assert list(capped) == list(request)  # every key where the harness put it
+        assert note == {"cap": 8192, "asked": {"max_tokens": 65536}, "written": ["max_tokens"]}
+        assert request["max_tokens"] == 65536  # the harness's own request is left alone
+        assert uncapped(capped, note) == request
+
+    def test_a_request_naming_no_limit_is_given_the_formats_own(self):
+        request = {"model": "m", "messages": []}
+
+        capped, note = cap_output(OPENAI, request, 100)
+
+        assert capped["max_tokens"] == 100 and note["asked"] == {}
+        assert uncapped(capped, note) == request  # the written limit taken out again
+
+    @pytest.mark.parametrize("limit", [-1, None, "lots", 2.5, True])
+    def test_no_limit_at_all_is_more_than_the_cap(self, limit):
+        capped, note = cap_output(OPENAI, {"n_predict": limit, "messages": []}, 100)
+        assert capped["n_predict"] == 100 and note["asked"] == {"n_predict": limit}
+
+    def test_each_limit_named_is_held_and_one_within_it_left(self):
+        request = {"max_tokens": 50, "n_predict": -1, "messages": []}
+
+        capped, note = cap_output(OPENAI, request, 100)
+
+        # llama.cpp reads n_predict before max_tokens: lowering max_tokens alone would not do.
+        assert (capped["max_tokens"], capped["n_predict"]) == (50, 100)
+        assert note["written"] == ["n_predict"]
+        assert uncapped(capped, note) == request
+
+    def test_a_request_within_the_cap_comes_back_as_it_was(self):
+        request = {"max_tokens": 100, "messages": []}
+        assert cap_output(OPENAI, request, 100) == (request, None)
+        assert cap_output(AnthropicMessages(), {"max_tokens": 64, "messages": []}, 100)[1] is None
+
+    def test_anthropic_messages_names_its_one_limit(self):
+        capped, note = cap_output(AnthropicMessages(), {"max_tokens": 32000, "messages": []}, 8192)
+        assert capped["max_tokens"] == 8192 and note["asked"] == {"max_tokens": 32000}

@@ -299,6 +299,11 @@ function head(view) {
           h("a", { class: "mono", href: `#/experiments/${view.sample.experiment_id}` }, short(view.sample.experiment_id)),
           ` — ${view.sample.outcome || ""}`)
       : null,
+    view.choice
+      ? h("p", { class: "small" }, `Choice of tool, at token [${view.choice.position}]: `,
+          Object.entries(view.choice.chance || {}).map(([name, p]) => `${name} ${Math.round(p * 100)}%`).join(", "),
+          " — the model's own chance of each, under the step's sampler. A choice near even is one a few words of the skill can move.")
+      : null,
     h("p", { class: "hint" }, `Entropy counts the probability beyond the top ${view.top_k} as one outcome, so it is a lower bound. Where it could have gone another way is under the step's own sampler settings.`));
 }
 

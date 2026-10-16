@@ -113,6 +113,21 @@ class TestTheCommand:
         assert hideable([checkout], real_home=person, keep=[fixtures / "formats"]) == []
         assert hideable([person], real_home=person) == []
 
+    def test_folders_the_person_names_are_hidden_from_every_launch(self, tmp_path, monkeypatch):
+        from tuningfork.sandbox import HIDE, Status, for_launches
+
+        keys, more, home = tmp_path / "keys", tmp_path / "more", tmp_path / "home"
+        for folder in (keys, more, home):
+            folder.mkdir()
+        monkeypatch.setattr(tuningfork.sandbox, "status", lambda: Status("/usr/bin/bwrap", "0.11.1"))
+        monkeypatch.setenv(HIDE, f"{keys}{os.pathsep} {more} {os.pathsep}")
+        sandbox, why = for_launches([home])
+        assert why is None and sandbox.hide == (home.resolve(), keys.resolve(), more.resolve())
+        assert sandbox.to_json()["hidden"] == [str(folder) for folder in sandbox.hide]
+        monkeypatch.delenv(HIDE)
+        plain, _ = for_launches([home])
+        assert plain.hide == (home.resolve(),)
+
     def test_the_hidden_folders_leave_the_harnesss_path(self, tmp_path, monkeypatch, elsewhere):
         person = tmp_path / "person"
         checkout = person / "tuningfork"
@@ -251,3 +266,86 @@ class TestInBubblewrap:
             with pytest.raises(OperationError) as refused:
                 stack.fork(source.run_id, "write_file")
             assert refused.value.code == "no_sandbox"
+
+
+class TestTheClock:
+    def test_a_launch_starts_at_the_pinned_instant(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path("/home/tester")))
+        home, workspace = folders(tmp_path)
+        spec = LaunchSpec(argv=("hermes", "chat"), env={"PATH": "/usr/bin", "LD_PRELOAD": "/lib/other.so"}, cwd=workspace)
+        pinned = Sandbox("/usr/bin/bwrap", "0.11.1", clock="2026-10-08 09:00:00", clock_library="/lib/libfaketime.so.1")
+        wrapped = pinned.wrap(spec, home=home, workspace=workspace)
+        assert wrapped.env["FAKETIME"] == "@2026-10-08 09:00:00"
+        assert wrapped.env["LD_PRELOAD"] == "/lib/libfaketime.so.1:/lib/other.so"
+        assert wrapped.env["FAKETIME_DONT_FAKE_MONOTONIC"] == "1"
+        assert pinned.to_json()["clock"] == "2026-10-08 09:00:00"
+        plain = Sandbox("/usr/bin/bwrap", "0.11.1")
+        assert "FAKETIME" not in plain.wrap(spec, home=home, workspace=workspace).env
+        assert "clock" not in plain.to_json()
+
+    def test_the_persons_setting_pins_it_where_the_library_is(self, tmp_path, monkeypatch):
+        from tuningfork.sandbox import CLOCK, CLOCK_LIBRARY, Status
+
+        monkeypatch.setattr(tuningfork.sandbox, "status", lambda: Status("/usr/bin/bwrap", "0.11.1"))
+        library = tmp_path / "libfaketime.so.1"
+        library.write_bytes(b"")
+        monkeypatch.setenv(CLOCK, "2026-10-08 09:00:00")
+        monkeypatch.setenv(CLOCK_LIBRARY, str(library))
+        sandbox, why = for_launches([])
+        assert why is None and sandbox.clock == "2026-10-08 09:00:00" and sandbox.clock_library == str(library)
+        assert sandbox.clock_problem is None
+        # A fork gives its source's clock, or none, whatever the person set now.
+        assert for_launches([], clock=None)[0].clock is None
+        assert for_launches([], clock="2026-01-05 09:00:00")[0].clock == "2026-01-05 09:00:00"
+        # Without the library the runs keep the real clock, and the plans can say so.
+        monkeypatch.setenv(CLOCK_LIBRARY, str(tmp_path / "missing.so"))
+        monkeypatch.setattr(tuningfork.sandbox, "CLOCK_LIBRARIES", ())
+        unpinned, _ = for_launches([])
+        assert unpinned.clock is None and "libfaketime is not installed" in unpinned.clock_problem
+        # Not an instant: the real clock, and why.
+        monkeypatch.setenv(CLOCK, "tomorrow")
+        odd, _ = for_launches([])
+        assert odd.clock is None and "not an instant" in odd.clock_problem
+        # Off, or unset: the real clock, nothing to say.
+        monkeypatch.setenv(CLOCK, "off")
+        assert for_launches([])[0].clock_problem is None
+        monkeypatch.delenv(CLOCK)
+        assert for_launches([])[0].clock is None
+
+    def test_the_batch_plan_says_it_or_warns(self, tmp_path, mock_server, monkeypatch):
+        from tuningfork.ops.batch import prepare_batch
+
+        with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+            stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+            kwargs = dict(base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches", model="m", harness="fake", n=1)
+            monkeypatch.setattr(
+                tuningfork.sandbox, "for_launches",
+                lambda hide, **_: (Sandbox("/usr/bin/bwrap", "0.11.1", clock="2026-10-08 09:00:00", clock_library="/lib/x.so"), None),
+            )
+            data = prepare_batch(stack.store, stack.spec.path, **kwargs).to_json()
+            assert data["sandbox"]["clock"] == "2026-10-08 09:00:00" and data["notes"] == []
+            problem = "the clock cannot be pinned at 2026-10-08 09:00:00: libfaketime is not installed"
+            monkeypatch.setattr(
+                tuningfork.sandbox, "for_launches",
+                lambda hide, **_: (Sandbox("/usr/bin/bwrap", "0.11.1", clock_problem=problem), None),
+            )
+            data = prepare_batch(stack.store, stack.spec.path, **kwargs).to_json()
+            assert "clock" not in data["sandbox"]
+            (note,) = data["notes"]
+            assert note["level"] == "warning" and "libfaketime is not installed" in note["message"]
+
+    def test_a_launch_reads_the_pinned_clock(self, sandboxed, tmp_path):
+        from tuningfork.sandbox import clock_library
+
+        library = clock_library()
+        if library is None:
+            pytest.skip("libfaketime is not installed here")
+        home, workspace = folders(tmp_path)
+        script = "import datetime; print(datetime.datetime.now().strftime('%A, %B %d, %Y'))"
+        spec = LaunchSpec(argv=(sys.executable, "-c", script), env={"PATH": os.environ.get("PATH", "")}, cwd=workspace)
+        pinned = Sandbox(sandboxed.executable, sandboxed.version, clock="2026-10-08 09:00:00", clock_library=library)
+        wrapped = pinned.wrap(spec, home=home, workspace=workspace)
+        done = subprocess.run(list(wrapped.argv), env=wrapped.env, cwd=wrapped.cwd, capture_output=True, text=True, timeout=60)
+        assert done.returncode == 0, done.stderr
+        assert done.stdout.strip() == "Thursday, October 08, 2026"
+

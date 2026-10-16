@@ -264,6 +264,7 @@ def _parts(blocks: list[Any]) -> str | list[dict[str, Any]]:
 class AnthropicMessages:
     name = "anthropic-messages"
     endpoint = "/v1/messages"
+    output_limits = ("max_tokens",)
 
     def matches(self, method: str, path: str) -> bool:
         return method == "POST" and path.endswith("/v1/messages")

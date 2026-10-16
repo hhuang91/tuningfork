@@ -37,27 +37,118 @@ def tools_called(store: Store, step: Step) -> list[str]:
     return [(call.get("function") or {}).get("name") for call in message.get("tool_calls") or []]
 
 
-def first_call(store: Store, run: Run, tool: str) -> int | None:
-    """The first step of `run` whose model called `tool`, if any."""
+#: Joins tool names in a step reference: "write_file|execute_code" is the first step whose
+#: model called either — the step where a run wrote, whichever way it wrote.
+EITHER = "|"
+#: A step named by the call that first changed a file of the workspace — "changed:inventory.json",
+#: or a glob, "changed:*.json" — found from the run's snapshots (`ops.inspect.first_change`).
+CHANGED = "changed:"
+#: A step named by the call that first made a finding its task's check prints — "made:in stock" —
+#: found from the check run along the run (`ops.checks.check_along`, `first_made`).
+MADE = "made:"
+
+
+def step_tools(reference: str) -> list[str] | None:
+    """The tools a step reference names, as `step_index` reads it; None for an index, or for a
+    step named by a file's first change or a finding's making."""
+    if reference.isdigit() or reference.startswith((CHANGED, MADE)):
+        return None
+    return [name for name in reference.split(EITHER) if name]
+
+
+def named_by_doing(reference: str) -> bool:
+    """Whether a step reference names the step by what the run did there — a tool it called, a
+    file its call first changed, a finding its call first made — so that another run's same step
+    is that run's own such step, not the same index."""
+    return not reference.isdigit()
+
+
+def first_call(store: Store, run: Run, tool: str | Sequence[str]) -> int | None:
+    """The first step of `run` whose model called `tool` — any of them, given several."""
+    wanted = {tool} if isinstance(tool, str) else set(tool)
     for step in store.steps(run.id):
-        if tool in tools_called(store, step):
+        if wanted.intersection(tools_called(store, step)):
             return step.idx
     return None
 
 
+def find_step(store: Store, run: Run, reference: str | Sequence[str]) -> int | None:
+    """The step `reference` names in `run`, by what the run did there, or None when it did no such
+    thing; an index is itself. A sequence of tool names is the first call of any of them."""
+    if not isinstance(reference, str):
+        return first_call(store, run, reference)
+    if reference.isdigit():
+        return int(reference)
+    if reference.startswith(CHANGED):
+        from tuningfork.ops.inspect import first_change
+
+        return first_change(store, run, reference[len(CHANGED):] or "*")
+    if reference.startswith(MADE):
+        from tuningfork.ops.checks import first_made
+
+        return first_made(run, reference[len(MADE):])
+    tools = step_tools(reference)
+    return first_call(store, run, tools) if tools else None
+
+
+def not_done(reference: str | Sequence[str]) -> str:
+    """What a run did not do, when `find_step` finds no step of it: "never called write_file"."""
+    if not isinstance(reference, str):
+        return f"never called {' or '.join(reference)}"
+    if reference.startswith(CHANGED):
+        return f"never changed {reference[len(CHANGED):] or 'a file'}"
+    if reference.startswith(MADE):
+        return f"made no finding with {reference[len(MADE):]!r} (or its check was not run along it)"
+    return f"never called {' or '.join(step_tools(reference) or [reference])}"
+
+
 def step_index(store: Store, run: Run, reference: str) -> int:
-    """A step of `run` by its index, or as the first step whose model called that tool.
+    """A step of `run` by its index, as the first step whose model called that tool — or any
+    of several tools, joined by `|` — or as the step whose call first changed a file
+    (`changed:<path>`) or first made a finding of the task's check (`made:<words>`).
 
     "The write" is how a person thinks of a step; its number depends on the path the run
-    took — a run that listed the directory first writes a step later.
+    took — a run that listed the directory first writes a step later. And not every run
+    writes the same way: one calls write_file, another a script through execute_code, so
+    "write_file|execute_code" names the write in both. Where every run made the same mistake
+    with one call among several — a delivery booked a second time — "changed:inventory.json"
+    names that call in each run, whatever tool made it.
     """
     if reference.isdigit():
         return int(reference)
-    found = first_call(store, run, reference)
+    if reference.startswith(CHANGED):
+        found = find_step(store, run, reference)
+        if found is None:
+            raise OperationError(
+                f"run {run.id[:8]} {not_done(reference)}: no call of it changed that in its workspace",
+                hint="show_files where=end lists what the run changed (`tuningfork files <run> end`)",
+            )
+        return found
+    if reference.startswith(MADE):
+        if not reference[len(MADE):].strip():
+            raise OperationError("made: names a finding by words it contains: made:in stock", code="bad_params",
+                                 field="step")
+        found = find_step(store, run, reference)
+        if found is None:
+            raise OperationError(
+                f"run {run.id[:8]} {not_done(reference)}",
+                hint="`tuningfork check-along --run <run>` runs the task's check along it; the tally then says "
+                     "which call made each finding",
+            )
+        return found
+    tools = step_tools(reference)
+    if not tools or any(ch.isspace() for ch in reference):
+        raise OperationError(
+            "a step is its number, or the name of the tool the model called there (write_file; "
+            "write_file|execute_code for whichever came first), or changed:<path> or made:<words>: "
+            f"not {reference!r}",
+            code="bad_params", field="step",
+        )
+    found = first_call(store, run, tools)
     if found is None:
         raise OperationError(
-            f"run {run.id[:8]} has no step where the model called {reference}",
-            hint=f"`tuningfork runs --called {reference}` lists runs that do",
+            f"run {run.id[:8]} has no step where the model called {' or '.join(tools)}",
+            hint=f"`tuningfork runs --called {tools[0]}` lists runs that do",
         )
     return found
 

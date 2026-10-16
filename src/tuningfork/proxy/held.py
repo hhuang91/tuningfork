@@ -42,6 +42,7 @@ from tuningfork.config import Settings
 from tuningfork.proxy.recorder import Recorder, Timings
 from tuningfork.proxy.sse import SSEParser, unreadable
 from tuningfork.wire import Assembler, WireFormat
+from tuningfork.wire.base import cap_output
 
 #: Fields describing the harness's connection rather than the call's content. An edited
 #: request keeps the harness's values, because the harness is still the one listening.
@@ -281,6 +282,13 @@ class BreakpointPath:
                         sent[key] = payload[key]
                     else:
                         sent.pop(key, None)
+                # The proxy's cap holds an edited call too: an edit asking for more output, or
+                # for no limit, is sent at the cap, and the step says what the edit asked.
+                # What the harness asked stays in the call's own note (`output_cap`).
+                if self.settings.max_output is not None:
+                    sent, held_to = cap_output(wire, sent, self.settings.max_output)
+                    if held_to is not None:
+                        edits["output_cap"] = held_to
                 if sent != payload:
                     edits["request"] = describe_edit(payload, sent)
                     # What the model will see now. A response-phase condition, and a
@@ -333,6 +341,7 @@ class BreakpointPath:
                     assignment=assignment,
                     replay=notes.get("replay"),
                     substitution=notes.get("substitution"),
+                    output_cap=notes.get("output_cap"),
                     workspace_commit=notes.get("workspace_commit"),
                     holds=list(held),
                 )

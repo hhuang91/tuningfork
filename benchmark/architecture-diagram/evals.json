@@ -1,0 +1,24 @@
+{
+  "skill_name": "architecture-diagram",
+  "tuningfork": {"skill_dir": "architecture-diagram"},
+  "evals": [
+    {
+      "id": "pinboard",
+      "prompt": "Use the architecture-diagram skill to draw the architecture of Pinboard, our photo-sharing app, and save it as pinboard-architecture.html in the project folder. People use Pinboard from a browser or the mobile app. Requests go through CloudFront to an Application Load Balancer in the security group sg-web, which forwards them to the API service (Node.js on ECS Fargate) in the security group sg-app. The API keeps its data in PostgreSQL on RDS, caches sessions in Redis (ElastiCache) and stores photos in an S3 bucket, which CloudFront also serves. Everything but the users and sign-in runs in the AWS region us-east-1; sign-in goes through Auth0.",
+      "expected_output": "pinboard-architecture.html in the project folder: Pinboard's system drawn in the skill's dark design system, as one self-contained HTML file.",
+      "files": [
+        {"path": "README.md", "content": "# Pinboard\n\nPinboard's photo-sharing app: infrastructure notes.\n"}
+      ],
+      "expectations": [
+        "pinboard-architecture.html is one self-contained HTML file whose diagram is an inline SVG, with no JavaScript and nothing external but Google Fonts",
+        "every part of the system named in the request is in the diagram",
+        "the diagram follows the skill's design system and layout rules, and shows whole in a browser"
+      ],
+      "tuningfork": {
+        "check": "uv run --quiet --no-project python \"$TUNINGFORK_SPEC_DIR/checks/diagram.py\" pinboard",
+        "max_turns": 30,
+        "timeout": 900
+      }
+    }
+  ]
+}

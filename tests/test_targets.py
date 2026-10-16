@@ -130,6 +130,31 @@ class TestSeen:
         own = seen_behaviours(store, ran[1], "0", base=True).to_json()
         assert {entry["label"].split("(")[0]: entry["matches"] for entry in own["behaviours"]} == {"read_file": True, "search_files": False}
 
+    def test_how_the_runs_that_took_each_behaviour_fared(self, store):
+        """A target a screen can move counts the passing runs' answers and not the failing
+        runs': the split says so before a screen is spent. A run whose verdict does not
+        count (unusable) is seen, and judged by nothing."""
+        ran = [
+            record_run(store, f"v{index}", [tool_call_message(name, {"pattern" if name == "search_files" else "path": "data.csv"})], task_id="t/2")
+            for index, name in enumerate(["search_files", "read_file", "read_file", "search_files"])
+        ]
+        for run_id, passed in zip(ran, (True, False, False)):
+            store.annotate_run(run_id, result={"passed": passed, "usable": True})
+        store.annotate_run(ran[3], result={"passed": True, "usable": False})
+
+        seen = seen_behaviours(store, ran[0], "0", target_rules=[{"if": "calls", "value": "search_files"}])
+
+        by_label = {entry.outcome.label.split("(")[0]: entry for entry in seen.behaviours}
+        assert by_label["search_files"].verdicts == {"passed": 1} and by_label["read_file"].verdicts == {"failed": 2}
+        assert seen.judged == {"passed": 1, "failed": 2} and seen.recorded == 4
+        assert seen.split() == {"kind": "mixed", "passing": {"counted": 1, "of": 1},
+                                "failing": {"counted": 0, "of": 2}, "separates": True}
+        everything = seen_behaviours(store, ran[0], "0", target_match="data").split()
+        assert everything["kind"] == "universal" and everything["separates"] is False
+        nothing = seen_behaviours(store, ran[0], "0", target_match="zzz").to_json()["split"]
+        assert nothing["kind"] == "unseen" and nothing["passing"] == {"counted": 0, "of": 1}
+        assert seen_behaviours(store, ran[0], "0").split() is None
+
     def test_a_bad_description_or_pattern_names_its_field(self, store):
         run = record_run(store, "r", [text_message("x")], task_id="t/1")
         with pytest.raises(OperationError) as described:
@@ -140,3 +165,61 @@ class TestSeen:
 
     def test_the_tools_a_step_offered(self):
         assert offered_tools({"tools": [{"type": "function", "function": {"name": "read_file"}}, {"name": "Write"}]}) == ["read_file", "Write"]
+
+
+class TestAligned:
+    """A step named by its tool is compared across runs at each run's own such step — the
+    write is step 1 in a run that read first and step 2 in one that searched first — and
+    a run that wrote another way is counted apart, with its verdict, not compared at a
+    step that is something else in it."""
+
+    def runs(self, store):
+        read = tool_call_message("read_file", {"path": "notes.md"})
+        search = tool_call_message("search_files", {"pattern": "*.md"})
+        write = tool_call_message("write_file", {"path": "out.md", "content": "x"})
+        script = tool_call_message("execute_code", {"code": "write_file('out.md', 'x')"})
+        ran = [
+            record_run(store, "a-read-then-write", [read, write, text_message("done")], task_id="t/9"),
+            record_run(store, "b-search-then-write", [search, read, write, text_message("done")], task_id="t/9"),
+            record_run(store, "c-scripted", [read, script, text_message("done")], task_id="t/9"),
+            record_run(store, "d-never-wrote", [read, text_message("I could not")], task_id="t/9"),
+        ]
+        for run_id, passed in zip(ran, (True, True, False, False)):
+            store.annotate_run(run_id, result={"passed": passed, "usable": True})
+        return ran
+
+    def test_a_step_named_by_its_tool_compares_each_run_at_its_own(self, store):
+        ran = self.runs(store)
+        by_index = seen_behaviours(store, ran[0], "1").to_json()
+        by_tool = seen_behaviours(store, ran[0], "write_file").to_json()
+        # By index, step 1 of the searching run is its read, of the scripted run its script, and
+        # of the run that never wrote its reply: four behaviours, one point in no two runs.
+        labels = lambda seen: sorted(entry["label"].split("(")[0] for entry in seen["behaviours"])
+        assert len(by_index["behaviours"]) == 4 and by_index["aligned"] is None
+        # By tool, the two writers meet at their own write; the others are counted apart.
+        assert by_tool["step"] == 1 and by_tool["aligned"] == ["write_file"]
+        assert labels(by_tool) == ["write_file"]
+        (write,) = by_tool["behaviours"]
+        assert write["seen"] == {"this run": 1, "other runs": 1} and write["verdicts"] == {"passed": 2}
+        assert by_tool["not_aligned"] == {"failed": 2}
+        # Named by every tool the runs wrote with, the scripted run is compared at its script.
+        either = seen_behaviours(store, ran[0], "write_file|execute_code",
+                                 target_rules=[{"if": "calls", "value": "write_file"}]).to_json()
+        assert either["aligned"] == ["write_file", "execute_code"] and either["not_aligned"] == {"failed": 1}
+        assert labels(either) == ["execute_code", "write_file"]
+        assert either["split"] == {"kind": "mixed", "passing": {"counted": 2, "of": 2},
+                                   "failing": {"counted": 0, "of": 1}, "separates": True}
+
+    def test_a_step_reference_names_its_tools(self, store):
+        from tuningfork.ops.experiments import step_index, step_tools
+
+        ran = self.runs(store)
+        assert step_tools("3") is None and step_tools("write_file|execute_code") == ["write_file", "execute_code"]
+        scripted = store.get_run(ran[2])
+        assert step_index(store, scripted, "write_file|execute_code") == 1
+        with pytest.raises(OperationError) as refused:
+            step_index(store, scripted, "write_file")
+        assert "no step where the model called write_file" in str(refused.value)
+        with pytest.raises(OperationError) as bad:
+            step_index(store, scripted, "write file")
+        assert bad.value.field == "step" and "write_file|execute_code" in str(bad.value)

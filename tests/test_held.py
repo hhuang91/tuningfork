@@ -143,6 +143,43 @@ class TestBeforeTheModel:
         assert all_steps(recorder.store) == []  # nothing happened, so nothing is recorded
 
 
+class TestTheCapHoldsAnEdit:
+    """`serve --max-output`: a held call is shown as it will be sent, at the cap, and an edit
+    asking for more — or for no limit — is sent at the cap too, the step saying what it asked.
+    What the harness asked stays its own: a fork's replay matches against it."""
+
+    @pytest.fixture
+    def settings(self, tmp_path):
+        return Settings(upstream_base_url="http://upstream.test", home=tmp_path / "home", max_output=100)
+
+    @pytest.mark.parametrize("change", [{"max_tokens": 1000}, {"n_predict": 1000}, None],
+                             ids=["more", "another-limit", "no-limit"])
+    async def test_an_edit_asking_for_more_is_sent_at_the_cap(
+        self, proxy_client, engine, mock_server, recorder, settle, change
+    ):
+        engine.add(Breakpoint(phase="request"))
+        call = asyncio.create_task(proxy_client.post(CHAT, json=request("go", max_tokens=65536)))
+        hold = await first_hold(engine)
+        assert hold.request["max_tokens"] == 100
+
+        edited = json.loads(json.dumps(hold.request))
+        edited["messages"][0]["content"] = "go, carefully"
+        if change is None:
+            edited.pop("max_tokens")
+        else:
+            edited.update(change)
+        engine.resolve(hold.id, "continue", request=edited)
+        await asyncio.wait_for(call, 3)
+        await settle()
+
+        (sent,) = mock_server.requests
+        assert sent["messages"][0]["content"] == "go, carefully"
+        assert sent["max_tokens"] == 100 and sent.get("n_predict", 100) == 100
+        step = only_step(recorder.store)
+        assert step.edits["output_cap"]["cap"] == 100
+        assert recorder.store.harness_request(step) == request("go", max_tokens=65536)
+
+
 class TestAfterTheModel:
     async def test_a_tool_call_is_held_before_the_harness_sees_it(
         self, proxy_client, engine, mock_server

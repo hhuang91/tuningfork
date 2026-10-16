@@ -156,17 +156,20 @@ def record_run(
     *,
     prompt: str = "do the task",
     task_id: str | None = None,
+    tools: Sequence[str] = (),
 ) -> str:
     """Record a synthetic multi-step run and return its id.
 
     Each assistant message is followed by a user turn, so successive requests extend the
-    same path through the tree exactly as a real conversation would.
+    same path through the tree exactly as a real conversation would. `tools` are offered
+    in every request, by name.
     """
     store.begin_run(label, task_id)
     messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+    offered = {"tools": [{"type": "function", "function": {"name": name}} for name in tools]} if tools else {}
     for message in assistant_messages:
         store.record_step(
-            request={"model": "m", "messages": list(messages)},
+            request={"model": "m", "messages": list(messages), **offered},
             response=as_response(message),
         )
         messages.append(message)
@@ -281,7 +284,14 @@ class FakeAgent:
         }
         if os.environ.get("FAKE_NOISE"):
             env["FAKE_NOISE"] = os.environ["FAKE_NOISE"]
+        if os.environ.get("FAKE_DELAY"):
+            env["FAKE_DELAY"] = os.environ["FAKE_DELAY"]
         return LaunchSpec(argv=(sys.executable, str(FAKE_AGENT), prompt), env=env, cwd=Path(workspace))
+
+    def continue_launch(self, prompt, *, home, workspace, max_turns=30):
+        """One more turn: the fake agent keeps no session, so it is a fresh conversation in
+        the same home and workspace — enough for what the runner does with it."""
+        return self.launch(prompt, home=home, workspace=workspace, max_turns=max_turns)
 
     def skill_roots(self, home) -> tuple[Path, ...]:
         return (Path(home) / "skills",)
@@ -341,7 +351,9 @@ class Stack:
 
 
 @contextmanager
-def task_stack(tmp_path: Path, mock_server: Any, monkeypatch: Any, *, max_inflight: int = 4) -> Iterator[Stack]:
+def task_stack(
+    tmp_path: Path, mock_server: Any, monkeypatch: Any, *, max_inflight: int = 4, max_output: int | None = None,
+) -> Iterator[Stack]:
     """The tally task, runnable end to end with no model: `FakeAgent` as the harness (as
     "fake" in ADAPTERS), `tally_model` as the mock server's responder, a real proxy on a
     socket, and a skill folder beside the spec."""
@@ -369,7 +381,7 @@ def task_stack(tmp_path: Path, mock_server: Any, monkeypatch: Any, *, max_inflig
     )
     upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_server.app), timeout=30)
     app = create_app(
-        Settings(upstream_base_url="http://upstream.test", home=home, max_inflight=max_inflight),
+        Settings(upstream_base_url="http://upstream.test", home=home, max_inflight=max_inflight, max_output=max_output),
         client=upstream,
     )
     store = Store(home)

@@ -87,6 +87,9 @@ class TestReads:
         ("step_tokens", {"run": "secret", "step": 0}),
         ("list_runs", {"task": "tally-report/2"}),
         ("find_divergence", {"task": "tally-report/2"}),
+        ("tally_failures", {"task": "tally-report/2"}),
+        ("where_it_holds", {"task": "tally-report/2", "target_match": "SECRET"}),
+        ("where_it_holds", {"task": "tally-report/2", "path": "report.json"}),
         ("list_experiments", {"run": "secret"}),
     ])
     async def test_opening_one_by_name_is_refused(self, recordings, name, arguments):
@@ -103,6 +106,10 @@ class TestReads:
         with pytest.raises(OperationError) as refused:
             await server.call(registry("all")["show_experiment"], {"experiment": experiment.id[:8]})
         assert refused.value.code == "held_out"
+        # Its checks' findings too, before anything is said of how it was drawn.
+        with pytest.raises(OperationError) as tallied:
+            await server.call(registry("all")["tally_failures"], {"screen": experiment.id[:8]})
+        assert tallied.value.code == "held_out"
 
 
 class TestWork:
@@ -119,3 +126,11 @@ class TestWork:
         with pytest.raises(OperationError) as refused:
             await server.call(registry("all")["start_resample"], {"run": "secret", "step": 0, "n": 2})
         assert refused.value.code == "held_out"
+
+    async def test_the_check_along_a_held_out_task_is_refused_before_it_is_planned(self, recordings):
+        store, _, _ = recordings
+        server = ToolServer(store=store, jobs=NoJobs(), toolset="all")
+        for arguments in ({"task": "tally-report/2"}, {"run": "secret"}):
+            with pytest.raises(OperationError) as refused:
+                await server.call(registry("all")["start_check_along"], arguments)
+            assert refused.value.code == "held_out", arguments

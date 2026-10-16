@@ -21,6 +21,8 @@ SUFFIX = "/chat/completions"
 class OpenAIChat:
     name = "openai-chat"
     endpoint = "/v1/chat/completions"
+    #: OpenAI's two names, and llama.cpp's own, which it reads before `max_tokens`.
+    output_limits = ("max_tokens", "max_completion_tokens", "n_predict")
 
     def matches(self, method: str, path: str) -> bool:
         return method == "POST" and path.endswith(SUFFIX)

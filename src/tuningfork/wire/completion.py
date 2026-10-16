@@ -47,6 +47,7 @@ class _Assembler:
 class RawCompletion:
     name = "completion"
     endpoint = "/completion"
+    output_limits = ("n_predict", "max_tokens")
 
     def matches(self, method: str, path: str) -> bool:
         return (

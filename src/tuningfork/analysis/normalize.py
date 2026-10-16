@@ -15,6 +15,7 @@ import ast
 import hashlib
 import json
 import re
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
@@ -113,7 +114,12 @@ def python_ast_digest(source: str) -> str | None:
     phrased a comment differently.
     """
     try:
-        tree = ast.parse(source)
+        # The source is the model's: an invalid escape in one of its strings is its own
+        # business, not a warning on whoever reads the recording.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SyntaxWarning)
+            warnings.simplefilter("ignore", DeprecationWarning)
+            tree = ast.parse(source)
     except (SyntaxError, ValueError, RecursionError):
         return None
     _strip_docstrings(tree)

@@ -488,6 +488,73 @@ def candidates(
     return found[:top]
 
 
+@dataclass(frozen=True, slots=True)
+class ToolChoice:
+    """The model's choice of tool at a step, as a number: at the first token of the first
+    call's name, how likely each tool offered was under the step's sampler. Exact for this
+    prompt, from one scoring; twenty samples would estimate it to within twenty points."""
+
+    position: int
+    #: The tool the recorded answer called; tools that share a first token are joined by "/".
+    chosen: str | None
+    #: Each tool's chance of being the one called — "other" for tokens naming none offered.
+    chance: dict[str, float]
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "position": self.position,
+            "chosen": self.chosen,
+            "chance": {name: round(p, 4) for name, p in sorted(self.chance.items(), key=lambda item: -item[1])},
+        }
+
+
+def tool_choice(
+    stream: TokenStream, sampler: Sampler, *, tools: Sequence[str] = (), prefix: str = "",
+) -> ToolChoice | None:
+    """What the step's tool choice was, from its scored tokens: at the first token of the
+    first call's name — after `prefix`, what the format writes before a name — each known
+    token's sampled probability, summed by the offered tool its text begins. None for an
+    answer with no call, a stream whose format is unknown, or a position nothing is known at.
+
+    A choice near even is one a few words of the skill can move, as a screen then shows; one
+    near certain needs another kind of change. On meeting-action-items the write path — a
+    script through execute_code, or write_file — was the task's largest effect, decided at
+    this one position."""
+    part = next(((start, end) for kind, start, end in stream.parts if kind == TOOL_CALL), None)
+    if part is None:
+        return None
+    start, end = part
+    consumed, position = "", None
+    for i in range(start, end):
+        piece = stream.token_text(i)
+        if len(consumed) + len(piece) > len(prefix):
+            position = i
+            break
+        consumed += piece
+    if position is None or stream.ids[position] is None or not stream.top_ids[position]:
+        return None
+    head = prefix[len(consumed):]  # what is left of the prefix, if this token carries it too
+
+    def tool_of(text: str, chosen: bool = False) -> str | None:
+        if head and text.startswith(head):
+            text = text[len(head):]
+        text = text.strip()
+        if not text:
+            return None
+        matched = sorted(name for name in tools if name.startswith(text))
+        if matched:
+            return "/".join(matched)
+        # The name the model wrote, when no tool offered begins with it — or none is known.
+        return text if chosen or not tools else None
+
+    sampled = effective(stream.known(position), sampler)
+    chance: dict[str, float] = {}
+    for token, p in sampled.items():
+        key = tool_of(stream.token_text_of(token), chosen=token == stream.ids[position]) or "other"
+        chance[key] = chance.get(key, 0.0) + p
+    return ToolChoice(position=position, chosen=tool_of(stream.token_text(position), chosen=True), chance=chance)
+
+
 # --- redaction ------------------------------------------------------------------------------
 
 

@@ -243,12 +243,15 @@ def first_difference(expected: str, actual: str) -> dict[str, Any]:
 
 def unique_lines(original: str, variant: str, shortest: int = 20) -> list[str]:
     """Lines of the original wording that the variant does not have: if the model sees one
-    in a fork testing the variant, the original reached it — a leak."""
-    kept = {line.strip() for line in variant.splitlines()}
+    in a fork testing the variant, the original reached it — a leak. A line the variant
+    still holds — as a line, or inside a longer one, since an edit that extends a line keeps
+    its words — cannot tell a leak from the variant itself, and is left out: twenty forks of
+    one screen were marked unusable, the variant in place, for "- explicit commitments"
+    inside "- explicit commitments (including …)"."""
     return [
         line.strip()
         for line in original.splitlines()
-        if len(line.strip()) >= shortest and line.strip() not in kept
+        if len(line.strip()) >= shortest and line.strip() not in variant
     ]
 
 

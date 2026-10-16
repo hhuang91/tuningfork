@@ -150,6 +150,24 @@ class Refinement:
         return self.data["step"]
 
     @property
+    def step_tools(self) -> list[str] | None:
+        """The tools the step was named by, when it was ("write_file", or
+        "write_file|execute_code"): the same step of another run is then that run's own
+        first call of one, where a screen draws from several checkpoints."""
+        from tuningfork.ops.experiments import step_tools
+
+        named = self.data.get("step_named")
+        return step_tools(named) if isinstance(named, str) else None
+
+    @property
+    def step_reference(self) -> str | None:
+        """The step as it was named, when by what the run did there — a tool, a file's first
+        change (`changed:<path>`), a finding's making (`made:<words>`): another run's same
+        step is then its own such step. None for a step named by its index."""
+        named = self.data.get("step_named")
+        return named if isinstance(named, str) else None
+
+    @property
     def target(self) -> dict[str, Any]:
         return self.data["target"]
 
@@ -232,11 +250,14 @@ def create(
     target: str | None = None,
     target_match: str | None = None,
     target_rules: Sequence[dict[str, str]] | None = None,
+    target_check: bool = False,
     created_by: dict[str, Any] | None = None,
 ) -> Refinement:
     """Start refining the skill a run was given, at one of its steps, toward a target
     declared now — before any proposal is made or sampled. The same checkpoint, target and
-    skill give back the open refinement already there."""
+    skill give back the open refinement already there. `target_check` makes the task's own
+    check the target, for a failure only the check can see: its screens run forks to the
+    end."""
     from tuningfork.experiment import resolve_target
     from tuningfork.experiment.sampling import CheckpointError
     from tuningfork.experiment.skill import diagnose, locate, text_sha256
@@ -244,12 +265,13 @@ def create(
     from tuningfork.ops.trash import refuse_trashed
     from tuningfork.ops.variants import skill_name
 
-    declared = [value for value in (target, target_match, target_rules) if value]
+    declared = [value for value in (target, target_match, target_rules, target_check) if value]
     if len(declared) != 1:
         raise OperationError(
             "declare what the model should do at this step, before anything is proposed or "
             "sampled: a behaviour's letter from this step's resample (target), a pattern "
-            "(target_match), or conditions in words (target_rules) — exactly one",
+            "(target_match), conditions in words (target_rules), or the task's check "
+            "(target_check) — exactly one",
             code="bad_params", field="target",
         )
     checkpoint = load(store, run, step)
@@ -278,12 +300,26 @@ def create(
             detail=diagnose(checkpoint.request, baseline),
             code="no_skill_here", field="step",
         )
-    try:
-        declared_target, bound = resolve_target(
-            store, checkpoint, letter=target, pattern=target_match, rules=target_rules
-        )
-    except (ValueError, CheckpointError) as error:
-        raise OperationError(str(error), code="bad_params", field="target") from None
+    if target_check:
+        # Judged by forks run to the end: the run must come from a task with a check.
+        from tuningfork.analysis.distribution import target_check as check_target
+
+        launch = _launch_of(store, checkpoint.run)
+        check = (((launch.eval or {}).get("tuningfork") or {}).get("check")) if launch is not None else None
+        if not check:
+            raise OperationError(
+                f"run {checkpoint.run.id[:8]}'s task has no check to judge forks by",
+                hint="the task's check is a target only for a run launched from a spec whose eval names one",
+                code="bad_params", field="target_check",
+            )
+        declared_target, bound = check_target(), None
+    else:
+        try:
+            declared_target, bound = resolve_target(
+                store, checkpoint, letter=target, pattern=target_match, rules=target_rules
+            )
+        except (ValueError, CheckpointError) as error:
+            raise OperationError(str(error), code="bad_params", field="target") from None
     baseline_sha = text_sha256(baseline)
     source = source_skill(store, checkpoint.run)
     source_data = None
@@ -294,11 +330,16 @@ def create(
         if (existing.step_idx == checkpoint.step.idx and existing.target == declared_target.spec
                 and existing.data["baseline"]["sha256"] == baseline_sha):
             return existing
+    from tuningfork.ops.experiments import named_by_doing
+
     rid = uuid.uuid4().hex
     folder = root(store.home) / rid
     data = {
         "run": checkpoint.run.id,
         "step": checkpoint.step.idx,
+        # The step as it was named, when by what the run did there: how the same step is found
+        # in other runs.
+        "step_named": step if named_by_doing(step) else None,
         "task_id": checkpoint.run.task_id,
         "skill": skill_name(checkpoint.run, found),
         "baseline": {"path": str(found), "sha256": baseline_sha},
@@ -359,19 +400,24 @@ def add_proposal(
     prompt: str | None = None,
     strict: bool = True,
 ) -> Proposal:
-    """A proposed edit of the refinement's skill: a few exact replacements (`edits`), or —
-    from a person — a whole text. Refused unless it can be screened at the checkpoint.
+    """A proposed edit of the refinement's skill: a few edits (`edits`: a line replaced by its
+    number, lines added after one, or exact text replaced — each resolved to an exact
+    replacement, and recorded so), or — from a person — a whole text. Refused unless it can
+    be screened at the checkpoint.
 
     `strict` holds a proposal to a few small edits; a person's own text only warns."""
     from tuningfork.experiment.skill import NothingToCompare, split_frontmatter, substitute, text_sha256
-    from tuningfork.ops.diff import apply_edits, line_diff
+    from tuningfork.ops.diff import apply_resolved, line_diff, resolve_edits
     from tuningfork.ops.experiments import load
     from tuningfork.ops.variants import save_variant
 
     refinement = get(store, reference)
     refuse_closed(refinement)
     if (edits is None) == (text is None):
-        raise OperationError("give the edits ({old, new}), or a whole text", code="bad_params", field="edits")
+        raise OperationError(
+            "give the edits ({line, new}, {after, insert} or {old, new}), or a whole text",
+            code="bad_params", field="edits",
+        )
     if not isinstance(rationale, str) or not rationale.strip():
         raise OperationError("say why: a rationale that cites the evidence", code="bad_params", field="rationale")
     baseline = refinement.baseline_text()
@@ -381,7 +427,11 @@ def add_proposal(
                 f"at most {MAX_EDITS} edits in one proposal: small changes are what a screen can attribute",
                 code="bad_params", field="edits",
             )
-        text = apply_edits(baseline, edits)
+        resolved = resolve_edits(baseline, edits)
+        text = apply_resolved(baseline, resolved)
+        kept = [{key: found[key] for key in ("lines", "old", "new", "given")} for found in resolved]
+    else:
+        kept = None
     assert text is not None
     if text_sha256(text) == text_sha256(baseline):
         raise OperationError("the proposal changes nothing", code="bad_params", field="edits")
@@ -415,7 +465,7 @@ def add_proposal(
         "rationale": rationale.strip(),
         "packet": packet,
         "prompt": prompt,
-        "edits": list(edits) if edits is not None else None,
+        "edits": kept,
         "at": time.time(),
     }
     name = f"r{refinement.id[:8]}-{pid[:8]}"
@@ -462,11 +512,25 @@ def prepare_refinement_screen(
     *,
     base_url: str | None = None,
     alpha: float = 0.05,
+    to_end: bool = False,
+    proxy: Any = None,
+    spec: Path | None = None,
+    workdir: Path | None = None,
+    checkpoints: int = 1,
+    quick: bool = False,
+    fresh_original: bool = False,
     **plan: Any,
 ) -> Any:
     """A screen of some of a refinement's proposals at its checkpoint, toward its target:
-    the family the correction counts is the proposals named here, fixed before sampling."""
-    from tuningfork.ops.screen import prepare_screen
+    the family the correction counts is the proposals named here, fixed before sampling.
+    With `to_end`, each arm's samples are forks run to the end and the task's check decides:
+    the only screen for a refinement whose target is the check, and open to any other, whose
+    own target then stands aside for this screen — the record says which measured. Its
+    forks are drawn from `checkpoints` runs — this one, and others of its task at the same
+    step, passing and failing by turns — so an effect of one prefix shows up as one. The
+    original's forks its earlier screens drew there count again (`fresh_original` draws them
+    anew); `quick` is a quick look, the proposals' forks alone and no verdict."""
+    from tuningfork.ops.screen import prepare_screen, prepare_screen_to_end
 
     refinement = get(store, reference)
     refuse_closed(refinement)
@@ -482,6 +546,31 @@ def prepare_refinement_screen(
             chosen.append(found)
     arms = [(found.id[:8], found.text(), {"proposal": found.id, "variant_path": found.data["variant_path"]})
             for found in chosen]
+    if refinement.target.get("kind") == "check" and not to_end:
+        raise OperationError(
+            "this refinement's target is the task's check, which no answer at the step can be judged by",
+            hint="screen it to the end — each arm's samples forks run through the harness, the check "
+                 "deciding: `tuningfork refine screen <id> --to-end`, or start_screen_to_end",
+            code="to_end_only", field="refinement",
+        )
+    if to_end:
+        return prepare_screen_to_end(
+            store, refinement.run_id, str(refinement.step_idx), original_text=refinement.baseline_text(),
+            arms=arms, alpha=alpha, base_url=base_url, spec=spec, workdir=workdir, proxy=proxy,
+            refinement=refinement.id, checkpoints=checkpoints, aligned=refinement.step_reference,
+            quick=quick, fresh_original=fresh_original, **plan,
+        )
+    if quick or fresh_original:
+        raise OperationError(
+            "a quick look, and the original's forks drawn anew, are for a screen to the end: a screen at the step "
+            "draws its own original arm, one call a sample",
+            code="bad_params", field="quick" if quick else "fresh_original",
+        )
+    if checkpoints != 1:
+        raise OperationError(
+            "a screen at the step samples the refinement's own checkpoint: several are for a screen to the end",
+            code="bad_params", field="checkpoints",
+        )
     return prepare_screen(
         store, refinement.run_id, str(refinement.step_idx),
         original_text=refinement.baseline_text(), arms=arms, target_spec=refinement.target,
@@ -493,6 +582,25 @@ def prepare_refinement_screen(
 # --- what a refinement holds, for a front end --------------------------------------------------------
 
 
+def screen_experiments(store: Store, refinement: Refinement, *, include_trashed: bool = False) -> list[Any]:
+    """Every experiment of the refinement's screens: those at its own checkpoint, found by
+    its id in their settings, and the rest of each one's group — a screen to the end drawn
+    from several checkpoints keeps an experiment at each, under other runs' ids."""
+    found: dict[str, Any] = {}
+    for experiment in store.experiments(
+        run_id=refinement.run_id, step_idx=refinement.step_idx, kind="screen", limit=100_000,
+        include_trashed=include_trashed,
+    ):
+        if experiment.settings.get("refinement") != refinement.id:
+            continue
+        found.setdefault(experiment.id, experiment)
+        if experiment.group_id:
+            for member in store.experiment_group(experiment.group_id):
+                if include_trashed or member.trashed_at is None:
+                    found.setdefault(member.id, member)
+    return list(found.values())
+
+
 def screens(store: Store, reference: str) -> list[dict[str, Any]]:
     """The refinement's screens, newest first, each reported again from the store."""
     from tuningfork.ops.inspect import overall_status, arm_status
@@ -500,8 +608,8 @@ def screens(store: Store, reference: str) -> list[dict[str, Any]]:
 
     refinement = get(store, reference)
     groups: dict[str, list[Any]] = {}
-    for experiment in store.experiments(run_id=refinement.run_id, step_idx=refinement.step_idx, kind="screen", limit=500):
-        if experiment.settings.get("refinement") == refinement.id and experiment.group_id:
+    for experiment in screen_experiments(store, refinement):
+        if experiment.group_id:
             groups.setdefault(experiment.group_id, []).append(experiment)
     found = []
     for group_id, arms in groups.items():
@@ -513,6 +621,11 @@ def screens(store: Store, reference: str) -> list[dict[str, Any]]:
             "created_at": min(arm.created_at for arm in arms),
             "status": overall_status(arm_status(arm) for arm in arms),
             "proposals": planned.get("proposals") or {},
+            # What it measured: a target at the step, or the task's check over forks to the end.
+            "reach": result.report.reach,
+            "measure": result.report.target,
+            # A quick look's rates are a lead, never a verdict.
+            "quick": result.report.quick,
             "report": result.report.to_json(),
         })
     return sorted(found, key=lambda screen: screen["created_at"], reverse=True)
@@ -537,11 +650,11 @@ def citations(
             continue
         refinement = _load(folder)
         cites = ["its checkpoint"] if refinement.run_id in runs else []
-        screens = {experiment.id for experiment in store.experiments(
-            run_id=refinement.run_id, step_idx=refinement.step_idx, kind="screen", limit=500,
-        ) if experiment.settings.get("refinement") == refinement.id}
-        if screens & experiments:
+        screened = {experiment.id for experiment in screen_experiments(store, refinement, include_trashed=True)}
+        if screened & experiments:
             cites.append("its screens")
+        elif any(experiment.run_id in runs for experiment in screen_experiments(store, refinement, include_trashed=True)):
+            cites.append("a checkpoint its screens drew from")
         for record in validations(store, refinement.id):
             ran = {verdict.get("run_id") for part in ("forward", "training") for arm in ("original", "edit")
                    for verdict in (record.get(part) or {}).get(arm) or []}
@@ -586,6 +699,8 @@ def made_by(store: Store, refinement: Refinement) -> Made:
     experiments = {experiment.id for experiment in store.experiments(
         run_id=refinement.run_id, step_idx=refinement.step_idx, limit=100_000, include_trashed=True,
     ) if experiment.settings.get("refinement") == refinement.id}
+    # A screen to the end drawn from several checkpoints: its experiments at the other runs.
+    experiments.update(experiment.id for experiment in screen_experiments(store, refinement, include_trashed=True))
     runs: set[str] = set()
     for record in validations(store, refinement.id):
         experiments.update(((record.get("forward") or {}).get("experiments") or {}).values())
@@ -625,6 +740,7 @@ def view(store: Store, reference: str, *, held_out: bool = False) -> dict[str, A
             if pid:
                 verdicts.setdefault(pid, []).append({
                     "screen": screen["experiment"], "arm": arm["name"], "target": arm["target"],
+                    "reach": screen.get("reach"), "quick": bool(report.get("quick")),
                     "baseline": report["baseline"]["target"], "adjusted_p": arm.get("adjusted_p"),
                     "survives": arm.get("survives"), "worse": arm.get("worse"), "complete": report["complete"],
                 })

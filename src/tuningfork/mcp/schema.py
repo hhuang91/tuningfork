@@ -26,7 +26,7 @@ from tuningfork.ops.common import OperationError, params_schema
 EVIDENCE = ("resample", "ab", "tokens", "forking-tokens", "server-check", "screen")
 #: Kinds that run a harness, or a task's check, on this machine — as the user, perhaps with
 #: skill text the agent wrote. Offered only with `--tools all`.
-HARNESS = ("batch", "fork", "resample-to-end", "ab-to-end", "check-trial")
+HARNESS = ("batch", "chain", "fork", "resample-to-end", "ab-to-end", "check-trial", "check-along", "screen-to-end")
 #: Kinds an agent is never offered, and why: each is a person's to start.
 EXCLUDED = {
     "hold-sample": "samples a call held at a breakpoint: live debugging, for a person",
@@ -38,11 +38,14 @@ EXCLUDED = {
                 "agent that saw them could fit its edits to them",
 }
 #: Kinds whose parameters name a refinement: offered with the loop's own tools.
-REFINE_ONLY = ("screen",)
+REFINE_ONLY = ("screen", "screen-to-end")
 TOOLSETS = {
     "evidence": tuple(kind for kind in EVIDENCE if kind not in REFINE_ONLY),
     # The refinement loop: evidence at a step, proposals, and screens of them.
     "refine": ("resample", "ab", "screen"),
+    # The loop with the task's check as a measure too: screens whose samples are forks run to
+    # the end through the harness on this machine, for a failure only the check can see.
+    "refine-to-end": ("resample", "ab", "screen", "screen-to-end"),
     "all": EVIDENCE + HARNESS,
 }
 
@@ -52,7 +55,7 @@ MAX_WAIT = {"stdio": 120, "http": 50}
 #: A job's `total` (samples, forks, runs) an agent may ask for, at most, unless the person
 #: running `tuningfork mcp` says otherwise: a checkpoint sample costs seconds, a harness run
 #: minutes.
-DEFAULT_LIMITS = {kind: 100 for kind in EVIDENCE} | {kind: 20 for kind in HARNESS}
+DEFAULT_LIMITS = {kind: 100 for kind in EVIDENCE} | {kind: 20 for kind in HARNESS} | {"screen-to-end": 60}
 
 #: What an agent may say of a check: one that reads the reply, or (with `run`) the run's own.
 AGENT_CHECK = {

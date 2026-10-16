@@ -16,6 +16,11 @@ the launch ends, nothing it started lives on.
 
 `TUNINGFORK_SANDBOX=off` launches without it, as where bubblewrap cannot run: each launch
 then sees its own folders.
+
+The clock a launch reads can be pinned too (`TUNINGFORK_CLOCK`, an instant): libfaketime
+under `LD_PRELOAD`, so the harness's "today" is the same whichever day a run is made — the
+model reads the date in its prompt, and at a knife edge the date decides — and a fork's is
+its source's.
 """
 
 from __future__ import annotations
@@ -40,6 +45,27 @@ TMP = Path("/tmp")
 
 #: The environment variable that turns the sandbox off.
 SWITCH = "TUNINGFORK_SANDBOX"
+#: Folders every launch sees empty besides tuningfork's own, named by the person as PATH
+#: is (`os.pathsep` between them): where a benchmark keeps its checks' keys, say.
+HIDE = "TUNINGFORK_SANDBOX_HIDE"
+
+#: The instant every launch's clock starts at, "YYYY-MM-DD HH:MM:SS" in the machine's zone,
+#: named by the person: libfaketime under `LD_PRELOAD`, which the harness's clock calls go
+#: through, so a run's "today" is the same whichever day it is made, and a fork's is its
+#: source's. Unset, or "off": the real clock.
+CLOCK = "TUNINGFORK_CLOCK"
+#: Where libfaketime is, when not at one of the usual places.
+CLOCK_LIBRARY = "TUNINGFORK_CLOCK_LIBRARY"
+CLOCK_LIBRARIES = (
+    "/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1",
+    "/usr/lib/aarch64-linux-gnu/faketime/libfaketime.so.1",
+    "/usr/lib64/faketime/libfaketime.so.1",
+    "/usr/lib/faketime/libfaketime.so.1",
+    "/usr/local/lib/faketime/libfaketime.so.1",
+)
+CLOCK_FORMAT = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+#: `for_launches`' default for `clock`: what the person set.
+FROM_ENV = "from the environment"
 
 #: A probe gives up after this long: bubblewrap that hangs must not hang a batch's plan.
 PROBE_TIMEOUT = 10.0
@@ -67,6 +93,33 @@ class Status:
             "workspace": str(WORKSPACE),
             "reason": self.reason,
         }
+
+
+def hidden_by_the_person() -> list[Path]:
+    """The folders `HIDE` names, if any: no launch may read them."""
+    given = os.environ.get(HIDE, "")
+    return [Path(part.strip()).expanduser() for part in given.split(os.pathsep) if part.strip()]
+
+
+def pinned_clock() -> tuple[str | None, str | None]:
+    """The instant the person pinned every launch's clock at (`CLOCK`), or None — and, if
+    what they set is not an instant, why it is not used."""
+    given = os.environ.get(CLOCK, "").strip()
+    if not given or given.lower() == "off":
+        return None, None
+    if not CLOCK_FORMAT.match(given):
+        return None, f"{CLOCK} is {given!r}, not an instant like 2026-01-05 09:00:00: runs keep the real clock"
+    return given, None
+
+
+def clock_library() -> str | None:
+    """libfaketime, where it is here: the path the person named (`CLOCK_LIBRARY`), else the
+    usual places."""
+    given = os.environ.get(CLOCK_LIBRARY, "").strip()
+    for candidate in ([given] if given else CLOCK_LIBRARIES):
+        if Path(candidate).is_file():
+            return candidate
+    return None
 
 
 def turned_off() -> bool:
@@ -135,10 +188,21 @@ class Sandbox:
     executable: str
     version: str | None
     hide: tuple[Path, ...] = ()
+    #: The instant every launch's clock starts at, and the library that makes it so; None,
+    #: the real clock — and if a pin was wanted and is not possible, why (the plans say).
+    clock: str | None = None
+    clock_library: str | None = None
+    clock_problem: str | None = None
 
     def to_json(self) -> dict[str, Any]:
-        """As a launch's settings keep it: a fork of the run is sandboxed the same way."""
-        return {"kind": "bubblewrap", "version": self.version, "home": str(HOME), "workspace": str(WORKSPACE)}
+        """As a launch's settings keep it: a fork of the run is sandboxed the same way, and
+        its clock starts where its source's did. The folders hidden are kept too, so a record
+        says what its launch could not see."""
+        return {
+            "kind": "bubblewrap", "version": self.version, "home": str(HOME), "workspace": str(WORKSPACE),
+            **({"hidden": [str(folder) for folder in self.hide]} if self.hide else {}),
+            **({"clock": self.clock} if self.clock else {}),
+        }
 
     def wrap(self, spec: LaunchSpec, *, home: Path, workspace: Path) -> LaunchSpec:
         """The harness's command, run in the sandbox: `home` seen as `HOME`, `workspace` as
@@ -159,6 +223,13 @@ class Sandbox:
                 if not any(_within(Path(entry), folder) for folder in hidden)
             )
         env.update({"HOME": str(HOME), "TMPDIR": "/tmp", "PWD": str(WORKSPACE)})
+        if self.clock and self.clock_library:
+            # The harness's clock calls go through libfaketime, started at the instant: its
+            # "today" is the same whichever day the launch is made. Monotonic clocks stay
+            # real, so its timeouts and tuningfork's timings do.
+            env["LD_PRELOAD"] = ":".join(filter(None, [self.clock_library, env.get("LD_PRELOAD")]))
+            env["FAKETIME"] = f"@{self.clock}"
+            env["FAKETIME_DONT_FAKE_MONOTONIC"] = "1"
         arguments = [self.executable, *_base_arguments(real_home)]
         for folder in hidden:
             arguments += ["--tmpfs", str(folder)]
@@ -174,13 +245,29 @@ class Sandbox:
         )
 
 
-def for_launches(hide: Iterable[Path | str | None] = ()) -> tuple[Sandbox | None, str | None]:
-    """The sandbox launches run in here, or None and why not."""
+def for_launches(
+    hide: Iterable[Path | str | None] = (), *, clock: str | None = FROM_ENV
+) -> tuple[Sandbox | None, str | None]:
+    """The sandbox launches run in here, or None and why not. `hide` is what the operation
+    keeps from every launch; the folders the person names (`HIDE`) are hidden with them.
+    `clock` is the instant every launch starts at: the person's setting (`CLOCK`) unless
+    given — a fork gives its source's, None where the source had none. Wanted and not
+    possible, the sandbox says why (`clock_problem`) and runs on the real clock."""
     found = status()
     if not found.available or found.executable is None:
         return None, found.reason
-    folders = tuple(dict.fromkeys(Path(folder).resolve() for folder in hide if folder))
-    return Sandbox(found.executable, found.version, folders), None
+    folders = tuple(dict.fromkeys(
+        Path(folder).resolve() for folder in (*hide, *hidden_by_the_person()) if folder
+    ))
+    wanted, problem = pinned_clock() if clock == FROM_ENV else (clock, None)
+    library = clock_library() if wanted else None
+    if wanted and library is None:
+        problem = (f"the clock cannot be pinned at {wanted}: libfaketime is not installed "
+                   f"(or name it with {CLOCK_LIBRARY}); runs keep the real clock")
+        wanted = None
+    return Sandbox(
+        found.executable, found.version, folders, clock=wanted, clock_library=library, clock_problem=problem,
+    ), None
 
 
 def mount_point(home: Path) -> Path:
