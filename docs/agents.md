@@ -144,12 +144,14 @@ proxy's gate like the person's own work, and shown on its Jobs page as "from MCP
 tool call returns the job's result if it ends within the call's wait, and otherwise its id, for
 `job_status`.
 
-| Limit | Default | Set with |
+| Limit | Default | Option of `tuningfork mcp` |
 |---|---|---|
 | Samples one job may draw at a checkpoint | 100 | `--limit resample=200`, by job kind |
 | Harness runs one job may make | 20 (60 forks for a screen to the end) | `--limit batch=…` |
 | Jobs agents may have queued or running | 4 | `--max-jobs` |
-| How long a call waits for its job | 120 s on stdio, 50 s on the route | `--max-wait`, `serve --mcp-max-wait` |
+| How long a call waits for its job | 120 s on stdio, 50 s on the route | `--max-wait`; for the route, `serve --mcp-max-wait` |
+
+The route on the proxy keeps the other defaults.
 
 The same work asked for twice is given back rather than started again, and an agent cancels only
 its own jobs.
