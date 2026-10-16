@@ -21,7 +21,7 @@ from rich.table import Table
 from tuningfork import __version__
 from tuningfork.analysis.divergence import DivergenceReport, compare_runs
 from tuningfork.analysis.normalize import DEFAULT_NORMALIZERS, recorded_outcome
-from tuningfork.analysis.stats import samples_needed
+from tuningfork.analysis.stats import p_short, samples_needed
 from tuningfork.backends.base import BackendProfile, Support
 from tuningfork.backends.probe import probe_backend
 from tuningfork.config import Settings, default_home
@@ -1698,7 +1698,7 @@ def _print_divergence(
         console.print(
             f"\n[bold]by tool[/bold]  runs that called {escape(by_tool['tool'])} passed "
             f"{called['passed']}/{called['total']}, runs that never did {never['passed']}/{never['total']} "
-            f"(Fisher p = {by_tool['p']:.2f}): the tool {goes}, at whatever step each run called it"
+            f"(Fisher p = {p_short(by_tool['p'])}): the tool {goes}, at whatever step each run called it"
         )
     console.print(
         "\n[dim]Intervals are Wilson 95%. With this many runs they are wide; "

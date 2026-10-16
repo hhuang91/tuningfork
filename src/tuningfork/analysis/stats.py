@@ -106,6 +106,13 @@ def fisher_exact(a: int, b: int, c: int, d: int) -> float:
     return min(1.0, p)
 
 
+def p_short(p: float) -> str:
+    """A p-value for a sentence: two decimals from 0.01 up ("0.07"), and below that its first
+    significant figure ("0.005", "2e-05") — never "0.00", which reads as a certainty no test of
+    a few runs has."""
+    return f"{p:.2f}" if p >= 0.01 else f"{p:.1g}"
+
+
 def holm(p_values: Sequence[float]) -> list[float]:
     """Holm-Bonferroni adjusted p-values, in the order given.
 

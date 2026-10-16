@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from tuningfork.analysis.stats import p_short
 from tuningfork.ops import compact
 from tuningfork.ops.catalog import RULE_LIST, Kind
 from tuningfork.ops.common import OperationError, params_schema, parse_params
@@ -671,7 +672,7 @@ def find_divergence(context: Context, args: DivergenceArgs) -> Answer:
         lines.append(
             f"the behaviour that best predicts the verdict is at {where}: {best['label']} — those runs passed "
             f"{best['passed']}/{best['total']}, the others {best['others_passed']}/{best['others_total']} "
-            f"(Fisher p = {best['p']:.2f})"
+            f"(Fisher p = {p_short(best['p'])})"
         )
     by_tool = (report.get("tool_split") or {}).get("best")
     if by_tool is not None:
@@ -679,7 +680,7 @@ def find_divergence(context: Context, args: DivergenceArgs) -> Answer:
         called, never, tool = by_tool["called"], by_tool["never"], by_tool["tool"]
         line = (f"by the tool a run used, at whatever step: runs that called {tool} passed "
                 f"{called['passed']}/{called['total']}, runs that never did {never['passed']}/{never['total']} "
-                f"(Fisher p = {by_tool['p']:.2f})")
+                f"(Fisher p = {p_short(by_tool['p'])})")
         if by_tool.get("with_passing"):
             line += (f" — the tool goes with passing, and is a behaviour a target can name: start_refinement at "
                      f"step \"{tool}\" of a run that called it (its first such step), with target_rules "

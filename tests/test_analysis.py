@@ -15,7 +15,7 @@ from tuningfork.analysis.normalize import (
     python_ast_digest,
     step_outcome,
 )
-from tuningfork.analysis.stats import rate, samples_needed, wilson_interval
+from tuningfork.analysis.stats import fisher_exact, p_short, rate, samples_needed, wilson_interval
 from tests.helpers import as_response, record_run, text_message, tool_call_message
 
 
@@ -53,6 +53,13 @@ class TestWilson:
 
     def test_smaller_differences_need_more_samples(self):
         assert samples_needed(0.6, 0.65) > samples_needed(0.6, 0.9)
+
+    def test_a_small_p_value_never_reads_as_zero(self):
+        """4/4 against 0/6 is p ≈ 0.0048: two decimals printed it as "0.00"."""
+        assert p_short(fisher_exact(4, 0, 0, 6)) == "0.005"
+        assert p_short(2.3e-5) == "2e-05"
+        assert p_short(0.1) == "0.10"
+        assert p_short(1.0) == "1.00"
 
 
 class TestPythonNormalization:
