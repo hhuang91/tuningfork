@@ -2,10 +2,11 @@
 
 The pictures in the top-level README.
 
-- **`hero-light.svg`, `hero-dark.svg`** — the opening figure, drawn by `hero.py` from the
-  numbers of [the guide's](../../examples/README.md) own runs (Gemma 4 31B through Hermes Agent,
-  Part 2 §3, §6 and §8), in the web UI's colours. GitHub shows the dark one in a dark theme.
-  After a change to the script or the numbers: `python3 docs/images/hero.py docs/images`.
+- **`hero-light.svg`, `hero-dark.svg`** — the opening figure, drawn by `hero.py` from the runs
+  of [`examples/find-the-file/`](../../examples/find-the-file/README.md) (Gemma 4 31B through
+  Hermes Agent), where each number is shown with the command that made it, in the web UI's
+  colours. GitHub shows the dark one in a dark theme. After a change to the script or the
+  numbers: `python3 docs/images/hero.py docs/images`.
 - **`ui-*.png`, `ui-demo.gif`** — the web UI, taken by hand as listed below.
 
 ## Screenshots
@@ -21,8 +22,10 @@ The pictures in the top-level README.
 | `ui-refine.png` | A refinement: its target, proposals as diffs, and a screen's verdict | real recordings |
 | `ui-live.png` | The Live page with a call held at a breakpoint, its tool call being edited | `demo.py live` |
 
-**Real recordings** are runs of the guide's task on a real model, so that the numbers on the
-page are ones the guide reports. **`demo.py lab`** serves seeded runs through a real proxy, in
+**Real recordings** are runs on a real model, so that the numbers on the page are ones the docs
+report. Those behind the hero, [`examples/find-the-file/`](../../examples/find-the-file/README.md)'s,
+suit the run, divergence, A/B and token shots best — its step 1, token [121] open on "Wait", is the
+figure's fork — and `tuningfork ui --home <their folder>` serves them read-only. **`demo.py lab`** serves seeded runs through a real proxy, in
 front of a scripted model that names the report's keys only when the skill states them: an A/B
 of a wording that names them shows the shift in seconds, with no GPU. **`demo.py live`** is the
 same proxy with a call held at a breakpoint. Each prints the web UI's address:

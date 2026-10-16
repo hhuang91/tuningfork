@@ -11,14 +11,15 @@ which fix works — on local LLMs.**
 <p>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
-  <img alt="A recorded run that fails at its write step, where the model names the report's keys count and total. That step, sent to the model twenty times with everything before it held fixed: as written, 0 of 20 name the keys the check wants; with an edit that names them, 20 of 20, Fisher's exact p = 1.5e-11. Full runs with the edit: 8 of 8 pass, against 0 of 8 before." src="docs/images/hero-light.svg">
+  <img alt="Ten runs of a skill pass 4 times in 10: every run that searched for its file passed, every run that gave up when its read found nothing failed. That step, sent to the model twenty times with its history held fixed: it gives up 16 times and searches 4. Its reasoning forks after 'but it was not found': 'According' (80%) leads on to 'I should say so and stop', 'Wait' (7%) to 'search for it first?'. One line in the skill, find the file with search_files, then read it: at that step the model then searches 20 times in 20, and ten full runs pass 10 times in 10, Fisher's exact p = 0.011 against 4 in 10." src="docs/images/hero-light.svg">
 </picture>
 </p>
 
 tuningfork sits between your agent and your local model, and records every call the agent
-makes. When a skill fails, it finds the step where the runs go wrong and sends that step to the
-model again and again, with everything before it held fixed: once as written, once with your
-edit. Then it tells you whether the difference is real.
+makes. When a skill fails, it finds the step where the runs go wrong, and shows how the model
+wavers there, down to its odds for each word of its reasoning. Then it sends that step to the
+model again and again, everything before it held fixed, once as written and once with your edit,
+and tells you whether the difference is real.
 
 It works with **Hermes Agent** and **Claude Code** on **llama.cpp**, from a terminal, a web UI,
 or an agent over MCP. It is pre-alpha: commands and their output may still change.
@@ -44,6 +45,8 @@ missing debugger:
 - **Localize** the first step where successful and failed runs diverge.
 - **Resample** that step N times from a checkpoint, its history held fixed, and count what the
   model does.
+- **Look inside the step**: the model's own odds at each token of its answer, and the word where
+  its reasoning forks.
 - **A/B the wording there**, and report the difference with a confidence interval and a
   significance test instead of a bare percentage.
 - **Break** a live call before or after the model, and read or edit its whole context.
@@ -53,42 +56,47 @@ Pausing and editing LLM traffic is table stakes; several tools do it. The point 
 
 ## See it work
 
-The toy skill in [`examples/`](examples/) asks the model to count a CSV's line items and total
-its amounts into `report.json`, but never says what to call the keys. The task's check wants
-`row_count` and `amount_total`. Eight runs through Hermes Agent, on Gemma 4 31B:
+The toy skill in [`examples/find-the-file/`](examples/find-the-file/README.md) summarizes a CSV
+into `report.json`, and says that if the file is not there, the agent should say so and stop.
+The request names `data.csv`, but the file is in a subfolder. Ten runs through Hermes Agent, on
+Gemma 4 31B:
 
 ```console
-$ tuningfork batch examples/tally-report.evals.json -n 8 --harness hermes --model gemma-4-31b
+$ tuningfork batch examples/find-the-file/evals.json -n 10 --harness hermes --model gemma-4-31b
 ...
-0/8  0%  [0%-32%] passed
+4/10  40%  [17%-69%] passed
 ```
 
-Every run wrote the keys `count` and `total`. Bad luck, or the wording? Take the step where the
-model wrote the file, and send it to the model twenty times with its history held fixed — once as
-written, once with an edit that names the keys — toward a target declared before the first
-sample:
+Every run first read `data.csv` where the request names it, and found nothing. Then it either
+searched for the file and passed, or gave up and failed. Bad luck, or the wording? Sent to the
+model twenty more times with its history held fixed, that step gives up 16 times. Scored, its
+answer shows where the reasoning forks. After "…but it was not found.", the next word is
+"According" at 80%, which goes on "…I should say so and stop", or "Wait" at 7%, which goes on
+"…search for it first?". The model wavers there, so one line of the skill can tip it. Tested at
+that step, toward a target declared before the first sample:
 
 ```console
-$ tuningfork ab <run> write_file --variant examples/variants/tally-report/SKILL.v2.md \
-    --target-rules '[{"if": "contains", "value": "row_count"}, {"if": "contains", "value": "amount_total"}]'
+$ tuningfork ab <run> 1 --variant examples/find-the-file/fix/SKILL.md \
+    --target-rules '[{"if": "calls", "value": "search_files"}]'
 ...
-target (declared before sampling): a behaviour that mentions "row_count", and mentions "amount_total"
-  original  0/20   0% [0%-16%]
+target (declared before sampling): a behaviour that calls search_files
+  original  4/20  20% [8%-42%]
   variant   20/20 100% [84%-100%]
-  Fisher exact p = 1.5e-11 → significant at α=0.05, variant higher
+  Fisher exact p = 1.5e-07 → significant at α=0.05, variant higher
 ```
 
-About seven minutes, one model call a sample. Full runs agree: with the edit in every run, 8/8
-pass [68%-100%], against 0/8 before. Every rate comes with its 95% interval, and an A/B without
-a declared target is labelled exploratory and corrected for every comparison it makes.
+Full runs agree: with the edit in every run, 10/10 pass [72%-100%], against 4/10 before
+(Fisher p = 0.011). Every rate comes with its 95% interval, and an A/B without a declared target
+is labelled exploratory and corrected for every comparison it makes.
+[The example](examples/find-the-file/README.md) shows each command with its output.
 
-In the web UI, the same experiment is a few clicks from the run's step (here on the demo's
-scripted model, which answers at once):
+In the web UI, an A/B is a few clicks from a run's step (here on the demo's scripted model, which
+answers at once):
 
 ![Opening a run in the web UI, choosing its write step, and A/B-testing an edited wording there: the original arm at 0 of 20, the edit at 20 of 20, with their intervals and Fisher's test](docs/images/ui-demo.gif)
 
-The [step-by-step guide](examples/README.md) does all of this, with Claude Code beside Hermes,
-and every output in it is from a real run.
+The [step-by-step guide](examples/README.md) walks through every part of the tool on another toy
+skill, with Claude Code beside Hermes, and every output in it is from a real run.
 
 ## Quickstart
 
@@ -336,6 +344,9 @@ self-improvement loop, on the same local model.
 - [**Tuning Fork, step by step**](examples/README.md) — every part of the tool, on a toy skill
   made to fail one way: a tour with no GPU, the real experiment with Claude Code and Hermes
   Agent, a look inside a step, and a fix proposed, screened, validated and approved.
+- [**A step where the model wavers**](examples/find-the-file/README.md) — the runs behind the
+  figure at the top: where the runs part ways, how often the model goes each way, where its
+  reasoning forks, and the line that tips it.
 - [**A real skill, fixed at the step that fails**](examples/hermes-design-md/README.md) —
   Hermes Agent's own `design-md` skill, from the failing step to an approved edit and the runs
   after it.
