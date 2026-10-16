@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="456" viewBox="0 0 960 456" role="img" aria-labelledby="title desc">
+  <title id="title">tuningfork, in one picture</title>
+  <desc id="desc">A recorded run fails at its write step, where the model names the report's keys count and total; the check wants row_count. That step, sent to the model twenty times with everything before it held fixed: as written, 0 of 20 name the keys the check wants [0-16%]; with an edit that names them, 20 of 20 [84-100%], Fisher's exact p = 1.5e-11. Full runs with the edit: 8 of 8 pass [68-100%], against 0 of 8 [0-32%] before.</desc>
+  <style>
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; }
+    .num { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; fill: #a5a59c; }
+    .lane { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 650; fill: #e9e9e4; }
+    .lane-sub { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 12.5px; fill: #a5a59c; }
+    .step { fill: #1c1c1a; stroke: #45453f; stroke-width: 1.2; }
+    .step-hot { fill: #262a4d; stroke: #8b95ff; stroke-width: 2; }
+    .step-k { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 11.5px; fill: #a5a59c; letter-spacing: .02em; }
+    .step-t { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13.5px; fill: #e9e9e4; }
+    .wrong { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12.5px; fill: #f07b72; }
+    .arrow { stroke: #75756d; stroke-width: 1.4; fill: none; }
+    .arrowhead { fill: #75756d; }
+    .rail { stroke: #8b95ff; stroke-width: 1.6; fill: none; stroke-dasharray: 4 4; }
+    .railhead { fill: #8b95ff; }
+    .verdict-bad { fill: #3d1f1d; stroke: #f07b72; stroke-width: 1.2; }
+    .verdict-ok { fill: #1b3122; stroke: #62c27b; stroke-width: 1.2; }
+    .t-bad { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; fill: #f07b72; }
+    .t-ok { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; fill: #62c27b; }
+    .dot-bad { fill: #3d1f1d; stroke: #f07b72; stroke-width: 1.3; }
+    .dot-ok { fill: #62c27b; }
+    .arm { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; fill: #e9e9e4; }
+    .rate-bad { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #f07b72; }
+    .rate-ok { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; fill: #62c27b; }
+    .ci { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 12px; fill: #a5a59c; }
+    .note { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 12.5px; fill: #a5a59c; }
+    .pvalue { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; fill: #e9e9e4; }
+    .rule { stroke: #2f2f2b; stroke-width: 1; }
+    .frame { fill: #141412; stroke: #2f2f2b; stroke-width: 1; }
+    </style>
+  <rect x="0.5" y="0.5" width="959" height="455" rx="14" class="frame"/>
+  <text x="24" y="52" class="num" text-anchor="start">1</text><text x="46" y="52" class="lane" text-anchor="start">A recorded run</text><text x="46" y="71" class="lane-sub" text-anchor="start">every call, its exact context</text>
+  <rect x="210" y="26" width="156" height="62" rx="9" class="step"/>
+  <text x="224" y="48" class="step-k" text-anchor="start">STEP 0</text>
+  <text x="224" y="70" class="step-t" text-anchor="start">read data.csv</text>
+  <line x1="372" y1="57.0" x2="393" y2="57.0" class="arrow"/><path d="M 400 57.0 L 392 52.5 L 392 61.5 z" class="arrowhead"/>
+  <rect x="406" y="26" width="210" height="62" rx="9" class="step-hot"/>
+  <text x="420" y="48" class="step-k" text-anchor="start">STEP 1</text>
+  <text x="420" y="70" class="step-t" text-anchor="start">write report.json</text>
+  <line x1="622" y1="57.0" x2="643" y2="57.0" class="arrow"/><path d="M 650 57.0 L 642 52.5 L 642 61.5 z" class="arrowhead"/>
+  <rect x="656" y="26" width="104" height="62" rx="9" class="step"/>
+  <text x="670" y="48" class="step-k" text-anchor="start">STEP 2</text>
+  <text x="670" y="70" class="step-t" text-anchor="start">reply</text>
+  <rect x="796" y="40" width="118" height="34" rx="17" class="verdict-bad"/>
+  <text x="855" y="62" class="t-bad" text-anchor="middle">check fails</text>
+  <text x="511" y="110" class="wrong" text-anchor="middle">{"count": 4, "total": 61.5}</text>
+  <text x="855" y="110" class="note" text-anchor="middle">wants row_count</text>
+  <path d="M 511.0 122 L 511.0 174" class="rail"/>
+  <path d="M 511.0 183 L 506.0 174 L 516.0 174 z" class="railhead"/>
+  <text x="24" y="206" class="num" text-anchor="start">2</text><text x="46" y="206" class="lane" text-anchor="start">That step, sent again ×20</text><text x="46" y="225" class="lane-sub" text-anchor="start">everything before it held fixed</text>
+  <text x="322" y="201" class="arm" text-anchor="end">as written</text>
+  <circle cx="342" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="363" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="384" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="405" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="426" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="447" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="468" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="489" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="510" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="531" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="552" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="573" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="594" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="615" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="636" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="657" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="678" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="699" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="720" cy="196" r="7.5" class="dot-bad"/>
+  <circle cx="741" cy="196" r="7.5" class="dot-bad"/>
+  <text x="776" y="201" class="rate-bad" text-anchor="start">0 / 20</text>
+  <text x="844" y="201" class="ci" text-anchor="start">[0–16%]</text>
+  <text x="322" y="241" class="arm" text-anchor="end">with your edit</text>
+  <circle cx="342" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="363" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="384" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="405" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="426" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="447" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="468" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="489" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="510" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="531" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="552" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="573" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="594" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="615" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="636" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="657" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="678" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="699" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="720" cy="236" r="7.5" class="dot-ok"/>
+  <circle cx="741" cy="236" r="7.5" class="dot-ok"/>
+  <text x="776" y="241" class="rate-ok" text-anchor="start">20 / 20</text>
+  <text x="844" y="241" class="ci" text-anchor="start">[84–100%]</text>
+  <text x="342" y="296" class="pvalue" text-anchor="start">Fisher’s exact p = 1.5 × 10⁻¹¹<tspan class="note" dx="12">·  the target, named before the first sample: the keys the check wants</tspan></text>
+  <line x1="24" y1="324" x2="936" y2="324" class="rule"/>
+  <text x="24" y="366" class="num" text-anchor="start">3</text><text x="46" y="366" class="lane" text-anchor="start">Then full runs</text><text x="46" y="385" class="lane-sub" text-anchor="start">the edit in every run, from step 0</text>
+  <text x="322" y="359" class="arm" text-anchor="end">before</text>
+  <rect x="331" y="343" width="22" height="22" rx="5" class="verdict-bad"/>
+  <text x="342" y="359" class="t-bad" text-anchor="middle">✗</text>
+  <rect x="361" y="343" width="22" height="22" rx="5" class="verdict-bad"/>
+  <text x="372" y="359" class="t-bad" text-anchor="middle">✗</text>
+  <rect x="391" y="343" width="22" height="22" rx="5" class="verdict-bad"/>
+  <text x="402" y="359" class="t-bad" text-anchor="middle">✗</text>
+  <rect x="421" y="343" width="22" height="22" rx="5" class="verdict-bad"/>
+  <text x="432" y="359" class="t-bad" text-anchor="middle">✗</text>
+  <rect x="451" y="343" width="22" height="22" rx="5" class="verdict-bad"/>
+  <text x="462" y="359" class="t-bad" text-anchor="middle">✗</text>
+  <rect x="481" y="343" width="22" height="22" rx="5" class="verdict-bad"/>
+  <text x="492" y="359" class="t-bad" text-anchor="middle">✗</text>
+  <rect x="511" y="343" width="22" height="22" rx="5" class="verdict-bad"/>
+  <text x="522" y="359" class="t-bad" text-anchor="middle">✗</text>
+  <rect x="541" y="343" width="22" height="22" rx="5" class="verdict-bad"/>
+  <text x="552" y="359" class="t-bad" text-anchor="middle">✗</text>
+  <text x="586" y="359" class="rate-bad" text-anchor="start">0 / 8</text>
+  <text x="644" y="359" class="ci" text-anchor="start">[0–32%]</text>
+  <text x="322" y="399" class="arm" text-anchor="end">with the edit</text>
+  <rect x="331" y="383" width="22" height="22" rx="5" class="verdict-ok"/>
+  <text x="342" y="399" class="t-ok" text-anchor="middle">✓</text>
+  <rect x="361" y="383" width="22" height="22" rx="5" class="verdict-ok"/>
+  <text x="372" y="399" class="t-ok" text-anchor="middle">✓</text>
+  <rect x="391" y="383" width="22" height="22" rx="5" class="verdict-ok"/>
+  <text x="402" y="399" class="t-ok" text-anchor="middle">✓</text>
+  <rect x="421" y="383" width="22" height="22" rx="5" class="verdict-ok"/>
+  <text x="432" y="399" class="t-ok" text-anchor="middle">✓</text>
+  <rect x="451" y="383" width="22" height="22" rx="5" class="verdict-ok"/>
+  <text x="462" y="399" class="t-ok" text-anchor="middle">✓</text>
+  <rect x="481" y="383" width="22" height="22" rx="5" class="verdict-ok"/>
+  <text x="492" y="399" class="t-ok" text-anchor="middle">✓</text>
+  <rect x="511" y="383" width="22" height="22" rx="5" class="verdict-ok"/>
+  <text x="522" y="399" class="t-ok" text-anchor="middle">✓</text>
+  <rect x="541" y="383" width="22" height="22" rx="5" class="verdict-ok"/>
+  <text x="552" y="399" class="t-ok" text-anchor="middle">✓</text>
+  <text x="586" y="399" class="rate-ok" text-anchor="start">8 / 8</text>
+  <text x="644" y="399" class="ci" text-anchor="start">[68–100%]</text>
+  <text x="936" y="438" class="note" text-anchor="end">Gemma 4 31B through Hermes Agent: the step-by-step guide’s own runs</text>
+</svg>

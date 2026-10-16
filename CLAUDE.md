@@ -441,6 +441,11 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     examples/                 a skill that mostly fails, and a step-by-step guide (README.md);
                                hermes-design-md/, Hermes's own design-md skill fixed from the
                                failing step to an approved edit, with its guide
+    docs/                     what the README links to: setup.md (install, the server's flags and
+                               why, the harnesses, the sandbox, a task's format), commands.md
+                               (every command by the question it answers), agents.md (the MCP
+                               server, client by client); adapters/, one page per harness;
+                               images/, the README's pictures (hero.py draws the figure)
 
 A request is never stored whole: messages live in the content-addressed tree and are
 rebuilt by `Store.rebuild_request`. Never report a rate without its interval — see
@@ -458,7 +463,11 @@ than on a hardcoded assumption about which server is running.
 - Python 3.12+, managed with uv. Under WSL, keep the venv and the recordings on the Linux
   file system, never under `/mnt/c`: DrvFs breaks SQLite's WAL locking.
 - Nothing of one machine in a tracked file: real paths, hostnames, ports that serve something
-  else, notes. Those go in untracked `*.local.md` files.
+  else, notes. Those go in untracked `*.local.md` files. A screenshot is a tracked file too.
+- The README is the front door, read by someone deciding in a few minutes whether to try
+  tuningfork: what it does, a quickstart, the commands by question, links. Reference goes in
+  `docs/`. A new command or option goes in `docs/commands.md` (and in the README's tables if a
+  newcomer needs it); an output a guide shows that changes is captured again, never typed.
 - The UI puts every string on the page as a text node — payloads are full of markup-looking
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
 - tuningfork's own endpoints (`/_tuningfork/`) answer only to a loopback Host, refuse
