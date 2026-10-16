@@ -351,7 +351,9 @@ class Stack:
 
 
 @contextmanager
-def task_stack(tmp_path: Path, mock_server: Any, monkeypatch: Any, *, max_inflight: int = 4) -> Iterator[Stack]:
+def task_stack(
+    tmp_path: Path, mock_server: Any, monkeypatch: Any, *, max_inflight: int = 4, max_output: int | None = None,
+) -> Iterator[Stack]:
     """The tally task, runnable end to end with no model: `FakeAgent` as the harness (as
     "fake" in ADAPTERS), `tally_model` as the mock server's responder, a real proxy on a
     socket, and a skill folder beside the spec."""
@@ -379,7 +381,7 @@ def task_stack(tmp_path: Path, mock_server: Any, monkeypatch: Any, *, max_inflig
     )
     upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_server.app), timeout=30)
     app = create_app(
-        Settings(upstream_base_url="http://upstream.test", home=home, max_inflight=max_inflight),
+        Settings(upstream_base_url="http://upstream.test", home=home, max_inflight=max_inflight, max_output=max_output),
         client=upstream,
     )
     store = Store(home)

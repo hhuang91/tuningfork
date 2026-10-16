@@ -139,6 +139,19 @@ def asked_by(value: Any) -> dict[str, str] | None:
     return kept
 
 
+def kept_params(parsed: Any) -> dict[str, Any]:
+    """A job's parameters as they are kept and shown — on the Jobs page, to whoever reads the
+    jobs API — redacted, and a harness's options as its plan shows them: every value under an
+    MCP server's `headers` or `env` masked, whatever its name, which no pattern would know for
+    a secret (`shown_options`). The job runs with them as given; what is kept is never run."""
+    from tuningfork.ops.batch import shown_options
+
+    data = dataclasses.asdict(parsed)
+    if isinstance(data.get("harness_options"), dict):
+        data["harness_options"] = shown_options(data["harness_options"])
+    return redact_json(data)
+
+
 def plain(value: Any) -> Any:
     """A result, or a cancelled job's partial result, as JSON."""
     if value is None:
@@ -229,7 +242,7 @@ class JobRunner:
         kind = self._kind(kind_name)
         parsed = kind.parse(params)
         started_by = asked_by(started_by)
-        stored_params = redact_json(dataclasses.asdict(parsed))
+        stored_params = kept_params(parsed)
         if dedupe:
             with self._lock:
                 same = next((

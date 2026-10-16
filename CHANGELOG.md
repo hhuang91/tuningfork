@@ -103,8 +103,9 @@
   to try another edit, step or tool rather than to stop. A running job says how long is left,
   and `serve --mcp-max-wait` sets how long one MCP call may wait for it.
 - **A cap on output for every call through the proxy** (`serve --max-output N`): a harness's
-  call asking for more than N output tokens, or naming no limit, is sent with N; the step
-  records what the model was sent and what the harness asked, and a fork's replay matches the
+  call asking for more than N output tokens, or naming no limit, is sent with N — a call a
+  person edits at a breakpoint, and a validation's held-out runs, included; the step records
+  what the model was sent and what the harness asked, and a fork's replay matches the
   harness's own request. Hermes answers a reply cut at its limit by asking again for more, so
   the cap has to be the proxy's: an agent's reply looped to Hermes's 65,536 tokens for 35
   minutes of one GPU.

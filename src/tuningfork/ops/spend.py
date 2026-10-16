@@ -106,16 +106,29 @@ def main_run_spend(store: Store, run: Run) -> Spend:
     return launch_spend(store, run.launch_id) if run.launch_id else run_spend(store, run.id)
 
 
+def sampled_spend(store: Store, experiment_id: str) -> Spend:
+    """The model calls an experiment made itself: one a sample, answered at the step. A sample
+    run to the end is a fork, whose calls its launch's runs recorded; one with no run made no
+    model call — its harness ended before its first — and its time is the harness's, never a
+    call's."""
+    experiment = store.get_experiment(experiment_id)
+    if experiment is None or (experiment.settings or {}).get("reach") == "end":
+        return Spend()
+    total = Spend()
+    for sample in store.samples(experiment_id):
+        if not sample.run_id:
+            total += count_call(sample.usage, sample.timings, store.sample_response(sample), sample.error)
+    return total
+
+
 def experiment_spend(store: Store, experiment_id: str) -> Spend:
     """An experiment's samples. A sample run to the end is a fork: counted as its launch."""
-    total = Spend()
+    total = sampled_spend(store, experiment_id)
     for sample in store.samples(experiment_id):
         if sample.run_id:
             run = store.get_run(sample.run_id)
             if run is not None:
                 total += main_run_spend(store, run)
-        else:
-            total += count_call(sample.usage, sample.timings, store.sample_response(sample), sample.error)
     return total
 
 
@@ -126,9 +139,7 @@ def job_spend(store: Store, links: dict[str, Any]) -> Spend:
     for launch_id in links.get("launches") or []:
         total += launch_spend(store, launch_id)
     for experiment_id in links.get("experiments") or []:
-        for sample in store.samples(experiment_id):
-            if not sample.run_id:
-                total += count_call(sample.usage, sample.timings, store.sample_response(sample), sample.error)
+        total += sampled_spend(store, experiment_id)
     return total
 
 

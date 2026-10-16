@@ -59,6 +59,9 @@ class ValidatePlan:
     #: Where the held-out runs' private folders are made, each deleted when its runs end.
     private_base: Path | None = None
     keep_private: Path | None = None
+    #: The proxy's cap on a call's output: the held-out runs, which it never records, are
+    #: held to it by their private proxy, as every other run here is by the proxy itself.
+    max_output: int | None = None
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -91,6 +94,7 @@ class ValidatePlan:
                 "says": "held-out runs are recorded in a temporary folder outside the recordings folder, "
                         "deleted when they end, and only their verdicts kept"
                         + (f"; a copy is kept at {self.keep_private}" if self.keep_private else ""),
+                "max_output": self.max_output,
             },
             "warnings": self.warnings,
         }
@@ -244,7 +248,8 @@ def prepare_validate(
         refinement=refinement, proposal=proposal, spec=spec, training=training, held_out=held,
         n=n, runs=runs, alpha=alpha, concurrency=concurrency, harness=harness, model=model,
         proxy_url=proxy_url, forward=forward, training_plans=training_plans, screen=screen,
-        held_out_recorded=held_recorded, private_base=private_base, keep_private=keep_private, warnings=warnings,
+        held_out_recorded=held_recorded, private_base=private_base, keep_private=keep_private,
+        max_output=forward.original.proxy.raw.get("max_output"), warnings=warnings,
     )
 
 
@@ -357,7 +362,7 @@ def execute_validate(
                 arms[arm] = [verdict.to_json() for verdict in run_verdict_only(
                     store, plan.spec, entry, n=plan.runs, harness=plan.harness, model=plan.model,
                     proxy_url=plan.proxy_url, skill_file=skill, concurrency=plan.concurrency, keep=keep,
-                    label=f"held-out {entry.id}, {arm}", progress=progress, cancel=cancel,
+                    max_output=plan.max_output, label=f"held-out {entry.id}, {arm}", progress=progress, cancel=cancel,
                 )]
             record["held_out"].append(arms)
             _replace(path, record)

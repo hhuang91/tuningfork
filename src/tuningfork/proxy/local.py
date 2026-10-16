@@ -49,6 +49,7 @@ class LocalProxy:
             "status": "ok",
             "home": str(self.home),
             "max_inflight": state.gate.max_inflight,
+            "max_output": state.settings.max_output,
             "paused": state.gate.paused,
             "launches": True,
             "server": getattr(state, "server", None),

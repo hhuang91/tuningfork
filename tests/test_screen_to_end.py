@@ -101,6 +101,18 @@ def test_a_refinement_toward_the_check_is_screened_to_the_end(stack):
     assert (answers["reached"], answers["of"]) == (0, 6)
 
 
+def test_a_run_whose_verdict_does_not_count_says_nothing_of_the_check(stack):
+    """Toward the check, the packet sorts the answers seen by their verdicts: the recorded run's
+    own answer is one only where its verdict counts — not where the skill changed during it, or
+    it timed out, as an excluded fork's is not."""
+    made, _ = proposed(stack, target_check=True)
+    assert build_packet(stack.store, made.id).data["answers_here"]["of"] == 1  # the run's own: it failed
+    run = stack.store.get_run(made.run_id)
+    stack.store.annotate_run(run.id, result={**run.result, "usable": False})
+    answers = build_packet(stack.store, made.id).data["answers_here"]
+    assert (answers["reached"], answers["of"]) == (0, 0)
+
+
 def test_a_refinement_toward_a_behaviour_may_be_screened_to_the_end_too(stack, monkeypatch):
     from rich.console import Console
 

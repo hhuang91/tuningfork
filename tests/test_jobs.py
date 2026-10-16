@@ -12,6 +12,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -27,6 +28,11 @@ class CountParams:
     delay: float = 0.0
     fail: str | None = None
     refuse: bool = False
+
+
+@dataclass
+class OptionsParams:
+    harness_options: dict[str, Any] = field(default_factory=dict)
 
 
 class Counted:
@@ -232,6 +238,38 @@ class TestAsking:
         settled(runner, first["id"])
         assert runner.submit("count", {"steps": 1}, request_id="form-7")["id"] == first["id"]
         assert len(store.jobs()) == 1
+
+    def test_an_mcp_servers_secrets_are_kept_masked_and_given_to_the_job(self, store):
+        """A header or an environment variable of an MCP server is a secret whatever its name, which
+        no pattern would know: kept and shown masked — on the Jobs page, to whoever reads the jobs
+        API — and the job runs with it as given."""
+        from tuningfork.mcp.tools import same_params
+
+        given = []
+
+        def execute_options(context, prepared, *, progress, cancel):
+            given.append(prepared.harness_options)
+            cancel.wait(10)  # under way until cancelled
+            raise Cancelled(cancel.reason)
+
+        kind = Kind("options", BACKGROUND, "Options.", OptionsParams, lambda context, params: params, execute_options)
+        runner = JobRunner(store, Bus(), Proxy(), catalog=kinds(options=kind))
+        try:
+            options = {"mcp_servers": {"x": {"command": "x", "env": {"CREDENTIAL": "plain-words-1"},
+                                             "headers": {"X-Credential": "plain-words-2"}}}}
+            job = runner.submit("options", {"harness_options": options}, dedupe=True)
+            until(lambda: given)
+            kept = store.get_job(job["id"]).params
+            assert kept == runner.get(job["id"])["params"] == same_params(kind, {"harness_options": options})
+            assert kept["harness_options"]["mcp_servers"]["x"] == {
+                "command": "x", "env": {"CREDENTIAL": "…"}, "headers": {"X-Credential": "…"}}
+            assert given == [options]
+            # The same work asked for while it runs is found by the view kept of it.
+            assert runner.submit("options", {"harness_options": options}, dedupe=True)["deduplicated"] is True
+            runner.cancel(job["id"])
+            settled(runner, job["id"])
+        finally:
+            runner.shutdown(10)
 
     def test_the_kinds_carry_their_parameters(self, runner):
         (count, *_) = runner.kinds()

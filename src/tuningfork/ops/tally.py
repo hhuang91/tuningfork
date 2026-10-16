@@ -95,11 +95,14 @@ def made_along(runs: Iterable[Run]) -> dict[str, dict[str, Any]]:
     made and some repaired later — where no passing run's answer shows the fix (findings §31.42)."""
     from tuningfork.ops.checks import ALONG, made_by_calls
 
-    checked = [run for run in runs if (run.result or {}).get(ALONG)]
+    # A run whose check printed more than its findings could be placed by is not counted at all.
+    placed = [(run, made_by_calls(run.result[ALONG])) for run in runs if (run.result or {}).get(ALONG)]
+    placed = [(run, made) for run, made in placed if made is not None]
+    checked = [run for run, _ in placed]
     found: dict[str, dict[str, Any]] = {}
-    for run in checked:
+    for run, made in placed:
         first: dict[str, dict[str, Any]] = {}
-        for entry in made_by_calls(run.result[ALONG]):
+        for entry in made:
             if entry["made_by"] is None:
                 continue
             seen = first.setdefault(entry["finding"], {"step": entry["made_by"], "at_end": False})

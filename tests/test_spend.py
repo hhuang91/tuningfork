@@ -63,3 +63,30 @@ def test_a_failed_call_and_one_without_timings_still_count():
     total = failed + bare
     assert total.calls == 2 and total.to_json()["server_s"] == 0.0
     assert Spend().to_json()["server_s"] is None
+
+
+def test_a_fork_that_made_no_call_cost_no_call(tmp_path):
+    """A sample run to the end is a fork, counted as its launch. One whose harness ended before its
+    first model call has no run, and its time is the harness's: never a failed call. A sample at
+    the step is a call of its own."""
+    from tuningfork.ops.spend import experiment_spend, job_spend
+
+    store = Store(tmp_path / "store")
+    try:
+        made = {}
+        for name, settings in (("forks", {"n": 1, "reach": "end"}), ("step", {"n": 1})):
+            experiment = store.create_experiment(
+                kind="resample", arm="original", run_id=None, step_idx=None, step_id=None,
+                request={"model": "m", "messages": []}, settings=settings,
+            )
+            store.add_sample(experiment.id, 0, seed=None, response=None, outcome_kind="error", outcome_key=None,
+                             outcome_label=None, timings={"total_ms": 30_000.0}, error="the harness exited",
+                             usage={"prompt_tokens": 7} if name == "step" else None)
+            made[name] = experiment.id
+
+        assert experiment_spend(store, made["forks"]) == Spend()
+        step = experiment_spend(store, made["step"])
+        assert (step.calls, step.failed, step.prompt_tokens, step.wall_ms) == (1, 1, 7, 30_000.0)
+        assert job_spend(store, {"experiments": [made["forks"], made["step"]]}) == step
+    finally:
+        store.close()

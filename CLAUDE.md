@@ -95,7 +95,10 @@ first, not the first one read. Run along a run (`ops.checks.check_along`; `tunin
 workspace as it started, after each call that changed it, and at its end, kept in the run's result and
 never a verdict — a check that reads the files says when each finding came to be: there from the start
 is work not done yet; made by a call is a mistake, made there (each line followed by its exact text:
-masked, "not booked yet" and "booked twice" would be one finding). The tally then gives each finding
+masked, "not booked yet" and "booked twice" would be one finding). Each state keeps its findings whole
+(`kept_findings`), never from its output's end alone, where a finding there from the start can fall
+off and come back as made by a later call; a state with more than `MAX_FINDINGS` places none of its
+run's findings. The tally then gives each finding
 the step that made it in each run, the passing ones included, and names a mistake every run made and
 some repaired later (`made_along`, `shared_mistakes`): comparing passing with failing runs points at the
 repair there, never at the mistake (findings §31.42). A batch interrupted — Ctrl-C, or a SIGTERM, which
@@ -352,8 +355,10 @@ traffic while no breakpoint is armed — but a cap the proxy was started with: `
 (`wire.base.cap_output`, by the limits each format names, `output_limits`: a limit above N, or
 none, is sent as N). The step records the request as the model was sent it, and what the
 harness asked in its params (`output_cap`), from which `Store.harness_request` gives the
-harness's own back — what a fork's replay matches against. Experiment traffic keeps its own
-limit. The cap belongs in the proxy because Hermes answers a reply cut at its own limit by asking
+harness's own back — what a fork's replay matches against. A call a person edits at a
+breakpoint is held to N again (the edit's own ask in the step's `edits`), and a validation's
+held-out runs, which the main proxy relays unrecorded, are held to it by their private proxy
+(`ValidatePlan.max_output`). Experiment traffic keeps its own limit. The cap belongs in the proxy because Hermes answers a reply cut at its own limit by asking
 again for more (a tool call dropped and resent, text continued; four or five times, the limit
 doubled each time): an agent's reply looped to Hermes's 65,536 tokens for 35 minutes of one GPU
 (findings §31.58).

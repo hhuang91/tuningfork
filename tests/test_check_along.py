@@ -15,13 +15,16 @@ from typer.testing import CliRunner
 from tuningfork.cli import app
 from tuningfork.ops import refine
 from tuningfork.ops.batch import execute_batch, prepare_batch
-from tuningfork.ops.checks import ALONG, check_along, first_made, prepare_check_along
+from tuningfork.ops.checks import (
+    ALONG, MAX_FINDINGS, check_along, first_made, kept_findings, made_by_calls, prepare_check_along,
+)
 from tuningfork.ops.common import OperationError
 from tuningfork.ops.inspect import (
     first_change, hides_what_it_ran, ran_excerpt, replay_warning, run_detail, step_changes, workspace_at,
     workspace_patch,
 )
 from tuningfork.ops.tally import finding_words, shared_mistakes, tally_task
+from tuningfork.specs import CHECK_KEPT
 from tests.helpers import task_stack
 from tests.test_tally import judged
 
@@ -67,6 +70,7 @@ def test_the_check_along_a_run_says_which_call_made_each_finding(stack):
     # Kept with the run, its verdict as it was.
     kept = stack.store.get_run(run.id)
     assert kept.result["passed"] is False and kept.result[ALONG]["states"][0]["output"].strip() == "no report.json yet"
+    assert kept.result[ALONG]["states"][0]["findings"] == ["no report.json yet"]
     # A step named by the call that made a finding, or that first changed a file: each run's own.
     from tuningfork.ops.experiments import find_step, step_index
 
@@ -169,6 +173,47 @@ def along(states):
     return {"states": [{"before_step": before, "end": index == len(states) - 1, "commit": f"c{index}",
                         "passed": output == "ok", "output": output} for index, (before, output) in enumerate(states)],
             "steps": states[-1][0], "at": 0}
+
+
+def kept_whole(states):
+    """A check along a run as it is kept now: each state's findings whole beside its output's end."""
+    return {"states": [{"before_step": before, "end": index == len(states) - 1, "commit": f"c{index}",
+                        "passed": output == "ok", "output": output[-CHECK_KEPT:], **kept_findings(output)}
+                       for index, (before, output) in enumerate(states)],
+            "steps": states[-1][0], "at": 0}
+
+
+def test_a_finding_cut_from_a_long_output_is_not_taken_for_one_a_later_call_made():
+    """A check's output past what a verdict keeps loses its first lines: a finding there from the
+    start, fixed last, would come back into what was kept and seem made by the call that fixed the
+    others. Each state keeps its findings whole."""
+    early = "report.json: no row_count"
+    others = [f"line {index}: the total of this row is not the sum of its parts" for index in range(60)]
+    start = "\n".join([early, *others])
+    assert early not in start[-CHECK_KEPT:]
+    states = [(0, start), (2, early)]  # the call at step 1 fixed every other line
+    made = {entry["line"]: entry["made_by"] for entry in made_by_calls(kept_whole(states))}
+    assert made[early] is None  # there from the start: work not done yet
+    # Kept as before, the output's end alone, it was taken for step 1's call's.
+    assert {entry["line"]: entry["made_by"] for entry in made_by_calls(along(
+        [(before, output[-CHECK_KEPT:]) for before, output in states]))}[early] == 1
+
+
+def test_a_check_that_prints_more_than_findings_places_none(store):
+    """Past `MAX_FINDINGS` distinct lines a state is cut, a line missing from it might have been
+    there, and no call can be named for any: the run is not counted among those placed."""
+    flood = "\n".join(f"row {index} is wrong" for index in range(MAX_FINDINGS + 1))
+    kept = kept_findings(flood)
+    assert kept["findings_cut"] and len(kept["findings"]) == MAX_FINDINGS
+    assert made_by_calls(kept_whole([(0, flood), (2, "row 0 is wrong")])) is None
+    placed = judged(store, "a", passed=False, output="row 0 is wrong")
+    flooded = judged(store, "b", passed=False, output="row 0 is wrong")
+    for run_id, record in ((placed, kept_whole([(0, "ok"), (1, "row 0 is wrong")])),
+                           (flooded, kept_whole([(0, flood), (1, "row 0 is wrong")]))):
+        store.annotate_run(run_id, result={**store.get_run(run_id).result, ALONG: record})
+    (finding,) = tally_task(store, "t/1").to_json()["groups"][0]["findings"]
+    assert (finding["made"]["steps"], finding["made"]["checked"]) == ([0], 1)
+    assert first_made(store.get_run(flooded), "row") is None
 
 
 def test_a_mistake_every_run_made_is_named_with_the_call_that_made_it(store):

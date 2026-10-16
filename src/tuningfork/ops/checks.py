@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from tuningfork.ops.common import OperationError
+from tuningfork.specs import CHECK_KEPT
 from tuningfork.store.db import Run, Store
 
 #: How long a tried check may run, unless asked otherwise: one that takes longer is worth
@@ -186,9 +187,10 @@ def prepare_check_trial(
     )
 
 
-def execute_check_trial(store: Store, plan: CheckTrialPlan) -> CheckTrial:
+def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None = CHECK_KEPT) -> CheckTrial:
     """Run the check in a throwaway folder laid out as a run's: the workspace, and the reply
-    in a file beside it (`$TUNINGFORK_REPLY`). Nothing is kept, and nothing recorded."""
+    in a file beside it (`$TUNINGFORK_REPLY`). Nothing is kept, and nothing recorded. The
+    output is its last `keep` characters, as a verdict keeps it; None, all of it."""
     from tuningfork.snapshots import Snapshots
     from tuningfork.specs import inside, run_check
 
@@ -207,7 +209,7 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan) -> CheckTrial:
         reply_file = root / "reply.txt"
         reply_file.write_text(plan.reply, encoding="utf-8")
         result = run_check(plan.check, workspace, plan.timeout, reply=plan.reply, reply_file=reply_file,
-                           spec_dir=Path(plan.spec_dir) if plan.spec_dir else None)
+                           spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, keep=keep)
     return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found)
 
 
@@ -228,6 +230,23 @@ def try_check(store: Store, check: Any = None, **options: Any) -> CheckTrial:
 
 #: Where the check along a run is kept, in the run's result.
 ALONG = "check_along"
+#: The findings a state keeps whole, each to so many characters: a call is named for a finding
+#: by comparing them, and a finding cut from one state's output would read as made by the next
+#: call. A state with more is not placed at all (`made_by_calls`): its check prints more than
+#: findings.
+MAX_FINDINGS = 400
+FINDING_CHARS = 500
+
+
+def kept_findings(output: str) -> dict[str, Any]:
+    """A state's findings, each distinct one once in the order printed — all of them, or a state
+    whose check printed more than `MAX_FINDINGS` marked cut."""
+    from tuningfork.ops.tally import finding_lines
+
+    lines = list(dict.fromkeys(line[:FINDING_CHARS] for line in finding_lines(output)))
+    if len(lines) > MAX_FINDINGS:
+        return {"findings": lines[:MAX_FINDINGS], "findings_cut": True}
+    return {"findings": lines}
 
 
 @dataclass(slots=True)
@@ -287,17 +306,18 @@ def execute_check_along(
         end = index == len(plan.states) - 1
         key = (commit, end)
         if key not in seen:
-            # The reply is the run's own at the end; before it, there is none.
+            # The reply is the run's own at the end; before it, there is none. The output whole:
+            # its findings are compared state by state, and only their end is shown.
             reply = plan.trial.reply if end else ""
-            seen[key] = execute_check_trial(store, replace(plan.trial, commit=commit, reply=reply))
+            seen[key] = execute_check_trial(store, replace(plan.trial, commit=commit, reply=reply), keep=None)
         trial = seen[key]
         states.append({"before_step": before, "end": end, "commit": commit, "passed": trial.passed,
-                       "output": trial.output[-2000:]})
+                       "output": trial.output[-CHECK_KEPT:], **kept_findings(trial.output)})
         emit(progress, "state", done=index + 1, total=len(plan.states))
     record = {"states": states, "steps": plan.steps, "at": time.time()}
     run = store.get_run(plan.trial.run.id)
     store.annotate_run(run.id, result={**(run.result or {}), ALONG: record})
-    return {"run": run.id, **record, "made": made_by_calls(record)}
+    return {"run": run.id, **record, "made": made_by_calls(record) or []}
 
 
 def check_along(store: Store, run: str, *, timeout: float = DEFAULT_TIMEOUT) -> dict[str, Any]:
@@ -394,21 +414,28 @@ def execute_check_along_runs(
     return CheckAlongRuns(task_id=plan.task_id, runs=done, skipped=plan.skipped)
 
 
-def made_by_calls(record: dict[str, Any] | None) -> list[dict[str, Any]]:
+def made_by_calls(record: dict[str, Any] | None) -> list[dict[str, Any]] | None:
     """Each line the check printed along a run, with the step whose call first made it — None
     when it was there from the start: work not done yet — and whether it was still there at the
     end. Lines are followed by their exact text: masked as the tally masks them, "SKU-310: 15 in
-    stock" (not booked yet) and "SKU-100: 28 in stock" (booked twice) would be one finding."""
+    stock" (not booked yet) and "SKU-100: 28 in stock" (booked twice) would be one finding.
+
+    None when a state's findings were cut (`kept_findings`): a line missing from a state might
+    have been there, and no call can be named for it — the run is not placed at all."""
     from tuningfork.ops.tally import MAX_LINE, finding_key, finding_lines
 
     states = (record or {}).get("states") or []
     if not states:
         return []
+    if any(state.get("findings_cut") for state in states):
+        return None
+    # A record from before states kept their findings whole has only its output's end.
+    lines = [state["findings"] if "findings" in state else finding_lines(state.get("output")) for state in states]
     first: dict[str, int] = {}
-    for index, state in enumerate(states):
-        for line in finding_lines(state.get("output")):
+    for index, found in enumerate(lines):
+        for line in found:
             first.setdefault(line, index)
-    end = set(finding_lines(states[-1].get("output")))
+    end = set(lines[-1])
     made = []
     for line, index in first.items():
         # A line first seen in a state a call made: the call at the step before that state.
@@ -419,8 +446,9 @@ def made_by_calls(record: dict[str, Any] | None) -> list[dict[str, Any]]:
 
 def first_made(run: Run, words: str) -> int | None:
     """The step whose call first made a finding with these words (case aside) along `run`, from
-    its check along the run; None when none did, or the check was not run along it."""
+    its check along the run; None when none did, or the check was not run along it, or could not
+    place what it found."""
     wanted = words.strip().lower()
-    steps = [entry["made_by"] for entry in made_by_calls((run.result or {}).get(ALONG))
+    steps = [entry["made_by"] for entry in made_by_calls((run.result or {}).get(ALONG)) or []
              if entry["made_by"] is not None and wanted in f"{entry['line']}\n{entry['finding']}".lower()]
     return min(steps) if steps else None

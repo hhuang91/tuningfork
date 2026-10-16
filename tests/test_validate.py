@@ -30,11 +30,12 @@ KEYS = {"old": "Write the totals to report.json.",
 
 
 @pytest.fixture
-def stack(tmp_path, mock_server, monkeypatch):
+def stack(tmp_path, mock_server, monkeypatch, request):
     temp = tmp_path / "tmp"
     temp.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(temp))
-    with task_stack(tmp_path, mock_server, monkeypatch) as built:
+    # A test may ask for a proxy started with a cap on output: `indirect` parametrization.
+    with task_stack(tmp_path, mock_server, monkeypatch, max_output=getattr(request, "param", None)) as built:
         built.spec.evals.append(Eval(
             id="2", prompt=f"Summarize data.csv into report.json. {MARKER}",
             files=[{"path": "data.csv", "content": f"id,amount\n1,10\n2,20\n3,30\n4,1.5\n# {MARKER}\n"}],
@@ -165,6 +166,22 @@ def test_a_spec_with_no_held_out_task_is_warned_and_can_never_pass_the_gate(stac
     plan = validate.prepare_validate(stack.store, made.id, proposal.id, proxy_url=stack.url)
     assert plan.held_out == [] and plan.total == 4 * 5
     assert any("no held-out eval" in warning for warning in plan.warnings)
+
+
+@pytest.mark.parametrize("stack", [50], indirect=True)
+def test_the_held_out_runs_are_held_to_the_proxys_cap(stack, monkeypatch):
+    """Every other run here goes through the proxy, held to its cap on output; the held-out runs
+    go through a private proxy, which the plan gives the same cap."""
+    from tuningfork.ops import private
+
+    monkeypatch.setattr(validate, "MINIMUM", 1)
+    made, proposal = screened(stack)
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    assert plan.max_output == 50 and plan.to_json()["private"]["max_output"] == 50
+    asked = []
+    monkeypatch.setattr(private, "run_verdict_only", lambda *args, **kwargs: asked.append(kwargs["max_output"]) or [])
+    validate.execute_validate(stack.store, plan)
+    assert asked == [50, 50]  # the held-out task's two arms
 
 
 def test_cancelled_it_keeps_what_finished_and_gives_no_verdict(stack, monkeypatch):

@@ -11,7 +11,6 @@ Nothing here needs the MCP SDK: the registry and its handlers are plain Python, 
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import re
 import time
@@ -1521,6 +1520,6 @@ def check_job_id(value: str) -> str:
 def same_params(kind: Kind, params: dict[str, Any]) -> dict[str, Any]:
     """Parameters as the job runner stores them — parsed, defaults filled, redacted — so an
     identical job already under way can be found."""
-    from tuningfork.config import redact_json
+    from tuningfork.jobs import kept_params
 
-    return redact_json(dataclasses.asdict(kind.parse(params)))
+    return kept_params(kind.parse(params))
