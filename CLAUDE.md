@@ -467,7 +467,9 @@ than on a hardcoded assumption about which server is running.
 - The README is the front door, read by someone deciding in a few minutes whether to try
   tuningfork: what it does, a quickstart, the commands by question, links. Reference goes in
   `docs/`. A new command or option goes in `docs/commands.md` (and in the README's tables if a
-  newcomer needs it); an output a guide shows that changes is captured again, never typed.
+  newcomer needs it): `tests/test_docs.py` fails on a command it does not name, and on a link
+  in those pages that leads nowhere. An output a guide shows that changes is captured again,
+  never typed.
 - The UI puts every string on the page as a text node — payloads are full of markup-looking
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
 - tuningfork's own endpoints (`/_tuningfork/`) answer only to a loopback Host, refuse
