@@ -466,10 +466,10 @@ was asked, how it went and what it made; `cancel <id>` stops it, keeping what it
 
 ### `trash`
 
-`trash run|experiment|job|scenario|refinement <id>…` sets items aside: out of every list and every
-rate, with what is tied to them left in place, and no new work started on them. `trash list` shows
-what is there and what deleting each for good would remove; `trash restore <id>` brings items
-back. `trash purge <id>` deletes items for good with everything tied to them — a run's
+`trash run <id>…` sets runs aside — and `trash experiment`, `trash job`, `trash scenario` and
+`trash refinement` the others — out of every list and every rate, with what is tied to them left
+in place, and no new work started on them. `trash list` shows what is there and what deleting
+each for good would remove; `trash restore <id>` brings items back. `trash purge <id>` deletes items for good with everything tied to them — a run's
 experiments and their samples, forks that replayed it — and `trash empty` deletes everything
 there. Neither can be undone.
 
