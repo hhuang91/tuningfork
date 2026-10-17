@@ -479,8 +479,10 @@ pre.md-front { display: block; white-space: pre-wrap; }
   color: var(--muted);
 }
 .chip.tone-accent { background: var(--accent-soft); color: var(--accent); }
-/* A behaviour a declared target counts: solid, apart from the soft accent of a tool call. */
+/* A behaviour a declared target counts: solid, apart from the soft accent of a tool call; one
+   it does not, an outline — the same height, its border inside the chip's line. */
 .chip.tone-target { background: var(--accent); color: var(--panel); }
+.chip.tone-not-target { background: transparent; color: var(--muted); border: 1px dashed var(--border-strong); line-height: 17px; }
 .chip.tone-request { background: var(--request-soft); color: var(--request); }
 .chip.tone-response { background: var(--response-soft); color: var(--response); }
 .chip.tone-ok { background: var(--ok-soft); color: var(--ok); }

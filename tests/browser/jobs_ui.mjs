@@ -109,6 +109,9 @@ try {
   const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
     [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
   check(marked === "target:6/6", `the behaviours table marks the one the target counts: the original's every sample (${marked})`);
+  const others = await page.eval(`[...document.querySelectorAll(".table tbody tr")].filter((row) => !row.classList.contains("is-target")).map((row) =>
+    [row.querySelector(".chip.tone-not-target")?.textContent, row.children[3].textContent.split(" ")[0]].join(":")).join(",")`);
+  check(others === "not target:6/6", `and badges the other "not target", its 6/6 the variant's, not the target's (${others})`);
 
   // --- 3. A task run again from its run's page; a fork held at its step; forks to the end ----
   console.log("run a task again, fork at a step, and run forks to the end");
@@ -571,6 +574,13 @@ try {
   // At the step, a survivor is a shift of a behaviour, not a check passed: the accent's, never green.
   check(await page.eval(`!document.querySelector(".verdict-block.tone-ok") && [...document.querySelectorAll(".screen-table .chip")]
     .find((chip) => chip.textContent === "survives")?.classList.contains("tone-accent")`), "a step screen's survivor is the accent's colour, not a check's green");
+  // What the model did, by arm: the right keys are the target ("calls write_file and mentions row_count").
+  const byArm = await page.eval(`(() => {
+    const panel = [...document.querySelectorAll(".panel")].find((found) => found.querySelector("h2")?.textContent === "What the model did, by arm");
+    return [...panel.querySelectorAll("tbody tr")].map((row) =>
+      [row.querySelector(".chip.tone-target, .chip.tone-not-target")?.textContent, row.children[1].textContent.includes("row_count")].join(":")).join(",");
+  })()`);
+  check(byArm.split(",").sort().join(",") === "not target:false,target:true", `the screen's behaviours are badged target or not target (${byArm})`);
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
   check(await page.eval(`[...document.querySelectorAll(".screen-table .chip")].map((c) => c.textContent).sort().join(",") === "not significant,survives"`), "the screen's page gives each proposal its verdict");

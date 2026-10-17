@@ -62,7 +62,7 @@ It checks that a resample started from a step on the run's conversation runs thr
 proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter as its
 target, shows the known shift, saves the variant only when it starts, and leads its page with the
 edit it tested, then the target and which way the variant moved it — in the accent's colour, never
-a check's green — with the behaviour the target counts marked; that no target is
+a check's green — with each behaviour badged target or not target; that no target is
 chosen for you; that a task runs again from its run's page, its check shown whole; that a
 fork stops at its step for a person and runs on when continued; that forks run to the end,
 for a resample and for an A/B, whose page names the task's check as its target; that a job's page, its event stream cut mid-job, catches up
@@ -90,7 +90,8 @@ the step has done, and declared in words; that a refinement started from a step 
 target first, offering no exploratory choice; that the lab's built-in proposer, asked through
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have; that a person's own wording joins them; that a screen of two,
-Holm-corrected, finds the one that names the keys, and each proposal then carries its
+Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
+behaviours badged target or not target — and each proposal then carries its
 verdict; that a survivor, validated from its refinement's page, runs forks to the end, the
 training task and the lab's held-out task — named only by its id in the plan and the job,
 its text nowhere — and meets the gate, each part and check shown to the person; that

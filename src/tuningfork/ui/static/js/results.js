@@ -50,13 +50,18 @@ function shiftWords(target) {
   return `The variant hit the target ${way} often: ${ofTotal(target.variant)} samples, against ${ofTotal(target.original)} with the original`;
 }
 
-/** Whether the declared target counts a behaviour: all its samples, some, or none. */
-function targetMark(shift) {
-  if (!shift.target_counted) return null;
-  const pooled = shift.original.successes + shift.variant.successes;
-  return shift.target_counted >= pooled
-    ? chip("target", "target", "The declared target counts this behaviour: its samples are the target's numbers above")
-    : chip(`target in ${shift.target_counted} of ${pooled}`, "target",
+/** Whether the declared target counts a behaviour — all `pooled` of its samples, some, or
+ *  none — as the badge its row starts with: a row's own rate, 6/6 say, is how often the
+ *  behaviour happened, and only these say whether that is the target. Nothing where there is
+ *  no target, or a result stored before behaviours said. */
+function targetMark(counted, pooled) {
+  if (counted === undefined || counted === null) return null;
+  if (!counted) {
+    return chip("not target", "not-target", "The declared target does not count this behaviour: none of its samples are in the target's numbers");
+  }
+  return counted >= pooled
+    ? chip("target", "target", "The declared target counts this behaviour: its samples are the target's numbers")
+    : chip(`target in ${counted} of ${pooled}`, "target",
         "The declared target counts some of this behaviour's samples: what some of them say meets it, and what others say does not");
 }
 
@@ -81,8 +86,8 @@ export function comparisonView(experiment) {
     h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "behaviour"), h("th", null, "original"), h("th", null, "variant"),
       h("th", { class: "num" }, "p"), comparison.exploratory ? h("th", { class: "num" }, "adjusted p") : null)),
     h("tbody", null, comparison.shifts.map((shift) => {
-      const mark = targetMark(shift);
-      return h("tr", { class: mark ? "is-target" : null },
+      const mark = targetMark(shift.target_counted, shift.original.successes + shift.variant.successes);
+      return h("tr", { class: shift.target_counted ? "is-target" : null },
         h("td", { class: "nowrap" }, h("span", { class: "chip tone-accent" }, shift.letter), mark ? [" ", mark] : null),
         h("td", null, outcome(shift.outcome)),
         h("td", null, rateBar(shift.original), reasonedText(shift.original_reasoned, shift.original.successes)),
@@ -236,10 +241,13 @@ export function screenView(screen, { arms = {} } = {}) {
   const behaviours = screen.behaviours?.length
     ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
         h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "behaviour"), names.map((arm) => h("th", { class: "num mono" }, arm)))),
-        h("tbody", null, screen.behaviours.map((found) => h("tr", null,
-          h("td", null, h("span", { class: "chip tone-accent" }, found.letter)),
-          h("td", null, outcome(found.outcome)),
-          names.map((arm) => h("td", { class: "num" }, String(found.by_arm?.[arm] ?? 0))))))))
+        h("tbody", null, screen.behaviours.map((found) => {
+          const mark = targetMark(found.target_counted, found.count);
+          return h("tr", { class: found.target_counted ? "is-target" : null },
+            h("td", { class: "nowrap" }, h("span", { class: "chip tone-accent" }, found.letter), mark ? [" ", mark] : null),
+            h("td", null, outcome(found.outcome)),
+            names.map((arm) => h("td", { class: "num" }, String(found.by_arm?.[arm] ?? 0))));
+        }))))
     : null;
   return h("div", { class: "stack" },
     panel(screen.quick ? "Each proposal's forks" : "Each proposal against the original", [
