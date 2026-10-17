@@ -802,3 +802,29 @@ class TestRunsAsPartOfSomethingLarger:
         (outcome,) = runner.run(spec, item, 1).outcomes
         launch = store.get_launch(store.get_run(outcome.run_id).launch_id)
         assert launch.settings["harness"] == {"await_review": True}
+
+
+@pytest.mark.parametrize("changes, why", [
+    ({}, None),
+    ({"skills_changed": ["SKILL.md"]}, "skills changed: SKILL.md"),
+    ({"timed_out": True}, "timed out"),
+    ({"edited_steps": [2]}, "edited at a breakpoint (step 2)"),
+    ({"failed_steps": [0, 3]}, "model call failed (step 0, 3)"),
+    ({"thread_trouble": ["subagent 1a2b3c4d step 1"]}, "a call failed or was edited in subagent 1a2b3c4d step 1"),
+    ({"fork_step": 2, "departed": {"step": 1, "thread": "side"}}, "the replay departed from the recording at thread side step 1"),
+    ({"fork_step": 2, "leaked": [2]}, "the original wording reached the model (step 2)"),
+    ({"fork_step": 2, "reached": False}, "the harness never reached step 2"),
+])
+def test_why_a_run_is_not_counted_reads_the_same_from_what_is_stored(changes, why):
+    """A run's page says why its verdict is left out from the result the store kept: the same
+    words the batch said when it ran."""
+    from tuningfork.analysis.conditions import exclusion_from
+    from tuningfork.runner import RunOutcome
+    from tuningfork.specs import CheckResult
+
+    outcome = RunOutcome(index=0, label="t#b.0", run_id="r", passed=False, check=CheckResult(False, "KeyError"),
+                         duration_s=1.0, returncode=0, stdout="", stderr="", **changes)
+
+    assert outcome.exclusion == why
+    assert exclusion_from(outcome.to_result()) == why
+    assert outcome.to_result()["usable"] is (why is None)

@@ -13,7 +13,7 @@ import { ago, chip, crumbs, h, kv, loading, panel, plural, pretty, rateBar, repl
 import { cacheField, field, formError, input, numberOf, planForm, samplingChoices, seedField, textArea } from "../forms.js";
 import { ACTIVE } from "../jobs.js";
 import { live } from "../live.js";
-import { formatP } from "../results.js";
+import { formatP, screenTones } from "../results.js";
 import { trashButton, trashedBanner } from "../trash.js";
 import { targetPicker } from "../variants.js";
 
@@ -752,10 +752,10 @@ export async function refinementView(root, [id], scope) {
           // A quick look draws no original arm: the original's forks drawn before, if any.
           h("td", null, report.baseline.target.total ? rateBar(report.baseline.target) : h("span", { class: "faint" }, "none drawn here")),
           h("td", null, report.quick ? chip("quick look: rates only, no verdict", "muted") : !report.complete ? chip("unfinished: no verdict", "warn") : [
-            report.survivors.length ? chip(`${report.survivors.join(", ")} survived`, "ok") : chip("none survived", "muted"),
+            report.survivors.length ? chip(`${report.survivors.join(", ")} survived`, screenTones(report.reach)[0]) : chip("none survived", "muted"),
             // A wording that made it significantly worse is a finding too.
             report.arms.some((arm) => arm.worse)
-              ? [" ", chip(`${report.arms.filter((arm) => arm.worse).map((arm) => arm.name).join(", ")} worse`, "bad")]
+              ? [" ", chip(`${report.arms.filter((arm) => arm.worse).map((arm) => arm.name).join(", ")} worse`, screenTones(report.reach)[1])]
               : null,
           ]),
           h("td", { class: "faint", title: when(screen.created_at) }, ago(screen.created_at)));
@@ -816,8 +816,8 @@ function screenLine(verdict) {
 function verdictChip(verdict) {
   if (verdict.quick) return chip("quick look: rates only", "muted");
   if (!verdict.complete) return chip("screen unfinished", "warn");
-  if (verdict.survives) return chip("survived a screen", "ok");
-  if (verdict.worse) return chip("worse in a screen", "bad");
+  if (verdict.survives) return chip("survived a screen", screenTones(verdict.reach)[0]);
+  if (verdict.worse) return chip("worse in a screen", screenTones(verdict.reach)[1]);
   return chip("not significant", "muted");
 }
 

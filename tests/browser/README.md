@@ -61,10 +61,11 @@ node tests/browser/jobs_ui.mjs
 It checks that a resample started from a step on the run's conversation runs through the
 proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter as its
 target, shows the known shift, saves the variant only when it starts, and leads its page with the
-edit it tested; that no target is
+edit it tested, then the target and which way the variant moved it — in the accent's colour, never
+a check's green — with the behaviour the target counts marked; that no target is
 chosen for you; that a task runs again from its run's page, its check shown whole; that a
 fork stops at its step for a person and runs on when continued; that forks run to the end,
-for a resample and for an A/B; that a job's page, its event stream cut mid-job, catches up
+for a resample and for an A/B, whose page names the task's check as its target; that a job's page, its event stream cut mid-job, catches up
 with every event shown once; that cancelling takes two clicks and keeps what was
 sampled, and a running job's time moves while nothing is sent; that a scenario made in the
 page — its skill folder shown where it resolves, its check flagged as the shell command it
@@ -75,8 +76,11 @@ sampled behaviours and is filed under the step once the call is recorded, while 
 to the model comes back marked a hypothesis; on the Connections page, that a server
 check measures what the harnesses need, a protected endpoint is refused, and an idle proxy
 switches its server after a dry run; that Start… on the Jobs page leads to a step's form;
-that a run reads as one conversation — each message once, the final reply marked, a
-step opening in place with its form in it, and its exact context on a page of its own;
+that a run reads as one conversation — each message once, the final reply marked (and not
+green), its verdict closing the page and the step rail, coloured by it with what the check
+printed, a step opening in place with its form in it, and its exact context on a page of its own;
+that the divergence page colours each run by its own verdict, draws "then passed" as a rate, and
+says plainly how it counts the failed runs' check lines;
 that an answer scored from its Tokens view is rebuilt token for token and drawn once
 per token, a token shows what else the model weighed there, and a token selected there
 opens the forking-token form, whose probe finds that token decides the answer; that the

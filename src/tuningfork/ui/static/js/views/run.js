@@ -1,9 +1,9 @@
 // One run, as one conversation: its last context top to bottom, each step's answer where it
-// happened (`js/timeline.js`), a step's details opening in place, and the run's own facts —
-// how it was launched, how it passes, what it left — folded above it.
+// happened (`js/timeline.js`), a step's details opening in place, its verdict at the end, and
+// the run's own facts — how it was launched, what it left — folded above it.
 
 import { api, enc } from "../api.js";
-import { ago, chip, copyButton, crumbs, h, kv, loading, longText, plural, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, copyButton, crumbs, h, kv, loading, plural, replace, short, verdict, when } from "../dom.js";
 import { costOf } from "../cost.js";
 import { live } from "../live.js";
 import { timeline } from "../timeline.js";
@@ -56,17 +56,22 @@ export async function runView(root, [reference, focus], scope) {
   );
   view.start();
 
-  // A run still going: what it does next is added below, as it is recorded.
+  // A run still going: what it does next is added below, as it is recorded. Its verdict is
+  // written when its harness finishes, with no step of its own: a job's news may be it.
+  let latest = data;
   let timer = null;
   scope.on((event) => {
-    if (event.type !== "step" || event.run_id !== run.id) return;
+    const step = event.type === "step" && event.run_id === run.id;
+    const verdict = event.type === "job" && launch && !latest.run.result;
+    if (!step && !verdict) return;
     clearTimeout(timer);
     timer = setTimeout(async () => {
       try {
         const next = await api.get(`/runs/${enc(run.id)}/timeline`);
+        latest = next;
         if (scope.active) view.update(next);
       } catch {
-        // the next step's event tries again
+        // the next event tries again
       }
     }, 500);
   });
@@ -131,12 +136,10 @@ function aboutRun({ run, launch, threads }) {
         ["forked from", run.forked_from_run
           ? [h("a", { class: "mono", href: `#/runs/${run.forked_from_run}` }, short(run.forked_from_run)), ` at message depth ${run.forked_at_depth}`]
           : null],
-        ["how it passes", launch?.check
-          ? launch.check_kind === "shell"
-            ? [h("span", { class: "mono" }, launch.check), h("span", { class: "muted" }, " — a shell command, run in the workspace")]
-            : [launch.check, h("span", { class: "muted" }, " — judged on the final reply")]
-          : launch ? h("span", { class: "muted" }, "no check: no verdict") : null],
-        ["verdict", result ? [verdict(result), h("span", { class: "muted" }, `  harness exit ${result.returncode ?? "—"} · ${result.duration_s ?? "—"} s`)] : null],
+        // The check, what it said and why: at the end of the run, below.
+        ["how it ended", result?.returncode !== undefined || result?.duration_s !== undefined
+          ? `harness exit ${result.returncode ?? "—"} after ${result.duration_s ?? "—"} s`
+          : null],
         ["cost", costOf({ run: run.id })],
         ["workspace", launch?.workspace ? h("span", { class: "mono" }, launch.workspace) : null],
         ["sandbox", launch ? sandboxWords(launch.sandbox) : null],
@@ -156,7 +159,6 @@ function aboutRun({ run, launch, threads }) {
         ? h("div", null, h("div", { class: "label" }, "Skill files when the run started"),
             kv(skills.map(([path, digest]) => [h("span", { class: "mono" }, path), h("span", { class: "mono faint" }, digest.slice(0, 16))])))
         : null,
-      result?.check_output ? h("div", null, h("div", { class: "label" }, "Check output"), longText(result.check_output, { limit: 600, lines: 10 })) : null,
       threads.length
         ? h("div", null, h("div", { class: "label" }, "Other conversations in this launch"),
             h("div", { class: "stack", style: { gap: "4px" } }, threads.map((thread) =>

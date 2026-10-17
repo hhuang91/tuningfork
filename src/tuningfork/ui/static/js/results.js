@@ -29,15 +29,45 @@ function reasonedText(reasoned, of) {
   return h("div", { class: "small warn-text" }, `${reasoned} of ${of} reasoned`);
 }
 
+/** What an experiment counted, said first and plainly: every number below it is of this. */
+export function targetLine(description, declared = "declared before sampling") {
+  return h("div", { class: "verdict-target" },
+    h("span", { class: "label" }, "Target"),
+    h("span", { class: "verdict-target-text" }, description),
+    h("span", { class: "muted small" }, declared));
+}
+
+const ofTotal = (rate) => `${rate.successes} of ${rate.total}`;
+
+/** A step's A/B against its declared target, in words: which way the variant moved it, and
+ *  by how much. More of a behaviour is better only if it is the one wanted, which tuningfork
+ *  is never told: a shift is the accent's colour, never the green of a check that passed. */
+function shiftWords(target) {
+  if (!target.significant) {
+    return `No significant difference: the variant hit the target in ${ofTotal(target.variant)} samples, the original in ${ofTotal(target.original)}`;
+  }
+  const way = target.direction === "down" ? "less" : "more";
+  return `The variant hit the target ${way} often: ${ofTotal(target.variant)} samples, against ${ofTotal(target.original)} with the original`;
+}
+
+/** Whether the declared target counts a behaviour: all its samples, some, or none. */
+function targetMark(shift) {
+  if (!shift.target_counted) return null;
+  const pooled = shift.original.successes + shift.variant.successes;
+  return shift.target_counted >= pooled
+    ? chip("target", "target", "The declared target counts this behaviour: its samples are the target's numbers above")
+    : chip(`target in ${shift.target_counted} of ${pooled}`, "target",
+        "The declared target counts some of this behaviour's samples: what some of them say meets it, and what others say does not");
+}
+
 export function comparisonView(experiment) {
   const comparison = experiment.comparison;
   const target = comparison.target;
   const parts = [];
   if (target) {
     parts.push(h("div", { class: ["verdict-block", target.significant ? "significant" : "not-significant"] },
-      h("div", null,
-        h("div", { class: "verdict-big" }, target.significant ? "The variant shifts the target" : "No significant shift"),
-        h("div", { class: "muted small" }, `Target declared before sampling: ${target.description}`)),
+      targetLine(target.description),
+      h("div", { class: "verdict-big" }, shiftWords(target)),
       h("div", { class: "stack", style: { gap: "4px" } },
         h("span", null, h("span", { class: "muted" }, "original  "), rateBar(target.original)),
         h("span", null, h("span", { class: "muted" }, "variant   "), rateBar(target.variant, "response"))),
@@ -50,14 +80,21 @@ export function comparisonView(experiment) {
   parts.push(h("div", { class: "table-wrap" }, h("table", { class: "table" },
     h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "behaviour"), h("th", null, "original"), h("th", null, "variant"),
       h("th", { class: "num" }, "p"), comparison.exploratory ? h("th", { class: "num" }, "adjusted p") : null)),
-    h("tbody", null, comparison.shifts.map((shift) =>
-      h("tr", null,
-        h("td", null, h("span", { class: "chip tone-accent" }, shift.letter)),
+    h("tbody", null, comparison.shifts.map((shift) => {
+      const mark = targetMark(shift);
+      return h("tr", { class: mark ? "is-target" : null },
+        h("td", { class: "nowrap" }, h("span", { class: "chip tone-accent" }, shift.letter), mark ? [" ", mark] : null),
         h("td", null, outcome(shift.outcome)),
         h("td", null, rateBar(shift.original), reasonedText(shift.original_reasoned, shift.original.successes)),
         h("td", null, rateBar(shift.variant, "response"), reasonedText(shift.variant_reasoned, shift.variant.successes)),
         h("td", { class: "num mono" }, formatP(shift.p_value)),
-        comparison.exploratory ? h("td", { class: "num mono" }, formatP(shift.adjusted_p)) : null))))));
+        comparison.exploratory ? h("td", { class: "num mono" }, formatP(shift.adjusted_p)) : null);
+    })))));
+  // A result a job stored before behaviours said whether the target counts them says nothing.
+  const said = comparison.shifts.some((shift) => shift.target_counted !== undefined);
+  if (target && said && !comparison.shifts.some((shift) => shift.target_counted)) {
+    parts.push(h("p", { class: "hint" }, "The target counts none of these behaviours: neither arm ever did it."));
+  }
   return panel("Original wording against the variant", parts);
 }
 
@@ -89,11 +126,10 @@ export function forkingView(report, context = {}) {
   const flips = report.positions.reduce((total, position) => total + position.alternatives.filter((alt) => alt.flips).length, 0);
   const parts = [
     h("div", { class: ["verdict-block", flips ? "significant" : "not-significant"] },
-      h("div", null,
-        h("div", { class: "verdict-big" }, flips
-          ? `${plural(flips, "forced token")} changed what the model did`
-          : "No forced token changed what the model did"),
-        h("div", { class: "muted small" }, `Target declared before sampling: ${report.target}`)),
+      targetLine(report.target),
+      h("div", { class: "verdict-big" }, flips
+        ? `${plural(flips, "forced token")} changed what the model did`
+        : "No forced token changed what the model did"),
       report.reproduced
         ? h("div", { class: "stack", style: { gap: "4px" } },
             h("span", null, h("span", { class: "muted" }, "the run's own tokens reached it  "), rateBar(report.reproduced)))
@@ -154,23 +190,33 @@ function forkRow(label, arm, tested) {
     h("td", null, tested?.flips ? chip(tested.direction === "away" ? "flips away" : "flips toward", "bad") : null));
 }
 
+/** The chip tones for a screen's survivor and for a proposal it found worse: green and red
+ *  where it ran to the end, so the target was the task's check; the accent and amber where
+ *  the target was a behaviour at the step. */
+export function screenTones(reach) {
+  return reach === "end" ? ["ok", "bad"] : ["accent", "warn"];
+}
+
 /** A screen: each proposal against a fresh arm of the original, Holm-corrected over the
  *  proposals planned before sampling. `arms` names each arm's experiment, to link to it; an
  *  unfinished screen shows its rates and no verdict. */
 export function screenView(screen, { arms = {} } = {}) {
   const survivors = new Set(screen.survivors);
+  // Run to the end, the target is the task's check: green and red, as for a run.
+  const [up, down] = screenTones(screen.reach);
   const [headline, tone] = screen.quick
     ? ["A quick look: rates only, never a verdict", "not-significant"]
     : !screen.complete
       ? ["Unfinished: rates only, no verdict", "not-significant"]
       : survivors.size
-        ? [`${plural(survivors.size, "proposal")} shifted the target`, "significant"]
-        : ["No proposal shifted the target past the correction", "not-significant"];
+        ? [`${plural(survivors.size, "proposal")} hit the target more often than the original, past the correction`,
+            screen.reach === "end" ? "significant tone-ok" : "significant"]
+        : ["No proposal hit the target more often than the original, past the correction", "not-significant"];
   const verdict = (arm) => {
     if (screen.quick) return chip("quick look", "muted");
     if (!screen.complete) return chip("no verdict", "warn");
-    if (arm.survives) return chip("survives", "ok");
-    if (arm.worse) return chip("worse", "bad");
+    if (arm.survives) return chip("survives", up);
+    if (arm.worse) return chip("worse", down);
     return chip("not significant", "muted");
   };
   const drawn = (arm) => (arm.drawn < arm.planned ? chip(`${arm.drawn} of ${arm.planned} drawn`, "warn") : null);
@@ -198,9 +244,8 @@ export function screenView(screen, { arms = {} } = {}) {
   return h("div", { class: "stack" },
     panel(screen.quick ? "Each proposal's forks" : "Each proposal against the original", [
       h("div", { class: ["verdict-block", tone] },
-        h("div", null,
-          h("div", { class: "verdict-big" }, headline),
-          h("div", { class: "muted small" }, `Target declared before sampling: ${screen.target}`)),
+        targetLine(screen.target),
+        h("div", { class: "verdict-big" }, headline),
         h("div", { class: "mono small" }, screen.quick
           ? "No test: a lead for the next edit — only a full screen can keep one"
           : `Fisher exact against the original, Holm-corrected over the ${plural(screen.family, "proposal")} planned; α = ${screen.alpha}`)),
@@ -262,23 +307,28 @@ function checkpointsView(screen, names) {
 export function tallyView(tally, { only = null } = {}) {
   const groups = (tally?.groups || []).filter((group) => !only || group.condition?.id === only);
   if (!groups.some((group) => group.failed)) return null;
-  const title = tally.scope === "screen" ? "What each arm's failed forks' checks said" : "What the failed runs' checks said";
+  const forks = tally.scope === "screen";
+  const title = forks ? "What each arm's failed forks' checks said" : "What the failed runs' checks said";
+  const failed = forks ? "failed forks" : "failed runs";
   return panel(title, [
     ...groups.map((group) => h("div", { class: "stack", style: { gap: "6px", marginBottom: "12px" } },
       h("div", null, h("strong", null, group.label), h("span", { class: "muted small" }, `  failed ${group.failed} of ${group.judged} judged`)),
-      group.failed
+      group.failed && group.findings.length
         ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
-            h("thead", null, h("tr", null, h("th", null, "failed runs that said it"), h("th", null, "finding"))),
+            h("thead", null, h("tr", null, h("th", null, `${failed} that printed it`), h("th", null, "a line the check printed"))),
             h("tbody", null, group.findings.slice(0, 12).map((found) =>
               h("tr", null, h("td", null, rateBar(found.rate, "bad")), h("td", { class: "mono small" }, found.finding,
                 // Where the check was run along the runs: the call that made it, passing runs included.
                 found.made_text ? h("div", { class: "faint small" }, found.made_text) : null))))))
-        : h("p", { class: "muted small" }, "None failed."),
-      group.findings.length > 12 ? h("p", { class: "faint small" }, `+${group.findings.length - 12} more finding(s)`) : null,
-      group.silent ? h("p", { class: "faint small" }, `${plural(group.silent, "failed run")} whose check printed nothing`) : null)),
-    h("p", { class: "hint" }, "Each line a check printed is one finding, its numbers shown as # and its colours as <color>; a run counts once a finding. "
-      + "The most common first: the failure to fix first, rather than the first one read."),
-  ]);
+        : group.failed ? null : h("p", { class: "muted small" }, "None failed."),
+      group.findings.length > 12 ? h("p", { class: "faint small" }, `+${group.findings.length - 12} more line(s)`) : null,
+      group.silent ? h("p", { class: "faint small" }, `${plural(group.silent, forks ? "failed fork" : "failed run")} whose check printed nothing`) : null)),
+    h("p", { class: "hint" }, `Each bar counts the ${failed} that printed the line: once each, however many times it printed it. `
+      + "Lines that differ only in their numbers or colour codes count as one, shown with # for each number and <color> for each colour. "
+      + "The most common comes first: it is the failure to fix first."),
+  ], {
+    meta: h("span", { class: "muted" }, `Every ${forks ? "failed fork" : "failed run"}'s check output, line by line`),
+  });
 }
 
 export function formatP(value) {

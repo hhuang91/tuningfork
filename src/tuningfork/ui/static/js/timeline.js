@@ -5,10 +5,11 @@
 // back without its reasoning, so the next context is not where to read it. A step opens in
 // place — its settings, the skills in its context, the files its call found, the experiments
 // at it, and the work that can start from it — and the exact context it was sent is one link
-// away, on its own page: that is what a resample resends.
+// away, on its own page: that is what a resample resends. The conversation ends with the run's
+// verdict: what its task's check said, coloured by it — the only green or red on the page.
 
 import { api, enc } from "./api.js";
-import { chip, count, failure, h, loading, millis, outcome, plural, replace, short, toggle } from "./dom.js";
+import { chip, count, failure, h, kv, loading, longText, millis, outcome, plural, replace, short, toggle } from "./dom.js";
 import { settle } from "./nav.js";
 import { messageSize, messageView, noReasoning, outputView, toolNames } from "./payload.js";
 import { startForm, startPanel } from "./start.js";
@@ -35,6 +36,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     }
   }, { rootMargin: "-30% 0px -60% 0px" });
   let state = data;
+  // The run's verdict, always the timeline's last element: "Jump to the end" lands on it.
+  let verdictNode = null;
   draw();
 
   return {
@@ -54,8 +57,48 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   function draw() {
     sections.clear();
     seen.disconnect();
-    replace(element, nodesFrom(0, () => true));
+    verdictNode = verdictSection();
+    replace(element, nodesFrom(0, () => true), verdictNode);
     drawRail();
+  }
+
+  /** How the run fared against its task's check, and why: the check, what it printed, and —
+   *  where the check was run along the run — the call that made each line still there at the
+   *  end. Green passed, red failed, amber a verdict every rate leaves out. */
+  function verdictSection() {
+    const { run, launch } = state;
+    const verdict = verdictOf(run, launch, state.ended);
+    const result = run.result || {};
+    const output = String(result.check_output || "").trim();
+    const made = (state.made_by || []).filter((line) => line.at_end);
+    return h("section", { class: ["verdict-block", "tl-verdict", verdict.tone || "not-significant"], id: "verdict" },
+      h("div", { class: "verdict-big" }, verdict.headline),
+      verdict.detail ? h("p", { class: "hint" }, verdict.detail) : null,
+      kv([
+        ["the check", launch?.check
+          ? launch.check_kind === "shell"
+            ? [h("span", { class: "mono" }, launch.check), h("span", { class: "muted" }, " — a shell command, run in the workspace")]
+            : [launch.check, h("span", { class: "muted" }, " — judged on the final reply")]
+          : null],
+        ["it printed", output
+          ? longText(output, { limit: 2000, lines: 30, open: true })
+          : result.passed === false ? h("span", { class: "muted" }, "nothing") : null],
+      ]),
+      made.length
+        ? h("div", { class: "verdict-lines-wrap" },
+            h("div", { class: "label" }, "Where each line came from: the check, run along the run"),
+            h("ul", { class: "verdict-lines" }, made.map((line) => h("li", null,
+              h("span", { class: "mono" }, line.line), " — ",
+              line.made_by === null
+                ? h("span", { class: "muted" }, "there from the start: work not done")
+                : h("a", {
+                    href: `${base}/${line.made_by}`,
+                    onclick: (event) => {
+                      event.preventDefault();
+                      reveal(line.made_by);
+                    },
+                  }, `made by step ${line.made_by}'s call`)))))
+        : null);
   }
 
   /** The entries from `from` on, and the steps placed among them that `wanted` takes. */
@@ -228,6 +271,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   }
 
   function drawRail() {
+    const verdict = verdictOf(state.run, state.launch, state.ended);
     replace(rail,
       h("div", { class: "tl-rail-head" }, plural(state.steps.length, "step")),
       state.steps.map((step) =>
@@ -239,7 +283,14 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
             reveal(step.idx);
           },
         }, h("span", { class: "mono" }, String(step.idx)), h("span", { class: "tl-rail-what" }, railLabel(step)),
-        step.variant || step.edited.request || step.edited.response ? h("span", { class: "tl-dot", title: "changed by tuningfork" }) : null)));
+        step.variant || step.edited.request || step.edited.response ? h("span", { class: "tl-dot", title: "changed by tuningfork" }) : null)),
+      h("a", {
+        class: ["tl-rail-verdict", verdict.tone], href: base, title: "What the task's check said: the end of the run",
+        onclick: (event) => {
+          event.preventDefault();
+          verdictNode?.scrollIntoView({ block: "start" });
+        },
+      }, verdict.rail));
   }
 
   function railLabel(step) {
@@ -374,9 +425,46 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       replace(found.output, outputParts(step));
       found.output.classList.toggle("tl-final", Boolean(finalReply(step)));
     }
-    for (const node of nodesFrom(old.entries.length, (step) => !sections.has(step.idx))) element.append(node);
+    for (const node of nodesFrom(old.entries.length, (step) => !sections.has(step.idx))) element.insertBefore(node, verdictNode);
+    // The verdict comes once the harness has finished: drawn again, still last.
+    const fresh = verdictSection();
+    verdictNode.replaceWith(fresh);
+    verdictNode = fresh;
     drawRail();
   }
+}
+
+/** A run's verdict, as its page's end and its rail say it: in words, with its colour. A
+ *  verdict every rate leaves out is amber, whatever the check said, and says why. */
+function verdictOf(run, launch, ended) {
+  const result = run.result;
+  if (!result) {
+    if (run.parent_run_id && ["subagent", "side", "thread"].includes(run.role)) {
+      return {
+        headline: "No verdict of its own", rail: "No verdict",
+        detail: [`This conversation is a ${run.role} of `, h("a", { class: "mono", href: `#/runs/${run.parent_run_id}` }, `run ${short(run.parent_run_id)}`),
+          ", and the check judged that run."],
+      };
+    }
+    if (!launch) {
+      return { headline: "No verdict", rail: "No verdict", detail: "This run was recorded as it happened, not launched by tuningfork: no check ran." };
+    }
+    if (!launch.check) return { headline: "No verdict", rail: "No verdict", detail: "The task defines no check." };
+    return ended
+      ? { headline: "No verdict", rail: "No verdict", detail: "The run ended without one." }
+      : { headline: "No verdict yet", rail: "No verdict yet", detail: "The check runs when the harness finishes." };
+  }
+  if (result.passed === null || result.passed === undefined) {
+    return { headline: "No verdict", rail: "No verdict", detail: result.passed === null ? "The task defines no check." : null };
+  }
+  const said = result.passed ? "passed" : "failed";
+  if (result.usable === false) {
+    return {
+      tone: "tone-warn", headline: `The check ${said}, but the run is not counted`, rail: "Not counted",
+      detail: `Left out of every pass rate: ${run.exclusion || "the batch marked it unusable"}.`,
+    };
+  }
+  return { tone: result.passed ? "tone-ok" : "tone-bad", headline: `The check ${said}`, rail: `Verdict: ${said}` };
 }
 
 function group(items, key) {

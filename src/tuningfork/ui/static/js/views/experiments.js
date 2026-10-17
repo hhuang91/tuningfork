@@ -6,7 +6,7 @@ import {
 } from "../dom.js";
 import { costOf } from "../cost.js";
 import { live } from "../live.js";
-import { comparisonView, distributionView, forkingView, formatP, screenView, tallyView } from "../results.js";
+import { comparisonView, distributionView, forkingView, formatP, screenView, tallyView, targetLine } from "../results.js";
 import { trashButton, trashedBanner } from "../trash.js";
 import { whereForm } from "../where.js";
 import { diffView } from "./refine.js";
@@ -279,16 +279,23 @@ function toEndView(experiment) {
       distributionView(result.actions, "What the model did at the step"),
       forksPanel([[null, result]]));
   }
+  // The target is the task's check: here green and red mean what they mean for a run.
   const significant = result.significant;
+  const up = result.direction === "up";
+  const passes = (arm) => `${arm.passed} of ${arm.counted}`;
+  const headline = result.p_value === null
+    ? "No test: an arm has no fork that counts"
+    : significant
+      ? `The variant passed the check ${up ? "more" : "less"} often: ${passes(result.variant)} forks, against ${passes(result.original)} with the original`
+      : `No significant difference: the variant's forks passed the check in ${passes(result.variant)}, the original's in ${passes(result.original)}`;
   return h("div", { class: "stack" },
     panel("Original wording against the variant, to the end", [
-      h("div", { class: ["verdict-block", significant ? "significant" : "not-significant"] },
-        h("div", null,
-          h("div", { class: "verdict-big" }, significant ? "The variant changes how often the task passes" : "No significant difference"),
-          h("div", { class: "muted small" }, "Target: the task's check passes — declared by the task before any fork ran")),
+      h("div", { class: ["verdict-block", significant ? "significant" : "not-significant", significant ? (up ? "tone-ok" : "tone-bad") : null] },
+        targetLine("the task's check passes", "declared by the task, before any fork ran"),
+        h("div", { class: "verdict-big" }, headline),
         h("div", { class: "stack", style: { gap: "4px" } },
           armView(result.original, "original", undefined), armView(result.variant, "variant", "response")),
-        h("div", { class: "mono small" }, result.p_value === null ? "no test: an arm has no fork that counts" : `Fisher exact p = ${formatP(result.p_value)} (α = ${result.alpha})`)),
+        result.p_value === null ? null : h("div", { class: "mono small" }, `Fisher exact p = ${formatP(result.p_value)} (α = ${result.alpha})`)),
       h("p", { class: "hint" }, "Steps before this one were answered from the recording in every fork, so both arms share the history written under the original wording; from here each ran live with its own wording."),
     ]),
     distributionView(result.original.actions, "Original: what the model did at the step"),

@@ -274,6 +274,10 @@ class TestToEnd:
         assert result.exit_code == 0, result.output
         assert "original  0/4" in result.output and "variant   4/4" in result.output
         assert "significant" in result.output and "not significant" not in result.output
+        # Which way the pass rate moved, for the page to say it in words and colour it.
+        arm = stack.store.experiments(limit=1)[0]
+        body = httpx.get(f"{stack.url}/_tuningfork/api/experiments/{arm.id}").json()
+        assert body["to_end"]["direction"] == "up" and body["to_end"]["significant"]
         # The edit it tested, as its forks were given it: the file has changed since.
         variant.write_text("another wording\n", encoding="utf-8")
         again = cli("experiment", stack.store.experiments(limit=1)[0].id[:8])

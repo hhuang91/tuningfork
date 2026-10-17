@@ -19,6 +19,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from tuningfork.analysis.conditions import exclusion_from
 from tuningfork.ops.common import OperationError
 from tuningfork.ops.experiments import resolve_run
 from tuningfork.store.db import Launch, Run, Step, Store, arrived
@@ -38,6 +39,8 @@ def run_json(run: Run) -> dict[str, Any]:
         "forked_at_depth": run.forked_at_depth,
         "skill_hashes": run.skill_hashes,
         "result": run.result or None,
+        # Why every rate leaves its verdict out, where one does.
+        "exclusion": exclusion_from(run.result) if (run.result or {}).get("usable") is False else None,
         "launch_id": run.launch_id,
         "role": run.role,
         "parent_run_id": run.parent_run_id,
@@ -259,6 +262,16 @@ class RunTimeline:
     #: The last step's reply, as the harness received it; None when it said nothing.
     reply: str | None
 
+    @property
+    def made_by(self) -> list[dict[str, Any]] | None:
+        """Where the check was run along the run (`ops.checks.check_along`): each line it
+        printed, with the step whose call made it (`made_by_calls`); None where it was not, or
+        could not place what it found."""
+        from tuningfork.ops.checks import ALONG, made_by_calls
+
+        along = (self.run.result or {}).get(ALONG)
+        return made_by_calls(along) if along else None
+
     def to_json(self) -> dict[str, Any]:
         return {
             "run": run_json(self.run),
@@ -272,6 +285,7 @@ class RunTimeline:
             "threads": self.threads,
             "ended": self.ended,
             "reply": self.reply,
+            "made_by": self.made_by,
         }
 
 

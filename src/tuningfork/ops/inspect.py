@@ -506,14 +506,7 @@ class ExperimentReport:
             return base
         base["variant"] = report.arms["variant"].variant
         if report.kind == "ab_to_end":
-            result = report.to_end
-            base["to_end"] = {
-                "original": result.original.to_json(),
-                "variant": result.variant.to_json(),
-                "p_value": result.p_value,
-                "significant": result.significant,
-                "alpha": result.alpha,
-            }
+            base["to_end"] = report.to_end.to_json()
             return base
         if report.target_note:
             base["notes"] = [*found.notes, report.target_note]

@@ -98,6 +98,17 @@ try {
   check(await page.eval(`[...${edit}.querySelectorAll(".diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))
     && ${edit}.querySelector(".panel-meta").textContent.includes(${JSON.stringify(`+ variant ${variantName}`)})`),
     "the A/B's page leads with the edit it tested, as a diff, the variant by its saved name");
+  // The target first, then which way the variant moved it: the wrong keys, behaviour A, fell.
+  check(await page.eval(`(() => {
+    const block = document.querySelector(".verdict-block");
+    return block.classList.contains("significant") && !block.classList.contains("tone-ok")
+      && block.firstElementChild.classList.contains("verdict-target")
+      && block.querySelector(".verdict-target-text").textContent.startsWith("A from resample ")
+      && block.querySelector(".verdict-big").textContent === "The variant hit the target less often: 0 of 6 samples, against 6 of 6 with the original";
+  })()`), "the result says the target first, then which way the variant moved it, in the accent's colour, not green");
+  const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
+    [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
+  check(marked === "target:6/6", `the behaviours table marks the one the target counts: the original's every sample (${marked})`);
 
   // --- 3. A task run again from its run's page; a fork held at its step; forks to the end ----
   console.log("run a task again, fork at a step, and run forks to the end");
@@ -169,6 +180,14 @@ try {
   const abEnd = await finished(abEndId, 120000);
   check(abEnd.status === "done" && abEnd.result.original.passed === 0 && abEnd.result.variant.passed === 1,
     "an A/B to the end: the original fails the check, the variant passes");
+  await page.eval(`location.hash = "#/experiments/${abEnd.links.experiments[0]}"`);
+  await until(() => page.eval(`!!document.querySelector(".verdict-block .verdict-target-text")`), "the A/B to the end's page");
+  check(await page.eval(`(() => {
+    const block = document.querySelector(".verdict-block");
+    return block.querySelector(".verdict-target-text").textContent === "the task's check passes"
+      && block.querySelector(".verdict-big").textContent === "No significant difference: the variant's forks passed the check in 1 of 1, the original's in 0 of 1"
+      && !block.classList.contains("tone-ok") && !block.classList.contains("tone-bad");
+  })()`), "its page names the check as the target, and one fork an arm is said in words, not in green");
 
   // --- 4. Cancel a running job ------------------------------------------------------------
   console.log("cancel a job");
@@ -370,6 +389,20 @@ try {
   check(shown === shape.entries.filter((entry) => entry.origin !== "copy").length,
     `each message once, a step's own answer in place of the harness's copy (${shown} messages, ${shape.steps.length} steps)`);
   check(await page.eval(`!!document.querySelector(".tl-final .tl-final-label")`), "the final reply is marked at the end");
+  // Then its verdict, coloured by it: green and red are the check's alone, never the reply's.
+  const said = shape.run.result.passed ? "passed" : "failed";
+  check(shape.run.result.usable && await page.eval(`(() => {
+    const last = document.querySelector(".tl").lastElementChild;
+    const probe = document.body.appendChild(document.createElement("span"));
+    probe.style.color = "var(--ok)";
+    const ok = getComputedStyle(probe).color;
+    probe.remove();
+    return last.classList.contains("tl-verdict") && last.classList.contains("${said === "passed" ? "tone-ok" : "tone-bad"}")
+      && last.querySelector(".verdict-big").textContent === "The check ${said}"
+      && last.textContent.includes(${JSON.stringify((shape.run.result.check_output || "").trim())})
+      && document.querySelector(".tl-rail-verdict").textContent === "Verdict: ${said}"
+      && getComputedStyle(document.querySelector(".tl-final")).borderTopColor !== ok;
+  })()`), `the run ends with its verdict — ${said}, what the check printed — and so does the rail; the reply is not green`);
   // Opening a step happens in place: the page is not drawn again, and the address follows.
   await page.eval(`document.querySelector(".view").dataset.sentinel = "kept"`);
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
@@ -384,6 +417,27 @@ try {
   await until(() => page.eval(`(document.querySelector(".page-head h1")?.textContent || "").startsWith("Step 1")`), "the exact context");
   check(await page.eval(`document.querySelector(".page-head h1").textContent.includes("exact context") && document.querySelectorAll(".msg").length >= 2`),
     "the exact context a step was sent has a page of its own");
+
+  // --- 10b. Where a task's runs split: each run by its verdict; the checks' lines counted --
+  console.log("the divergence page: each run by its verdict, the checks' lines counted");
+  const split = await api(`/divergence?task=${encodeURIComponent("tally-report/1")}&limit=50`);
+  await page.eval(`location.hash = "#/divergence/${encodeURIComponent("tally-report/1")}"`);
+  await until(() => page.eval(`!!document.querySelector(".run-chips a.chip")`), "the behaviours at the split");
+  const tones = { passed: "tone-ok", failed: "tone-bad", "not counted": "tone-warn" };
+  const chips = await page.eval(`[...document.querySelectorAll(".run-chips a.chip")].map((chip) => [chip.getAttribute("href"), chip.className])`);
+  const wrong = chips.filter(([href, className]) => {
+    const id = href.split("/")[2];
+    return !className.split(" ").includes(tones[split.verdicts[id]] || "tone-muted");
+  });
+  check(chips.length > 1 && !wrong.length && chips.some(([, className]) => className.includes("tone-ok")) && chips.some(([, className]) => className.includes("tone-bad")),
+    `each run's chip is coloured by its own verdict (${chips.length} runs${wrong.length ? `; wrong: ${JSON.stringify(wrong)}` : ""})`);
+  check(await page.eval(`!document.querySelector(".group-rates .ci-track.tone-ok")`), "and a behaviour's \"then passed\" is a rate, never drawn green");
+  const tallied = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What the failed runs' checks said")`;
+  check(await page.eval(`(() => {
+    const panel = ${tallied};
+    return !!panel && panel.querySelector("th").textContent === "failed runs that printed it"
+      && panel.querySelector(".hint").textContent.startsWith("Each bar counts the failed runs that printed the line");
+  })()`), "the failed runs' checks are counted line by line, and the page says so plainly");
 
   // --- 11. A step's answer as tokens, and the token that decides it -------------------------
   console.log("score an answer, read its tokens, find the token that decides it");
@@ -513,7 +567,10 @@ try {
   const screenJob = await finished(screenJobId, 60000);
   check(screenJob.status === "done" && screenJob.result.screen.complete && screenJob.result.screen.survivors.length === 1,
     "the screen: the wording that names the keys survives the correction, the other does not");
-  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal shifted the target"`), "the verdict on the job's page");
+  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal hit the target more often than the original, past the correction"`), "the verdict on the job's page");
+  // At the step, a survivor is a shift of a behaviour, not a check passed: the accent's, never green.
+  check(await page.eval(`!document.querySelector(".verdict-block.tone-ok") && [...document.querySelectorAll(".screen-table .chip")]
+    .find((chip) => chip.textContent === "survives")?.classList.contains("tone-accent")`), "a step screen's survivor is the accent's colour, not a check's green");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
   check(await page.eval(`[...document.querySelectorAll(".screen-table .chip")].map((c) => c.textContent).sort().join(",") === "not significant,survives"`), "the screen's page gives each proposal its verdict");

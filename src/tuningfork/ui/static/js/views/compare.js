@@ -129,7 +129,7 @@ export async function divergenceView(root, [task, conditionId]) {
     !chosen && conditions.length > 1 ? conditionsBanner(task, conditions) : null,
     report.mixed_skills ? mixedSkillsBanner() : null,
     h("div", { class: "stack" },
-      split ? panel(`At step ${at}`, [groupsView(split, at), nextStep(split, at)], {
+      split ? panel(`At step ${at}`, [groupsView(split, at, report.verdicts || {}), nextStep(split, at)], {
         meta: h("span", { class: "muted" }, "Intervals are Wilson 95%; with few runs they are wide."),
       }) : null,
       predictorsView(report),
@@ -205,17 +205,34 @@ function predictorsView(report) {
   });
 }
 
-function groupsView(step, index) {
-  return h("div", { class: "groups" }, step.groups.map((group, position) =>
-    h("div", { class: "group" },
-      h("span", { class: "letter" }, LETTERS[position % LETTERS.length]),
-      h("div", null, outcome(group.outcome)),
-      h("div", { class: "group-rates" },
-        h("span", null, h("span", { class: "what" }, "of runs"), rateBar(group.rate)),
-        group.passed ? h("span", null, h("span", { class: "what" }, "then passed"), rateBar(group.passed, "ok")) : null),
-      h("div", { class: "run-chips" },
-        group.run_ids.slice(0, 16).map((id) => h("a", { class: "chip tone-muted mono", href: `#/runs/${id}/${index}` }, short(id))),
-        group.run_ids.length > 16 ? h("span", { class: "faint small" }, `+${group.run_ids.length - 16} more`) : null))));
+/** Each run's chip, coloured by its own verdict: which behaviours went on to pass is seen at a
+ *  glance, while "then passed" — a rate, with its interval — stays the accent's. */
+const RUN_VERDICT = {
+  passed: ["ok", "passed its check"],
+  failed: ["bad", "failed its check"],
+  "not counted": ["warn", "not counted: left out of every pass rate"],
+};
+
+function groupsView(step, index, verdicts) {
+  const judged = Object.values(verdicts).some((verdict) => verdict === "passed" || verdict === "failed");
+  return h("div", { class: "stack" },
+    h("div", { class: "groups" }, step.groups.map((group, position) =>
+      h("div", { class: "group" },
+        h("span", { class: "letter" }, LETTERS[position % LETTERS.length]),
+        h("div", null, outcome(group.outcome)),
+        h("div", { class: "group-rates" },
+          h("span", null, h("span", { class: "what" }, "of runs"), rateBar(group.rate)),
+          group.passed ? h("span", null, h("span", { class: "what" }, "then passed"), rateBar(group.passed)) : null),
+        h("div", { class: "run-chips" },
+          group.run_ids.slice(0, 16).map((id) => {
+            const [tone, said] = RUN_VERDICT[verdicts[id]] || ["muted", "no verdict"];
+            return h("a", { class: `chip tone-${tone} mono`, href: `#/runs/${id}/${index}`, title: `run ${short(id)}: ${said}` }, short(id));
+          }),
+          group.run_ids.length > 16 ? h("span", { class: "faint small" }, `+${group.run_ids.length - 16} more`) : null)))),
+    judged
+      ? h("p", { class: "hint" }, `Each run is coloured by its check: green passed, red failed${
+          Object.values(verdicts).includes("not counted") ? ", amber not counted" : ""}.`)
+      : null);
 }
 
 function nextStep(step, index) {

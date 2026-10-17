@@ -477,6 +477,10 @@ than on a hardcoded assumption about which server is running.
   never typed.
 - The UI puts every string on the page as a text node — payloads are full of markup-looking
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
+- The UI keeps green and red for a check: a run's verdict (which closes its page), a fork's, a
+  gate's, and a change in how often a task's check passes (an A/B or a screen run to the end).
+  Any other significant result is the accent's colour, said in words with its direction —
+  tuningfork is never told whether more of a behaviour is wanted.
 - tuningfork's own endpoints (`/_tuningfork/`) answer only to a loopback Host, refuse
   cross-site state changes by Origin, and accept no state change without the access token
   (`api/guard.py`): a loopback port is reachable from any page in the user's browser. Keep new endpoints under
