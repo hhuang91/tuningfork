@@ -31,6 +31,7 @@ import sys
 import threading
 import time
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -84,10 +85,25 @@ def write(keys):
     return tool_call_message("write_file", arguments, call_id="c2")
 
 
+def keep_skill(store: Store) -> Path:
+    """The skill as the seeded runs were given it, kept where a batch keeps its copy: what
+    an A/B's original names, the Skills page reads, and the browser's variant editor starts
+    from."""
+    snapshot = store.home / "batches" / "demo" / "skill-snapshot" / "tally-report"
+    snapshot.mkdir(parents=True, exist_ok=True)
+    (snapshot / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    for run in store.runs(limit=100, task_id="tally-report/1"):
+        store.annotate_run(run.id, parity={**run.parity, "skill_snapshot_dir": str(snapshot)})
+    return snapshot / "SKILL.md"
+
+
 def seed(home: Path) -> None:
     """Nine runs of a flaky task that diverge at step 1: one edited at a breakpoint and
     one whose skill changed mid-run, neither counted; a run with no task; a resample and
-    an A/B."""
+    an A/B of a saved variant, its arms sent the two wordings."""
+    from tuningfork.experiment.skill import substitute, text_sha256
+    from tuningfork.ops.variants import save_variant
+
     store = Store(home)
     skill_hash = hashlib.sha256(SKILL.encode()).hexdigest()
     base = {"model": MODEL, "tools": TOOLS, "stream": True, "stream_options": {"include_usage": True}}
@@ -158,6 +174,7 @@ def seed(home: Path) -> None:
         timings={"ttft_ms": 300.0, "total_ms": 420.0},
     )
 
+    original = keep_skill(store)
     checkpoint = store.step(run_ids[0], 1)
     request = store.rebuild_request(checkpoint)
 
@@ -179,17 +196,21 @@ def seed(home: Path) -> None:
     add_samples(resample, 0.6)
     group = uuid.uuid4().hex
     target = {"kind": "pattern", "value": "row_count", "description": "writes the row_count key"}
+    # The variant saved as the browser saves one, and swapped in as an A/B swaps it: the
+    # variant arm keeps the request it would have sent.
+    variant_request, spans = substitute(request, SKILL, VARIANT)
     variant = {
-        "original_path": "skills/tally-report/SKILL.md",
-        "variant_path": "skills/tally-report/SKILL.v2.md",
-        "original_sha256": skill_hash,
-        "variant_sha256": hashlib.sha256(VARIANT.encode()).hexdigest(),
-        "spans": [{"message_index": 0, "start": 10, "end": 90}],
+        "original_path": str(original),
+        "variant_path": str(save_variant(home, "tally-report", "name-the-keys", VARIANT)),
+        "original_sha256": text_sha256(SKILL),
+        "variant_sha256": text_sha256(VARIANT),
+        "spans": [asdict(span) for span in spans],
+        "unapplied": [],
     }
-    for arm, share in (("original", 0.6), ("variant", 0.95)):
+    for arm, share, sent in (("original", 0.6, request), ("variant", 0.95, variant_request)):
         experiment = store.create_experiment(
             kind="ab", arm=arm, run_id=run_ids[0], step_idx=1, step_id=checkpoint.id,
-            request=request, settings={**settings, "target": target}, variant=variant,
+            request=sent, settings={**settings, "target": target}, variant=variant,
             group_id=group,
         )
         add_samples(experiment, share)
@@ -304,14 +325,9 @@ def lab(home: Path, port: int) -> None:
 
     if not (home / "tuningfork.db").exists():
         seed(home)
-    # The skill as the seeded runs were given it, kept as a batch keeps it: the baseline
-    # the browser's variant editor starts from.
-    snapshot = home / "lab-skill" / "tally-report"
-    snapshot.mkdir(parents=True, exist_ok=True)
-    (snapshot / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    # Kept again for a home seeded before the seed kept it.
     store = Store(home)
-    for run in store.runs(limit=100, task_id="tally-report/1"):
-        store.annotate_run(run.id, parity={**run.parity, "skill_snapshot_dir": str(snapshot)})
+    keep_skill(store)
     store.close()
 
     def wording_sensitive(payload):
