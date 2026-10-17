@@ -3036,6 +3036,7 @@ def experiment(
         arm = next(iter(report.arms.values()))
         if report.kind == "interrupted":
             console.print(f"  [yellow]this A/B was interrupted: only its {arm.arm} arm ran[/yellow]")
+        _print_wording(report.wording)
         if report.to_end is not None:
             _print_end_to_end(report.to_end, f"{arm.arm} arm — {arm.sample_count} forks")
         else:
@@ -3043,7 +3044,9 @@ def experiment(
         return
     variant_info = report.arms["variant"].variant
     swapped = f"{variant_info.get('original_path')} → {variant_info.get('variant_path')}"
-    console.print(f"  swapped   {escape(swapped)}")
+    # Paths are printed whole, never broken across lines: they are copied.
+    console.print(f"  swapped   {escape(swapped)}", soft_wrap=True)
+    _print_wording(report.wording)
     if report.kind == "ab_to_end":
         _print_ab_to_end(report.to_end, k, alpha)
         return
@@ -3096,6 +3099,26 @@ def _who(entry: dict) -> str:
     if via == "mcp":
         return f"an agent over MCP ({entry.get('client') or 'unnamed'})"
     return "a person" if via == "person" else via
+
+
+def _print_wording(wording) -> None:
+    """The edit an A/B tested, as a line diff of its two texts."""
+    if wording is None:
+        return
+    if wording.diff is None:
+        console.print(f"  the edit  [yellow]not shown: {escape(wording.missing or '')}[/yellow]")
+        return
+    changed = wording.diff["changed"]
+    notes = []
+    if wording.source == "files":
+        notes.append("read from its files, which still hold the texts it tested")
+    if wording.form == "body":
+        notes.append("the model read the skill's body here, without its frontmatter")
+    console.print(
+        f"  the edit  {changed} line{'s' if changed != 1 else ''} changed"
+        + (f" [dim]({escape('; '.join(notes))})[/dim]" if notes else "")
+    )
+    _print_diff(wording.diff["hunks"])
 
 
 def _print_diff(hunks: list[dict]) -> None:

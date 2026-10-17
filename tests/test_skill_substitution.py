@@ -7,6 +7,7 @@ frontmatter included, inlined into the system prompt between two harness-written
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 
 import pytest
 
@@ -16,6 +17,7 @@ from tuningfork.experiment.skill import (
     locate,
     split_frontmatter,
     substitute,
+    swapped,
     text_sha256,
     unapplied,
 )
@@ -242,6 +244,69 @@ class TestNothingToCompare:
         (note,) = unapplied(ORIGINAL, variant, spans)
         assert "frontmatter" in note
         assert unapplied(ORIGINAL, variant, locate(hermes_request(), ORIGINAL)) == []
+
+
+class TestSwapped:
+    """The inverse of `substitute`: an A/B's two requests give back the texts it compared,
+    as the model read each, which a report shows as the edit."""
+
+    @staticmethod
+    def back(request: dict, original: str = ORIGINAL, variant: str = VARIANT):
+        changed, spans = substitute(request, original, variant)
+        return swapped(request, changed, [asdict(span) for span in spans])
+
+    def test_a_preloaded_skill_comes_back_whole(self):
+        before, after, span = self.back(hermes_request())
+        assert (before, after) == (ORIGINAL, VARIANT)
+        assert span["form"] == "full" and span["line_start"] == 1
+
+    def test_a_body_comes_back_as_the_body_with_its_place_in_the_file(self):
+        _, body = split_frontmatter(ORIGINAL)
+        before, after, span = self.back(hermes_request(skill=body.strip()))
+        assert before == body.strip()
+        assert after == split_frontmatter(VARIANT)[1].strip()
+        assert span["form"] == "body" and span["line_start"] == 6
+
+    def test_a_json_escaped_copy_is_read_unescaped(self):
+        original = ORIGINAL.replace("Read the CSV.", 'Read the "CSV" — carefully.')
+        variant = VARIANT.replace("Read the CSV.", 'Read the "CSV" — carefully.')
+        viewed = {"role": "tool", "tool_call_id": "1", "content": json.dumps({"success": True, "content": original})}
+        before, after, span = self.back(hermes_request(skill="(not preloaded)", extra_messages=[viewed]), original, variant)
+        assert (before, after) == (original, variant)
+        assert span["encoding"] == "json"
+
+    def test_two_copies_give_the_first(self):
+        viewed = {"role": "tool", "tool_call_id": "1", "content": json.dumps({"content": ORIGINAL})}
+        before, after, span = self.back(hermes_request(extra_messages=[viewed]))
+        assert (before, after) == (ORIGINAL, VARIANT)
+        assert span["message_index"] == 0
+
+    def test_windows_line_endings_come_back_plain(self):
+        request = {"model": "m", "messages": [
+            {"role": "user", "content": "Skill:\n" + ORIGINAL.replace("\n", "\r\n") + "ARGUMENTS: a"},
+        ]}
+        before, after, _ = self.back(request, ORIGINAL.replace("\n", "\r\n"), VARIANT.replace("\n", "\r\n"))
+        assert (before, after) == (ORIGINAL, VARIANT)
+
+    def test_an_anthropic_tool_result(self):
+        request = {"messages": [{"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t", "content": [{"type": "text", "text": ORIGINAL}]},
+        ]}]}
+        before, after, _ = self.back(request)
+        assert (before, after) == (ORIGINAL, VARIANT)
+
+    def test_nothing_comes_back_where_the_arms_were_sent_the_same_skill(self):
+        """The demo's seeded A/B once kept the original's request in both arms."""
+        request = hermes_request()
+        _, spans = substitute(request, ORIGINAL, VARIANT)
+        assert swapped(request, request, [asdict(span) for span in spans]) is None
+
+    def test_nothing_comes_back_where_what_differs_is_not_the_swap(self):
+        request = hermes_request()
+        changed, spans = substitute(request, ORIGINAL, VARIANT)
+        changed["messages"][1]["content"] = "Use another skill."
+        unswapped = {**changed, "messages": [request["messages"][0], *changed["messages"][1:]]}
+        assert swapped(request, unswapped, [asdict(span) for span in spans]) is None
 
 
 def test_hash_ignores_line_endings():

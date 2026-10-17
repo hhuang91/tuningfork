@@ -1,6 +1,6 @@
 // Resamples and wording A/B tests: behaviour distributions at a checkpoint.
 
-import { api, query } from "../api.js";
+import { api, enc, query } from "../api.js";
 import {
   ago, chip, crumbs, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
 } from "../dom.js";
@@ -9,6 +9,7 @@ import { live } from "../live.js";
 import { comparisonView, distributionView, forkingView, formatP, screenView, tallyView } from "../results.js";
 import { trashButton, trashedBanner } from "../trash.js";
 import { whereForm } from "../where.js";
+import { diffView } from "./refine.js";
 
 export async function experimentsView(root) {
   replace(root, loading());
@@ -165,6 +166,7 @@ export async function experimentView(root, [id], scope) {
           ? h("div", { class: "banner banner-warn" }, h("strong", null, "This A/B was interrupted. "),
             `Only its ${experiment.interrupted} arm ran, so there is nothing to compare; its samples are below.`)
           : null,
+        experiment.wording ? wordingPanel(experiment.wording) : null,
         experiment.comparison ? comparisonView(experiment) : null,
         experiment.forking ? forkingView(experiment.forking, { experiment, view: base }) : null,
         experiment.screen ? screenView(experiment.screen, { arms: experiment.arms }) : null,
@@ -185,6 +187,32 @@ export async function experimentView(root, [id], scope) {
         notesPanel(experiment)),
     );
   }
+}
+
+/** The edit an A/B tests: its two texts as a line diff, read back from what its arms were
+ *  sent (`ops.experiments.ab_wording`). */
+function wordingPanel(wording) {
+  const { original, variant, diff } = wording;
+  return panel("The variant's edit", [
+    diff
+      ? diffView(diff.hunks)
+      : h("p", { class: "muted" }, `Not shown: ${wording.missing}.`),
+    wording.form === "body"
+      ? h("p", { class: "hint" }, "At this step the model read the skill's body, without its frontmatter: the lines are those it read.")
+      : null,
+    wording.source === "files"
+      ? h("p", { class: "hint" }, "Read from its files, which still hold the texts it tested.")
+      : null,
+    variant.name
+      ? h("p", { class: "hint" }, "The variant is saved as ", h("span", { class: "mono" }, variant.name), ", one of ",
+          h("a", { href: `#/skills/${enc(variant.skill)}` }, `${variant.skill}'s saved variants`), ".")
+      : null,
+  ], {
+    meta: h("span", { class: "muted" },
+      h("span", { class: "diff-del-text" }, `− original ${original.label}`), " · ",
+      h("span", { class: "diff-add-text" }, `+ variant ${variant.label}`),
+      diff ? ` · ${plural(diff.changed, "line")} changed` : null),
+  });
 }
 
 function originBanner(experiment) {

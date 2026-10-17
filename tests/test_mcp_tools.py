@@ -137,6 +137,10 @@ class TestReads:
         result = await call(server, "show_experiment", {"experiment": ab["id"]})
         assert "declared target" in text(result) and "Fisher's exact test" in text(result)
         assert result.structured_content["comparison"]["target"]["alpha"] == 0.05
+        # What it tested, as a proposal's lines are shown: an agent reading old experiments
+        # learns the wording from them, not from a file that may have changed.
+        assert "the edit it tested, original skill/SKILL.md → variant skill/SKILL.v2.md: 1 line(s) changed" in text(result)
+        assert [line["op"] for line in result.structured_content["wording"]["diff"]] == ["-", "+"]
         # A client that shows the model only the structured content (Claude Code) gets the
         # sentences first too.
         assert list(result.structured_content)[0] == "summary"

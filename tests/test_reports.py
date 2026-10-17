@@ -61,6 +61,60 @@ def ab_ids(path):
     return arms
 
 
+class TestWording:
+    """An A/B's report says what it tested: the edit, as a line diff of its two texts, read
+    back from what its arms were sent."""
+
+    @staticmethod
+    def changed(report) -> list[dict]:
+        return [line for hunk in report.wording.diff["hunks"] for line in hunk["lines"] if line["op"] != " "]
+
+    def test_the_report_shows_the_edit_numbered_as_the_files_lines(self, home):
+        store = Store(home)
+        report = experiment_report(store, ab_ids(home)["variant"])
+        store.close()
+
+        assert report.wording.source == "sent" and report.wording.form == "full"
+        assert self.changed(report) == [
+            {"op": "-", "old": 7, "text": "Write the totals to report.json."},
+            {"op": "+", "new": 7, "text": "Write the totals to report.json, using the keys row_count and amount_total."},
+        ]
+        assert report.wording.variant["label"] == "skill/SKILL.v2.md"
+        assert report.to_json()["wording"]["diff"]["changed"] == 1
+        shown = CliRunner().invoke(app, ["experiment", ab_ids(home)["variant"][:8], "--home", str(home)])
+        assert "the edit  1 line changed" in shown.output
+        assert "+ Write the totals to report.json, using the keys row_count and amount_total." in shown.output
+
+    def test_a_file_edited_since_does_not_change_what_was_tested(self, home, tmp_path):
+        (tmp_path / "skill" / "SKILL.v2.md").write_text(VARIANT.replace("row_count", "rows"), encoding="utf-8")
+        store = Store(home)
+        report = experiment_report(store, ab_ids(home)["original"])
+        store.close()
+
+        assert report.wording.source == "sent"
+        assert self.changed(report)[-1]["text"] == "Write the totals to report.json, using the keys row_count and amount_total."
+
+    def test_before_its_variant_arm_its_files_say_it_while_they_hold_its_texts(self, home, tmp_path):
+        arms = ab_ids(home)
+        store = Store(home)
+        with store._lock:
+            store._conn.execute("DELETE FROM samples WHERE experiment_id = ?", (arms["variant"],))
+            store._conn.execute("DELETE FROM experiments WHERE id = ?", (arms["variant"],))
+            store._conn.commit()
+        try:
+            report = experiment_report(store, arms["original"])
+            assert report.wording.source == "files" and report.wording.diff["changed"] == 1
+            (tmp_path / "skill" / "SKILL.v2.md").write_text("another wording\n", encoding="utf-8")
+            report = experiment_report(store, arms["original"])
+        finally:
+            store.close()
+
+        assert report.wording.diff is None
+        assert "hold the texts it tested" in report.wording.missing
+        shown = CliRunner().invoke(app, ["experiment", arms["original"][:8], "--home", str(home)])
+        assert "the edit  not shown: neither what its arms recorded" in shown.output
+
+
 class TestPartial:
     def test_an_ab_stopped_in_its_variant_arm_says_so(self, home):
         """Found in review: an A/B interrupted part way through its second arm read as a

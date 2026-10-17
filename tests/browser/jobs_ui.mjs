@@ -91,6 +91,13 @@ try {
   const variants = await api("/variants?skill=tally-report");
   check(variants.some((variant) => variant.name === variantName), "the variant was saved when the A/B started");
   await until(() => page.eval(`!!document.querySelector(".verdict-block.significant")`), "the verdict on the job page");
+  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
+  await until(() => page.eval(`location.hash.startsWith("#/experiments/")`), "the A/B's page");
+  const edit = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "The variant's edit")`;
+  await until(() => page.eval(`!!${edit}`), "the edit it tested");
+  check(await page.eval(`[...${edit}.querySelectorAll(".diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))
+    && ${edit}.querySelector(".panel-meta").textContent.includes(${JSON.stringify(`+ variant ${variantName}`)})`),
+    "the A/B's page leads with the edit it tested, as a diff, the variant by its saved name");
 
   // --- 3. A task run again from its run's page; a fork held at its step; forks to the end ----
   console.log("run a task again, fork at a step, and run forks to the end");

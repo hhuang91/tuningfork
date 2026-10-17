@@ -250,7 +250,8 @@ breakpoints apply from there: a restart from any step of a recorded run.
 
 `experiments` lists them, newest first (`--run`, `-n`, `-q`). `experiment <id>` shows one's
 result again, drawing no new samples: `--normalizer` analyses its samples again under another
-normalizer, `--alpha` at another level.
+normalizer, `--alpha` at another level. An A/B's starts with the edit it tested, as a line diff
+of the two texts its arms sent the model.
 
 ## Which token decided it?
 

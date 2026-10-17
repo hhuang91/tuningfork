@@ -60,7 +60,8 @@ node tests/browser/jobs_ui.mjs
 
 It checks that a resample started from a step on the run's conversation runs through the
 proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter as its
-target, shows the known shift and saves the variant only when it starts; that no target is
+target, shows the known shift, saves the variant only when it starts, and leads its page with the
+edit it tested; that no target is
 chosen for you; that a task runs again from its run's page, its check shown whole; that a
 fork stops at its step for a person and runs on when continued; that forks run to the end,
 for a resample and for an A/B; that a job's page, its event stream cut mid-job, catches up

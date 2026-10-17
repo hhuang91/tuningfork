@@ -23,6 +23,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -307,6 +308,43 @@ def substitute(
             f"Both arms would send the same request: {detail}. Nothing would be measured."
         )
     return changed, spans
+
+
+def swapped(
+    original: dict[str, Any], variant: dict[str, Any], spans: list[dict[str, Any]]
+) -> tuple[str, str, dict[str, Any]] | None:
+    """The skill texts two requests differ by, as the model read each — an A/B's arms, the
+    variant put where `spans` (as `substitute` recorded them) found the original: its inverse.
+
+    Exact or nothing. A text that differs only inside one recorded span gives the original's
+    text there and what took its place, with that span; None when no text does — the arms
+    were sent the same texts, or what differs is not one swap.
+    """
+    before_fields, after_fields = list(_fields(original)), list(_fields(variant))
+    if len(before_fields) != len(after_fields):
+        return None
+    for (path, index, _, part, before), (other, _, _, _, after) in zip(before_fields, after_fields):
+        if path != other or before == after:
+            continue
+        head = len(os.path.commonprefix([before, after]))
+        room = min(len(before), len(after)) - head
+        tail = len(os.path.commonprefix([before[::-1], after[::-1]])[:room])
+        for span in spans:
+            start, end = span.get("start"), span.get("end")
+            if span.get("message_index") != index or span.get("part_index") != part:
+                continue
+            # Everything that differs lies inside the span: the rest is the same in both.
+            if not (isinstance(start, int) and isinstance(end, int)
+                    and 0 <= start <= head and len(before) - tail <= end <= len(before)):
+                continue
+            texts = [before[start:end], after[start : len(after) - (len(before) - end)]]
+            if span.get("encoding") == "json":
+                try:
+                    texts = [json.loads(f'"{text}"') for text in texts]
+                except ValueError:
+                    continue
+            return normalize_newlines(texts[0]), normalize_newlines(texts[1]), span
+    return None
 
 
 def _get(obj: Any, path: Path) -> Any:

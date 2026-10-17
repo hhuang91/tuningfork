@@ -4,6 +4,12 @@ ab at run <run pilot> step 1 — after the result of read_file
   sent max_tokens=4096 (recorded: 65536)
   sent cache_prompt=False (recorded: None)
   swapped   <tmp>/skill/SKILL.md → <tmp>/skill/SKILL.v2.md
+  the edit  1 line changed
+    @@ line 5 @@
+      # Tally report
+      
+    - Write the totals to report.json.
+    + Write the totals to report.json, using the keys row_count and amount_total.
 
    behaviour                                                                original             variant              p adj.
 A  write_file(content='{"amount_total":61.5,"row_count":4}', … (+19 chars)  0/3   0% [0%-56%]    3/3 100% [44%-100%]  0.200 

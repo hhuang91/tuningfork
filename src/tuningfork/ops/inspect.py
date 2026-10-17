@@ -434,6 +434,8 @@ class ExperimentReport:
     forking: Any = None
     #: A screen's report (`tuningfork.analysis.screen`): each proposal against one baseline.
     screen: Any = None
+    #: An A/B's edit: its two texts as a line diff (`ops.experiments.ab_wording`).
+    wording: Any = None
 
     @property
     def interrupted_arm(self) -> str | None:
@@ -467,6 +469,8 @@ class ExperimentReport:
             "origin": found.settings.get("origin"),
             "trashed_at": found.trashed_at,
         }
+        if report.wording is not None:
+            base["wording"] = report.wording.to_json()
         if report.kind == "to_end":
             base["to_end"] = report.to_end.to_json()
             return base
@@ -583,6 +587,10 @@ def experiment_report(
         report.kind, report.forking = "forking", forking_result(store, found)
         return report
     to_end = found.settings.get("reach") == "end"
+    if found.kind == "ab":
+        from tuningfork.ops.experiments import ab_wording
+
+        report.wording = ab_wording(store, arms)
     if found.kind != "ab" or not found.group_id:
         if to_end:
             report.kind, report.to_end = "to_end", arm_summary(store, found)

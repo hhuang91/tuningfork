@@ -274,8 +274,12 @@ class TestToEnd:
         assert result.exit_code == 0, result.output
         assert "original  0/4" in result.output and "variant   4/4" in result.output
         assert "significant" in result.output and "not significant" not in result.output
+        # The edit it tested, as its forks were given it: the file has changed since.
+        variant.write_text("another wording\n", encoding="utf-8")
         again = cli("experiment", stack.store.experiments(limit=1)[0].id[:8])
         assert "variant   4/4" in again.output
+        assert "the edit  1 line changed" in again.output
+        assert "+ Write the totals to report.json, using the keys row_count and amount_total." in again.output
         listing = cli("experiments")
         assert "ab to end" in listing.output
 

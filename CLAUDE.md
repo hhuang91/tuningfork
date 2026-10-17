@@ -115,7 +115,11 @@ script's code, which its key keeps only as a syntax-tree digest; one stored befo
 `code` in its spec) matches as it was declared. Every sample's prompt is processed whole where llama.cpp takes `cache_prompt: false` —
 chat completions, not its Messages endpoint, which drops the field — so no sample depends on
 what the server ran before (`--prompt-cache` reuses it). Each arm draws a random seed base,
-recorded with it; `--seed-base` draws an earlier experiment's samples again.
+recorded with it; `--seed-base` draws an earlier experiment's samples again. An A/B's report
+starts with the edit it tested, a line diff of its two texts (`ops.experiments.ab_wording`;
+`tuningfork experiment`, its page, MCP's show_experiment), read back from what it recorded — a
+checkpoint A/B's arms' requests (`experiment.skill.swapped`, the inverse of `substitute`), a
+fork's launch — and from the files it names only while each still holds the text tested.
 
 Refining a skill at a step — the target first, then proposed edits, each screened, a survivor
 validated with full runs, and approved by a person:
