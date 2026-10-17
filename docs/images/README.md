@@ -13,11 +13,11 @@ The pictures in the top-level README.
 
 | File | What it shows | Taken from |
 |---|---|---|
-| `ui-demo.gif` | A run opened, its write step chosen, an edited wording A/B-tested there, and the result: the original arm against the edit, with intervals and Fisher's test. 30 seconds at most, no sound | `demo.py lab` |
+| `ui-demo.gif` | A run opened, its write step chosen, an edited wording A/B-tested there, and the result: the edit, then the original arm against it, with intervals and Fisher's test. 30 seconds at most, no sound | `demo.py lab`, [step by step](#the-gif-step-by-step) |
 | `ui-guide.png` | The front page: what is set up, the loop from a skill to its next version, and the questions each way of looking at a step answers | real recordings |
 | `ui-run.png` | A run as one conversation, the write step open, the skill marked in the context | real recordings |
 | `ui-divergence.png` | A task's divergence page: where the runs split, how each behaviour fared, what the failed checks said | real recordings |
-| `ui-ab.png` | An A/B's result at a step, both arms with their intervals and the declared target's test | real recordings |
+| `ui-ab.png` | An A/B's result at a step: the edit it tested, both arms with their intervals, and the declared target's test | real recordings |
 | `ui-tokens.png` | An answer's token heatmap, one uncertain token's alternatives open | real recordings |
 | `ui-refine.png` | A refinement: its target, proposals as diffs, and a screen's verdict | real recordings |
 | `ui-live.png` | The Live page with a call held at a breakpoint, its tool call being edited | `demo.py live` |
@@ -26,9 +26,10 @@ The pictures in the top-level README.
 report. Those behind the hero, [`examples/find-the-file/`](../../examples/find-the-file/README.md)'s,
 suit the run, divergence, A/B and token shots best — its step 1, token [121] open on "Wait", is the
 figure's fork — and `tuningfork ui --home <their folder>` serves them read-only. **`demo.py lab`** serves seeded runs through a real proxy, in
-front of a scripted model that names the report's keys only when the skill states them: an A/B
-of a wording that names them shows the shift in seconds, with no GPU. **`demo.py live`** is the
-same proxy with a call held at a breakpoint. Each prints the web UI's address:
+front of a scripted model that names the report's keys only for one wording of the skill, given
+[below](#the-gif-step-by-step): an A/B of it shows the shift in seconds, with no GPU.
+**`demo.py live`** is the same proxy with a call held at a breakpoint. Each prints the web UI's
+address:
 
 ```bash
 python tests/browser/demo.py lab ~/tuningfork-lab 8790
@@ -50,3 +51,20 @@ How to take them:
 
 Each name above is the one the README already uses, so a file saved under it appears in the
 README with no other change.
+
+## The GIF, step by step
+
+`demo.py lab`'s model writes the keys the check wants only when the skill holds the exact words
+`row_count and amount_total`. Any other wording, such as the names in backticks or a comma
+between them, gets the wrong keys in every sample, and the two arms come out the same. It has no
+randomness either: every sample of an arm is the same answer.
+
+1. Start `python tests/browser/demo.py lab ~/tuningfork-lab 8790` on a new folder (it seeds only
+   an empty one), and open the address it prints.
+2. **Runs** → run `tally-report/1#demo.2` → step 1 → **A/B a wording…**
+3. In the editor, change `Write the totals to report.json.` to
+   `Write the totals to report.json, using the keys row_count and amount_total.`
+4. For the target, choose *What the model does matches a pattern* and type `row_count`. Keep the
+   suggested name and 20 samples per arm, and start it.
+5. Its job's page links the result: the variant's edit as a diff, then 0/20 against 20/20, Fisher
+   exact p = 1.5e-11. Equal arms mean the sentence differs from the one above.

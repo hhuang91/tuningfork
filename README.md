@@ -306,11 +306,11 @@ start the work as well as show it: a batch of runs, a resample, an A/B, a fork, 
     <td>Where a task's runs stop agreeing, how the runs that took each path fared, and what the failed checks said</td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/ui-ab.png" alt="An A/B result: each arm's rate with its interval, and Fisher's test"></td>
+    <td width="50%"><img src="docs/images/ui-ab.png" alt="An A/B result: the edit it tested, each arm's rate with its interval, and Fisher's test"></td>
     <td width="50%"><img src="docs/images/ui-tokens.png" alt="An answer as tokens, shaded by how unsure the model was, one token's alternatives open"></td>
   </tr>
   <tr>
-    <td>An A/B at a step: each arm's rate with its interval, and the test of the target declared before sampling</td>
+    <td>An A/B at a step: the edit it tested, each arm's rate with its interval, and the test of the target declared before sampling</td>
     <td>An answer as the model's tokens, shaded by how unsure it was; a click shows what else it weighed there</td>
   </tr>
   <tr>
