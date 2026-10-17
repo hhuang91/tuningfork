@@ -92,11 +92,16 @@ the proxy and never recorded, has two of its three ideas kept and one refused fo
 line the skill does not have; that a person's own wording joins them; that a screen of two,
 Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
 behaviours badged target or not target — and each proposal then carries its
-verdict; that a survivor, validated from its refinement's page, runs forks to the end, the
+verdict, the refinement's page leading with that evidence — where it stands, each proposal's
+screen in a line — above what a proposer is shown, the original wording's answers, with the
+skill's paths closed away in About; that a survivor, validated from its refinement's page, runs forks to the end, the
 training task and the lab's held-out task — named only by its id in the plan and the job,
-its text nowhere — and meets the gate, each part and check shown to the person; that
+its text nowhere — and meets the gate, each part and check shown to the person, the evidence
+then naming it ready to approve, its screen and its full runs in a line each and a link down
+to them; that
 approving shows the file it writes and the edit, writes nothing for a wrong code, and writes
-the skill's own file once the code shown is typed; and that the proposer's key, set on
+the skill's own file once the code shown is typed, the page then saying so first, the
+approved proposal picked out in the evidence and in its card; and that the proposer's key, set on
 Connections, is never on the page or in an answer again. On the way it checks that a batch's plan opens with
 how a run passes and offers the spec's task by what it asks, that Start is ready with nothing
 more typed, and that the Runs page says how a task passes. Last, it moves a run to the trash

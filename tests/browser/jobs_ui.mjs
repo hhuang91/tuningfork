@@ -528,7 +528,8 @@ try {
   check(await page.eval(`document.querySelector('.start-panel [name="target_kind"][value="describe"]').checked`), "describing the behaviour chooses that way of declaring it");
   await page.click("Start refining", `document.querySelector(".start-panel")`);
   const refinementId = await until(async () => /^#\/refine\/([0-9a-f]{32})$/.exec(await page.eval("location.hash"))?.[1], "the refinement's page");
-  await until(() => page.eval(`[...document.querySelectorAll("dt")].some((dt) => dt.textContent === "answers here")`), "the evidence");
+  await until(() => page.eval(`[...document.querySelectorAll(".packet-panel dt")].some((dt) => dt.textContent === "the original wording")`), "what a proposer is shown");
+  check(await page.eval(`!document.querySelector(".evidence-panel")`), "no evidence panel before there is a proposal to weigh");
   check(await page.eval(`document.querySelector(".page-head").textContent.includes('a behaviour that calls write_file, and mentions "row_count"')`), "the refinement states its target, declared before anything was proposed");
   await until(() => page.eval(`(document.querySelector(".propose-builtin .plan-preview")?.textContent || "").includes("through this proxy")`), "the proposer's plan");
   check(true, "the proposer's plan says where the evidence goes: through this proxy, never recorded");
@@ -588,6 +589,27 @@ try {
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Back to the refinement").click()`);
   await until(() => page.eval(`location.hash === "#/refine/${refinementId}" && [...document.querySelectorAll(".proposal .chip")].some((c) => c.textContent === "survived a screen")`), "the verdicts on the refinement's proposals");
   check(await page.eval(`[...document.querySelectorAll(".proposal .chip")].filter((c) => c.textContent === "hypothesis: not screened yet").length === 1`), "the screened carry their verdicts; the one not screened is still a hypothesis");
+  // The page leads with the evidence: where it stands, each proposal's screen, a step screen's survivor in the accent.
+  const evidence = await page.eval(`(() => {
+    const titles = [...document.querySelectorAll(".panel-head h2")].map((h2) => h2.textContent);
+    const block = document.querySelector(".evidence-panel .verdict-block");
+    const rows = [...document.querySelectorAll(".evidence-panel tbody tr")];
+    return {
+      order: titles.indexOf("The evidence") < titles.indexOf("Proposals (3)") && titles.indexOf("Proposals (3)") < titles.indexOf("What a proposer is shown"),
+      headline: block?.querySelector(".verdict-big")?.textContent,
+      accent: block?.classList.contains("significant") && !block.classList.contains("tone-ok"),
+      survivor: rows.some((row) => row.querySelector(".chip.tone-accent")?.textContent === "survived a screen"),
+      unscreened: rows.filter((row) => row.textContent.includes("hypothesis: not screened yet")).length,
+      chosen: rows.some((row) => row.classList.contains("is-chosen")),
+      about: !document.querySelector("details.about-refinement").open,
+    };
+  })()`);
+  check(evidence.order && evidence.headline === "1 of 3 proposals survived a screen" && evidence.accent,
+    `the refinement leads with the evidence: where it stands, in the accent for a step screen (${evidence.headline})`);
+  check(evidence.survivor && evidence.unscreened === 1 && !evidence.chosen, "each proposal's screen in a line, nothing chosen before a validation");
+  check(evidence.about, "the skill's paths wait in About this refinement, closed");
+  await until(() => page.eval(`(document.querySelector(".packet-panel")?.textContent || "").includes("the original wording")`),
+    "what a proposer is shown, below them: the original wording's answers, the problem and not the result");
 
   // --- 12b. Validate a survivor with full runs, held-out task included, and approve it ------
   console.log("validate a survivor with full runs, and approve it");
@@ -620,6 +642,25 @@ try {
     "the person's page shows each part, the held-out task's included");
   check(await page.eval(`[...document.querySelectorAll(".validation .gate-list .chip")].filter((c) => c.textContent === "low-powered").length === 2`),
     "the not-worse checks say they are low-powered");
+  const ready = await page.eval(`(() => {
+    const block = document.querySelector(".evidence-panel .verdict-block");
+    const row = document.querySelector(".evidence-panel tr.is-chosen");
+    return {
+      headline: block?.querySelector(".verdict-big")?.textContent,
+      green: block?.classList.contains("tone-ok"),
+      lines: block?.querySelector(".verdict-lines")?.textContent || "",
+      row: row ? [...row.querySelectorAll(".chip")].map((c) => c.textContent).join() : null,
+    };
+  })()`);
+  check(ready.headline === `Proposal ${keysFix.id.slice(0, 8)} meets the gate: ready to approve` && ready.green,
+    `a validation that meets the gate: the evidence names the proposal ready to approve, in the gate's green (${ready.headline})`);
+  check(ready.lines.includes("Survived its screen: 6/6 against the original's 0/6") && ready.lines.includes("on held-out task 2") && ready.lines.includes("checks met"),
+    `with its screen and its validation in a line each, the held-out task's included (${ready.lines})`);
+  check(ready.row === "ready to approve,survived a screen,meets the gate", `its row picked out (${ready.row})`);
+  const hash = await page.eval("location.hash");
+  await page.eval(`[...document.querySelectorAll(".evidence-panel .verdict-lines a")].find((a) => a.textContent.startsWith("validation ")).click()`);
+  check(await page.eval(`location.hash === ${JSON.stringify(hash)} && document.querySelector(".validation").getBoundingClientRect().top < innerHeight`),
+    "its link leads down the page to the validation, the address as it was");
   await page.click("Approve…", `document.querySelector(".validation")`);
   await until(() => page.eval(`!!document.querySelector(".approve-code strong")`), "the approval's plan");
   const code = await page.eval(`document.querySelector(".approve-code strong").textContent`);
@@ -637,7 +678,20 @@ try {
   const approved = await api(`/refinements/${made.id}`);
   check(approved.approval?.state === "applied" && approved.refinement.status === "approved",
     "the typed code writes it: the skill's own file, its old text and a changelog beside its folder");
-  check(await page.eval(`(document.querySelector(".banner-ok")?.textContent || "").includes("was written")`), "and the page says so");
+  const writtenView = await page.eval(`(() => {
+    const block = document.querySelector(".evidence-panel .verdict-block");
+    return {
+      headline: block?.querySelector(".verdict-big")?.textContent,
+      green: block?.classList.contains("tone-ok"),
+      row: [...(document.querySelector(".evidence-panel tr.is-chosen")?.querySelectorAll(".chip") || [])].map((c) => c.textContent).join(),
+      card: !!document.querySelector(".proposal.chosen") && [...document.querySelectorAll(".proposal.chosen .chip")].some((c) => c.textContent === "approved"),
+      about: document.querySelector("details.about-refinement").textContent,
+    };
+  })()`);
+  check(writtenView.headline === `Approved: proposal ${keysFix.id.slice(0, 8)}, written to the skill's own file` && writtenView.green,
+    `and the page says so first, with the evidence it stood on (${writtenView.headline})`);
+  check(writtenView.row === "approved,survived a screen,met the gate" && writtenView.card, `the approved proposal picked out, in the evidence and its card (${writtenView.row})`);
+  check(writtenView.about.includes(`${health.home}/lab-task/tally-report/SKILL.md`), "About this refinement says where it wrote");
 
   console.log("the proposer's key: set, never shown, cleared");
   await page.eval(`location.hash = "#/connections"`);

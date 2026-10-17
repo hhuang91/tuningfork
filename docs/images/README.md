@@ -19,13 +19,18 @@ The pictures in the top-level README.
 | `ui-divergence.png` | A task's divergence page: where the runs split, how each behaviour fared, what the failed checks said | real recordings |
 | `ui-ab.png` | An A/B's result at a step: the edit it tested, both arms with their intervals, and the declared target's test | real recordings |
 | `ui-tokens.png` | An answer's token heatmap, one uncertain token's alternatives open | real recordings |
-| `ui-refine.png` | A refinement: its target, proposals as diffs, and a screen's verdict | real recordings |
+| `ui-refine.png` | A refinement: its target, then the evidence — each proposal's screen, the approved one's validation — and the proposals as diffs | real recordings |
 | `ui-live.png` | The Live page with a call held at a breakpoint, its tool call being edited | `demo.py live` |
 
 **Real recordings** are runs on a real model, so that the numbers on the page are ones the docs
 report. Those behind the hero, [`examples/find-the-file/`](../../examples/find-the-file/README.md)'s,
 suit the run, divergence, A/B and token shots best — its step 1, token [121] open on "Wait", is the
-figure's fork — and `tuningfork ui --home <their folder>` serves them read-only. **`demo.py lab`** serves seeded runs through a real proxy, in
+figure's fork — and `tuningfork ui --home <their folder>` serves them read-only. The refinement
+shot is the guide's own Hermes refinement, `338504b1` in [`examples/README.md`](../../examples/README.md):
+the whole loop on one page, from its target through three proposals and their screen to a
+validated, approved edit. find-the-file has no held-out task, so no refinement of it could be
+validated. Leave its *About this refinement* closed: it holds the skill's paths.
+**`demo.py lab`** serves seeded runs through a real proxy, in
 front of a scripted model that names the report's keys only for one wording of the skill, given
 [below](#the-gif-step-by-step): an A/B of it shows the shift in seconds, with no GPU.
 **`demo.py live`** is the same proxy with a call held at a breakpoint. Each prints the web UI's

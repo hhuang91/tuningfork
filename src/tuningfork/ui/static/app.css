@@ -1340,6 +1340,11 @@ details.about-run:not([open]) > summary { border-bottom: none; }
 .proposal-list { display: flex; flex-direction: column; gap: 12px; }
 .proposal { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }
 .proposal.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* The proposal approved, or meeting the gate: the gate is a check, so its green. */
+.proposal.chosen { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok); }
+.evidence-table tr.is-chosen td { background: var(--ok-soft); }
+.evidence-table tr.is-chosen td:first-child { box-shadow: inset 3px 0 var(--ok); }
+.evidence-table tr.is-chosen .chip.tone-ok { background: var(--panel); }
 .proposal-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .proposal-why { margin: 0; }
 .proposal-why .label { margin: 0; }

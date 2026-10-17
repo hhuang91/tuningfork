@@ -314,11 +314,11 @@ start the work as well as show it: a batch of runs, a resample, an A/B, a fork, 
     <td>An answer as the model's tokens, shaded by how unsure it was; a click shows what else it weighed there</td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/ui-refine.png" alt="A refinement: its target, its proposals as diffs, and each screen's verdict"></td>
+    <td width="50%"><img src="docs/images/ui-refine.png" alt="A refinement: its target, then the evidence — each proposal's screen and the approved one's validation — and its proposals as diffs"></td>
     <td width="50%"><img src="docs/images/ui-live.png" alt="The Live page: a call held at a breakpoint, its tool call edited in place"></td>
   </tr>
   <tr>
-    <td>A refinement: the target declared first, each proposal as a diff, and what each screen found</td>
+    <td>A refinement: the target declared first, then each proposal's screen and the full runs behind the one approved</td>
     <td>A call held at a breakpoint, edited in place before the harness gets it</td>
   </tr>
 </table>

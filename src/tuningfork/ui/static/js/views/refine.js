@@ -149,6 +149,7 @@ export async function refinementView(root, [id], scope) {
   const banners = h("div", { class: "stack" });
   const facts = h("div");
   const evidenceEl = h("div");
+  const packetEl = h("div");
   const proposalsEl = h("div");
   const proposeEl = h("div");
   const screenEl = h("div");
@@ -162,7 +163,7 @@ export async function refinementView(root, [id], scope) {
   let asked = 0;
   let timer = null;
   replace(root, crumbs([["Refine", "#/refine"], [short(shown.refinement.id)]]), head,
-    h("div", { class: "stack" }, banners, facts, evidenceEl, proposalsEl, proposeEl, screenEl, screensEl,
+    h("div", { class: "stack" }, banners, facts, evidenceEl, proposalsEl, packetEl, proposeEl, screenEl, screensEl,
       validateEl, validationsEl, approveEl));
 
   // Nothing new starts on a refinement closed, approved, or in the trash.
@@ -184,6 +185,7 @@ export async function refinementView(root, [id], scope) {
     drawFacts();
     drawEvidence();
     drawProposals();
+    drawPacket();
     drawForms();
     drawScreens();
     drawValidations();
@@ -238,14 +240,23 @@ export async function refinementView(root, [id], scope) {
         h("a", { href: `#/jobs/${job.id}` }, "Its job"), " shows its progress; what it makes appears here when it ends.")));
   }
 
+  // Closed, as a run's is: where the skill's files are, and where an approval wrote.
   function drawFacts() {
     const found = shown.refinement;
-    replace(facts, kv([
-      ["skill", h("span", null, h("span", { class: "mono" }, found.baseline.path), h("span", { class: "muted small" }, " — the run's copy"))],
-      ["its own file", found.source ? h("span", { class: "mono" }, found.source.path) : h("span", { class: "muted" }, "not known: the run's task named no skill folder")],
-      ["read by", found.normalizers?.length ? found.normalizers.join(", ") : null],
-      ["started by", h("span", null, who(found.created_by), h("span", { class: "faint" }, ` · ${when(found.created_at)}`))],
-    ]));
+    const written = shown.approval?.state === "applied" ? shown.approval : null;
+    replace(facts, h("details", { class: "panel about-run about-refinement" },
+      h("summary", { class: "panel-head" }, h("h2", null, "About this refinement"),
+        h("span", { class: "muted small" }, `started by ${who(found.created_by)}, ${ago(found.created_at)}`)),
+      h("div", { class: "panel-body" }, kv([
+        ["skill", h("span", null, h("span", { class: "mono" }, found.baseline.path), h("span", { class: "muted small" }, " — the run's copy"))],
+        ["its own file", found.source ? h("span", { class: "mono" }, found.source.path) : h("span", { class: "muted" }, "not known: the run's task named no skill folder")],
+        ["written to", written ? h("span", null, h("span", { class: "mono" }, written.target),
+          written.windows ? h("div", { class: "mono faint" }, written.windows) : null) : null],
+        ["the file before", written ? h("span", { class: "mono" }, written.backup) : null],
+        ["changelog", written ? h("span", { class: "mono" }, written.changelog) : null],
+        ["read by", found.normalizers?.length ? found.normalizers.join(", ") : null],
+        ["started", when(found.created_at)],
+      ]))));
   }
 
   function closeButton() {
@@ -270,34 +281,137 @@ export async function refinementView(root, [id], scope) {
     return button;
   }
 
-  // --- the evidence: the packet, as a proposer would be shown it now -------------------------
+  // --- the evidence: each proposal's screen, and the validation behind the one chosen ---------
+  //
+  // First on the page, so an approval is read with what it stood on: what a proposer is shown
+  // — the original's answers here, none of which may reach the target — is the problem, below.
+
+  /** The proposal the page points to: the one approved, else one whose validation meets the gate. */
+  function chosen() {
+    if (shown.approval) return shown.approval.proposal;
+    return (shown.validations || []).find((record) => record.complete && record.gate?.passed)?.proposal || null;
+  }
+
+  /** A proposal's validation to show: the approved one, else one meeting the gate, else its newest. */
+  function validationOf(pid) {
+    const its = (shown.validations || []).filter((record) => record.proposal === pid);
+    return its.find((record) => record.approved) || its.find((record) => record.complete && record.gate?.passed) || its[0] || null;
+  }
+
+  /** A link down the page to a proposal's card or a validation's: the address stays as it is. */
+  function jump(label, selector, title) {
+    return h("a", {
+      href: `#/refine/${shown.refinement.id}`, title,
+      onclick: (event) => {
+        event.preventDefault();
+        root.querySelector(selector)?.scrollIntoView({ block: "start" });
+      },
+    }, label);
+  }
+
+  function toValidation(record) {
+    return jump(`validation ${short(record.id)}`, `[data-validation="${record.id}"]`, "Its runs, and the gate check by check, below");
+  }
 
   function drawEvidence() {
+    const items = shown.proposals;
+    if (!items.length) {
+      replace(evidenceEl);
+      return;
+    }
+    const pick = chosen();
+    replace(evidenceEl, panel("The evidence", h("div", { class: "stack" },
+      standing(items, pick),
+      h("div", { class: "table-wrap" }, h("table", { class: "table evidence-table" },
+        h("thead", null, h("tr", null, h("th", null, "proposal"), h("th", null, "its screen"), h("th", null, "its validation"))),
+        h("tbody", null, items.map((item) => evidenceRow(item, pick)))))),
+      { meta: h("span", { class: "muted" }, "why a proposal is kept: a screen at this step, then full runs"), className: "evidence-panel" }));
+  }
+
+  function evidenceRow(item, pick) {
+    const verdict = screenedOf(item);
+    const record = validationOf(item.id);
+    const approved = shown.approval?.proposal === item.id;
+    return h("tr", { class: item.id === pick ? "is-chosen" : null },
+      h("td", { class: "nowrap" }, jump(h("span", { class: "mono" }, short(item.id)), `[data-proposal="${item.id}"]`, "Its edit, below"),
+        approved ? [" ", chip("approved", "ok")] : item.id === pick ? [" ", chip("ready to approve", "ok")] : null),
+      h("td", null, verdict
+        ? [verdictChip(verdict), " ", h("span", { class: "small" }, screenLine(verdict), " · ",
+            h("a", { href: `#/experiments/${verdict.screen}` }, `screen ${short(verdict.screen)}`))]
+        : chip("hypothesis: not screened yet", "warn")),
+      h("td", null, record
+        ? [validationChip(record), " ", h("span", { class: "small" }, toValidation(record))]
+        : h("span", { class: "faint" }, "not validated")));
+  }
+
+  /** Where the refinement stands, in a line, with the screen and the full runs behind it. */
+  function standing(items, pick) {
+    const approval = shown.approval;
+    const behind = (pid) => {
+      const item = items.find((each) => each.id === pid);
+      const verdict = item ? screenedOf(item) : null;
+      const record = validationOf(pid);
+      return h("ul", { class: "verdict-lines" },
+        verdict ? h("li", null, verdict.survives ? "Survived its screen: " : "Its screen: ", screenLine(verdict),
+          " (", h("a", { href: `#/experiments/${verdict.screen}` }, `screen ${short(verdict.screen)}`), ")") : null,
+        record ? h("li", null, "Validated: ", validatedWords(record), " (", toValidation(record), ")") : null);
+    };
+    if (approval) {
+      return approval.state === "applied"
+        ? verdictBox("tone-ok", `Approved: proposal ${short(approval.proposal)}, written to the skill's own file`, behind(approval.proposal))
+        : verdictBox("tone-warn", `The approval of proposal ${short(approval.proposal)} did not finish: see above`, behind(approval.proposal));
+    }
+    if (pick) return verdictBox("tone-ok", `Proposal ${short(pick)} meets the gate: ready to approve`, behind(pick));
+    const judged = (shown.validations || []).find((record) => record.complete);
+    if (judged) return verdictBox("tone-bad", `Proposal ${short(judged.proposal)} does not meet the gate`, behind(judged.proposal));
+    const survived = items.filter((item) => item.screens.some((verdict) => verdict.complete && verdict.survives));
+    if (survived.length) {
+      const toEnd = survived.some((item) => item.screens.some((verdict) => verdict.complete && verdict.survives && verdict.reach === "end"));
+      return verdictBox(toEnd ? "significant tone-ok" : "significant",
+        items.length === 1 ? `Proposal ${short(survived[0].id)} survived a screen` : `${survived.length} of ${plural(items.length, "proposal")} survived a screen`,
+        h("p", { class: "verdict-lines" }, toEnd
+          ? "Validate a survivor with full runs before approving it: the task's own, and the tasks held out from it."
+          : "A screen at one step is evidence, not proof: validate a survivor with full runs before approving it."));
+    }
+    const worse = items.filter((item) => item.screens.some((verdict) => verdict.complete && verdict.worse));
+    if (items.some((item) => item.screens.some((verdict) => verdict.complete && !verdict.quick))) {
+      return verdictBox("not-significant", "No proposal has survived a screen",
+        worse.length ? h("p", { class: "verdict-lines" }, `${worse.map((item) => short(item.id)).join(", ")} made it worse.`) : null);
+    }
+    return verdictBox("not-significant", "Not screened yet: each proposal is a hypothesis until a screen tests it",
+      items.some((item) => item.screens.length) ? h("p", { class: "verdict-lines" }, "A quick look gives rates, never a verdict.") : null);
+  }
+
+  // --- what a proposer is shown: the packet, as it would be built now -------------------------
+
+  function drawPacket() {
     const found = shown.refinement;
-    const body = h("div", null, loading("Gathering the evidence…"));
-    replace(evidenceEl, panel("The evidence", body,
-      { meta: h("span", { class: "muted" }, "what a proposer is shown: built from what is recorded, never sampled for it") }));
+    const body = h("div", null, loading("Gathering what a proposer is shown…"));
+    replace(packetEl, panel("What a proposer is shown", body,
+      { meta: h("span", { class: "muted" }, "built from what is recorded, never sampled for it"), className: "packet-panel" }));
     const mineAsked = (asked += 1);
     api.get(`/refinements/${enc(found.id)}/packet`)
-      .then((packet) => evidenceBody(found, packet))
+      .then((packet) => packetBody(found, packet))
       .catch((error) => h("p", { class: "form-error" }, error.message))
       .then((drawn) => { if (scope.active && mineAsked === asked) replace(body, drawn); });
   }
 
-  function evidenceBody(found, evidence) {
+  function packetBody(found, evidence) {
     const packet = evidence.packet;
     const answers = packet.answers_here || {};
     const runs = packet.runs_here || {};
     return h("div", { class: "stack", style: { gap: "8px" } },
       kv([
-        ["answers here", h("span", null, answers.summary || "—", answers.rate ? [" ", rateBar(answers.rate)] : null)],
+        // The original's answers only — the recorded one, a resample, the screens' original arms —
+        // never a proposal's: why the step is refined, not whether an edit worked.
+        ["the original wording", h("span", null, answers.summary || "—", answers.rate ? [" ", rateBar(answers.rate)] : null)],
         ["runs of the task", runs.summary],
         ["the task's criteria", packet.included?.task_criteria ? "shown: its prompt, expected output and check" : "left out"],
         ["tried before", packet.tried_before ? plural(packet.tried_before.length, "proposal") : "nothing yet"],
       ]),
       !answers.reached
         ? h("p", { class: "hint" },
-            answers.of ? "No answer seen here reached the target: a proposer has only the target, and the task's own criteria, to show it what is wanted. " : "",
+            answers.of ? "With the original wording, no answer here reached the target: a proposer has only the target, and the task's own criteria, to show it what is wanted. " : "",
             "More answers here make better evidence: ",
             h("a", { href: `#/runs/${found.run}/${found.step}?start=resample` }, "resample this step"), ".")
         : null,
@@ -334,12 +448,14 @@ export async function refinementView(root, [id], scope) {
         })
       : null;
     const first = item.proposers[0] || {};
-    // Screens come newest first: the chip says it survived if any screen found so, else the newest.
-    const latest = item.screens.find((verdict) => verdict.complete && verdict.survives) || item.screens[0];
-    return h("div", { class: ["proposal", ticked && "selected"], dataset: { proposal: item.id } },
+    const latest = screenedOf(item);
+    const pick = chosen() === item.id;
+    const approved = shown.approval?.proposal === item.id;
+    return h("div", { class: ["proposal", ticked && "selected", pick && "chosen"], dataset: { proposal: item.id } },
       h("div", { class: "proposal-head" },
         box,
         h("span", { class: "mono" }, short(item.id)),
+        approved ? chip("approved", "ok") : pick ? chip("ready to approve", "ok") : null,
         chip(`${plural(item.changed, "line")} changed`, "muted"),
         item.proposers.map((entry) => whoChip(entry)),
         latest ? verdictChip(latest) : chip("hypothesis: not screened yet", "warn")),
@@ -710,12 +826,9 @@ export async function refinementView(root, [id], scope) {
 
   function approvalBanner() {
     const state = shown.approval;
-    if (!state) return null;
+    // Applied, the evidence says so with what it stood on, and About where it wrote.
+    if (!state || state.state === "applied") return null;
     const where = h("span", { class: "mono" }, state.target);
-    if (state.state === "applied") {
-      return h("div", { class: "banner banner-ok" }, h("strong", null, `Approved: proposal ${short(state.proposal)} was written. `),
-        where, h("span", { class: "muted" }, " — the file before, and the changelog, are beside its folder."));
-    }
     const repair = state.state !== "diverged" && live.mode === "live"
       ? h("button", {
           class: "btn btn-small", type: "button", "data-control": true,
@@ -821,6 +934,40 @@ function verdictChip(verdict) {
   return chip("not significant", "muted");
 }
 
+/** A proposal's screen to show. Screens come newest first: one it survived, else the newest. */
+function screenedOf(item) {
+  return item.screens.find((verdict) => verdict.complete && verdict.survives) || item.screens[0] || null;
+}
+
+/** A validation's verdict in a chip: the gate is a check, so green or red. */
+function validationChip(record) {
+  if (!record.complete) return chip("unfinished: no verdict", "warn");
+  if (record.approved) return chip("met the gate", "ok");
+  const failed = (record.gate?.checks || []).filter((check) => !check.passed).map((check) => check.id);
+  return record.gate?.passed ? chip("meets the gate", "ok") : chip(`does not meet the gate: ${failed.join(", ")}`, "bad");
+}
+
+/** A validation in a sentence: each part's edit against the original, then the gate. */
+function validatedWords(record) {
+  const counts = record.counts || {};
+  const ratio = (arm) => (arm?.rate ? `${arm.rate.successes}/${arm.rate.total}` : "none counted");
+  const parts = [
+    counts.forward ? [counts.forward, "from this step to the end"] : null,
+    counts.training ? [counts.training, "in full runs of the task"] : null,
+    ...(counts.held_out || []).map((entry) => [entry, `on held-out task ${entry.eval}`]),
+  ].filter(Boolean).map(([arms, where], index) =>
+    `${ratio(arms.edit)} against ${index ? "" : "the original's "}${ratio(arms.original)} ${where}`);
+  const checks = record.gate?.checks || [];
+  const failed = checks.filter((check) => !check.passed).map((check) => check.id);
+  const verdict = !record.complete ? "unfinished: no verdict"
+    : failed.length ? `the gate not met: ${failed.join(", ")}` : `every one of the gate's ${checks.length} checks met`;
+  return `${parts.join(", ")} — ${verdict}`;
+}
+
+function verdictBox(tone, big, lines) {
+  return h("div", { class: ["verdict-block", tone] }, h("div", { class: "verdict-big" }, big), lines);
+}
+
 /** A proposal's line diff: the hunks `ops.diff.line_diff` makes, numbered both sides. */
 export function diffView(hunks) {
   return h("div", { class: "diff" }, hunks.map((hunk) => {
@@ -862,7 +1009,7 @@ function proposePreview(plan) {
         plan.through_the_proxy ? h("span", { class: "muted" }, " — through this proxy: gated, never recorded") : null)],
       ["model", plan.model ? h("span", { class: "mono" }, plan.model) : h("span", { class: "muted" }, "the server's default")],
       ["for", plural(plan.proposals, "proposal")],
-      ["sends", `${Math.round(plan.size / 1024) || 1} KB: the skill, and the evidence above (packet ${plan.packet})`],
+      ["sends", `${Math.round(plan.size / 1024) || 1} KB: the skill, and what a proposer is shown, above (packet ${plan.packet})`],
     ]),
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
     h("p", { class: "hint" }, "One call. Each proposal it makes is checked — its edits must match the skill exactly, leave the frontmatter alone and change at most ten lines — and kept with the model, the packet and the prompt it came from."));
