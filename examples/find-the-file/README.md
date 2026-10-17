@@ -278,7 +278,9 @@ behaviour, so a later token decided it (`tuningfork tokens` shows the tokens aft
   the chance of the target from here, weighted by each token's chance: 12%
 ...
 
-0 of 3 forced tokens changed what the model did (Holm-corrected over the 3 planned before sampling; α=0.05).
+No forced token decided what the model did (Holm-corrected over the 3 planned before sampling; α=0.05).
+With 10 continuations a token, only a token that changes about 6 of its 10 would show: a smaller shift can be 
+real and go unseen (-n draws more).
 
 experiment d39bc626 · 4.1 min · `tuningfork experiment d39bc626` shows it again
 ```

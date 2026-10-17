@@ -2271,10 +2271,18 @@ def _print_forking(report) -> None:
             console.print(f"  [dim]the chance of the target from here, weighted by each token's chance: {position.weighted:.0%}[/dim]")
     _print_distribution(report.behaviours, "behaviours, across the probe")
     flips = sum(len(position.flips()) for position in report.positions)
-    console.print(
-        f"\n{flips} of {report.family} forced tokens changed what the model did (Holm-corrected over "
-        f"the {report.family} planned before sampling; α={report.alpha})."
-    )
+    corrected = f"Holm-corrected over the {report.family} planned before sampling; α={report.alpha}"
+    if flips:
+        console.print(f"\n{flips} of {report.family} forced tokens changed what the model did ({corrected}).")
+        return
+    # A null is what the probe could see, never that nothing changed.
+    console.print(f"\nNo forced token decided what the model did ({corrected}).")
+    if report.detectable:
+        console.print(f"With {report.per_arm} continuations a token, only a token that changes about "
+                      f"{report.detectable} of its {report.per_arm} would show: a smaller shift can be real and "
+                      "go unseen (-n draws more).")
+    elif report.per_arm:
+        console.print(f"With {report.per_arm} continuations a token, no change could reach significance: raise -n.")
 
 
 def _print_screen(report, arms: dict) -> None:

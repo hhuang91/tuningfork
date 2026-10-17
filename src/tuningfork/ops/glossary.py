@@ -50,20 +50,25 @@ TERMS: tuple[Term, ...] = (
          "one answered, and pass rates are kept apart per server.",
          "recording", aka=("inference server", "upstream"), see=("proxy", "sliding-window cache"),
          where="Connections page; tuningfork servers"),
-    Term("sliding-window cache", "Strongly recommended: start llama-server with --swa-full for any model with "
-         "sliding-window attention layers, Gemma 2, 3 and 4 among them. Without it the server keeps only part of "
-         "those layers' cache and reuses saved states between requests, so the same request can behave differently "
-         "depending on what the server ran before. A screen then favours its proposals, because it samples each "
-         "one right after the original. The flag costs GPU memory, and tuningfork cannot see whether it is on.",
-         "recording", aka=("--swa-full", "swa-full", "SWA"), see=("server", "screen", "prompt cache"),
-         where="llama-server's command line: --swa-full"),
+    Term("sliding-window cache", "Strongly recommended: start llama-server with --ctx-checkpoints 0, or with "
+         "--swa-full, for any model with sliding-window attention layers, Gemma 2, 3 and 4 among them. Without one of "
+         "them the server takes rollback checkpoints of those layers' cache, which cut a prompt into batches at "
+         "places that differ between the chat endpoint a harness talks to and the raw one tuningfork scores answers "
+         "with: one answer's deciding token had a chance of 0.15 on the first and 0.70 on the second. With either, "
+         "the two agree token for token. Checkpoints off cost nothing when prompts are not cached; --swa-full keeps "
+         "the whole sliding-window cache, at a cost in memory. tuningfork cannot see whether either is on.",
+         "recording", aka=("--swa-full", "swa-full", "SWA", "--ctx-checkpoints", "ctx-checkpoints"),
+         see=("server", "score", "prompt cache"),
+         where="llama-server's command line: --ctx-checkpoints 0, or --swa-full"),
     Term("prompt cache", "Strongly recommended: start llama-server with --no-cache-prompt. By default it answers a "
          "prompt from what it cached of an earlier one, and its Messages endpoint, which Claude Code uses, ignores a "
          "request asking otherwise. Then Claude Code's samples share the first one's processing, and a whole arm of "
          "forks can share one state: one resample swung from 16 in 20 to 1 in 10 on a behaviour with what the server "
-         "had run before. The flag makes every step process its whole prompt — slower, about 1.5 s per 14,000 tokens "
+         "had run before. A screen samples each proposal right after the original, so on such a server it favours "
+         "the proposals. The flag makes every step process its whole prompt — slower, about 1.5 s per 14,000 tokens "
          "on one RTX 5090. The server check measures whether the server reuses prompts.",
-         "recording", aka=("--no-cache-prompt", "cache_prompt", "fresh prompts"), see=("server", "sliding-window cache"),
+         "recording", aka=("--no-cache-prompt", "cache_prompt", "fresh prompts"),
+         see=("server", "screen", "sliding-window cache"),
          where="llama-server's command line: --no-cache-prompt; tuningfork connections check"),
     Term("skill", "A folder with a SKILL.md: the instructions a harness gives the model for one kind of task. "
          "What tuningfork helps you improve, one measured change at a time.",

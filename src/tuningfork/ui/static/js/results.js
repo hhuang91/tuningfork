@@ -134,7 +134,13 @@ export function forkingView(report, context = {}) {
       targetLine(report.target),
       h("div", { class: "verdict-big" }, flips
         ? `${plural(flips, "forced token")} changed what the model did`
-        : "No forced token changed what the model did"),
+        : "No forced token decided what the model did"),
+      // A null is what the probe could see, never that nothing changed.
+      !flips && report.per_arm
+        ? h("p", { class: "verdict-lines" }, report.detectable
+            ? `With ${report.per_arm} continuations a token, only a token that changes about ${report.detectable} of its ${report.per_arm} would show: a smaller shift can be real and go unseen.`
+            : `With ${report.per_arm} continuations a token, no change could reach significance: draw more.`)
+        : null,
       report.reproduced
         ? h("div", { class: "stack", style: { gap: "4px" } },
             h("span", null, h("span", { class: "muted" }, "the run's own tokens reached it  "), rateBar(report.reproduced)))

@@ -293,6 +293,26 @@ class TestReport:
         assert detectable(10, 15) == 7  # 10/10 against 3/10: p ≈ 0.0031, x15 < 0.05
         assert detectable(2, 30) is None
 
+    def test_a_probe_that_found_nothing_says_what_it_could_have_seen(self, monkeypatch):
+        """Measured on find-the-file: 'Wait' led to the search 4 times in 10 and 'According'
+        once, and the page said no forced token had changed what the model did. Ten
+        continuations a token see only a token that decides the step: a null says that much."""
+        from tuningfork.cli import _print_forking
+
+        search, stop = Outcome("tool_call", "search", "search"), Outcome("text", "text:stop", "stop")
+        arms = [{"position": 121, "id": 1, "text": "Wait", "p": 0.07, "original": True},
+                {"position": 121, "id": 2, "text": "According", "p": 0.80, "original": False}]
+        report = forking_report(arms, [[search] * 4 + [stop] * 6, [search] + [stop] * 9], per_arm=10,
+                                target=target_by_key("search", "search"))
+        assert report.positions[0].flips() == []
+        assert (report.to_json()["per_arm"], report.to_json()["detectable"]) == (10, detectable(10, 1)) == (10, 5)
+        console = Console(width=200, record=True)
+        monkeypatch.setattr("tuningfork.cli.console", console)
+        _print_forking(report)
+        printed = console.export_text()
+        assert "No forced token decided what the model did" in printed and "changed what the model did" not in printed
+        assert "only a token that changes about 5 of its 10 would show" in printed
+
 
 def test_the_command(store, served, monkeypatch):
     monkeypatch.setattr("tuningfork.cli.console", Console(width=220))

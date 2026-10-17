@@ -203,10 +203,13 @@ class TestGlossary:
             assert term.group in groups and set(term.see) <= set(names), term.term
             assert term.means.endswith((".", ".\"")) and term.means[0].isupper() or term.means[0] == "\"", term.term
 
-    def test_the_swa_full_recommendation_is_found_by_the_flag(self):
-        # A strong recommendation, measured: looked up by the flag a person types.
-        found = glossary.lookup("--swa-full")[0]
-        assert found.term == "sliding-window cache" and found.means.startswith("Strongly recommended")
+    def test_the_sliding_window_recommendation_is_found_by_either_flag(self):
+        # A strong recommendation, measured: looked up by the flag a person types. Either does,
+        # and checkpoints off cost no memory, so it comes first (docs/setup.md).
+        for flag in ("--swa-full", "--ctx-checkpoints"):
+            found = glossary.lookup(flag)[0]
+            assert found.term == "sliding-window cache" and found.means.startswith("Strongly recommended"), flag
+            assert "--ctx-checkpoints 0, or with --swa-full" in found.means
 
     def test_looked_up_by_its_name_first(self):
         assert [term.term for term in glossary.lookup("evals.json")] == ["spec"]

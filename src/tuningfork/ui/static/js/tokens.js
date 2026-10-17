@@ -202,7 +202,7 @@ export function heatmap(view, { onProbe = null, marks = null, focus = null, comp
   function probed(mark) {
     const arm = (found, label) => `${label} ${quoted(found.arm.text)} ${found.target.successes}/${found.target.total}`;
     return h("div", { class: "tk-probes" },
-      h("div", { class: "label" }, mark.flips ? "Probed here: a forced token changed what the model did" : "Probed here: no forced token changed what the model did"),
+      h("div", { class: "label" }, mark.flips ? "Probed here: a forced token changed what the model did" : "Probed here: no forced token decided what the model did"),
       mark.probes.map(({ experiment, position }) => h("div", { class: "tk-probe" },
         h("a", { class: "mono", href: `#/experiments/${experiment.id}?at=${position.position}` }, `probe ${short(experiment.id)}`),
         h("span", { class: "small muted" }, arm(position.baseline, "as run")),

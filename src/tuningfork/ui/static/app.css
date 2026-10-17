@@ -957,7 +957,7 @@ pre.code { color: var(--muted); }
 .verdict-block.tone-bad { border-color: var(--bad); background: var(--bad-soft); }
 .verdict-block.tone-warn { border-color: var(--warn); background: var(--warn-soft); }
 .verdict-big { font-size: 16px; font-weight: 650; }
-.verdict-block > .verdict-target, .verdict-block > .verdict-big { flex-basis: 100%; }
+.verdict-block > .verdict-target, .verdict-block > .verdict-big, .verdict-block > .verdict-lines { flex-basis: 100%; }
 .verdict-target { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 14px; }
 .verdict-target .label { margin: 0; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11.5px; }
 .verdict-target-text { font-weight: 600; overflow-wrap: anywhere; }

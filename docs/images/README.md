@@ -14,9 +14,9 @@ The pictures in the top-level README.
 | File | What it shows | Taken from |
 |---|---|---|
 | `ui-demo.gif` | A run opened, its write step chosen, an edited wording A/B-tested there, and the result: the edit, then the original arm against it, with intervals and Fisher's test. 30 seconds at most, no sound | `demo.py lab`, [step by step](#the-gif-step-by-step) |
-| `ui-guide.png` | The front page: what is set up, the loop from a skill to its next version, and the questions each way of looking at a step answers | real recordings |
-| `ui-run.png` | A run as one conversation, the write step open, the skill marked in the context | real recordings |
-| `ui-divergence.png` | A task's divergence page: where the runs split, how each behaviour fared, what the failed checks said | real recordings |
+| `ui-guide.png` | The front page from its title down: where you left off, what is set up, and the loop from a skill to its next version | real recordings |
+| `ui-run.png` | A step's exact context: every message as the model saw it, the skill marked in it, and the call it made | real recordings |
+| `ui-divergence.png` | A task's divergence page: where the runs split, how each behaviour fared, and the step that best predicts the verdict | real recordings |
 | `ui-ab.png` | An A/B's result at a step: the edit it tested, both arms with their intervals, and the declared target's test | real recordings |
 | `ui-tokens.png` | An answer's token heatmap, one uncertain token's alternatives open | real recordings |
 | `ui-refine.png` | A refinement: its target, then the evidence — each proposal's screen, the approved one's validation — and the proposals as diffs | real recordings |
@@ -25,7 +25,9 @@ The pictures in the top-level README.
 **Real recordings** are runs on a real model, so that the numbers on the page are ones the docs
 report. Those behind the hero, [`examples/find-the-file/`](../../examples/find-the-file/README.md)'s,
 suit the run, divergence, A/B and token shots best — its step 1, token [121] open on "Wait", is the
-figure's fork — and `tuningfork ui --home <their folder>` serves them read-only. The refinement
+figure's fork — and `tuningfork ui --home <their folder>` serves them read-only. The front page
+reads better through `tuningfork serve` over them, its server checked on Connections: what is set
+up then folds to one line, where read-only browsing says nothing can be started. The refinement
 shot is the guide's own Hermes refinement, `338504b1` in [`examples/README.md`](../../examples/README.md):
 the whole loop on one page, from its target through three proposals and their screen to a
 validated, approved edit. find-the-file has no held-out task, so no refinement of it could be

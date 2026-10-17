@@ -1785,8 +1785,10 @@ B  3/40   8%    [3%-20%]   search_files(pattern='data.csv', target='files')
 C  1/40   2%    [0%-13%]   execute_code(code='<ast:54d4c953>')
 D  1/40   2%    [0%-13%]   execute_code(code='<ast:852d48ec>')
 
-0 of 3 forced tokens changed what the model did (Holm-corrected over the 3 planned before sampling;
+No forced token decided what the model did (Holm-corrected over the 3 planned before sampling;
 α=0.05).
+With 10 continuations a token, only a token that changes about 6 of its 10 would show: a smaller
+shift can be real and go unseen (-n draws more).
 
 experiment 68e55106 · 3.6 min · `tuningfork experiment 68e55106` shows it again
 ```

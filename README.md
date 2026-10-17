@@ -294,16 +294,16 @@ writes it into the skill only when you approve it.
 pages, read-only, over recordings with no proxy running. Everything above is in it, and it can
 start the work as well as show it: a batch of runs, a resample, an A/B, a fork, a refinement.
 
-![The front page: what is set up, where you left off, the loop from a skill to its next version, and the questions each way of looking at a step answers](docs/images/ui-guide.png)
+![The front page: where you left off, what is set up, and the loop from a skill to its next version](docs/images/ui-guide.png)
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/ui-run.png" alt="A run as one conversation, with the skill marked in its context"></td>
+    <td width="50%"><img src="docs/images/ui-run.png" alt="A step's exact context: every message as the model saw it, the skill marked in it, and the call it made"></td>
     <td width="50%"><img src="docs/images/ui-divergence.png" alt="The divergence page: where a task's runs split, and how each behaviour fared"></td>
   </tr>
   <tr>
-    <td>A run as one conversation: each step's answer where it happened, and the skill marked in it line by line</td>
-    <td>Where a task's runs stop agreeing, how the runs that took each path fared, and what the failed checks said</td>
+    <td>A step's exact context: every message as the model saw it, the skill marked line by line, and the call it made</td>
+    <td>Where a task's runs stop agreeing, how the runs that took each path fared, and the step that best predicts the verdict</td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/ui-ab.png" alt="An A/B result: the edit it tested, each arm's rate with its interval, and Fisher's test"></td>
