@@ -59,7 +59,10 @@ export async function launcher() {
     replace(stepSelect);
     refresh();
     if (!runSelect.value) return;
-    const detail = await api.get(`/runs/${enc(runSelect.value)}`);
+    const wanted = runSelect.value;
+    const detail = await api.get(`/runs/${enc(wanted)}`);
+    // A slower answer for a run chosen before is not this one's steps (found in review).
+    if (runSelect.value !== wanted) return;
     // A fork's replayed steps were answered from the recording: nothing was sampled there.
     steps = detail.steps.filter((step) => !step.served);
     replace(stepSelect, steps.map((step) => h("option", { value: String(step.idx) }, `step ${step.idx} · ${step.outcome?.label ?? ""}`)));

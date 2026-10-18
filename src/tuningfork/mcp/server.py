@@ -321,7 +321,7 @@ class ToolServer:
             again = await anyio.to_thread.run_sync(lambda: jobs.get(job["id"], after=args.after))
             job = {**job, "events": (again or {}).get("events") or []}
         answer = await anyio.to_thread.run_sync(job_answer, self.context, job)
-        if args.after is not None:
+        if args.after is not None and not answer.data.get("held_out"):
             answer.data["events"] = [
                 {"seq": entry.get("seq"), **((entry.get("event") or {}))} for entry in (job.get("events") or [])[-20:]
             ]

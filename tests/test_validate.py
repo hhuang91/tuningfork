@@ -114,6 +114,13 @@ def test_a_proposal_is_validated_three_ways_and_the_gate_reads_the_record(stack,
     assert mentions(stack.store.home, MARKER) == []
     assert list(stack.temp.glob(f"{PREFIX}*")) == []
 
+    # The gate as judged now reads the proposal's latest screen: one since that did not keep it fails G0.
+    assert validate.gate_for(stack.store, refine.get(stack.store, made.id), record).passed
+    later = refine.prepare_refinement_screen(stack.store, made.id, [proposal.id], base_url=stack.url, n=3)
+    asyncio.run(execute_screen(stack.store, later))
+    gate = validate.gate_for(stack.store, refine.get(stack.store, made.id), record)
+    assert [check.id for check in gate.failed()] == ["G0"] and "did not keep it" in gate.failed()[0].reason
+
 
 def test_refused_before_anything_runs_when_what_it_would_measure_has_changed(stack):
     made, proposal = screened(stack)
@@ -130,6 +137,17 @@ def test_refused_before_anything_runs_when_what_it_would_measure_has_changed(sta
         KEYS["old"], "Write the totals to report.json, compactly."), rationale="r", proposer={"via": "person"},
         strict=False)
     assert refused(proposal=other.id).code == "not_screened"
+
+    # A later complete screen that did not keep it undoes the earlier survival (found in review:
+    # the survival was taken whatever came after). At 3 forks an arm nothing can survive.
+    later = refine.prepare_refinement_screen(stack.store, made.id, [proposal.id], base_url=stack.url, n=3)
+    assert asyncio.run(execute_screen(stack.store, later)).report.survivors() == []
+    dropped = refused()
+    assert dropped.code == "not_screened" and "did not survive its latest complete screen" in dropped.message
+    assert validate.latest_screen(stack.store, made, proposal.id)["survived"] is False
+    again = refine.prepare_refinement_screen(stack.store, made.id, [proposal.id], base_url=stack.url, n=5)
+    asyncio.run(execute_screen(stack.store, again))
+    assert validate.latest_screen(stack.store, made, proposal.id)["survived"] is True
 
     source = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
     original = source.read_bytes()

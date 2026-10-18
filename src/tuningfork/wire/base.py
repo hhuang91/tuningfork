@@ -143,9 +143,10 @@ def cap_output(
 
 
 def _within(value: Any, cap: int) -> bool:
-    """A limit of at most `cap` tokens. A negative one is none at all (llama.cpp's -1), and so
-    is null or a value that is not a whole number."""
-    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= cap
+    """A limit of at most `cap` tokens: any number, a float too — llama.cpp reads one by its
+    whole part, and found in review, 1024.0 read as no limit was raised to the cap. A negative
+    one is none at all (llama.cpp's -1), and so is null, or anything that is not a number."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= cap
 
 
 def uncapped(request: dict[str, Any], note: dict[str, Any] | None) -> dict[str, Any]:

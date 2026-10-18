@@ -28,6 +28,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   const recorded = Object.keys(run.skill_hashes || {}).length > 0;
   // Each step's section, by index: its marker, answer and details block, built on first open.
   const sections = new Map();
+  // The steps not recorded whose rows are drawn: a live update draws only those it has not
+  // (found in review: each one below a new step was drawn again, every update).
+  const gapsShown = new Set();
+  // The form asked for last: one asked for before it that loads later is not shown (found in
+  // review: "A/B a wording…", then "Resample…" before the A/B form had loaded, left the A/B
+  // form open while the address asked for the other — and on two steps, both open).
+  let asking = 0;
   const element = h("div", { class: "tl" });
   const rail = h("nav", { class: "tl-rail", "aria-label": "Steps of the run" });
   const seen = new IntersectionObserver((changes) => {
@@ -56,6 +63,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
 
   function draw() {
     sections.clear();
+    gapsShown.clear();
     seen.disconnect();
     verdictNode = verdictSection();
     replace(element, nodesFrom(0, () => true), verdictNode);
@@ -81,7 +89,10 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
             : [launch.check, h("span", { class: "muted" }, " — judged on the final reply")]
           : null],
         ["it printed", output
-          ? longText(output, { limit: 2000, lines: 30, open: true })
+          ? [result.check_output_cut
+              ? h("p", { class: "hint" }, `${result.check_output_cut.toLocaleString()} characters it printed before these are not kept: a verdict keeps the last 2,000, and only they are tallied.`)
+              : null,
+            longText(output, { limit: 2000, lines: 30, open: true })]
           : result.passed === false ? h("span", { class: "muted" }, "nothing") : null],
       ]),
       made.length
@@ -107,11 +118,15 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const names = toolNames([...entries.map((entry) => entry.message), ...steps.map((step) => step.output || {})]);
     const at = group(steps.filter(wanted), (step) => step.position);
     const spawned = group(threads.filter((thread) => thread.after !== null), (thread) => thread.after);
-    const gaps = [...state.missing].sort((a, b) => a - b);
+    const gaps = [...state.missing].filter((idx) => !gapsShown.has(idx)).sort((a, b) => a - b);
     const nodes = [];
     for (let index = from; index <= entries.length; index += 1) {
       for (const step of at.get(index) || []) {
-        while (gaps.length && gaps[0] < step.idx) nodes.push(gap(gaps.shift()));
+        while (gaps.length && gaps[0] < step.idx) {
+          const idx = gaps.shift();
+          gapsShown.add(idx);
+          nodes.push(gap(idx));
+        }
         nodes.push(stepSection(step, spawned.get(step.idx) || []));
       }
       if (index === entries.length) break;
@@ -369,17 +384,19 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       return;
     }
     settle(`${base}/${idx}?${asked.toString()}`);
+    const mine = ++asking;
     await found.ready;
-    if (!found.slot) return;
+    if (!found.slot || mine !== asking) return;
     // One form at a time: a second would be a second plan on screen.
     for (const other of sections.values()) if (other !== found && other.slot) replace(other.slot);
     replace(found.slot, loading("Preparing the form…"));
     try {
       const form = await startForm(start, { run, idx }, asked, { go });
+      if (mine !== asking) return;
       replace(found.slot, form || failure(new Error(`There is no form called ${start}.`)));
       found.slot.scrollIntoView({ block: "nearest" });
     } catch (error) {
-      replace(found.slot, failure(error, "Could not open the form"));
+      if (mine === asking) replace(found.slot, failure(error, "Could not open the form"));
     }
   }
 
@@ -395,7 +412,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const asked = new URLSearchParams(text);
     const start = asked.get("start");
     if (!start) {
-      // "Close": the form goes, the step stays open.
+      // "Close": the form goes, the step stays open — and one still loading never comes.
+      asking += 1;
       const found = sections.get(idx);
       if (found?.slot) replace(found.slot);
       settle(`${base}/${idx}`);

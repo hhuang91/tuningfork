@@ -80,6 +80,14 @@ class ForkReplay:
             self.departed = self.departed or mismatch
             return Decision(live=True, mismatch=mismatch)
 
+    def give_back(self, decision: Decision) -> None:
+        """A call decided at the fork's step, then never recorded (refused while paused, or
+        dropped at a breakpoint): its retry is the step again. Found in review: the fork was
+        live already, and the retry was recorded with no word that it went live there."""
+        if decision.at_step:
+            with self._lock:
+                self.live = False
+
     def served_note(self, served: Served) -> dict[str, Any]:
         return {
             "served_from": served.step.id,

@@ -166,22 +166,41 @@ export function logLine(entry) {
 export function watchJob(id, scope, onChange) {
   const state = { job: null, events: [], seq: 0, gap: false };
   let asking = null;
+  // Asked for again while an answer was on its way: that answer may be from before what asked.
+  let again = false;
+  // Its events are its own from the first one: they can come before the first answer does.
+  const mine = (jobId) => jobId === (state.job?.id ?? id);
 
   async function catchUp() {
-    if (asking) return asking;
+    if (asking) {
+      again = true;
+      return asking;
+    }
     asking = (async () => {
       try {
-        const job = await api.get(`/jobs/${enc(id)}?after=${state.seq}`);
-        const fresh = (job.events || []).filter((entry) => entry.seq > state.seq);
-        // Kept only so far back: what came before the oldest kept is gone for good.
-        if (job.first_seq && job.first_seq > state.seq + 1 && fresh.length) state.gap = true;
-        state.events.push(...fresh);
-        if (state.events.length > 300) state.events.splice(0, state.events.length - 300);
-        state.seq = Math.max(state.seq, job.seq || 0, ...fresh.map((entry) => entry.seq));
-        delete job.events;
-        delete job.first_seq;
-        state.job = job;
-        onChange(state);
+        let tries = 0;
+        do {
+          again = false;
+          const job = await api.get(`/jobs/${enc(id)}?after=${state.seq}`);
+          const fresh = (job.events || []).filter((entry) => entry.seq > state.seq);
+          // Kept only so far back: what came before the oldest kept is gone for good.
+          if (job.first_seq && job.first_seq > state.seq + 1 && fresh.length) state.gap = true;
+          state.events.push(...fresh);
+          if (state.events.length > 300) state.events.splice(0, state.events.length - 300);
+          state.seq = Math.max(state.seq, job.seq || 0, ...fresh.map((entry) => entry.seq));
+          delete job.events;
+          delete job.first_seq;
+          // An answer asked for before the job ended never makes an ended job run again
+          // (found in review: a job's page stayed on "running" until reloaded).
+          if (state.job && !ACTIVE.has(state.job.status) && ACTIVE.has(job.status) && tries < 20) {
+            tries += 1;
+            again = true;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            continue;
+          }
+          state.job = job;
+          onChange(state);
+        } while (again);
       } finally {
         asking = null;
       }
@@ -192,11 +211,11 @@ export function watchJob(id, scope, onChange) {
   scope.on((event) => {
     if (event.type === "snapshot") {
       catchUp(); // reconnected: whatever happened meanwhile
-    } else if (event.type === "job" && event.job.id === state.job?.id) {
+    } else if (event.type === "job" && mine(event.job.id)) {
       state.job = { ...state.job, ...event.job };
       onChange(state);
       if (!ACTIVE.has(event.job.status)) catchUp(); // the result, and the last events
-    } else if (event.type === "job_event" && event.job_id === state.job?.id) {
+    } else if (event.type === "job_event" && mine(event.job_id)) {
       if (event.seq === state.seq + 1) {
         state.events.push({ seq: event.seq, at: event.at, event: event.event });
         state.seq = event.seq;

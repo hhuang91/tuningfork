@@ -10,7 +10,8 @@ SKILL.md, in place, under a lock, in five steps that a crash between leaves reco
    failed ones too — and the gate), and who approved it. It stands when the runs are purged.
 2. The file as it was, kept beside the skill folder: `<skill>.history/SKILL.<stamp>-<sha8>.md`.
 3. The new text, written to a temporary file and moved over the old one, with the old one's
-   line endings and byte-order mark — once its bytes are seen to be the ones approved.
+   line endings — the one most of its lines use, where it mixes them — and byte-order mark,
+   once its bytes are seen to be the ones approved.
 4. An entry in `<skill>.changelog.md`, beside the skill folder: the diff, why, who proposed
    it, the evidence, who approved it.
 5. `applied.json` in the refinement, and the refinement marked approved.
@@ -51,13 +52,23 @@ def confirmation(proposal_id: str, target: Path, current: bytes) -> str:
     return _sha(f"{proposal_id}|{target}|".encode() + current)[:8]
 
 
+def line_endings(current: bytes) -> tuple[str, int, int]:
+    """The line ending a file's bytes use — "CRLF" only where more of its lines end so than
+    not — and how many lines end with CRLF and with LF. A file that mixes them is written back
+    with the one most of its lines use: found in review, one CRLF line among LF ones turned
+    every line CRLF."""
+    crlf = current.count(b"\r\n")
+    lf = current.count(b"\n") - crlf
+    return ("CRLF" if crlf > lf else "LF"), crlf, lf
+
+
 def render(text: str, current: bytes) -> bytes:
     """`text` as the file's bytes: with the line endings and byte-order mark the file has now,
     whatever the proposal's text was written with."""
     from tuningfork.experiment.skill import normalize_newlines
 
     body = normalize_newlines(text).lstrip("﻿")
-    if b"\r\n" in current:
+    if line_endings(current)[0] == "CRLF":
         body = body.replace("\n", "\r\n")
     data = body.encode("utf-8")
     return BOM + data if current.startswith(BOM) else data
@@ -165,7 +176,7 @@ class ApprovePlan:
             "proposal": self.proposal.id,
             "validation": self.record["id"],
             "target": self.target.to_json(),
-            "line_endings": "CRLF" if b"\r\n" in self.before else "LF",
+            "line_endings": line_endings(self.before)[0],
             "bom": self.before.startswith(BOM),
             "diff": self.diff,
             "gate": self.gate.to_json(),
@@ -208,6 +219,7 @@ def prepare_approve(
     from tuningfork.experiment.skill import normalize_newlines, text_sha256
     from tuningfork.ops import refine
     from tuningfork.ops.diff import line_diff
+    from tuningfork.ops.validate import latest_screen
     from tuningfork.ops.validate import validations as validation_records
 
     refinement = refine.get(store, refinement_ref)
@@ -225,7 +237,8 @@ def prepare_approve(
         raise OperationError(f"cannot read {found.path}: {error.strerror}", field="target") from None
     current = before.decode("utf-8", errors="replace")
     matches = text_sha256(current) == refinement.data["baseline"]["sha256"]
-    gate = judge(record, target_matches=matches, refinement_open=True, approved=False)
+    screened = latest_screen(store, refinement, proposal.id)
+    gate = judge(record, target_matches=matches, refinement_open=True, approved=False, latest_screen=screened)
     if not gate.passed:
         raise OperationError(
             f"validation {record['id'][:8]} does not meet the gate: "
@@ -238,10 +251,14 @@ def prepare_approve(
         raise OperationError("the edit changes nothing in this file", code="no_change", field="proposal")
     passing = sum(
         1 for each in records if each.get("proposal") == proposal.id
-        and judge(each, target_matches=matches, refinement_open=True, approved=False).passed
+        and judge(each, target_matches=matches, refinement_open=True, approved=False, latest_screen=screened).passed
     )
     mine = sum(1 for each in records if each.get("proposal") == proposal.id)
     warnings = list(gate.notes)
+    ending, crlf, lf = line_endings(before)
+    if crlf and lf:
+        warnings.append(f"the file mixes line endings, {crlf} CRLF and {lf} LF: the approval writes every line "
+                        f"with {ending}, the one most of its lines use")
     if mine > 1:
         warnings.append(f"proposal {proposal.id[:8]} was validated {mine} times, and {passing} of them "
                         f"{'meets' if passing == 1 else 'meet'} the gate: the approval keeps them all")
@@ -401,8 +418,11 @@ def _entry(approval: dict[str, Any]) -> str:
 
 
 def _append_changelog(target: Target, approval: dict[str, Any]) -> None:
-    marker = MARKER.format(id=approval["id"])
-    if target.changelog.is_file() and marker in target.changelog.read_text(encoding="utf-8"):
+    # Looked for as bytes: what a person wrote in the changelog may be in any encoding, and
+    # read as UTF-8 it stopped the approval, after the skill's file was written, and every
+    # repair of it (found in review). The marker is ASCII.
+    marker = MARKER.format(id=approval["id"]).encode("utf-8")
+    if target.changelog.is_file() and marker in target.changelog.read_bytes():
         return
     fresh = not target.changelog.exists()
     with open(target.changelog, "a", encoding="utf-8", newline="\n") as handle:
@@ -486,7 +506,7 @@ def execute_approve(
                 "target": str(target.path),
                 "before": {"sha256": _sha(plan.before)},
                 "after": {"sha256": _sha(plan.after), "text": plan.after.decode("utf-8")},
-                "line_endings": "CRLF" if b"\r\n" in plan.before else "LF",
+                "line_endings": line_endings(plan.before)[0],
                 "bom": plan.before.startswith(BOM),
                 "diff": plan.diff, "backup_name": backup.name, "code": plan.code,
             },
@@ -540,8 +560,9 @@ def approval(store: Store, refinement_ref: str) -> dict[str, Any] | None:
 
 def state(store: Store, refinement_ref: str) -> dict[str, Any] | None:
     """Where an approval stands: `applied`; or interrupted, with the file `not_written` or
-    `written`; or `diverged` — the file holds neither the bytes approved from nor those
-    approved, so nothing more is done to it. None without an approval."""
+    `written`, or applied with the refinement not yet marked (`unmarked`); or `diverged` —
+    the file holds neither the bytes approved from nor those approved, so nothing more is
+    done to it. None without an approval."""
     from tuningfork.ops import refine
 
     refinement = refine.get(store, refinement_ref)
@@ -553,6 +574,11 @@ def state(store: Store, refinement_ref: str) -> dict[str, Any] | None:
              "windows": intent.get("windows"), "changelog": intent["changelog"],
              "backup": str(Path(intent["history"]) / intent["backup_name"])}
     if (refinement.folder / APPLIED).is_file():
+        # The last two marks are two writes: between them the edit is applied and the
+        # refinement still open (found in review: read as applied, it was never marked).
+        if refinement.status == "open":
+            return {**shown, "state": "unmarked", "message": "the edit was written and its changelog entry made, "
+                    "but the approval was interrupted before the refinement was marked approved: repair marks it"}
         return {**shown, "state": "applied"}
     try:
         now = _sha(Path(intent["target"]).read_bytes())

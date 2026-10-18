@@ -289,7 +289,14 @@ def delete_scenario(home: Path | str, name: str) -> str:
         raise OperationError(f"no scenario called {name!r}", code="not_found")
     trash = root(home) / TRASH
     trash.mkdir(parents=True, exist_ok=True)
-    moved = trash / f"{name}-{time.strftime('%Y%m%d-%H%M%S')}"
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    moved = trash / f"{name}-{stamp}"
+    # Deleted again within the second: a folder of its own beside the first, never inside it,
+    # where `shutil.move` puts what is moved onto a folder (found in review).
+    again = 1
+    while moved.exists():
+        again += 1
+        moved = trash / f"{name}-{stamp}-{again}"
     shutil.move(str(target), str(moved))
     return str(moved)
 

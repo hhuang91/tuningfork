@@ -57,6 +57,24 @@ def _run(store: Store, reference: str) -> Any:
     return run
 
 
+def experiment_of_fork(store: Store, run: Any) -> str | None:
+    """The experiment a run is a sample of — a fork it drew, run to the end — or None. Such a
+    run goes to the trash with its experiment, never alone, as a thread goes with its run: its
+    verdict is the experiment's, kept in its sample. Found in review: a fork trashed, even
+    deleted for good, still counted in its screen; and taking single forks out of a finished
+    experiment would choose which of them count."""
+    launch = store.get_launch(run.launch_id) if run.launch_id else None
+    return launch.experiment_id if launch is not None and launch.experiment_id else None
+
+
+def _fork_alone(run: Any, experiment: str) -> OperationError:
+    return OperationError(
+        f"run {run.id[:8]} is a fork experiment {experiment[:8]} drew, one of its samples: it goes to the trash, "
+        "and is deleted, with that experiment",
+        hint=f"`tuningfork trash experiment {experiment[:8]}`", code="bad_params",
+    )
+
+
 def _experiments(store: Store, reference: str) -> tuple[str, list[Any]]:
     """An experiment, with the other arm of its A/B: (the id they are filed under, the arms)."""
     found = store.get_experiment(reference)
@@ -86,6 +104,7 @@ def _refinement(store: Store, reference: str) -> Any:
 def _refinement_busy(store: Store, refinement: Any) -> None:
     """Refused while work on a refinement runs — a proposer asked, a screen, a validation —
     since what it made would be left without its refinement."""
+    from tuningfork.ops.inspect import arm_status
     from tuningfork.ops.refine import made_by
     from tuningfork.ops.validate import validations
 
@@ -102,7 +121,7 @@ def _refinement_busy(store: Store, refinement: Any) -> None:
         )
     for experiment_id in made_by(store, refinement).experiments:
         experiment = store.get_experiment(experiment_id)
-        if experiment is not None and experiment.status == "running":
+        if experiment is not None and arm_status(experiment) == "running":
             raise OperationError(
                 f"a {experiment.kind} of refinement {refinement.id[:8]} is still running", hint="wait for it",
                 code="busy",
@@ -113,16 +132,22 @@ def _refinement_busy(store: Store, refinement: Any) -> None:
 
 
 def trash(store: Store, kind: str, reference: str) -> dict[str, Any]:
-    """Move one item to the trash. Refused while it, or work on it, is still running."""
+    """Move one item to the trash. Refused while it, or work on it, is still running — by a
+    process still alive: work whose process died was cut off (`ops.inspect.launch_status`)."""
+    from tuningfork.ops.inspect import arm_status, launch_status
+
     kind = _kind(kind)
     if kind == "run":
         run = _run(store, reference)
         if run.trashed_at is not None:
             return {"kind": kind, "id": run.id, "moved": [], "already": True}
+        experiment = experiment_of_fork(store, run)
+        if experiment:
+            raise _fork_alone(run, experiment)
         launch = store.get_launch(run.launch_id) if run.launch_id else None
-        if launch is not None and launch.status == "running":
+        if launch is not None and launch_status(launch) == "running":
             raise OperationError(f"run {run.id[:8]} is still running", hint="wait for it, or cancel its job", code="busy")
-        running = [e for e in store.experiments(run_id=run.id, limit=10_000) if e.status == "running"]
+        running = [e for e in store.experiments(run_id=run.id, limit=10_000) if arm_status(e) == "running"]
         if running:
             raise OperationError(
                 f"an experiment is running at step {running[0].step_idx} of run {run.id[:8]}",
@@ -132,7 +157,7 @@ def trash(store: Store, kind: str, reference: str) -> dict[str, Any]:
         return {"kind": kind, "id": run.id, "label": run.label, "moved": moved}
     if kind == "experiment":
         root, arms = _experiments(store, reference)
-        if any(arm.status == "running" for arm in arms):
+        if any(arm_status(arm) == "running" for arm in arms):
             raise OperationError(f"experiment {arms[0].id[:8]} is still running", hint="wait for it, or cancel its job", code="busy")
         if all(arm.trashed_at is not None for arm in arms):
             return {"kind": kind, "id": root, "moved": [], "already": True}
@@ -283,6 +308,11 @@ def purge(store: Store, kind: str, reference: str) -> Removal:
         run = _run(store, reference)
         if run.trashed_with != run.id:
             raise _not_in_trash(kind, run.id)
+        # One that went to the trash alone before forks went only with their experiments: its
+        # verdict would stay in the experiment. It comes back with `restore`.
+        experiment = experiment_of_fork(store, run)
+        if experiment:
+            raise _fork_alone(run, experiment)
         plan = store.purge_closure(runs=[run.id])
         removal.items.append({"kind": kind, "id": run.id, "label": run.label})
     else:
@@ -305,6 +335,16 @@ def empty(store: Store) -> Removal:
     found = store.trashed()
     runs = [run.id for run in found["runs"]]
     experiments = [experiment.id for experiment in found["experiments"]]
+    # A fork that went to the trash without the experiment that drew it (before forks went only
+    # with theirs) would leave its verdict standing there: it is restored, or its experiment goes too.
+    alone = [run for run in found["runs"] if (drew := experiment_of_fork(store, run)) and drew not in experiments]
+    if alone:
+        raise OperationError(
+            f"{len(alone)} fork run(s) in the trash went there without the experiment that drew them, whose "
+            f"verdict counts them: {', '.join(run.id[:8] for run in alone)}",
+            hint="restore each (`tuningfork trash restore <run>`), or move its experiment to the trash too",
+            code="bad_params",
+        )
     refinements = _trashed_refinements(store)
     for refinement in refinements:
         _refinement_busy(store, refinement)
@@ -340,9 +380,33 @@ def _not_in_trash(kind: str, item: str) -> OperationError:
     )
 
 
+def _refuse_running(store: Store, plan: Purge) -> None:
+    """Refused while anything that would go is still at work. A fork started before its
+    source went to the trash runs on, and so may an experiment at one of its steps: found in
+    review, deleting the source took them with it, the fork's folders included, while its
+    harness was still working there. Work whose process died was cut off, and holds nothing."""
+    from tuningfork.ops.inspect import arm_status, launch_status
+
+    for launch_id in plan.launches:
+        launch = store.get_launch(launch_id)
+        if launch is not None and launch_status(launch) == "running":
+            raise OperationError(
+                f"{launch.kind} {launch.label or launch_id[:8]} is still running, and would go with it",
+                hint="wait for it, or cancel its job", code="busy",
+            )
+    for experiment_id in plan.experiments:
+        experiment = store.get_experiment(experiment_id)
+        if experiment is not None and arm_status(experiment) == "running":
+            raise OperationError(
+                f"a {experiment.kind} at step {experiment.step_idx} of run {(experiment.run_id or '?')[:8]} is still "
+                "running, and would go with it", hint="wait for it, or cancel its job", code="busy",
+            )
+
+
 def _remove(store: Store, plan: Purge, removal: Removal) -> None:
     from tuningfork.snapshots import SnapshotError, Snapshots
 
+    _refuse_running(store, plan)
     store.purge(plan)
     removal.add(plan.to_json())
     snapshots = Snapshots(store.home)

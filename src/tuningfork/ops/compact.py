@@ -498,11 +498,13 @@ def to_end(found: dict[str, Any] | None) -> dict[str, Any] | None:
             [{"run": short(entry.get("run_id")), "why": clip(entry.get("why"), 200)} for entry in found.get("exclusions") or []],
             10,
         ) or None,
+        "timed_out": found.get("timeouts") or None,
         "did_at_step": distribution(found.get("actions")),
         "forks": capped(
             [
                 {"idx": fork.get("idx"), "run": short(fork.get("run_id")), "passed": fork.get("passed"),
-                 "left_out": clip(fork.get("exclusion"), 120)}
+                 **({"timed_out": "counted as a failure"} if fork.get("timed_out")
+                    else {"left_out": clip(fork.get("exclusion"), 120)})}
                 for fork in found.get("forks") or []
             ],
             20,
@@ -573,6 +575,7 @@ def _screen_arm(arm: dict[str, Any] | None) -> dict[str, Any] | None:
         "drawn": arm.get("drawn"),
         "planned": arm.get("planned"),
         "errors": arm.get("errors") or None,
+        "timeouts": arm.get("timeouts") or None,
         "p_value": arm.get("p_value"),
         "adjusted_p": arm.get("adjusted_p"),
         "direction": arm.get("direction"),
@@ -904,6 +907,7 @@ def screen_lines(found: dict[str, Any] | None) -> list[str]:
                          + ("" if complete else " so far"))
         if not complete:
             lines.append("  unfinished: rates so far")
+        lines.extend(_timeout_lines(found))
         lines.extend(checkpoint_lines(found))
         return lines
     against = "the original's forks" if found.get("reach") == "end" else "a fresh baseline"
@@ -938,8 +942,16 @@ def screen_lines(found: dict[str, Any] | None) -> list[str]:
                 "no edit can show a gain here — a failed run's step, or a screen to the end from several "
                 "checkpoints, measures it where the model went wrong"
             )
+    lines.extend(_timeout_lines(found))
     lines.extend(checkpoint_lines(found))
     return lines
+
+
+def _timeout_lines(found: dict[str, Any]) -> list[str]:
+    """The forks run to the end that timed out, arm by arm: counted among the failures."""
+    arms = [found.get("baseline") or {}, *(found.get("arms") or [])]
+    timed_out = [f"{arm.get('name')} {arm['timeouts']}" for arm in arms if arm.get("timeouts")]
+    return [f"  forks that timed out, counted as failures as the gate counts them: {', '.join(timed_out)}"] if timed_out else []
 
 
 def checkpoint_lines(found: dict[str, Any]) -> list[str]:
@@ -1028,6 +1040,7 @@ def tally(report: dict[str, Any], show: int = 10) -> dict[str, Any]:
             "judged": group.get("judged"),
             "failed": group.get("failed"),
             "silent": group.get("silent"),
+            "cut": group.get("cut") or None,
             "findings": capped([{
                 "finding": clip(finding.get("finding"), LABEL),
                 "rate": rate(finding.get("rate")),
@@ -1073,6 +1086,11 @@ def tally_lines(view: dict[str, Any]) -> list[str]:
             lines.append(f"  … {found['total'] - len(shown)} more finding(s)")
         if group.get("silent"):
             lines.append(f"  {group['silent']} failed run(s) whose check printed nothing")
+        if group.get("cut"):
+            from tuningfork.specs import CHECK_KEPT
+
+            lines.append(f"  {group['cut']} failed run(s) whose check printed more than the last {CHECK_KEPT:,} "
+                         "characters a verdict keeps: what each printed before them is not counted")
     who = "failed forks" if view.get("scope") == "screen" else "failed runs"
     lines.append(f"each count is the {who} whose check printed the line, once each however often; lines that differ "
                  "only in numbers or colour codes count as one, shown with # and <color>")

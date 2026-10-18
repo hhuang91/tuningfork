@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from tuningfork.analysis.conditions import TIMED_OUT, fork_counted
 from tuningfork.ops.common import Cancel, Cancelled, OperationError, Progress, emit
 from tuningfork.ops.trash import refuse_trashed
 from tuningfork.ops.experiments import load
@@ -440,6 +441,8 @@ class EndToEnd:
     #: Every fork of the arm, in order, as stored: (sample index, its run, whether the
     #: check passed, why it does not count).
     forks: list[tuple[int, str | None, bool | None, str | None]] = field(default_factory=list)
+    #: Forks that timed out: counted among the failures, as the gate counts them.
+    timeouts: int = 0
 
     def to_json(self) -> dict[str, Any]:
         """One arm of forks run to the end: its pass rate, what it left out, what the model
@@ -449,9 +452,10 @@ class EndToEnd:
             "counted": self.counted,
             "rate": self.rate.to_json() if self.rate else None,
             "exclusions": [{"run_id": run_id, "why": why} for run_id, why in self.exclusions],
+            "timeouts": self.timeouts,
             "actions": self.actions.to_json(),
             "forks": [
-                {"idx": idx, "run_id": run_id, "passed": passed, "exclusion": why}
+                {"idx": idx, "run_id": run_id, "passed": passed, "exclusion": why, "timed_out": why == TIMED_OUT}
                 for idx, run_id, passed, why in self.forks
             ],
         }
@@ -498,17 +502,20 @@ def arm_summary(store: Store, experiment: Any, outcomes: list[Any] = ()) -> EndT
     from tuningfork.experiment import experiment_distribution
 
     samples = store.samples(experiment.id)
-    counted = [s for s in samples if s.exclusion is None and s.passed is not None]
-    passed = sum(1 for s in counted if s.passed)
+    # A fork that timed out failed, as the gate counts it; the rest the check decided, or left out.
+    verdicts = [fork_counted(s.passed, s.exclusion) for s in samples]
+    counted = [verdict for verdict in verdicts if verdict is not None]
+    passed = sum(counted)
     return EndToEnd(
         experiment=experiment,
         passed=passed,
         counted=len(counted),
         rate=rate(passed, len(counted)) if counted else None,
-        exclusions=[(s.run_id, s.exclusion) for s in samples if s.exclusion],
+        exclusions=[(s.run_id, s.exclusion) for s, verdict in zip(samples, verdicts) if s.exclusion and verdict is None],
         actions=experiment_distribution(store, experiment),
         outcomes=list(outcomes),
         forks=[(s.idx, s.run_id, s.passed, s.exclusion) for s in samples],
+        timeouts=sum(1 for s in samples if s.exclusion == TIMED_OUT),
     )
 
 

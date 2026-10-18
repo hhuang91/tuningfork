@@ -29,6 +29,7 @@ from typing import Any, Iterable, Sequence
 
 from tuningfork.analysis.stats import rate
 from tuningfork.ops.common import OperationError
+from tuningfork.specs import CHECK_KEPT
 from tuningfork.store.db import Run, Store
 
 #: Numbers, as a check prints scores, counts and ratios: masked so that one finding is one key.
@@ -54,6 +55,17 @@ def finding_lines(output: str | None) -> list[str]:
         if text and text.lower() != "ok":
             lines.append(text)
     return lines
+
+
+def kept_output(output: str | None) -> str:
+    """A check's output as a verdict keeps it, its end (`specs.CHECK_KEPT` characters), to read
+    for findings. Cut there, its first line is most likely the end of a longer one: left out,
+    never counted as a finding of its own (found in review). One kept whole at just that
+    length, or cut where a line began, loses a whole line: one finding of one run."""
+    text = str(output or "")
+    if len(text) >= CHECK_KEPT and "\n" in text:
+        text = text.partition("\n")[2]
+    return text
 
 
 def findings(output: str | None) -> dict[str, str]:
@@ -110,13 +122,18 @@ def made_along(runs: Iterable[Run]) -> dict[str, dict[str, Any]]:
             seen["at_end"] = seen["at_end"] or entry["at_end"]
         for key, seen in first.items():
             stat = found.setdefault(key, {"checked": len(checked), "runs": [], "steps": [], "repaired": 0,
-                                          "passing": 0})
+                                          "passing": 0, "passing_kept": 0})
+            passed = bool((run.result or {}).get("passed"))
             stat["runs"].append(run.id)
             stat["steps"].append(seen["step"])
             stat["repaired"] += 0 if seen["at_end"] else 1
-            stat["passing"] += 1 if (run.result or {}).get("passed") else 0
+            stat["passing"] += 1 if passed else 0
+            stat["passing_kept"] += 1 if passed and seen["at_end"] else 0
     for stat in found.values():
         stat["every_run"] = len(stat["runs"]) == stat["checked"] and stat["checked"] >= 2
+        # A mistake every run made only where every passing run undid it before the end, as
+        # where_it_holds asks: one they all kept is no mistake the passing ones repaired.
+        stat["shared"] = stat["every_run"] and stat["passing"] > 0 and stat["passing_kept"] == 0
     return found
 
 
@@ -134,7 +151,7 @@ def made_text(made: dict[str, Any]) -> str:
     text = f"made by a call in {runs} of {made.get('checked')} run(s) the check was run along ({made_steps(made)})"
     if made.get("repaired"):
         text += f"; gone by the end in {made['repaired']}"
-    if made.get("every_run") and made.get("passing"):
+    if made.get("shared"):
         text += f" — every run made it, the {made['passing']} that passed too, and repaired it later"
     return text
 
@@ -153,7 +170,7 @@ def shared_mistakes(report: dict[str, Any]) -> list[dict[str, Any]]:
     for group in report.get("groups") or []:
         for finding in group.get("findings") or []:
             made = finding.get("made") or {}
-            if made.get("every_run") and made.get("passing"):
+            if made.get("shared"):
                 found.append(finding)
     return found
 
@@ -171,6 +188,9 @@ class TallyGroup:
     condition: dict[str, Any] | None = None
     #: For a screen's forks: the arm's name — "original", or a proposal's id.
     arm: str | None = None
+    #: Failed runs whose check printed more than a verdict keeps (`specs.CHECK_KEPT`): what
+    #: each printed before its end is not counted.
+    cut: int = 0
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -179,6 +199,7 @@ class TallyGroup:
             "failed": self.failed,
             "passed": rate(self.judged - self.failed, self.judged).to_json() if self.judged else None,
             "silent": self.silent,
+            "cut": self.cut,
             "findings": [finding.to_json() for finding in self.findings],
             "condition": self.condition,
             "arm": self.arm,
@@ -205,9 +226,14 @@ class Tally:
         }
 
 
+def was_cut(result: dict[str, Any] | None) -> bool:
+    """Whether a run's check printed more than its verdict keeps, its start cut (`runner`)."""
+    return bool((result or {}).get("check_output_cut"))
+
+
 def counted(label: str, judged: int, failed: Sequence[tuple[str, str | None]], **where: Any) -> TallyGroup:
     """One group's findings: each failed run's (id, check output), counted; the most common first,
-    ties in the order first seen."""
+    ties in the order first seen. `where` may say how many of them were cut (`cut`)."""
     by_key: dict[str, Finding] = {}
     silent = 0
     for run_id, output in failed:
@@ -250,10 +276,11 @@ def tally_task(store: Store, task_id: str, *, hidden: Iterable[str] = ()) -> Tal
     groups = []
     for condition in conditions(runs):
         judged = judged_runs(condition.runs)
-        failed = [(run.id, run.result.get("check_output")) for run in judged if run.result.get("passed") is False]
+        failing = [run for run in judged if run.result.get("passed") is False]
+        failed = [(run.id, kept_output(run.result.get("check_output"))) for run in failing]
         about = condition_json(condition)
         label = " · ".join(str(part) for part in (about["harness"], about["model"], about["skill_version"]) if part)
-        group = counted(label, len(judged), failed, condition=about)
+        group = counted(label, len(judged), failed, condition=about, cut=sum(1 for run in failing if was_cut(run.result)))
         along = made_along(judged)
         for finding in group.findings:
             finding.made = along.get(finding.key)
@@ -300,11 +327,12 @@ def tally_screen(store: Store, reference: str, *, hidden: Iterable[str] = ()) ->
     for name in dict.fromkeys(names):
         samples = [sample for experiment in by_arm[name] for sample in store.samples(experiment.id)]
         kept = [sample for sample in samples if sample.exclusion is None and sample.passed is not None]
-        failed = []
+        failed, cut = [], 0
         for sample in kept:
             if sample.passed is False and sample.run_id:
                 fork = store.get_run(sample.run_id)
-                failed.append((sample.run_id, (fork.result or {}).get("check_output") if fork else None))
+                failed.append((sample.run_id, kept_output((fork.result or {}).get("check_output")) if fork else None))
+                cut += bool(fork) and was_cut(fork.result)
         label = "the original" if name == BASELINE else f"proposal {name[:8]}" if name != "variant" else "the variant"
-        groups.append(counted(label, len(kept), failed, arm=name))
+        groups.append(counted(label, len(kept), failed, arm=name, cut=cut))
     return Tally(scope="screen", task_id=task_id, groups=groups, screen=group_id, run_id=found.run_id)

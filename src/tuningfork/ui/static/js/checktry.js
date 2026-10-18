@@ -139,6 +139,9 @@ function verdictView(trial) {
     h("div", { class: "controls" }, chip(trial.passed ? "pass" : "fail", trial.passed ? "ok" : "bad"),
       trial.returncode !== null && trial.returncode !== undefined ? h("span", { class: "muted small" }, `exit ${trial.returncode}`) : null,
       compared),
+    trial.output_cut
+      ? h("p", { class: "hint" }, `${trial.output_cut.toLocaleString()} characters it printed before these are not shown: a verdict keeps the last 2,000, and only they are tallied.`)
+      : null,
     trial.output ? h("pre", { class: "code" }, trial.output) : h("p", { class: "muted small" }, "The command printed nothing."),
     h("details", { class: "fold" }, h("summary", null, "What it judged"),
       h("div", { class: "label" }, "The reply"), longText(trial.reply || "(none)", { limit: 1200, lines: 16 }),

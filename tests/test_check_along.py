@@ -218,6 +218,22 @@ def test_a_check_that_prints_more_than_findings_places_none(store):
     assert first_made(store.get_run(flooded), "row") is None
 
 
+def test_a_line_every_run_kept_to_the_end_is_no_mistake_the_passing_ones_repaired(store):
+    """Found in review: a line every run's check printed from the call that wrote the file to the
+    end, the passing runs' too — its numbers masked, one finding — was named a mistake every run
+    made and the passing ones repaired later, and an agent sent to its call; where_it_holds already
+    asks that every passing run undo it."""
+    failed = judged(store, "a", passed=False, output="owners 0.5")
+    passing = judged(store, "b", passed=True, output="owners 1")
+    for run_id, states in ((failed, [(0, "report.json: missing"), (2, "owners 0.5"), (3, "owners 0.5")]),
+                           (passing, [(0, "report.json: missing"), (1, "owners 1"), (2, "owners 1")])):
+        store.annotate_run(run_id, result={**store.get_run(run_id).result, ALONG: along(states)})
+    report = tally_task(store, "t/1").to_json()
+    (finding,) = report["groups"][0]["findings"]
+    assert finding["made"]["every_run"] and finding["made"]["passing"] == 1
+    assert shared_mistakes(report) == [] and "repaired" not in finding["made_text"]
+
+
 def test_a_mistake_every_run_made_is_named_with_the_call_that_made_it(store):
     pytest.importorskip("mcp")
     from tuningfork.mcp.server import ToolServer

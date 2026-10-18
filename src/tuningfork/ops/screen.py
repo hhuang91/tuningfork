@@ -535,8 +535,11 @@ def choose_checkpoints(
 
 
 def judged_forks(store: Store, experiment: Any) -> int:
-    """An arm's forks the check decided: neither left out nor without a verdict."""
-    return sum(1 for sample in store.samples(experiment.id) if sample.exclusion is None and sample.passed is not None)
+    """An arm's forks that count: those the check decided, and those that timed out, which
+    count as failures (`analysis.conditions.fork_counted`)."""
+    from tuningfork.analysis.conditions import fork_counted
+
+    return sum(1 for sample in store.samples(experiment.id) if fork_counted(sample.passed, sample.exclusion) is not None)
 
 
 def original_forks(store: Store, refinement: str | None, checkpoint: Any, plan: Any) -> list[Any]:
@@ -720,6 +723,19 @@ def prepare_screen_to_end(
     original_counts: list[int] = []
     for found, plan, count in zip(kept, baselines, per_checkpoint):
         earlier = [] if fresh_original else original_forks(store, refinement, found, plan)
+        if len(kept) > 1 and not quick:
+            # Pooled over several checkpoints, the arms must weigh each alike: never more of the
+            # original's forks at one than this screen draws of each proposal there, or the
+            # original's rate leans to that prefix (found in review: twenty drawn at the first by
+            # an earlier screen of it alone, against five of the proposal's). Whole arms, oldest
+            # first, while they fit; what is short is drawn. At one checkpoint, all count.
+            fitted, judged = [], 0
+            for arm in earlier:
+                forks = judged_forks(store, arm)
+                if judged + forks <= count:
+                    fitted.append(arm)
+                    judged += forks
+            earlier = fitted
         have = sum(judged_forks(store, arm) for arm in earlier)
         reused.append(earlier)
         reused_judged.append(have)
@@ -855,6 +871,8 @@ def checkpoint_breakdown(store: Store, by_arm: dict[str, list[Any]], planned: Se
     """Each checkpoint a screen to the end drew from, with every arm's passes there: the
     pooled test is the verdict, and this is where it came from — an effect the arms agree
     on at every checkpoint, or one checkpoint's alone. Empty for a screen from one."""
+    from tuningfork.analysis.conditions import fork_counted
+
     if len(planned) < 2:
         return []
     found = []
@@ -865,9 +883,9 @@ def checkpoint_breakdown(store: Store, by_arm: dict[str, list[Any]], planned: Se
             at = [arm for arm in experiments if arm.run_id == entry.get("run") and arm.step_idx == entry.get("step")]
             if not at:
                 continue
-            judged = [sample for arm in at for sample in store.samples(arm.id)
-                      if sample.exclusion is None and sample.passed is not None]
-            arms[name] = {"passed": sum(1 for sample in judged if sample.passed), "of": len(judged)}
+            judged = [verdict for arm in at for sample in store.samples(arm.id)
+                      if (verdict := fork_counted(sample.passed, sample.exclusion)) is not None]
+            arms[name] = {"passed": sum(judged), "of": len(judged)}
         found.append({"run": entry.get("run"), "step": entry.get("step"), "verdict": entry.get("verdict"),
                       "n": entry.get("n"), "arms": arms})
     return found

@@ -239,11 +239,16 @@ export function outcome(o) {
 export function verdict(result) {
   if (!result) return null;
   let base;
-  if (result.passed === null || result.passed === undefined) base = chip("no check", "muted", "The task defines no check command");
+  // A run stopped before it finished has no verdict either, and its task may well have a
+  // check: it never ran (found in review).
+  const stopped = result.cancelled ? (result.exclusion || "stopped before it finished") : null;
+  if (stopped) base = chip("stopped", "muted", "Stopped before it finished: its check never ran");
+  else if (result.passed === null || result.passed === undefined) base = chip("no check", "muted", "The task defines no check command");
   else base = result.passed ? chip("pass", "ok") : chip("fail", "bad");
   if (result.usable === false) {
     let why = "Excluded from statistics";
-    if (result.timed_out) why = "The run timed out";
+    if (stopped) why = `${stopped[0].toUpperCase()}${stopped.slice(1)}: how it would have ended is unknown`;
+    else if (result.timed_out) why = "The run timed out";
     else if (result.skills_changed?.length) why = `The run changed ${result.skills_changed.join(", ")}`;
     else if (result.edited_steps?.length) why = `Edited at a breakpoint (step ${result.edited_steps.join(", ")}): the verdict measures the edit, not the skill`;
     return h("span", { class: "verdict" }, base, chip("not counted", "warn", why));

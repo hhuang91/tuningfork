@@ -322,6 +322,31 @@ def test_the_original_is_forked_once_a_refinement_and_a_quick_look_forks_the_pro
     assert at_step.value.field in ("quick", "refinement")
 
 
+def test_over_several_checkpoints_the_original_counts_no_more_at_one_than_each_proposal(stack):
+    """Found in review: a screen at one checkpoint drew the original's forks there, and a later
+    screen over three counted all of them at it and one at each other, so the original's pooled
+    rate leaned to the first prefix while the proposal weighed the three alike."""
+    plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                         model="m", harness="fake", n=3)
+    execute_batch(stack.store, plan)
+    runs = stack.store.runs(limit=5, task_id="tally-report/1")
+    made = refine.create(stack.store, runs[0].id, "write_file", target_check=True)
+    proposal = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="the check reads row_count",
+                                   proposer={"via": "person"})
+    alone = refine.prepare_refinement_screen(stack.store, made.id, [proposal.id], to_end=True, n=4,
+                                             base_url=f"{stack.url}/v1", workdir=stack.tmp / "forks")
+    execute_screen_to_end(stack.store, alone)
+
+    spread = refine.prepare_refinement_screen(stack.store, made.id, [proposal.id], to_end=True, n=3,
+                                              base_url=f"{stack.url}/v1", workdir=stack.tmp / "forks", checkpoints=3)
+    assert spread.per_checkpoint == [1, 1, 1]
+    assert spread.reused_judged == [0, 0, 0] and spread.original_counts == [1, 1, 1]
+    # At one checkpoint alone every fork drawn there counts: one prefix, nothing to lean to.
+    again = refine.prepare_refinement_screen(stack.store, made.id, [proposal.id], to_end=True, n=2,
+                                             base_url=f"{stack.url}/v1", workdir=stack.tmp / "forks")
+    assert again.reused_judged == [4] and again.original_counts == [0]
+
+
 def test_where_a_question_holds_among_a_screens_forks(stack):
     """Where none of the task's own runs passed, a screen's forks are asked instead, arm by arm:
     the original's forks wrote no row_count and failed, the proposal's wrote it and passed. And

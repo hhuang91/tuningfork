@@ -85,6 +85,13 @@ class TestEdits:
         edited = apply_edits(windows, [{"old": "2. Work out the totals.\n3. Write", "new": "2. Count the rows.\n3. Write"}])
         assert "2. Count the rows.\r\n3. Write" in edited and "\n" not in edited.replace("\r\n", "")
 
+    def test_a_windows_file_keeps_its_endings_where_indentation_is_ignored(self):
+        """Found in review: the lines matched once their indentation was ignored kept the last
+        one's carriage return as text, so its replacement ended that line in a bare line feed."""
+        windows = "# Skill\r\n\r\n  1. Read the CSV.\r\n  2. Write report.json.\r\n  3. Reply.\r\n"
+        edited = apply_edits(windows, [{"old": "1. Read the CSV.\n2. Write report.json.", "new": "1. Read the CSV.\n2. Write it."}])
+        assert edited == "# Skill\r\n\r\n  1. Read the CSV.\r\n  2. Write it.\r\n  3. Reply.\r\n"
+
 
 class TestDiff:
     def test_a_reworded_line_counts_once_with_its_numbers(self):

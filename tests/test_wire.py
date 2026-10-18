@@ -499,10 +499,19 @@ class TestOutputCap:
         assert capped["max_tokens"] == 100 and note["asked"] == {}
         assert uncapped(capped, note) == request  # the written limit taken out again
 
-    @pytest.mark.parametrize("limit", [-1, None, "lots", 2.5, True])
+    @pytest.mark.parametrize("limit", [-1, None, "lots", True, float("nan")])
     def test_no_limit_at_all_is_more_than_the_cap(self, limit):
         capped, note = cap_output(OPENAI, {"n_predict": limit, "messages": []}, 100)
         assert capped["n_predict"] == 100 and note["asked"] == {"n_predict": limit}
+
+    @pytest.mark.parametrize("limit", [1024.0, 2.5])
+    def test_a_limit_written_as_a_float_is_a_limit_all_the_same(self, limit):
+        """Found in review: 1024.0 read as no limit at all, and the cap raised it to 8192 — a
+        cap must never give a call more than it asked. llama.cpp reads a float by its whole part."""
+        request = {"max_tokens": limit, "messages": []}
+        assert cap_output(OPENAI, request, 8192) == (request, None)
+        capped, note = cap_output(OPENAI, {"max_tokens": 65536.0, "messages": []}, 8192)
+        assert capped["max_tokens"] == 8192 and note["asked"] == {"max_tokens": 65536.0}
 
     def test_each_limit_named_is_held_and_one_within_it_left(self):
         request = {"max_tokens": 50, "n_predict": -1, "messages": []}

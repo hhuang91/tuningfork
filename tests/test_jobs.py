@@ -239,6 +239,28 @@ class TestAsking:
         assert runner.submit("count", {"steps": 1}, request_id="form-7")["id"] == first["id"]
         assert len(store.jobs()) == 1
 
+    @pytest.mark.parametrize("asked", [{"request_id": "form-8"}, {"dedupe": True}], ids=["request_id", "dedupe"])
+    def test_the_same_work_asked_twice_at_once_is_one_job(self, store, asked):
+        # The second asked while the first was still being checked: found in review, both
+        # passed the check for the same work, and it started twice.
+        def slowly(context, params):
+            time.sleep(0.3)
+            return prepare(context, params)
+
+        runner = JobRunner(store, Bus(), Proxy(), catalog=kinds(slow=Kind("slow", BACKGROUND, "Slowly.", CountParams, slowly, execute)))
+        runner.proxy.paused = True
+        try:
+            made = []
+            asking = [threading.Thread(target=lambda: made.append(runner.submit("slow", {"steps": 1}, **asked))) for _ in range(2)]
+            for thread in asking:
+                thread.start()
+            for thread in asking:
+                thread.join()
+            assert len(made) == 2 and made[0]["id"] == made[1]["id"]
+            assert len(store.jobs()) == 1
+        finally:
+            runner.shutdown(10)
+
     def test_an_mcp_servers_secrets_are_kept_masked_and_given_to_the_job(self, store):
         """A header or an environment variable of an MCP server is a secret whatever its name, which
         no pattern would know: kept and shown masked — on the Jobs page, to whoever reads the jobs
@@ -323,6 +345,25 @@ class TestCancelling:
         assert stopped["status"] == "cancelled"
         assert 2 <= stopped["result"]["counted"] < 100
 
+    def test_a_queued_job_cancelled_twice_at_once_ends_once(self, runner, monkeypatch):
+        # The second cancel arrives after the first has taken the job out of its queue, before
+        # it has ended it: found in review, it took the job for queued still, and failed
+        # taking it out again.
+        runner.proxy.paused = True
+        job = runner.submit("count", {"steps": 1})
+        finish = runner._finish
+        second = []
+
+        def finish_after_another_cancel(held, status, **kwargs):
+            if not second:
+                second.append(runner.cancel(held.id))
+            finish(held, status, **kwargs)
+
+        monkeypatch.setattr(runner, "_finish", finish_after_another_cancel)
+        assert runner.cancel(job["id"])["status"] == "cancelled"
+        assert second[0]["status"] == "cancelled"
+        assert [kind for kind, payload in runner.bus.events if payload["job"]["status"] == "cancelled"] == ["job"]
+
     def test_cancelling_twice_or_after_the_end_changes_nothing(self, runner):
         job = runner.submit("count", {"steps": 1})
         settled(runner, job["id"])
@@ -359,6 +400,34 @@ class TestStopping:
         assert store.get_job(job.id).status == "interrupted"
         assert store.get_launch(launch.id).status == "interrupted"
         assert store.get_job(mine.id).status == "running"  # its process is alive: this one
+
+    def test_launches_a_batch_killed_hard_left_running_are_marked_cut_off(self, store):
+        """A batch killed hard says nothing of its launches. Found in review: they stayed running
+        for good. The next proxy marks those whose process is gone, and those recorded before
+        launches named their process whose calls it could never take up again."""
+        import json
+
+        from tuningfork.launches import LaunchThreads, request_path
+        from tests.helpers import as_response, text_message
+
+        dead = {"pid": 2**22 + 12345, "host": _host(), "start": 1}
+        killed, older, unstarted, mine = (
+            store.create_launch(kind="batch", label=f"t/1#b.{index}", task_id="t/1") for index in range(4)
+        )
+        request = {"model": "m", "messages": [{"role": "user", "content": "go"}]}
+        store.record_step(request=request, response=as_response(text_message("x")),
+                          assignment=LaunchThreads(older.id, label=older.label, task_id="t/1").assign(request_path(request)))
+        store._conn.execute("UPDATE launches SET owner = ? WHERE id = ?", (json.dumps(dead), killed.id))
+        store._conn.execute("UPDATE launches SET owner = NULL WHERE id IN (?, ?)", (older.id, unstarted.id))
+        store._conn.commit()
+
+        JobRunner(store, Bus(), Proxy(), catalog=kinds()).sweep()
+
+        assert store.get_launch(killed.id).status == "interrupted"
+        assert store.get_launch(killed.id).exit == {"reason": "the process running it ended before it did"}
+        assert store.get_launch(older.id).status == "interrupted"
+        assert store.get_launch(unstarted.id).status == "running"  # no telling: it may yet make its first call
+        assert store.get_launch(mine.id).status == "running"  # its process is alive: this one
 
 
 def _host() -> str:

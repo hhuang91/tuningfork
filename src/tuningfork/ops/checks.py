@@ -79,6 +79,8 @@ class CheckTrial:
     output: str
     #: The workspace's files as the check found them.
     found: list[str]
+    #: Characters cut from the output's start, as a verdict cuts them (`specs.CHECK_KEPT`).
+    cut: int = 0
 
     @property
     def agrees(self) -> bool | None:
@@ -93,6 +95,7 @@ class CheckTrial:
             "passed": self.passed,
             "returncode": self.returncode,
             "output": self.output,
+            "output_cut": self.cut,
             "found": self.found[:FILES_SHOWN],
             "found_more": max(0, len(self.found) - FILES_SHOWN),
             "reply": reply if len(reply) <= REPLY_SHOWN else f"{reply[:REPLY_SHOWN]}… (+{len(reply) - REPLY_SHOWN} chars)",
@@ -210,7 +213,8 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None 
         reply_file.write_text(plan.reply, encoding="utf-8")
         result = run_check(plan.check, workspace, plan.timeout, reply=plan.reply, reply_file=reply_file,
                            spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, keep=keep)
-    return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found)
+    return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found,
+                      cut=result.cut)
 
 
 def try_check(store: Store, check: Any = None, **options: Any) -> CheckTrial:

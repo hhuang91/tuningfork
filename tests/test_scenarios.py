@@ -82,6 +82,17 @@ class TestSaving:
         assert moved.parent == tmp_path / "scenarios" / ".trash" and (moved / "evals.json").is_file()
         assert scenarios.list_scenarios(type("S", (), {"home": tmp_path, "runs": lambda self, limit: []})()) == []
 
+    def test_deleted_twice_in_one_second_it_is_kept_twice_side_by_side(self, tmp_path, skill, monkeypatch):
+        # Found in review: the second went inside the first's folder in the trash, its name
+        # taken by the second, and a third would have been refused.
+        monkeypatch.setattr(scenarios.time, "strftime", lambda *args: "20261018-061500")
+        moved = []
+        for prompt in ("first", "second", "third"):
+            scenarios.save_scenario(tmp_path, "gone", {**spec(str(skill)), "skill_name": prompt}, etag=None)
+            moved.append(Path(scenarios.delete_scenario(tmp_path, "gone")))
+        assert len(set(moved)) == 3 and all(path.parent == tmp_path / "scenarios" / ".trash" for path in moved)
+        assert [json.loads((path / "evals.json").read_text(encoding="utf-8"))["skill_name"] for path in moved] == ["first", "second", "third"]
+
 
 class TestInputs:
     @pytest.fixture

@@ -259,6 +259,56 @@ class TestProxy:
         (run,) = recorder.store.launch_runs(launch.id)
         assert run.label == "t/1#b.0" and run.task_id == "t/1"
 
+    async def test_a_call_refused_while_paused_gives_its_step_number_to_its_retry(
+        self, proxy_client, proxy_app, mock_server, recorder, settle
+    ):
+        """Found in review: a call refused while tuningfork was paused kept its step number, so
+        its retry was recorded a step later, and a fork of a later step, which counts steps by
+        place, went live a call late."""
+        launch = recorder.store.create_launch(kind="batch", label="t/1#b.0", task_id="t/1")
+        mock_server.script(MockTurn(content="first"), MockTurn(content="second"))
+        assert (await proxy_client.post(launched(launch.id), json=chat(user("hi")))).status_code == 200
+        later = chat(user("hi"), {"role": "assistant", "content": "first"}, user("and then"))
+        proxy_app.state.gate.paused = True
+        try:
+            refused = await proxy_client.post(launched(launch.id), json=later)
+        finally:
+            proxy_app.state.gate.paused = False
+        assert refused.status_code == 503
+        assert (await proxy_client.post(launched(launch.id), json=later)).status_code == 200
+        await settle()
+        (run,) = recorder.store.launch_runs(launch.id)
+        assert [step.idx for step in recorder.store.steps(run.id)] == [0, 1]
+
+    async def test_a_forks_call_at_its_step_refused_while_paused_leaves_its_retry_the_step(
+        self, proxy_client, proxy_app, mock_server, recorder, settle
+    ):
+        """Found in review: the call at a fork's step, refused while tuningfork was paused, had
+        already marked the fork live, so its retry was recorded with no word that the fork went
+        live there, nor how its workspace compared with the source's."""
+        source = recorder.store.create_launch(kind="batch", label="t/1#b.0", task_id="t/1")
+        first = chat(user("hi"))
+        later = chat(user("hi"), {"role": "assistant", "content": "first"}, user("and then"))
+        mock_server.script(MockTurn(content="first"), MockTurn(content="second"), MockTurn(content="live"))
+        for request in (first, later):
+            assert (await proxy_client.post(launched(source.id), json=request)).status_code == 200
+        await settle()
+        (run,) = recorder.store.launch_runs(source.id)
+        fork = recorder.store.create_launch(kind="fork", label="t/1#b.0@1.0", task_id="t/1", source_run=run.id, source_step=1)
+        assert (await proxy_client.post(launched(fork.id), json=first)).status_code == 200
+        proxy_app.state.gate.paused = True
+        try:
+            refused = await proxy_client.post(launched(fork.id), json=later)
+        finally:
+            proxy_app.state.gate.paused = False
+        assert refused.status_code == 503
+        assert (await proxy_client.post(launched(fork.id), json=later)).status_code == 200
+        await settle()
+        (forked,) = recorder.store.launch_runs(fork.id)
+        steps = recorder.store.steps(forked.id)
+        assert [(step.idx, step.served) for step in steps] == [(0, True), (1, False)]
+        assert (steps[1].replay or {}).get("live_from") == recorder.store.steps(run.id)[1].id
+
     async def test_a_relay_launch_is_forwarded_and_gated_but_never_recorded(
         self, proxy_client, proxy_app, mock_server, recorder, settle
     ):

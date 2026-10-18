@@ -198,23 +198,36 @@ def judge(
     target_matches: bool | None = None,
     refinement_open: bool = True,
     approved: bool = False,
+    latest_screen: dict[str, Any] | None = None,
 ) -> Gate:
     """The gate a validation record meets, or not, check by check (G0–G8).
 
     `target_matches` is whether the skill's file still holds the text the refinement started
     from (None: not looked at); `refinement_open` and `approved` say where the refinement
-    stands. Everything else is read from the record."""
+    stands; `latest_screen` is the proposal's latest complete screen now
+    (`ops.validate.latest_screen`; None: not looked at, or none left), which G0 reads over the
+    one the record kept when validation began. Everything else is read from the record."""
     alpha = float(record.get("alpha", 0.05))
     minimum = int(record.get("minimum", 5))
     planned = record.get("planned") or {}
     checks: list[Check] = []
     notes: list[str] = []
 
-    screen = record.get("screen") or {}
+    # The latest screen of the proposal is the evidence: found in review, one it survived passed
+    # G0 after a later screen — more proposals in its family, or run to the end — had not kept it.
+    kept = record.get("screen") or {}
+    screen = latest_screen or kept
+    named = str(screen.get("screen") or "?")[:8]
+    if screen.get("survived"):
+        reason = f"it survived screen {named}" + (", its latest" if latest_screen else "")
+    elif latest_screen:
+        reason = f"its latest complete screen, {named}, did not keep it" + (
+            f" (it had survived {str(kept.get('screen') or '?')[:8]}, the latest when it was validated)"
+            if kept.get("survived") and kept.get("screen") != latest_screen.get("screen") else "")
+    else:
+        reason = "no complete screen found it to shift the target"
     checks.append(Check(
-        "G0", "survived a screen", bool(screen.get("survived")),
-        f"it survived screen {str(screen.get('screen') or '?')[:8]}" if screen.get("survived")
-        else "no complete screen found it to shift the target",
+        "G0", "survived a screen", bool(screen.get("survived")), reason,
         numbers={key: screen.get(key) for key in ("target", "baseline", "adjusted_p") if key in screen},
     ))
 
@@ -237,9 +250,15 @@ def judge(
         if not part:
             continue
         for arm in ("original", "edit"):
-            drawn = len(part.get(arm) or [])
-            if drawn < minimum:
-                short.append(f"{name} {arm}: {drawn} of at least {minimum}")
+            # Runs counted, not drawn (found in review): the ones the infrastructure broke are
+            # left out of every later check, so one counted run an arm met this and every later
+            # check judged that one run.
+            verdicts = part.get(arm) or []
+            counted = count(verdicts, minimum)
+            if counted.counted < minimum:
+                left = len(verdicts) - counted.counted
+                short.append(f"{name} {arm}: {counted.counted} of at least {minimum}"
+                             + (f" counted, {left} left out ({', '.join(sorted(set(counted.excluded)))})" if left else ""))
         found = {verdict.get("server_id") for arm in ("original", "edit") for verdict in part.get(arm) or []} - {None}
         if len(found) > 1:
             servers.append(name)

@@ -16,7 +16,7 @@ import httpx
 
 from tuningfork.access import ENV as TOKEN_ENV
 from tuningfork.access import HEADER as TOKEN_HEADER
-from tuningfork.access import MCP_ENV, read_token
+from tuningfork.access import MCP_ENV, MCP_TOKEN_FILE, TOKEN_FILE, read_token
 
 DEFAULT_PROXY = "http://127.0.0.1:8787"
 #: How long to wait for a connection. Locally one is made at once; under WSL's mirrored
@@ -46,6 +46,13 @@ class ControlError(RuntimeError):
         super().__init__(message)
         self.error = error
         self.status = status
+
+
+def _loopback(base_url: str) -> bool:
+    """Whether the proxy at `base_url` is on this machine, where its recordings folder is."""
+    from tuningfork.endpoints import is_loopback
+
+    return is_loopback(httpx.URL(base_url).host or "")
 
 
 def _code(response: httpx.Response) -> str | None:
@@ -111,12 +118,20 @@ class ControlClient:
         return os.environ.get(MCP_ENV) or self._discover("mcp_token_file")
 
     def _discover(self, name: str = "token_file") -> str | None:
+        """The token in the file the proxy names at `/health`: only a proxy on this machine,
+        and only a file of the name a recordings folder keeps that token under. Found in
+        review: a server anywhere else could name any file, and be sent what it holds."""
+        if not _loopback(self.base_url):
+            return None
         try:
             health = self._http.get(f"{self.base_url}/_tuningfork/health").json()
         except (httpx.HTTPError, ValueError):
             return None
         path = health.get(name) if isinstance(health, dict) else None
-        return read_token(path) if path else None
+        expected = MCP_TOKEN_FILE if name == "mcp_token_file" else TOKEN_FILE
+        if not isinstance(path, str) or os.path.basename(path) != expected:
+            return None
+        return read_token(path)
 
     def _call(self, method: str, path: str, **kwargs: Any) -> Any:
         response = self._send(method, path, **kwargs)

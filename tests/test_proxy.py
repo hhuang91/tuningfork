@@ -582,6 +582,39 @@ class TestRedaction:
 
 
 class TestGate:
+    async def test_a_harness_gone_before_its_answer_began_leaves_the_gate_free(
+        self, proxy_app, mock_server, recorder, settle
+    ):
+        """Found in review: the gate's slot was given back only where the answer's body ended,
+        and Starlette starts no body for a response whose start cannot be sent — a harness gone
+        before its answer began — so the slot stayed taken, and every later model call waited
+        at the gate until the proxy restarted. Driven as raw ASGI: an in-process client never
+        hangs up for real."""
+        mock_server.script(MockTurn(content="hello"))
+        body = json.dumps(simple_request()).encode()
+        scope = {
+            "type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"}, "http_version": "1.1",
+            "method": "POST", "scheme": "http", "path": CHAT, "raw_path": CHAT.encode(), "query_string": b"",
+            "root_path": "", "client": ("127.0.0.1", 50000), "server": ("127.0.0.1", 8787),
+            "headers": [(b"host", b"localhost:8787"), (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode())],
+        }
+        incoming = [{"type": "http.request", "body": body, "more_body": False}]
+
+        async def receive():
+            return incoming.pop(0) if incoming else {"type": "http.disconnect"}
+
+        async def send(message):
+            raise OSError("the client went away")  # uvicorn's ClientDisconnected is one
+
+        try:
+            await proxy_app(scope, receive, send)
+        except Exception:  # noqa: BLE001 - however Starlette passes the hang-up on
+            pass
+        assert proxy_app.state.gate.inflight == 0
+        await settle()
+        assert len(all_steps(recorder.store)) == 1  # and the exchange is recorded, as one abandoned mid-answer is
+
     async def test_pause_rejects_chat_but_still_relays_other_routes(
         self, proxy_client, proxy_app, recorder
     ):

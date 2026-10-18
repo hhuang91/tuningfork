@@ -118,6 +118,30 @@ class TestTheCli:
         assert json.loads(header.output) == {"Authorization": f"Bearer {app.state.access.mcp_token}"}
 
 
+def test_the_client_reads_only_a_token_file_of_a_proxy_on_this_machine(tmp_path, monkeypatch):
+    """Found in review: the client read whatever file a server's /health named, and sent what
+    it held back as the token — any file, to any server it was pointed at."""
+    import httpx
+
+    monkeypatch.delenv(ENV, raising=False)
+    secret = tmp_path / "id_ed25519"
+    secret.write_text("PRIVATE KEY", encoding="utf-8")
+    own = tmp_path / "home" / ".access-token"
+    own.parent.mkdir()
+    own.write_text("the-token", encoding="utf-8")
+
+    def client_for(url, named):
+        client = ControlClient(url)
+        client._http.close()
+        client._http = httpx.Client(base_url=f"{url}/_tuningfork/api", transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"token_file": str(named)})))
+        return client
+
+    assert client_for("http://127.0.0.1:8787", secret).token is None
+    assert client_for("http://198.51.100.7:8787", own).token is None  # not a proxy on this machine
+    assert client_for("http://127.0.0.1:8787", own).token == "the-token"
+
+
 def test_a_tasks_check_never_sees_the_token(tmp_path, monkeypatch):
     """A check is the spec's own shell command, and a spec can come from anywhere."""
     monkeypatch.setenv(ENV, "secret")

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -45,18 +46,47 @@ def root(home: Path | str) -> Path:
     return Path(home) / FOLDER
 
 
-def _write_once(path: Path, data: Any) -> None:
-    """Create `path` with `data`, failing if it exists: two writers never overwrite."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _durable(path: Path, text: str) -> None:
+    """A new file holding `text`, on disk before this returns."""
     with open(path, "x", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2, sort_keys=True)
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _beside(path: Path) -> Path:
+    return path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+
+
+def _write_once(path: Path, data: Any) -> None:
+    """Create `path` with `data`, failing if it exists: two writers never overwrite. There
+    whole or not at all: written beside it and linked into place. Found in review: cut off
+    half-written, by a crash or a value that would not serialize, a record read as made, and
+    a truncated approval.json refused every later approval."""
+    text = json.dumps(data, indent=2, sort_keys=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = _beside(path)
+    try:
+        _durable(temporary, text)
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            raise
+        except OSError:
+            _durable(path, text)  # a filesystem without links: in place, never over another
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _replace(path: Path, data: Any) -> None:
+    text = json.dumps(data, indent=2, sort_keys=True)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(temporary, path)
+    temporary = _beside(path)
+    try:
+        _durable(temporary, text)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _read(path: Path) -> Any:

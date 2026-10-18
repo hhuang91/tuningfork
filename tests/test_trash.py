@@ -157,6 +157,93 @@ class TestDeletedForGood:
         assert survivor.forked_from_run is None
         assert store.rebuild_request(store.steps(alike)[0])["messages"][0]["content"] == "go t/1#b.0"
 
+    def test_a_fork_still_running_holds_back_its_source_from_going_for_good(self, store):
+        # A fork started before its source went to the trash runs on. Found in review: deleting
+        # the source for good took the fork's run and launch with it, its folders included,
+        # while its harness was still at work there.
+        launch, source = launched(store, label="t/1#b.0")
+        fork_launch = store.create_launch(kind="fork", label="t/1#b.0@1.0", task_id="t/1", harness="hermes", source_run=source.id)
+        threads = LaunchThreads(fork_launch.id, label=fork_launch.label, task_id="t/1", main_role="fork")
+        request = chat(user("go t/1#b.0"))
+        store.record_step(request=request, response=as_response(text_message("x")), assignment=threads.assign(request_path(request)))
+        trash.trash(store, "run", source.id)
+
+        for deleting in (lambda: trash.purge(store, "run", source.id), lambda: trash.empty(store)):
+            with pytest.raises(OperationError) as refused:
+                deleting()
+            assert refused.value.code == "busy" and "still running" in refused.value.message
+        assert store.get_run(source.id) is not None and store.get_launch(fork_launch.id) is not None
+
+        store.end_launch(fork_launch.id)
+        assert trash.purge(store, "run", source.id).to_json()["removed"]["launches"] == 2
+
+    def test_work_whose_process_was_killed_holds_back_nothing(self, store):
+        # A batch killed hard never says how its launches ended. Found in review: each stayed
+        # running for good — its run could not go to the trash, nor the run a fork of it
+        # replayed be deleted for good — and nothing could mark it ended. Its process is gone.
+        import socket
+
+        from tuningfork.ops.timeline import launch_json
+
+        launch, source = launched(store, label="t/1#b.0")
+        fork_launch = store.create_launch(kind="fork", label="t/1#b.0@1.0", task_id="t/1", harness="hermes", source_run=source.id)
+        threads = LaunchThreads(fork_launch.id, label=fork_launch.label, task_id="t/1", main_role="fork")
+        request = chat(user("go t/1#b.0"))
+        store.record_step(request=request, response=as_response(text_message("x")), assignment=threads.assign(request_path(request)))
+        (fork,) = [run for run in store.launch_runs(fork_launch.id) if not run.is_thread]
+        assert store.get_launch(fork_launch.id).owner["pid"] == os.getpid()
+        with pytest.raises(OperationError, match="still running"):
+            trash.trash(store, "run", fork.id)  # its process alive, it holds as before
+
+        dead = {"pid": 2**22 + 12345, "host": socket.gethostname(), "start": 1}
+        store._conn.execute("UPDATE launches SET owner = ? WHERE id = ?", (json.dumps(dead), fork_launch.id))
+        store._conn.commit()
+        assert launch_json(store.get_launch(fork_launch.id))["status"] == "interrupted"
+        trash.trash(store, "run", fork.id)
+        trash.trash(store, "run", source.id)
+        assert trash.purge(store, "run", source.id).to_json()["removed"]["launches"] == 2
+
+    def test_a_fork_an_experiment_drew_goes_only_with_its_experiment(self, store):
+        # Found in review: a fork's run trashed alone, even deleted for good, still counted in its
+        # screen — its verdict is the experiment's, kept in its sample — and taking single forks
+        # out of a finished screen would choose which of them count.
+        launch, source = launched(store, label="t/1#b.0")
+        steps = store.steps(source.id)
+        experiment = store.create_experiment(kind="screen", arm="original", run_id=source.id, step_idx=1,
+                                             step_id=steps[1].id, request={"messages": []},
+                                             settings={"n": 1, "reach": "end"}, status="done")
+        fork_launch = store.create_launch(kind="fork", label="t/1#b.0@1.0", task_id="t/1", harness="hermes",
+                                          source_run=source.id, source_step=1, experiment_id=experiment.id, sample_idx=0)
+        threads = LaunchThreads(fork_launch.id, label=fork_launch.label, task_id="t/1", main_role="fork")
+        request = chat(user("go t/1#b.0"))
+        store.record_step(request=request, response=as_response(text_message("x")), assignment=threads.assign(request_path(request)))
+        store.end_launch(fork_launch.id)
+        (fork,) = [run for run in store.launch_runs(fork_launch.id) if not run.is_thread]
+        store.add_sample(experiment.id, 0, seed=None, response=None, outcome_kind="text", outcome_key="k",
+                         outcome_label="x", run_id=fork.id, passed=False)
+
+        with pytest.raises(OperationError) as refused:
+            trash.trash(store, "run", fork.id)
+        assert refused.value.code == "bad_params" and "with that experiment" in refused.value.message
+        assert refused.value.hint == f"`tuningfork trash experiment {experiment.id[:8]}`"
+
+        # One that went alone before forks went only with theirs comes back, and never goes alone for good.
+        store.trash_run(fork.id)
+        with pytest.raises(OperationError, match="with that experiment"):
+            trash.purge(store, "run", fork.id)
+        with pytest.raises(OperationError, match="without the experiment that drew them"):
+            trash.empty(store)
+        trash.restore(store, "run", fork.id)
+
+        # With its experiment it goes, its sample with it.
+        trash.trash(store, "experiment", experiment.id)
+        trash.purge(store, "experiment", experiment.id)
+        assert store.get_run(fork.id) is None and store.samples(experiment.id) == []
+
+        # A fork no experiment drew is a run of its own, and goes alone.
+        _, lone = launched(store, kind="fork", label="t/1#b.0@1.1", source_run=source.id)
+        assert trash.trash(store, "run", lone.id)["moved"]
+
     def test_an_experiment_goes_with_the_other_arm_of_its_ab(self, store):
         run = record_run(store, "r", [text_message("a")], task_id="t/1")
         step = store.steps(run)[0]

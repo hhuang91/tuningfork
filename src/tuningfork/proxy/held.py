@@ -300,6 +300,9 @@ class BreakpointPath:
             stepping = decision.action == "step"
 
         if self.gate.paused:
+            # Never recorded: its step number is free for the retry, as a drop's is.
+            if release is not None and assignment is not None:
+                release(assignment)
             return Delivery.failure(
                 wire,
                 503,

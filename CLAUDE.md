@@ -84,7 +84,10 @@ blobs, snapshot objects — with a two-minute grace for a recording in flight. A
 with what it made (`refine.made_by`): its screens, its validations' forks and fresh training
 runs, its proposals' saved texts and its folder — never the run it studies, nor the changelog
 and old versions an approval wrote beside the skill's folder. One in the trash is shown as it
-was and takes no new work (`refine.refuse_closed`).
+was and takes no new work (`refine.refuse_closed`). A fork an experiment drew goes to the
+trash, and is deleted, only with its experiment, as a thread goes with its run
+(`trash.experiment_of_fork`): its verdict is the experiment's, kept in its sample, and taking
+single forks out of a finished screen would choose which of them count.
 
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
@@ -152,12 +155,14 @@ then each proposal, and tests each against it — Fisher, Holm over the proposal
 before sampling; an unfinished screen has rates and no verdict. Run to the end
 (`prepare_screen_to_end`, `refine screen --to-end`, the `screen-to-end` job kind), each
 arm's samples are forks from the checkpoint through the harness and the task's check decides
-each (`compare_verdicts`): the only screen for a refinement whose target is the check
-(`--target-check`: a failure only the check can see, a computed property of what the run
-wrote), open to any other, and the record says which measured (`reach`). A fork measures the
-edit given the prefix it replays — the model's answers and what its tools did to the files — so
-an edit to a call before the step shows nothing there: a refinement toward the check, and a
-screen's plan, say when a call before the step changed the workspace (`inspect.replay_warning`;
+each (`compare_verdicts`) — one that timed out failed, as the gate counts it, here and in an
+A/B or a resample to the end (`analysis.conditions.fork_counted`): an edit that makes the
+agent loop must not drop out of its own count. It is the only screen for a refinement whose
+target is the check (`--target-check`: a failure only the check can see, a computed property
+of what the run wrote), open to any other, and the record says which measured (`reach`). A
+fork measures the edit given the prefix it replays — the model's answers and what its tools did
+to the files — so an edit to a call before the step shows nothing there: a refinement toward
+the check, and a screen's plan, say when a call before the step changed the workspace (`inspect.replay_warning`;
 findings §31.42: a screen after a delivery was booked saw neither an edit's gain nor its harm).
 And one prefix is one draw of the model's path, so the forks
 are drawn from several checkpoints by default (`--checkpoints`, `choose_checkpoints`): the
@@ -191,9 +196,12 @@ full runs of each held-out eval through a private proxy (`ops/private.py`) that 
 a 0700 temp folder outside the home and is deleted after — its calls reach the server through
 a relay launch the main proxy forwards and never records (`LaunchState.records`), and only
 verdicts leave. It is refused when the skill's file, its other files or the training eval
-changed since the checkpoint's run. Its record, `refinements/<id>/validations/<vid>.json`, is
+changed since the checkpoint's run, and unless the proposal survived its latest complete
+screen (`validate.latest_screen`: a screen of more proposals, or one run to the end, can undo
+an earlier survival). Its record, `refinements/<id>/validations/<vid>.json`, is
 what the gate reads (`analysis/validation.py`, G0–G8, each check with its counts and rule
-name; timeouts count as failures, the not-worse checks are labelled low-powered, and a
+name; G0 reads the latest screen again whenever the gate is judged; timeouts count as
+failures, the not-worse checks are labelled low-powered, and a
 held-out task the original fails must improve with the edit — G8, what caught a cheat). A job's
 plan, result and progress carry no held-out verdict; `refine.view(held_out=True)` — the CLI,
 the refinement's page — shows them, MCP's `show_refinement` never does.
@@ -203,8 +211,9 @@ the only thing that writes a skill's own file. The target is worked out again fr
 spec (a moved spec, or one leading elsewhere, needs `--spec`/`--target`), the gate must pass,
 and the person types an 8-character code naming the proposal, the file and its bytes now.
 Under a lock in `<skill>.history/`: `approval.json` written once with its evidence, the old
-file kept in `<skill>.history/`, an atomic replace keeping the file's line endings and BOM,
-an entry in `<skill>.changelog.md` — beside the skill folder, never inside it, which every
+file kept in `<skill>.history/`, an atomic replace keeping the file's line endings (the one
+most of its lines use, where it mixes them: the plan says so) and BOM, an entry in
+`<skill>.changelog.md` — beside the skill folder, never inside it, which every
 run copies — then `applied.json`. A crash between is reported by `refine show` and finished
 by `--repair`, unless the file changed since. Deleting for good what a refinement cites says
 so first (`refine.citations`); an approval keeps its evidence.
@@ -220,14 +229,18 @@ on against a real server: `TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run p
 real_server tests/test_real_server.py`; skipped otherwise.
 
 A harness tuningfork starts is a *launch*: it talks to `/_launch/<token>/…` on the proxy, so
-every call it makes — a subagent's included — is attributed to it as it arrives. A call the
-harness adapter names a side call (`side_call`: Hermes's background review, which replays
-the whole conversation after the answer) starts a side thread, never the task's next step,
-and is never the run's final reply. A fork is a launch whose calls before step k are answered
-from the recording (`tuningfork.replay`); the proxy's `--max-inflight` must be at least the
-`--concurrency` of forks run through it. A launch is laid out as the harness installs itself
-(an adapter's layout "install": Hermes in `~/.hermes`, a skill in the category folder it
-declares; Claude Code in `~/.claude`), because the model reads those paths; each launch
+every call it makes — a subagent's included — is attributed to it as it arrives. It records the
+process running it, as a job and an experiment do: one still marked running after that process
+died — a batch killed hard says nothing of its launches — reads as interrupted
+(`ops.inspect.launch_status`), holds nothing back from the trash, and the next proxy marks it
+so (`JobRunner.sweep`). A call the harness adapter names a side call (`side_call`: Hermes's
+background review, which replays the whole conversation after the answer) starts a side
+thread, never the task's next step, and is never the run's final reply. A fork is a launch
+whose calls before step k are answered from the recording (`tuningfork.replay`); the proxy's
+`--max-inflight` must be at least the `--concurrency` of forks run through it. A launch is
+laid out as the harness installs itself (an adapter's layout "install": Hermes in
+`~/.hermes`, a skill in the category folder it declares; Claude Code in `~/.claude`),
+because the model reads those paths; each launch
 records its layout, and a fork is laid out as its source was ("flat" before layouts were
 recorded) and set up as it was (a harness option changes what the model is told: a fork
 told otherwise departs from the recording at its first step; an MCP server, recorded by
