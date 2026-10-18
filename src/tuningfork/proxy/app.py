@@ -148,6 +148,24 @@ class Gate:
         self._ensure().release()
 
 
+class _Finishing(StreamingResponse):
+    """A forwarded answer that finishes its exchange however the response ends. Starlette
+    starts no body for a response whose start could not be sent — a harness gone before its
+    answer began, a cancelled sample — and a body never started never runs its `finally`:
+    found in review, the gate's slot then stayed taken, and every later model call waited at
+    the gate until the proxy restarted. `finish` is the body's own end, done at most once."""
+
+    def __init__(self, content: Any, finish: Any, **kwargs: Any) -> None:
+        super().__init__(content, **kwargs)
+        self._finish = finish
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._finish()
+
+
 def _should_parse_body(headers: Any) -> tuple[bool, bool]:
     """(parse at all, is it an event stream) for a response we are recording.
 
@@ -679,8 +697,30 @@ def create_app(
         #: bytes still reach the harness, and the step is recorded raw with this as its error.
         copy_failed: str | None = None
 
+        finished = False
+
+        async def finish() -> None:
+            """Once, however the exchange ends: the upstream closed, the gate's slot given back,
+            the step recorded — at the body's end, or at the response's when its body never
+            started (`_Finishing`)."""
+            nonlocal released, finished
+            if finished:
+                return
+            finished = True
+            timings.finish()
+            try:
+                await upstream.aclose()
+            finally:
+                if not released:
+                    released = True
+                    gate.release()
+            if recording:
+                # Never awaited here: see `spawn_recording`. Recording must not be able to
+                # break the response, and must not be killed by the harness hanging up either.
+                spawn_recording(_record_response())
+
         async def stream_body():
-            nonlocal released, copy_failed
+            nonlocal copy_failed
             try:
                 async for chunk in upstream.aiter_raw():
                     timings.mark_first_byte()
@@ -700,18 +740,7 @@ def create_app(
                                 )
                     yield chunk
             finally:
-                timings.finish()
-                try:
-                    await upstream.aclose()
-                finally:
-                    if not released:
-                        released = True
-                        gate.release()
-                if recording:
-                    # Never awaited here: see `spawn_recording`. Recording must not be able
-                    # to break the response, and must not be killed by the harness hanging
-                    # up either.
-                    spawn_recording(_record_response())
+                await finish()
 
         async def _record_response() -> None:
             response_json: dict[str, Any] | None = None
@@ -749,8 +778,9 @@ def create_app(
                 workspace_commit=workspace_commit,
             )
 
-        return StreamingResponse(
+        return _Finishing(
             stream_body(),
+            finish,
             status_code=upstream.status_code,
             headers=_forward_headers(upstream.headers, drop=("content-length",)),
         )
