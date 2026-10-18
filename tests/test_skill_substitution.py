@@ -281,6 +281,29 @@ class TestSwapped:
         assert (before, after) == (ORIGINAL, VARIANT)
         assert span["message_index"] == 0
 
+    def test_two_copies_in_one_text_come_back(self):
+        """Found in review: `substitute` swaps every copy, so where one tool result held the skill
+        twice, what differs ran from the first copy to the second and no one span held it."""
+        twice = {"role": "tool", "tool_call_id": "1", "content": f"{ORIGINAL}\n--- and again ---\n{ORIGINAL}"}
+        before, after, span = self.back(hermes_request(skill="(not preloaded)", extra_messages=[twice]))
+        assert (before, after) == (ORIGINAL, VARIANT)
+        assert span["message_index"] == 2
+
+    def test_two_escaped_copies_in_one_text_come_back_unescaped(self):
+        original = ORIGINAL.replace("Read the CSV.", 'Read the "CSV" — carefully.')
+        variant = VARIANT.replace("Read the CSV.", 'Read the "CSV" — carefully.')
+        viewed = {"role": "tool", "tool_call_id": "1", "content": json.dumps({"before": original, "after": original})}
+        before, after, span = self.back(hermes_request(skill="(not preloaded)", extra_messages=[viewed]), original, variant)
+        assert (before, after) == (original, variant)
+        assert span["encoding"] == "json"
+
+    def test_two_copies_and_another_change_in_one_text_give_nothing(self):
+        twice = {"role": "tool", "tool_call_id": "1", "content": f"{ORIGINAL}\n--- and again ---\n{ORIGINAL}"}
+        request = hermes_request(skill="(not preloaded)", extra_messages=[twice])
+        changed, spans = substitute(request, ORIGINAL, VARIANT)
+        changed["messages"][2]["content"] = changed["messages"][2]["content"].replace("and again", "once more")
+        assert swapped(request, changed, [asdict(span) for span in spans]) is None
+
     def test_windows_line_endings_come_back_plain(self):
         request = {"model": "m", "messages": [
             {"role": "user", "content": "Skill:\n" + ORIGINAL.replace("\n", "\r\n") + "ARGUMENTS: a"},

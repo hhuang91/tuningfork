@@ -317,7 +317,8 @@ def swapped(
     variant put where `spans` (as `substitute` recorded them) found the original: its inverse.
 
     Exact or nothing. A text that differs only inside one recorded span gives the original's
-    text there and what took its place, with that span; None when no text does — the arms
+    text there and what took its place, with that span; so do two or more copies in one text,
+    each swapped for the same text (`_swapped_together`). None when no text does — the arms
     were sent the same texts, or what differs is not one swap.
     """
     before_fields, after_fields = list(_fields(original)), list(_fields(variant))
@@ -329,10 +330,9 @@ def swapped(
         head = len(os.path.commonprefix([before, after]))
         room = min(len(before), len(after)) - head
         tail = len(os.path.commonprefix([before[::-1], after[::-1]])[:room])
-        for span in spans:
+        here = [span for span in spans if span.get("message_index") == index and span.get("part_index") == part]
+        for span in here:
             start, end = span.get("start"), span.get("end")
-            if span.get("message_index") != index or span.get("part_index") != part:
-                continue
             # Everything that differs lies inside the span: the rest is the same in both.
             if not (isinstance(start, int) and isinstance(end, int)
                     and 0 <= start <= head and len(before) - tail <= end <= len(before)):
@@ -344,7 +344,49 @@ def swapped(
                 except ValueError:
                     continue
             return normalize_newlines(texts[0]), normalize_newlines(texts[1]), span
+        together = _swapped_together(before, after, here)
+        if together is not None:
+            return together
     return None
+
+
+def _swapped_together(
+    before: str, after: str, spans: list[dict[str, Any]]
+) -> tuple[str, str, dict[str, Any]] | None:
+    """Two or more copies in one text, every one swapped for the same text: what differs runs
+    from the first copy to the last, so no one span holds it.
+
+    Copies of one form and encoding hold one text and took one text's place, and the text
+    between them is unchanged: the replacement's length follows from the two texts' lengths,
+    and the text rebuilt with it must be the variant's exactly. Copies of mixed forms give
+    None.
+    """
+    spans = sorted(spans, key=lambda span: span.get("start") if isinstance(span.get("start"), int) else -1)
+    if len(spans) < 2 or len({(span.get("form"), span.get("encoding")) for span in spans}) != 1:
+        return None
+    bounds = [(span.get("start"), span.get("end")) for span in spans]
+    if not all(isinstance(start, int) and isinstance(end, int) and 0 <= start <= end for start, end in bounds):
+        return None
+    if any(bounds[i][1] > bounds[i + 1][0] for i in range(len(bounds) - 1)) or bounds[-1][1] > len(before):
+        return None
+    copies = {before[start:end] for start, end in bounds}
+    size, left = divmod(len(after) - len(before) + sum(end - start for start, end in bounds), len(bounds))
+    if len(copies) != 1 or left or size < 0:
+        return None
+    replacement = after[bounds[0][0] : bounds[0][0] + size]
+    rebuilt, at = [], 0
+    for start, end in bounds:
+        rebuilt += [before[at:start], replacement]
+        at = end
+    if "".join(rebuilt) + before[at:] != after:
+        return None
+    texts = [copies.pop(), replacement]
+    if spans[0].get("encoding") == "json":
+        try:
+            texts = [json.loads(f'"{text}"') for text in texts]
+        except ValueError:
+            return None
+    return normalize_newlines(texts[0]), normalize_newlines(texts[1]), spans[0]
 
 
 def _get(obj: Any, path: Path) -> Any:

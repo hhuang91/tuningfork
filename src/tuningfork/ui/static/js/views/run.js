@@ -76,6 +76,30 @@ export async function runView(root, [reference, focus], scope) {
     }, 500);
   });
   scope.onLeave(() => clearTimeout(timer));
+
+  // A launch no job watches — a batch or a fork from the command line — saves its verdict with
+  // no event this page hears (found in review). While one is still to come the page asks itself:
+  // every few seconds while the launch runs, and a few times more once it has ended, since the
+  // verdict is written just after. A thread gets none of its own: the check judged its run.
+  let poller = null;
+  let after = 0;
+  const awaiting = () => launch && !launch.job_id && !latest.run.result
+    && !["subagent", "side", "thread"].includes(latest.run.role);
+  const poll = async () => {
+    poller = null;
+    if (!scope.active || !awaiting()) return;
+    try {
+      const next = await api.get(`/runs/${enc(run.id)}/timeline`);
+      latest = next;
+      if (scope.active) view.update(next);
+    } catch {
+      // the next try asks again
+    }
+    if (latest.ended) after += 1;
+    if (scope.active && awaiting() && after < 10) poller = setTimeout(poll, 3000);
+  };
+  if (awaiting()) poller = setTimeout(poll, 3000);
+  scope.onLeave(() => clearTimeout(poller));
 }
 
 function subLine({ run, steps }) {

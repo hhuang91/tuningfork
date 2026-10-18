@@ -114,11 +114,12 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     if (name) form.querySelector(`[name="${CSS.escape(name)}"]`)?.classList.add("field-invalid");
   }
 
-  function changed() {
-    // What the form says, unchanged since its plan came back: a text field's change as it loses
-    // the focus, after its input events asked already. Start stays as it is: disabled there, on
-    // the mousedown that moves the focus to Start, it lost the click that followed.
-    if (timer === null && !checking && JSON.stringify(current().params) === shown) return;
+  function changed(event) {
+    // An event that leaves what the form says as its plan came back: a text field's change as it
+    // loses the focus, after its input events asked already. Start stays as it is: disabled there,
+    // on the mousedown that moves the focus to Start, it lost the click that followed. A refresh
+    // has no event and always asks again: what the plan reads can change outside the form.
+    if (event && timer === null && !checking && JSON.stringify(current().params) === shown) return;
     start.disabled = true;
     note.textContent = "";
     clearTimeout(timer);
@@ -191,5 +192,5 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
   }
 
   check(); // the plan for the form as it opens
-  return { element: form, refresh: changed };
+  return { element: form, refresh: () => changed() };
 }

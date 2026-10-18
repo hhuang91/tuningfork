@@ -64,6 +64,39 @@ try {
   await until(() => page.eval(`!!document.querySelector(".groups .letter")`), "the distribution");
   check(await page.eval(`document.querySelectorAll(".groups .group").length === 1`), "one behaviour: the wrong keys, every time");
 
+  // A form asks for its plan as it opens, and again when the page refreshes it — after work
+  // elsewhere that the plan reads — but not for an event that changes nothing it says (found
+  // in review: the one-press fix below had stopped a refresh asking).
+  const asked = await page.eval(`(async () => {
+    const { planForm } = await import(new URL("js/forms.js", location.href).href);
+    const { api } = await import(new URL("js/api.js", location.href).href);
+    const post = api.post;
+    let dry = 0;
+    api.post = (path, body) => { if (body && body.dry_run) dry += 1; return post(path, body); };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 1200));
+    const field = document.createElement("input");
+    const params = { run: ${JSON.stringify(run.id)}, step: "1", n: 2, concurrency: 1, max_tokens: 4096,
+      prompt_cache: false, normalizers: [], temperature: null, top_p: null, top_k: null };
+    const { element, refresh } = planForm({ kind: "resample", fields: [field], read: () => params,
+      render: () => document.createElement("div"), onStarted: () => {} });
+    document.body.append(element);
+    try {
+      await settle();
+      const opened = dry;
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle();
+      const unchanged = dry;
+      refresh();
+      await settle();
+      return { opened, unchanged, refreshed: dry, ready: !element.querySelector("button").disabled };
+    } finally {
+      api.post = post;
+      element.remove();
+    }
+  })()`);
+  check(asked.opened === 1 && asked.unchanged === 1 && asked.refreshed === 2 && asked.ready,
+    `a form asks for its plan as it opens, not for an event that changes nothing, and again when refreshed (${JSON.stringify(asked)})`);
+
   // --- 2. An A/B of a wording edited in the page, with a lettered target ----------------------
   console.log("A/B a wording edited in the page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "A/B a wording at this step").click()`);
@@ -161,6 +194,17 @@ try {
   await page.click("Continue");
   const fork = await finished(forkId, 90000);
   check(fork.status === "done" && fork.result.length === 1 && fork.result[0].run_id, "a fork stopped at its step for a person, then ran on");
+
+  // A fork cancelled while it waits at its step keeps no verdict, and its page says it was
+  // stopped, and why — never that the task defines no check (found in review).
+  const heldId = (await post("/jobs", { kind: "fork", params: { run: launched, step: "1", hold: "step", n: 1, concurrency: 1 } })).id;
+  const heldRun = await until(async () => (await api("/holds"))[0]?.run_id, "the second fork, held at its step", 60000);
+  await post(`/jobs/${heldId}/cancel`);
+  check((await finished(heldId, 60000)).status === "cancelled", "a second fork, held at its step, cancelled");
+  await page.eval(`location.hash = "#/runs/${heldRun}"`);
+  const stoppedText = await until(() => page.eval(`document.querySelector("#verdict")?.textContent || ""`), "the cancelled fork's verdict");
+  check(stoppedText.includes("the run was stopped") && stoppedText.includes("Cancelled before it finished") && !stoppedText.includes("defines no check"),
+    `a cancelled run says it was stopped, and why (${stoppedText})`);
 
   await openStepOf(page, launched, 1, "resample&reach=end");
   await planShows(page, "the task's check passes");

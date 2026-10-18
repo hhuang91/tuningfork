@@ -455,6 +455,15 @@ function verdictOf(run, launch, ended) {
       : { headline: "No verdict yet", rail: "No verdict yet", detail: "The check runs when the harness finishes." };
   }
   if (result.passed === null || result.passed === undefined) {
+    // A launch stopped before it finished keeps no verdict either, and says why: its check was
+    // never run, since how it would have ended is unknown (found in review).
+    if (result.cancelled) {
+      const why = run.exclusion || result.exclusion || "stopped before it finished";
+      return {
+        tone: "tone-warn", headline: "No verdict: the run was stopped", rail: "Stopped",
+        detail: `${why[0].toUpperCase()}${why.slice(1)}: how it would have ended is unknown, so its check never ran, and every pass rate leaves it out.`,
+      };
+    }
     return { headline: "No verdict", rail: "No verdict", detail: result.passed === null ? "The task defines no check." : null };
   }
   const said = result.passed ? "passed" : "failed";
