@@ -85,6 +85,18 @@ def test_runs_the_infrastructure_broke_are_not_enough_runs():
     assert "training edit: 1 of at least 5 counted, 4 left out (a model call failed)" in reason
 
 
+def test_g0_reads_the_proposals_latest_screen_over_the_one_the_record_kept():
+    """Found in review: a proposal that survived one screen passed G0 after a later screen —
+    more proposals in its family, or one run to the end — had not kept it."""
+    later = {"survived": False, "screen": "99887766aa"}
+    dropped = by_id(judge(record(), target_matches=True, latest_screen=later))["G0"]
+    assert not dropped.passed and "its latest complete screen, 99887766, did not keep it" in dropped.reason
+    assert "it had survived abcdef12, the latest when it was validated" in dropped.reason
+    kept = by_id(judge(record(), target_matches=True, latest_screen={"survived": True, "screen": "1234abcd"}))["G0"]
+    assert kept.passed and kept.reason == "it survived screen 1234abcd, its latest"
+    assert by_id(judge(record(), target_matches=True))["G0"].passed  # not looked at: the record's own
+
+
 def test_no_held_out_task_no_screen_a_changed_file_or_an_approval_each_refuse():
     assert not by_id(judge(record(held_out=[]), target_matches=True))["G1"].passed
     assert not by_id(judge(record(screen={"survived": False}), target_matches=True))["G0"].passed

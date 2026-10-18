@@ -198,23 +198,36 @@ def judge(
     target_matches: bool | None = None,
     refinement_open: bool = True,
     approved: bool = False,
+    latest_screen: dict[str, Any] | None = None,
 ) -> Gate:
     """The gate a validation record meets, or not, check by check (G0–G8).
 
     `target_matches` is whether the skill's file still holds the text the refinement started
     from (None: not looked at); `refinement_open` and `approved` say where the refinement
-    stands. Everything else is read from the record."""
+    stands; `latest_screen` is the proposal's latest complete screen now
+    (`ops.validate.latest_screen`; None: not looked at, or none left), which G0 reads over the
+    one the record kept when validation began. Everything else is read from the record."""
     alpha = float(record.get("alpha", 0.05))
     minimum = int(record.get("minimum", 5))
     planned = record.get("planned") or {}
     checks: list[Check] = []
     notes: list[str] = []
 
-    screen = record.get("screen") or {}
+    # The latest screen of the proposal is the evidence: found in review, one it survived passed
+    # G0 after a later screen — more proposals in its family, or run to the end — had not kept it.
+    kept = record.get("screen") or {}
+    screen = latest_screen or kept
+    named = str(screen.get("screen") or "?")[:8]
+    if screen.get("survived"):
+        reason = f"it survived screen {named}" + (", its latest" if latest_screen else "")
+    elif latest_screen:
+        reason = f"its latest complete screen, {named}, did not keep it" + (
+            f" (it had survived {str(kept.get('screen') or '?')[:8]}, the latest when it was validated)"
+            if kept.get("survived") and kept.get("screen") != latest_screen.get("screen") else "")
+    else:
+        reason = "no complete screen found it to shift the target"
     checks.append(Check(
-        "G0", "survived a screen", bool(screen.get("survived")),
-        f"it survived screen {str(screen.get('screen') or '?')[:8]}" if screen.get("survived")
-        else "no complete screen found it to shift the target",
+        "G0", "survived a screen", bool(screen.get("survived")), reason,
         numbers={key: screen.get(key) for key in ("target", "baseline", "adjusted_p") if key in screen},
     ))
 

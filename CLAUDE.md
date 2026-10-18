@@ -193,9 +193,12 @@ full runs of each held-out eval through a private proxy (`ops/private.py`) that 
 a 0700 temp folder outside the home and is deleted after — its calls reach the server through
 a relay launch the main proxy forwards and never records (`LaunchState.records`), and only
 verdicts leave. It is refused when the skill's file, its other files or the training eval
-changed since the checkpoint's run. Its record, `refinements/<id>/validations/<vid>.json`, is
+changed since the checkpoint's run, and unless the proposal survived its latest complete
+screen (`validate.latest_screen`: a screen of more proposals, or one run to the end, can undo
+an earlier survival). Its record, `refinements/<id>/validations/<vid>.json`, is
 what the gate reads (`analysis/validation.py`, G0–G8, each check with its counts and rule
-name; timeouts count as failures, the not-worse checks are labelled low-powered, and a
+name; G0 reads the latest screen again whenever the gate is judged; timeouts count as
+failures, the not-worse checks are labelled low-powered, and a
 held-out task the original fails must improve with the edit — G8, what caught a cheat). A job's
 plan, result and progress carry no held-out verdict; `refine.view(held_out=True)` — the CLI,
 the refinement's page — shows them, MCP's `show_refinement` never does.

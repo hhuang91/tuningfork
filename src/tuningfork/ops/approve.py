@@ -219,6 +219,7 @@ def prepare_approve(
     from tuningfork.experiment.skill import normalize_newlines, text_sha256
     from tuningfork.ops import refine
     from tuningfork.ops.diff import line_diff
+    from tuningfork.ops.validate import latest_screen
     from tuningfork.ops.validate import validations as validation_records
 
     refinement = refine.get(store, refinement_ref)
@@ -236,7 +237,8 @@ def prepare_approve(
         raise OperationError(f"cannot read {found.path}: {error.strerror}", field="target") from None
     current = before.decode("utf-8", errors="replace")
     matches = text_sha256(current) == refinement.data["baseline"]["sha256"]
-    gate = judge(record, target_matches=matches, refinement_open=True, approved=False)
+    screened = latest_screen(store, refinement, proposal.id)
+    gate = judge(record, target_matches=matches, refinement_open=True, approved=False, latest_screen=screened)
     if not gate.passed:
         raise OperationError(
             f"validation {record['id'][:8]} does not meet the gate: "
@@ -249,7 +251,7 @@ def prepare_approve(
         raise OperationError("the edit changes nothing in this file", code="no_change", field="proposal")
     passing = sum(
         1 for each in records if each.get("proposal") == proposal.id
-        and judge(each, target_matches=matches, refinement_open=True, approved=False).passed
+        and judge(each, target_matches=matches, refinement_open=True, approved=False, latest_screen=screened).passed
     )
     mine = sum(1 for each in records if each.get("proposal") == proposal.id)
     warnings = list(gate.notes)

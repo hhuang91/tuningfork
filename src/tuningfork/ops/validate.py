@@ -100,27 +100,46 @@ class ValidatePlan:
         }
 
 
-def surviving_screen(store: Store, refinement: Any, proposal: Any) -> dict[str, Any]:
-    """The latest complete screen in which the proposal survived, as the gate keeps it."""
+def latest_screen(store: Store, refinement: Any, proposal_id: str) -> dict[str, Any] | None:
+    """The proposal's latest complete screen, and whether it kept the proposal: what the gate's
+    G0 reads. A quick look, which never has a verdict, and an unfinished screen are not it; a
+    screen in the trash is out of every list. None when no complete screen has screened it."""
     from tuningfork.ops import refine
 
-    for screen in refine.screens(store, refinement.id):
+    for screen in refine.screens(store, refinement.id):  # newest first
         report = screen["report"]
-        if not report.get("complete"):
+        if not report.get("complete") or report.get("quick"):
             continue
-        names = {name for name, pid in (screen.get("proposals") or {}).items() if pid == proposal.id}
-        for arm in report["arms"]:
-            if arm["name"] in names and arm.get("survives"):
-                return {
-                    "survived": True, "screen": screen["experiment"], "target": arm["target"],
-                    "baseline": report["baseline"]["target"], "adjusted_p": arm.get("adjusted_p"),
-                    "alpha": report.get("alpha"), "family": report.get("family"),
-                }
-    raise OperationError(
-        f"proposal {proposal.id[:8]} has not survived a complete screen",
-        hint="screen it first: `tuningfork refine screen <refinement> --proposals <proposal>`",
-        code="not_screened", field="proposal",
-    )
+        names = {name for name, pid in (screen.get("proposals") or {}).items() if pid == proposal_id}
+        arm = next((arm for arm in report["arms"] if arm["name"] in names), None)
+        if arm is not None:
+            return {
+                "survived": bool(arm.get("survives")), "screen": screen["experiment"], "target": arm["target"],
+                "baseline": report["baseline"]["target"], "adjusted_p": arm.get("adjusted_p"),
+                "alpha": report.get("alpha"), "family": report.get("family"),
+            }
+    return None
+
+
+def surviving_screen(store: Store, refinement: Any, proposal: Any) -> dict[str, Any]:
+    """The proposal's latest complete screen, as the gate keeps it: refused unless it survived
+    there. Found in review: an earlier screen it survived was taken, though a later one — with
+    more proposals in its family, or run to the end — had not kept it."""
+    found = latest_screen(store, refinement, proposal.id)
+    if found is None:
+        raise OperationError(
+            f"proposal {proposal.id[:8]} has not survived a complete screen",
+            hint="screen it first: `tuningfork refine screen <refinement> --proposals <proposal>`",
+            code="not_screened", field="proposal",
+        )
+    if not found["survived"]:
+        raise OperationError(
+            f"proposal {proposal.id[:8]} did not survive its latest complete screen, {found['screen'][:8]}",
+            hint="the latest screen of a proposal is its evidence: screen it again "
+                 "(`tuningfork refine screen <refinement> --proposals <proposal>`)",
+            code="not_screened", field="proposal",
+        )
+    return found
 
 
 def _others(tree: dict[str, str]) -> dict[str, str]:
@@ -413,14 +432,15 @@ def target_matches(refinement: Any) -> bool | None:
         return False
 
 
-def gate_for(refinement: Any, record: dict[str, Any]) -> Any:
-    """The gate a validation meets now: its record, the skill's file as it is, and where the
-    refinement stands (`analysis.validation.judge`)."""
+def gate_for(store: Store, refinement: Any, record: dict[str, Any]) -> Any:
+    """The gate a validation meets now: its record, the skill's file as it is, the proposal's
+    latest screen, and where the refinement stands (`analysis.validation.judge`)."""
     from tuningfork.analysis.validation import judge
 
     return judge(
         record, target_matches=target_matches(refinement),
         refinement_open=refinement.status == "open", approved=refinement.status == "approved",
+        latest_screen=latest_screen(store, refinement, record.get("proposal") or ""),
     )
 
 
@@ -441,7 +461,7 @@ def validation_views(store: Store, refinement: Any, *, held_out: bool = False) -
                 views.append({**record, "gate": approved["evidence"]["gate"], "counts": counts(record),
                               "approved": True})
             else:
-                views.append({**record, "gate": gate_for(refinement, record).to_json(), "counts": counts(record)})
+                views.append({**record, "gate": gate_for(store, refinement, record).to_json(), "counts": counts(record)})
         return views
     return [{**ValidateResult(record).to_json(), "approved": bool(approved and approved.get("validation") == record["id"])}
             for record in found]

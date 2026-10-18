@@ -3736,7 +3736,7 @@ def refine_validate(
     except OperationError as error:
         _refuse(error)
     record = result.record
-    gate = validate.gate_for(refine.get(store, plan.refinement.id), record)
+    gate = validate.gate_for(store, refine.get(store, plan.refinement.id), record)
     console.print()
     _print_validation({**record, "gate": gate.to_json()})
     rid, pid = plan.refinement.id[:8], plan.proposal.id[:8]
