@@ -599,6 +599,12 @@ def create_app(
                 notes["output_cap"] = cap_note
 
         if wire is not None and gate.paused:
+            # Never recorded, so its step number is free for the harness's retry, as a call
+            # dropped at a breakpoint gives it back. Found in review: the retry took the next
+            # number, and a fork of a later step, which counts steps by place, went live a call
+            # late.
+            if assignment is not None and launch is not None:
+                launch.release(assignment)
             return JSONResponse(
                 wire.error(
                     503,

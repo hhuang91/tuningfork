@@ -259,6 +259,27 @@ class TestProxy:
         (run,) = recorder.store.launch_runs(launch.id)
         assert run.label == "t/1#b.0" and run.task_id == "t/1"
 
+    async def test_a_call_refused_while_paused_gives_its_step_number_to_its_retry(
+        self, proxy_client, proxy_app, mock_server, recorder, settle
+    ):
+        """Found in review: a call refused while tuningfork was paused kept its step number, so
+        its retry was recorded a step later, and a fork of a later step, which counts steps by
+        place, went live a call late."""
+        launch = recorder.store.create_launch(kind="batch", label="t/1#b.0", task_id="t/1")
+        mock_server.script(MockTurn(content="first"), MockTurn(content="second"))
+        assert (await proxy_client.post(launched(launch.id), json=chat(user("hi")))).status_code == 200
+        later = chat(user("hi"), {"role": "assistant", "content": "first"}, user("and then"))
+        proxy_app.state.gate.paused = True
+        try:
+            refused = await proxy_client.post(launched(launch.id), json=later)
+        finally:
+            proxy_app.state.gate.paused = False
+        assert refused.status_code == 503
+        assert (await proxy_client.post(launched(launch.id), json=later)).status_code == 200
+        await settle()
+        (run,) = recorder.store.launch_runs(launch.id)
+        assert [step.idx for step in recorder.store.steps(run.id)] == [0, 1]
+
     async def test_a_relay_launch_is_forwarded_and_gated_but_never_recorded(
         self, proxy_client, proxy_app, mock_server, recorder, settle
     ):
