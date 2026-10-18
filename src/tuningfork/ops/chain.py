@@ -32,7 +32,9 @@ from tuningfork.store.db import Store
 
 #: Where chains are kept, under the recordings folder.
 CHAINS = "chains"
-#: Under a link's folder: the skill as its harness left it, the next link's start.
+#: Beside the links' folders, numbered as they are: the skill as each link's harness left it,
+#: the next link's start. Never inside a link's own folder, which goes with its run when that
+#: is deleted for good (found in review: so did the chain's final skill, with the last link's).
 LEFT = "skill-left"
 #: What a told chain says to the harness after each run, as one more user turn of the same
 #: session: the check's verdict and its output, nothing more — what a person who ran the
@@ -325,7 +327,7 @@ def execute_chain(
                 settings={"chain": {"id": plan.id, "link": index, "tell": plan.tell}},
                 tell=TOLD_TEMPLATE if plan.tell else None, launch_seconds=cap,
             )
-            link, left = _link(store, adapter, batch.outcomes[0], index, current, folder / str(index))
+            link, left = _link(store, adapter, batch.outcomes[0], index, current, folder / f"{LEFT}-{index}")
             link.cap_seconds = cap
             if link.launch_id:
                 link.spent_seconds = launch_spend(store, link.launch_id).wall_ms / 1000
@@ -369,7 +371,7 @@ def _link(
         after = fingerprint(hash_tree(adapter.skill_roots(home)))
         place = skill_places(adapter, home, given)[0]
         if (place / "SKILL.md").is_file():
-            left = folder / LEFT / given.name
+            left = folder / given.name
             shutil.copytree(
                 place, left, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".*", "__pycache__"),
             )

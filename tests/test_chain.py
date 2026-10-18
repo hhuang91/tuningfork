@@ -93,6 +93,22 @@ class TestChain:
         kinds = [event.kind for event in events]
         assert kinds.count("link") == 3 and kinds.count("run") == 3 and kinds.count("launch") == 3
 
+    def test_a_link_deleted_for_good_leaves_the_skill_it_left(self, stack):
+        # What a link left is the chain's: the next link's start, and the last link's the
+        # chain's final skill. Found in review: kept in the link's launch folder, it went when
+        # the link's run was deleted for good, the chain's final skill with the last link's.
+        from tuningfork.ops import trash
+
+        report = execute_chain(stack.store, prepare_chain(
+            stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.store.home / "batches",
+            model="m", harness="fake", n=2,
+        ))
+        for link in report.links:
+            trash.trash(stack.store, "run", link.run_id)
+            assert trash.purge(stack.store, "run", link.run_id).to_json()["folders"] == 1
+        assert all((Path(link.left) / "SKILL.md").is_file() for link in report.links)
+        assert (report.final_skill / "SKILL.md").read_text(encoding="utf-8").endswith("learned: round 2\n")
+
     def test_the_links_are_launches_of_one_group_that_say_which_chain(self, stack):
         plan = prepare(stack, n=2)
         report = execute_chain(stack.store, plan)
