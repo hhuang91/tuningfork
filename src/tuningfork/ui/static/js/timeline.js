@@ -28,6 +28,9 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   const recorded = Object.keys(run.skill_hashes || {}).length > 0;
   // Each step's section, by index: its marker, answer and details block, built on first open.
   const sections = new Map();
+  // The steps not recorded whose rows are drawn: a live update draws only those it has not
+  // (found in review: each one below a new step was drawn again, every update).
+  const gapsShown = new Set();
   const element = h("div", { class: "tl" });
   const rail = h("nav", { class: "tl-rail", "aria-label": "Steps of the run" });
   const seen = new IntersectionObserver((changes) => {
@@ -56,6 +59,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
 
   function draw() {
     sections.clear();
+    gapsShown.clear();
     seen.disconnect();
     verdictNode = verdictSection();
     replace(element, nodesFrom(0, () => true), verdictNode);
@@ -107,11 +111,15 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const names = toolNames([...entries.map((entry) => entry.message), ...steps.map((step) => step.output || {})]);
     const at = group(steps.filter(wanted), (step) => step.position);
     const spawned = group(threads.filter((thread) => thread.after !== null), (thread) => thread.after);
-    const gaps = [...state.missing].sort((a, b) => a - b);
+    const gaps = [...state.missing].filter((idx) => !gapsShown.has(idx)).sort((a, b) => a - b);
     const nodes = [];
     for (let index = from; index <= entries.length; index += 1) {
       for (const step of at.get(index) || []) {
-        while (gaps.length && gaps[0] < step.idx) nodes.push(gap(gaps.shift()));
+        while (gaps.length && gaps[0] < step.idx) {
+          const idx = gaps.shift();
+          gapsShown.add(idx);
+          nodes.push(gap(idx));
+        }
         nodes.push(stepSection(step, spawned.get(step.idx) || []));
       }
       if (index === entries.length) break;
