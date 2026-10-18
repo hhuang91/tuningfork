@@ -130,6 +130,25 @@ def test_rendering_follows_the_file_not_the_proposal():
     assert render("a\n", BOM + b"x\n") == BOM + b"a\n"
 
 
+def test_a_file_that_mixes_line_endings_is_written_with_the_one_most_of_its_lines_use(stack):
+    """Found in review: one CRLF line among LF ones turned every line of the skill CRLF. The
+    plan says what it will write before the code is typed."""
+    assert approve.line_endings(b"x\ny\nz\r\n") == ("LF", 1, 2)
+    assert render("a\nb\n", b"x\r\ny\r\nz\n") == b"a\r\nb\r\n"
+    assert render("a\nb\n", b"x\r\ny\n") == b"a\nb\n"  # as many each way: LF
+
+    text = stack.skill.read_bytes()
+    stack.skill.write_bytes(text.replace(b"\n", b"\r\n", 1))  # its first line alone
+    made, proposal = validated(stack)
+    plan = prepare_approve(stack.store, made.id, proposal.id)
+    shown = plan.to_json()
+    assert shown["line_endings"] == "LF"
+    assert any("mixes line endings, 1 CRLF and" in warning and "every line with LF" in warning
+               for warning in shown["warnings"]), shown["warnings"]
+    execute_approve(stack.store, plan, confirm=plan.code, front_end="cli")
+    assert b"\r\n" not in stack.skill.read_bytes() and KEYS["new"].encode() in stack.skill.read_bytes()
+
+
 def test_a_wrong_code_or_a_file_changed_since_it_was_shown_writes_nothing(stack):
     made, proposal = validated(stack)
     plan = prepare_approve(stack.store, made.id, proposal.id)

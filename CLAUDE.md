@@ -205,8 +205,9 @@ the only thing that writes a skill's own file. The target is worked out again fr
 spec (a moved spec, or one leading elsewhere, needs `--spec`/`--target`), the gate must pass,
 and the person types an 8-character code naming the proposal, the file and its bytes now.
 Under a lock in `<skill>.history/`: `approval.json` written once with its evidence, the old
-file kept in `<skill>.history/`, an atomic replace keeping the file's line endings and BOM,
-an entry in `<skill>.changelog.md` — beside the skill folder, never inside it, which every
+file kept in `<skill>.history/`, an atomic replace keeping the file's line endings (the one
+most of its lines use, where it mixes them: the plan says so) and BOM, an entry in
+`<skill>.changelog.md` — beside the skill folder, never inside it, which every
 run copies — then `applied.json`. A crash between is reported by `refine show` and finished
 by `--repair`, unless the file changed since. Deleting for good what a refinement cites says
 so first (`refine.citations`); an approval keeps its evidence.

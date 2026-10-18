@@ -10,7 +10,8 @@ SKILL.md, in place, under a lock, in five steps that a crash between leaves reco
    failed ones too — and the gate), and who approved it. It stands when the runs are purged.
 2. The file as it was, kept beside the skill folder: `<skill>.history/SKILL.<stamp>-<sha8>.md`.
 3. The new text, written to a temporary file and moved over the old one, with the old one's
-   line endings and byte-order mark — once its bytes are seen to be the ones approved.
+   line endings — the one most of its lines use, where it mixes them — and byte-order mark,
+   once its bytes are seen to be the ones approved.
 4. An entry in `<skill>.changelog.md`, beside the skill folder: the diff, why, who proposed
    it, the evidence, who approved it.
 5. `applied.json` in the refinement, and the refinement marked approved.
@@ -51,13 +52,23 @@ def confirmation(proposal_id: str, target: Path, current: bytes) -> str:
     return _sha(f"{proposal_id}|{target}|".encode() + current)[:8]
 
 
+def line_endings(current: bytes) -> tuple[str, int, int]:
+    """The line ending a file's bytes use — "CRLF" only where more of its lines end so than
+    not — and how many lines end with CRLF and with LF. A file that mixes them is written back
+    with the one most of its lines use: found in review, one CRLF line among LF ones turned
+    every line CRLF."""
+    crlf = current.count(b"\r\n")
+    lf = current.count(b"\n") - crlf
+    return ("CRLF" if crlf > lf else "LF"), crlf, lf
+
+
 def render(text: str, current: bytes) -> bytes:
     """`text` as the file's bytes: with the line endings and byte-order mark the file has now,
     whatever the proposal's text was written with."""
     from tuningfork.experiment.skill import normalize_newlines
 
     body = normalize_newlines(text).lstrip("﻿")
-    if b"\r\n" in current:
+    if line_endings(current)[0] == "CRLF":
         body = body.replace("\n", "\r\n")
     data = body.encode("utf-8")
     return BOM + data if current.startswith(BOM) else data
@@ -165,7 +176,7 @@ class ApprovePlan:
             "proposal": self.proposal.id,
             "validation": self.record["id"],
             "target": self.target.to_json(),
-            "line_endings": "CRLF" if b"\r\n" in self.before else "LF",
+            "line_endings": line_endings(self.before)[0],
             "bom": self.before.startswith(BOM),
             "diff": self.diff,
             "gate": self.gate.to_json(),
@@ -242,6 +253,10 @@ def prepare_approve(
     )
     mine = sum(1 for each in records if each.get("proposal") == proposal.id)
     warnings = list(gate.notes)
+    ending, crlf, lf = line_endings(before)
+    if crlf and lf:
+        warnings.append(f"the file mixes line endings, {crlf} CRLF and {lf} LF: the approval writes every line "
+                        f"with {ending}, the one most of its lines use")
     if mine > 1:
         warnings.append(f"proposal {proposal.id[:8]} was validated {mine} times, and {passing} of them "
                         f"{'meets' if passing == 1 else 'meet'} the gate: the approval keeps them all")
@@ -489,7 +504,7 @@ def execute_approve(
                 "target": str(target.path),
                 "before": {"sha256": _sha(plan.before)},
                 "after": {"sha256": _sha(plan.after), "text": plan.after.decode("utf-8")},
-                "line_endings": "CRLF" if b"\r\n" in plan.before else "LF",
+                "line_endings": line_endings(plan.before)[0],
                 "bom": plan.before.startswith(BOM),
                 "diff": plan.diff, "backup_name": backup.name, "code": plan.code,
             },
