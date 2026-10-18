@@ -215,6 +215,8 @@ try {
   const stoppedText = await until(() => page.eval(`document.querySelector("#verdict")?.textContent || ""`), "the cancelled fork's verdict");
   check(stoppedText.includes("the run was stopped") && stoppedText.includes("Cancelled before it finished") && !stoppedText.includes("defines no check"),
     `a cancelled run says it was stopped, and why (${stoppedText})`);
+  const headChips = await page.eval(`[...document.querySelectorAll(".page-head .chip")].map((c) => c.textContent).join(",")`);
+  check(headChips.includes("stopped") && !headChips.includes("no check"), `its page's head says so too, not "no check" (${headChips})`);
 
   await openStepOf(page, launched, 1, "resample&reach=end");
   await planShows(page, "the task's check passes");
