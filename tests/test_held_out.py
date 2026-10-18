@@ -99,6 +99,14 @@ class TestReads:
             await server.call(registry("all")[name], arguments)
         assert refused.value.code == "held_out"
 
+    async def test_a_scenarios_pass_rates_leave_its_held_out_task_out(self, recordings):
+        """Found in review: the listing counted each eval's runs, the held-out one's included."""
+        store, _, _ = recordings
+        server = ToolServer(store=store, jobs=NoJobs(), toolset="all")
+        listed = await server.call(registry("all")["list_scenarios"], {})
+        (demo,) = listed.data["scenarios"]
+        assert {result["task_id"] for result in demo["results"]} == {"tally-report/1"}
+
     async def test_its_experiment_is_refused_too(self, recordings):
         store, _, secret = recordings
         (experiment,) = store.experiments(run_id=secret)
@@ -110,6 +118,44 @@ class TestReads:
         with pytest.raises(OperationError) as tallied:
             await server.call(registry("all")["tally_failures"], {"screen": experiment.id[:8]})
         assert tallied.value.code == "held_out"
+
+
+class StoredJobs:
+    """The proxy's jobs as job_status reads them: one stored job, its events after a point."""
+
+    def __init__(self, job):
+        self.job = job
+
+    def get(self, job_id, after=None):
+        return self.job if self.job["id"].startswith(job_id) else None
+
+    def list(self, limit=20):
+        return [self.job]
+
+
+class TestJobs:
+    """A person's work on a held-out task, read back through job_status. Found in review: only
+    a job's own run and its first experiment were looked at, so a batch of the held-out eval
+    and the check along the held-out task's runs were shown whole, events and all."""
+
+    @pytest.mark.parametrize("kind, params", [
+        ("batch", {"spec": "spec.json", "eval": "2", "include_held_out": True}),
+        ("check-along", {"task": "tally-report/2"}),
+        ("batch", {"spec": "spec.json"}),  # its run alone says it: one recorded before the task was held out
+    ])
+    async def test_its_runs_result_and_events_are_never_shown(self, recordings, kind, params):
+        store, _, secret = recordings
+        job = {
+            "id": "f" * 32, "kind": kind, "status": "done", "params": params,
+            "progress": {"done": 1, "total": 1}, "links": {"runs": [secret]},
+            "result": {"runs": [{"run_id": secret, "passed": True, "made": [{"line": "SECRET-CHECK"}]}]},
+            "events": [{"seq": 1, "event": {"kind": "run", "run_id": secret, "check_output": "SECRET-CHECK"}}],
+        }
+        server = ToolServer(store=store, jobs=StoredJobs(job), toolset="all")
+        answer = await server.call(registry("all")["job_status"], {"job": "f" * 8, "after": 0})
+        assert "SECRET-CHECK" not in shown(answer) and secret[:8] not in shown(answer)
+        assert answer.data["held_out"] and "held-out task" in answer.lines[-1]
+        assert "events" not in answer.data and "result" not in answer.data and "links" not in answer.data
 
 
 class TestWork:

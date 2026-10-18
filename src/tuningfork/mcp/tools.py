@@ -973,7 +973,13 @@ def show_scenarios(context: Context, args: ScenariosArgs) -> Answer:
     if args.name:
         found = shown(read_scenario(context.store.home, args.name).to_json())
         return Answer(compact.fit(found, 16_000), [f"scenario {args.name!r}: a task spec start_batch can run"])
-    listed = [shown(scenario.to_json()) for scenario in list_scenarios(context.store)]
+    hidden = hidden_tasks(context)
+
+    def summary(found: dict[str, Any]) -> dict[str, Any]:
+        # A held-out task's pass rates are its verdicts, counted (found in review).
+        return {**found, "results": [result for result in found.get("results") or [] if result.get("task_id") not in hidden]}
+
+    listed = [summary(scenario.to_json()) for scenario in list_scenarios(context.store)]
     return Answer({"scenarios": compact.fit(listed, 16_000)}, [f"{len(listed)} saved scenario(s)"])
 
 
@@ -1214,18 +1220,55 @@ def job_brief(job: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in data.items() if value is not None}
 
 
+def held_out_job(context: Context, job: dict[str, Any]) -> bool:
+    """Whether a job's work is of a held-out task: a batch a person ran with its held-out
+    evals included, the task it names, the run it was started at, any run it made or any
+    experiment it drew. Found in review: only the run it was started at and its first
+    experiment were looked at, so a held-out batch and a task's check along its runs were
+    shown whole."""
+    params = job.get("params") or {}
+    if params.get("include_held_out"):
+        return True
+    hidden = hidden_tasks(context)
+    if not hidden:
+        return False
+    if params.get("task") in hidden:
+        return True
+    from tuningfork.ops.experiments import resolve_run
+
+    store = context.store
+    links = job.get("links") or {}
+    runs = []
+    for reference in (params.get("run"), *(links.get("runs") or [])):
+        if reference:
+            try:
+                runs.append(resolve_run(store, str(reference)))
+            except OperationError:
+                continue
+    for experiment in links.get("experiments") or []:
+        found = store.get_experiment(str(experiment))
+        if found is not None and found.run_id:
+            runs.append(store.get_run(found.run_id))
+    return any(run is not None and run.task_id in hidden for run in runs)
+
+
 def job_answer(context: Context, job: dict[str, Any]) -> Answer:
     """A job with its result, read the way `show_experiment` reads it, when it has one."""
     data = job_brief(job)
     if job.get("deduplicated"):
         data["deduplicated"] = True
-    links = {name: [compact.short(found) for found in ids] for name, ids in (job.get("links") or {}).items() if ids}
-    if links:
-        data["links"] = links
     progress = job.get("progress") or {}
     head = f"job {data['id']} ({job.get('kind')}): {job.get('status')}"
     if progress.get("total"):
         head += f", {progress.get('done') or 0} of {progress['total']}"
+    if held_out_job(context, job):
+        # Nothing of its work: no runs, no result, no error's words, no events (`held_out`).
+        data.pop("error", None)
+        data["held_out"] = True
+        return Answer(data, [head, "its results are of a held-out task: the person's evidence, never an agent's"])
+    links = {name: [compact.short(found) for found in ids] for name, ids in (job.get("links") or {}).items() if ids}
+    if links:
+        data["links"] = links
     lines = [head + (" — the same work was already under way, so it was not started again" if job.get("deduplicated") else "")]
     status = job.get("status")
     if status in ("queued", "running"):
@@ -1240,17 +1283,6 @@ def job_answer(context: Context, job: dict[str, Any]) -> Answer:
         error = job["error"]
         lines.append(f"failed: {error.get('message')}" + (f" — {error['hint']}" if error.get("hint") else ""))
     experiments = (job.get("links") or {}).get("experiments") or []
-    hidden = hidden_tasks(context)
-    if hidden:
-        reference = (job.get("params") or {}).get("run")
-        runs = [context.store.get_run(str(reference))] if reference else []
-        runs += [context.store.get_run(found.run_id) for found in
-                 (context.store.get_experiment(experiment) for experiment in experiments[:1])
-                 if found is not None and found.run_id]
-        if any(run is not None and run.task_id in hidden for run in runs):
-            data.pop("links", None)
-            lines.append("its results are of a held-out task: the person's evidence, never an agent's")
-            return Answer(data, lines)
     result = job.get("result")
     if experiments and status in ("done", "cancelled", "interrupted"):
         from tuningfork.ops.inspect import experiment_report
