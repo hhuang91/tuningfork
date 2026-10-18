@@ -116,6 +116,19 @@ export class Page {
     })()`);
   }
 
+  // Type into a field as a person does: focused, what it says replaced, and left focused, so its
+  // change event fires when the focus moves on, as the person's next click moves it.
+  async enter(selectorExpression, value) {
+    await this.eval(`(() => {
+      const field = ${selectorExpression};
+      if (!field) throw new Error("no such field");
+      field.focus();
+      field.select();
+      return true;
+    })()`);
+    await this.send("Input.insertText", { text: value });
+  }
+
   click(buttonText, scope = "document") {
     return this.eval(`(() => {
       const button = [...${scope}.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(${JSON.stringify(buttonText)}) && !b.disabled);
@@ -123,6 +136,22 @@ export class Page {
       button.click();
       return true;
     })()`);
+  }
+
+  // Press a button with the mouse, as a person does. `click` calls it from script, which moves no
+  // focus; a press moves it first, and a button that what follows disables never gets the click.
+  async press(buttonText, scope = "document") {
+    const at = await this.eval(`(() => {
+      const button = [...${scope}.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(${JSON.stringify(buttonText)}) && !b.disabled);
+      if (!button) throw new Error("no enabled button " + ${JSON.stringify(buttonText)});
+      button.scrollIntoView({ block: "center", behavior: "instant" });
+      const box = button.getBoundingClientRect();
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    })()`);
+    await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    for (const type of ["mousePressed", "mouseReleased"]) {
+      await this.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1 });
+    }
   }
 
   text(selector) {

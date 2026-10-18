@@ -75,15 +75,17 @@ try {
     (await page.eval(`document.querySelector('[name="variant_text"]').value`)).replace("Write the totals to report.json.", "Write the totals to report.json, using the keys row_count and amount_total."));
   check((await page.text(".editor-head .muted")).startsWith("1 line changed"), "the editor counts the changed line");
   const variantName = `browser-${Date.now().toString(36)}`;
-  await page.type(`document.querySelector('[name="variant_name"]')`, variantName);
+  // Typed for real, and left focused until Start is pressed: its change fires as the press moves the focus.
+  await page.enter(`document.querySelector('[name="variant_name"]')`, variantName);
   await page.eval(`document.querySelector('[name="target"][value="A"]').click()`);
   check(await page.eval(`document.querySelector('[name="target_kind"][value="letter"]').checked`), "picking a behaviour picks the lettered target");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "6");
   await planShows(page, "6 samples per arm");
   check(await page.eval(`document.querySelector(".plan-preview").textContent.includes(${JSON.stringify(`${variantName}.md`)})`), "the plan names where the variant will be saved");
   await startButtonReady(page, "Start the A/B");
-  await page.click("Start the A/B");
-  const abId = await until(async () => jobIdIn(await page.eval("location.hash")), "the A/B's job page");
+  await page.press("Start the A/B");
+  const abId = await until(async () => jobIdIn(await page.eval("location.hash")), "the A/B's job page, after one press of Start", 5000);
+  check(!!abId, "one press of Start starts the A/B, the name just typed still focused as it is pressed");
   const ab = await finished(abId);
   const target = ab.result?.comparison?.target;
   check(ab.status === "done" && target && target.original.successes === 6 && target.variant.successes === 0 && target.significant,

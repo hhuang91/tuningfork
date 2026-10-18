@@ -60,7 +60,9 @@ node tests/browser/jobs_ui.mjs
 
 It checks that a resample started from a step on the run's conversation runs through the
 proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter as its
-target, shows the known shift, saves the variant only when it starts, and leads its page with the
+target, starts at one press of Start with the mouse, the name just typed still focused (the change
+event as the focus leaves it once lost that click), shows the known shift, saves the variant only
+when it starts, and leads its page with the
 edit it tested, then the target and which way the variant moved it — in the accent's colour, never
 a check's green — with each behaviour badged target or not target; that no target is
 chosen for you; that a task runs again from its run's page, its check shown whole; that a
