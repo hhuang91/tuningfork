@@ -5,7 +5,7 @@ starting a model server whose numbers repeat, the harnesses, the sandbox, and th
 person changes. For the first runs, follow [the guide](../examples/README.md); for every
 command, see [commands](commands.md).
 
-- [Install](#install)
+- [Install](#install), and [on Windows](#on-windows)
 - [The model server](#the-model-server) — and [numbers that repeat](#numbers-that-repeat)
 - [The harnesses](#the-harnesses)
 - [Start tuningfork](#start-tuningfork)
@@ -27,14 +27,59 @@ source .venv/bin/activate
 tuningfork version
 ```
 
-`uv sync` installs everything, the MCP server included. On Windows, work inside WSL, and keep the
-checkout and the recordings on the Linux file system (`~/…`), never under `/mnt/c`: SQLite's
-locking does not work there.
+`uv sync` installs everything, the MCP server included. On Windows, tuningfork runs inside WSL:
+[on Windows](#on-windows) says how.
 
 tuningfork records into `~/.tuningfork`, or into the folder `TUNINGFORK_HOME` or a command's
 `--home` names. Keep tuningfork, the harnesses and the recordings out of `/tmp`: in
 [the sandbox](#the-sandbox) every launch has a `/tmp` of its own, so a harness kept there
 vanishes from a run's sight.
+
+## On Windows
+
+tuningfork runs inside WSL 2, Windows' own Linux, and its web UI opens in your Windows browser.
+
+1. **Install WSL and a distro**, from PowerShell: `wsl --install -d Ubuntu`, then open *Ubuntu*
+   from the Start menu and make its user.
+2. **Work inside it, as on Linux:** [install](#install) tuningfork in your Linux home (`~`), and
+   the model server, the harnesses and bubblewrap there too. Keep the checkout and the
+   recordings under `~`, never under `/mnt/c`: SQLite's locking does not work on the Windows
+   drive.
+3. **Open the web UI in your Windows browser**, at the address tuningfork prints: WSL forwards
+   `127.0.0.1` to Windows.
+4. **A model server running on Windows itself**, llama.cpp's Windows build, is not at WSL's
+   `127.0.0.1` unless WSL shares the address with Windows: turn on mirrored networking
+   (`networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig`, then restart WSL;
+   `wsl --shutdown` stops every distro), or run the server inside WSL.
+
+### Keeping the checkout on Windows
+
+To keep the checkout where your Windows editors see it, run tuningfork through
+`scripts/tuningfork`, from PowerShell or from Git Bash. The checkout stays on Windows;
+tuningfork's venv and its recordings stay in the distro's Linux file system. It is slower than
+working inside WSL, since every file Python imports is read through the Windows drive.
+
+```powershell
+git clone https://github.com/hhuang91/tuningfork.git
+cd tuningfork
+$env:TUNINGFORK_WSL_DISTRO = "Ubuntu"      # the distro it runs in
+.\scripts\tuningfork version               # the first run installs it there
+.\scripts\tuningfork --run python tests/browser/demo.py lab /tmp/tuningfork-lab 8790
+```
+
+- **It runs nothing until a distro is named**, and lists the installed ones instead: with more
+  than one, the default may not be the one you mean. In Git Bash it is
+  `export TUNINGFORK_WSL_DISTRO=Ubuntu`.
+- **Every tuningfork command goes through** as on Linux: `.\scripts\tuningfork batch …`,
+  `.\scripts\tuningfork serve …`. `--run` runs anything else in tuningfork's venv, such as
+  `--run pytest` for the tests.
+- **Each argument arrives as you typed it**, the JSON of `--target-rules` included. A Windows
+  path to a file or a folder you name is read as tuningfork reads one under WSL; the recordings
+  stay in Linux (`~/.tuningfork`), so never name a Windows folder as `--home`.
+- **It needs uv inside the distro** (`curl -LsSf https://astral.sh/uv/install.sh | sh`), and
+  keeps its venv there, in `~/.local/share/tuningfork/venv`.
+- **Windows PowerShell 5.1 runs no script until you allow it**, once:
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. PowerShell 7 runs it as it is.
 
 ## The model server
 

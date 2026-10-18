@@ -103,7 +103,8 @@ skill, with Claude Code beside Hermes, and every output in it is from a real run
 tuningfork runs on Linux, or on Windows inside WSL 2, with Python 3.12 or later. It is not on
 PyPI yet: install it from GitHub with [uv](https://docs.astral.sh/uv/), which fetches Python
 itself if you need it. Under WSL, keep the checkout on the Linux file system (`~/…`), never
-under `/mnt/c`, where SQLite's locking does not work.
+under `/mnt/c`, where SQLite's locking does not work; [on Windows](docs/setup.md#on-windows) has
+the steps, and a way to keep the checkout on Windows instead.
 
 ### Try it without a GPU (five minutes)
 
