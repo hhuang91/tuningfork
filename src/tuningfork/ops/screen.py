@@ -535,8 +535,11 @@ def choose_checkpoints(
 
 
 def judged_forks(store: Store, experiment: Any) -> int:
-    """An arm's forks the check decided: neither left out nor without a verdict."""
-    return sum(1 for sample in store.samples(experiment.id) if sample.exclusion is None and sample.passed is not None)
+    """An arm's forks that count: those the check decided, and those that timed out, which
+    count as failures (`analysis.conditions.fork_counted`)."""
+    from tuningfork.analysis.conditions import fork_counted
+
+    return sum(1 for sample in store.samples(experiment.id) if fork_counted(sample.passed, sample.exclusion) is not None)
 
 
 def original_forks(store: Store, refinement: str | None, checkpoint: Any, plan: Any) -> list[Any]:
@@ -868,6 +871,8 @@ def checkpoint_breakdown(store: Store, by_arm: dict[str, list[Any]], planned: Se
     """Each checkpoint a screen to the end drew from, with every arm's passes there: the
     pooled test is the verdict, and this is where it came from — an effect the arms agree
     on at every checkpoint, or one checkpoint's alone. Empty for a screen from one."""
+    from tuningfork.analysis.conditions import fork_counted
+
     if len(planned) < 2:
         return []
     found = []
@@ -878,9 +883,9 @@ def checkpoint_breakdown(store: Store, by_arm: dict[str, list[Any]], planned: Se
             at = [arm for arm in experiments if arm.run_id == entry.get("run") and arm.step_idx == entry.get("step")]
             if not at:
                 continue
-            judged = [sample for arm in at for sample in store.samples(arm.id)
-                      if sample.exclusion is None and sample.passed is not None]
-            arms[name] = {"passed": sum(1 for sample in judged if sample.passed), "of": len(judged)}
+            judged = [verdict for arm in at for sample in store.samples(arm.id)
+                      if (verdict := fork_counted(sample.passed, sample.exclusion)) is not None]
+            arms[name] = {"passed": sum(judged), "of": len(judged)}
         found.append({"run": entry.get("run"), "step": entry.get("step"), "verdict": entry.get("verdict"),
                       "n": entry.get("n"), "arms": arms})
     return found

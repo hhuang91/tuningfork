@@ -231,6 +231,8 @@ export function screenView(screen, { arms = {} } = {}) {
     return chip("not significant", "muted");
   };
   const drawn = (arm) => (arm.drawn < arm.planned ? chip(`${arm.drawn} of ${arm.planned} drawn`, "warn") : null);
+  // A fork run to the end that timed out failed, as the gate counts it: said, since it is not the check.
+  const timedOut = (arm) => (arm.timeouts ? chip(`${arm.timeouts} timed out`, "warn", "counted as failures, as the gate counts them") : null);
   const name = (arm) => (arms[arm.name]?.id
     ? h("a", { class: "mono", href: `#/experiments/${arms[arm.name].id}` }, arm.name)
     : h("span", { class: "mono" }, arm.name));
@@ -271,11 +273,11 @@ export function screenView(screen, { arms = {} } = {}) {
         h("tbody", null,
           h("tr", null, h("td", null, name({ name: "original" })),
             h("td", null, screen.baseline.target.total ? rateBar(screen.baseline.target) : h("span", { class: "muted" }, "none drawn"),
-              screen.quick ? null : drawn(screen.baseline)),
+              screen.quick ? null : drawn(screen.baseline), timedOut(screen.baseline)),
             h("td", null, ""), h("td", null, ""), h("td", { class: "muted small" }, originalNote)),
           screen.arms.map((arm) => h("tr", null,
             h("td", null, name(arm)),
-            h("td", null, arm.target.total ? rateBar(arm.target, "response") : h("span", { class: "muted" }, "none drawn"), drawn(arm)),
+            h("td", null, arm.target.total ? rateBar(arm.target, "response") : h("span", { class: "muted" }, "none drawn"), drawn(arm), timedOut(arm)),
             h("td", { class: "num mono" }, formatP(arm.p_value)),
             h("td", { class: "num mono" }, formatP(arm.adjusted_p)),
             h("td", null, verdict(arm))))))),

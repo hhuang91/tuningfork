@@ -22,6 +22,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
+from tuningfork.analysis.conditions import TIMED_OUT, fork_counted
 from tuningfork.analysis.distribution import Target, cluster_letter
 from tuningfork.analysis.normalize import Outcome
 from tuningfork.analysis.stats import Rate, fisher_exact, holm, rate
@@ -40,6 +41,8 @@ class ArmResult:
     adjusted_p: float | None = None
     #: up, down or same: the arm's rate against the baseline's.
     direction: str | None = None
+    #: Forks run to the end that timed out: counted among its failures.
+    timeouts: int = 0
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -48,6 +51,7 @@ class ArmResult:
             "planned": self.planned,
             "drawn": self.drawn,
             "errors": self.errors,
+            "timeouts": self.timeouts,
             "p_value": self.p_value,
             "adjusted_p": self.adjusted_p,
             "direction": self.direction,
@@ -173,13 +177,15 @@ def compare_to_baseline(
 
 
 def _arm_by_check(name: str, samples: Sequence[Any], planned: int) -> tuple[ArmResult, int, int]:
-    """One arm of forks run to the end: a fork that passed is a hit, one that failed a miss,
-    and one left out — timed out, its replay departed — an error that counts for neither."""
-    kept = [sample for sample in samples if sample.exclusion is None and sample.passed is not None]
-    hits = sum(1 for sample in kept if sample.passed)
+    """One arm of forks run to the end: a fork that passed is a hit, one that failed a miss —
+    and so is one that timed out, as the gate counts it (`analysis.conditions.fork_counted`);
+    one left out otherwise — its replay departed — is an error that counts for neither."""
+    kept = [verdict for verdict in (fork_counted(sample.passed, sample.exclusion) for sample in samples)
+            if verdict is not None]
+    hits = sum(kept)
     result = ArmResult(
         name=name, target=rate(hits, len(kept)), planned=planned, drawn=len(samples),
-        errors=len(samples) - len(kept),
+        errors=len(samples) - len(kept), timeouts=sum(1 for sample in samples if sample.exclusion == TIMED_OUT),
     )
     return result, hits, len(kept)
 

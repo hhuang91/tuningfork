@@ -152,12 +152,14 @@ then each proposal, and tests each against it — Fisher, Holm over the proposal
 before sampling; an unfinished screen has rates and no verdict. Run to the end
 (`prepare_screen_to_end`, `refine screen --to-end`, the `screen-to-end` job kind), each
 arm's samples are forks from the checkpoint through the harness and the task's check decides
-each (`compare_verdicts`): the only screen for a refinement whose target is the check
-(`--target-check`: a failure only the check can see, a computed property of what the run
-wrote), open to any other, and the record says which measured (`reach`). A fork measures the
-edit given the prefix it replays — the model's answers and what its tools did to the files — so
-an edit to a call before the step shows nothing there: a refinement toward the check, and a
-screen's plan, say when a call before the step changed the workspace (`inspect.replay_warning`;
+each (`compare_verdicts`) — one that timed out failed, as the gate counts it, here and in an
+A/B or a resample to the end (`analysis.conditions.fork_counted`): an edit that makes the
+agent loop must not drop out of its own count. It is the only screen for a refinement whose
+target is the check (`--target-check`: a failure only the check can see, a computed property
+of what the run wrote), open to any other, and the record says which measured (`reach`). A
+fork measures the edit given the prefix it replays — the model's answers and what its tools did
+to the files — so an edit to a call before the step shows nothing there: a refinement toward
+the check, and a screen's plan, say when a call before the step changed the workspace (`inspect.replay_warning`;
 findings §31.42: a screen after a delivery was booked saw neither an edit's gain nor its harm).
 And one prefix is one draw of the model's path, so the forks
 are drawn from several checkpoints by default (`--checkpoints`, `choose_checkpoints`): the

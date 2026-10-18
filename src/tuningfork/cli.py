@@ -2330,6 +2330,9 @@ def _print_screen(report, arms: dict) -> None:
         console.print("[yellow]unfinished: rates only — no verdict until every arm has drawn what was planned[/yellow]")
     elif not survivors:
         console.print("no proposal survived the correction")
+    timed_out = [f"{arm.name} {arm.timeouts}" for arm in (base, *report.arms) if getattr(arm, "timeouts", 0)]
+    if timed_out:
+        console.print(f"[yellow]forks that timed out[/yellow], counted as failures: {escape(', '.join(timed_out))}")
     checkpoints = getattr(report, "checkpoints", None) or []
     if len(checkpoints) > 1:
         from tuningfork.ops.compact import checkpoint_lines
@@ -2728,7 +2731,8 @@ def _to_end_plan(store: Store, run: str, reference: str, *, n, concurrency, prox
 
 
 def _fork_progress(total: int, show_arm: bool = False):
-    """Prints each fork as it finishes; forks finish on worker threads, in any order."""
+    """Prints each fork as it finishes; forks finish on worker threads, in any order. A fork
+    run to the end that timed out counts as a failure (`analysis.conditions.fork_counted`)."""
     import threading
 
     lock = threading.Lock()
@@ -2741,7 +2745,7 @@ def _fork_progress(total: int, show_arm: bool = False):
         with lock:
             seen[arm] = seen.get(arm, 0) + 1
             label = f"{arm:<9}" if show_arm else ""
-            console.print(f"  {label}{seen[arm]:>3}/{total}{_fork_line(event.subject)[1:]}")
+            console.print(f"  {label}{seen[arm]:>3}/{total}{_fork_line(event.subject, timeouts_fail=True)[1:]}")
 
     return on_event
 
@@ -2752,6 +2756,8 @@ def _print_end_to_end(summary, heading: str) -> None:
         console.print(f"  check passed  {escape(summary.rate.format())}")
     else:
         console.print("  [yellow]no fork can be counted[/yellow], so there is no pass rate")
+    if summary.timeouts:
+        console.print(f"  [yellow]{summary.timeouts} timed out[/yellow], counted as failures")
     for run_id, why in summary.exclusions:
         console.print(
             f"  [yellow]not counted[/yellow]   {(run_id or '--------')[:8]}: {escape(why)}"
@@ -2818,7 +2824,8 @@ def _print_ab_to_end(result, k: int, alpha: float) -> None:
     console.print(f"\n[bold]target[/bold]: the task's check passes, end to end from step {k}")
     for name, arm in (("original", result.original), ("variant", result.variant)):
         shown = escape(_fmt_rate(arm.rate)) if arm.rate else "no fork counts"
-        console.print(f"  {name:<9} {shown}")
+        timeouts = f"  [yellow]{arm.timeouts} timed out[/yellow], counted as failures" if arm.timeouts else ""
+        console.print(f"  {name:<9} {shown}{timeouts}")
     if result.p_value is None:
         console.print("  [yellow]an arm has no fork that counts, so there is no test[/yellow]")
     else:
@@ -2843,8 +2850,9 @@ def _print_ab_to_end(result, k: int, alpha: float) -> None:
 
 
 def _fork_line(outcome, *, timeouts_fail: bool = False) -> str:
-    """One run as it lands. In a validation, `timeouts_fail`: a run that timed out counts as
-    a failure there, as the gate counts it, rather than being left out."""
+    """One run as it lands. In a validation, or among forks run to the end, `timeouts_fail`: a
+    run that timed out counts as a failure there, as the gate counts it, rather than being left
+    out."""
     if not outcome.checked:
         verdict = "[dim]no check[/dim]"
     else:

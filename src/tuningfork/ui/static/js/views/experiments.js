@@ -266,6 +266,7 @@ function nextSteps(experiment) {
 function armView(arm, label, tone) {
   return h("div", { class: "stack", style: { gap: "4px" } },
     h("span", null, h("span", { class: "muted" }, `${label}  `), arm.rate ? rateBar(arm.rate, tone) : h("span", { class: "muted" }, "no fork counts")),
+    arm.timeouts ? h("span", { class: "small muted" }, `${plural(arm.timeouts, "fork")} timed out: counted as failures, as the gate counts them`) : null,
     arm.exclusions.length
       ? h("ul", { class: "small" }, arm.exclusions.map((left) =>
           h("li", null, h("span", { class: "mono" }, short(left.run_id || "")), ` not counted: ${left.why}`)))
@@ -311,11 +312,13 @@ function forksPanel(arms) {
   const rows = [];
   for (const [label, arm] of arms) {
     for (const fork of arm.forks || []) {
-      const verdict = fork.exclusion
-        ? h("span", { class: "muted" }, `not counted: ${fork.exclusion}`)
-        : fork.passed === null || fork.passed === undefined
-          ? chip("no check", "muted")
-          : fork.passed ? chip("pass", "ok") : chip("fail", "bad");
+      const verdict = fork.timed_out
+        ? [chip("fail", "bad"), h("span", { class: "muted" }, " timed out: counted as a failure")]
+        : fork.exclusion
+          ? h("span", { class: "muted" }, `not counted: ${fork.exclusion}`)
+          : fork.passed === null || fork.passed === undefined
+            ? chip("no check", "muted")
+            : fork.passed ? chip("pass", "ok") : chip("fail", "bad");
       rows.push(h("tr", null,
         label ? h("td", { class: "muted" }, label) : null,
         h("td", { class: "num faint" }, `#${fork.idx + 1}`),

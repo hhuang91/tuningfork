@@ -32,6 +32,10 @@ def pass_rate(results: Iterable[dict[str, Any]]) -> Rate | None:
     return rate(sum(verdicts), len(verdicts)) if verdicts else None
 
 
+#: What `exclusion_from` says of a run that timed out.
+TIMED_OUT = "timed out"
+
+
 def exclusion_from(result: dict[str, Any] | None) -> str | None:
     """Why a run with this stored result (`runner.RunOutcome.to_result`) is not counted, in
     words; None when nothing in it says so."""
@@ -43,7 +47,7 @@ def exclusion_from(result: dict[str, Any] | None) -> str | None:
     if result.get("skills_changed"):
         return f"skills changed: {', '.join(result['skills_changed'])}"
     if result.get("timed_out"):
-        return "timed out"
+        return TIMED_OUT
     if result.get("edited_steps"):
         return f"edited at a breakpoint (step {steps('edited_steps')})"
     if result.get("failed_steps"):
@@ -61,6 +65,18 @@ def exclusion_from(result: dict[str, Any] | None) -> str | None:
     if result.get("reached") is False:
         return f"the harness never reached step {result.get('fork_step')}"
     return None
+
+
+def fork_counted(passed: bool | None, exclusion: str | None) -> bool | None:
+    """How a fork run to the end counts in its arm: as its check said; failed when it timed
+    out, as the gate counts a timeout (`analysis.validation.COUNTING`) — an edit that makes the
+    model loop must not drop out of its own count; None, left out, when something else kept it
+    from measuring the wording, or no check judged it."""
+    if exclusion == TIMED_OUT:
+        return False
+    if exclusion is not None or passed is None:
+        return None
+    return bool(passed)
 
 
 def counted_verdict(result: dict[str, Any] | None) -> str | None:
