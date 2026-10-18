@@ -134,4 +134,14 @@ class LocalProxy:
                     except Exception:  # noqa: BLE001 - decided meanwhile
                         logger.debug("hold %s was decided before it could be dropped", hold.id)
 
-        self.call_soon(drop)
+        # On the loop already, at once: a shutdown (`proxy.app.stop_live_work`) continues every
+        # call still held the moment the jobs are stopped. Found in review: dropped on the loop's
+        # next turn, a cancelled fork's held call had been continued first, and reached the model.
+        try:
+            here = asyncio.get_running_loop() is self.loop
+        except RuntimeError:
+            here = False
+        if here:
+            drop()
+        else:
+            self.call_soon(drop)

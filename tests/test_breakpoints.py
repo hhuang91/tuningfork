@@ -316,6 +316,27 @@ class TestEngine:
         assert engine.release_all() == 3
         assert all(hold.decision.action == "continue" for hold in holds)
 
+    async def test_stopping_drops_a_cancelled_jobs_held_calls_before_continuing_the_rest(self):
+        """Ctrl-C stops the jobs, then continues every call still held (`stop_live_work`).
+        Found in review: a cancelled job's holds were dropped on the loop's next turn, after
+        every hold had been continued — a fork killed at a breakpoint still sent its call to
+        the model, and its answer was recorded into the interrupted run."""
+        from dataclasses import replace
+        from types import SimpleNamespace
+
+        from tuningfork.proxy.local import LocalProxy
+
+        engine = BreakpointEngine()
+        engine.add(Breakpoint(phase="request"))
+        forked = engine.check_request(replace(ctx(), launch_id="a-cancelled-fork"))
+        person = engine.check_request(ctx([{"role": "user", "content": "a person's own harness"}]))
+        proxy = LocalProxy(SimpleNamespace(state=SimpleNamespace(engine=engine)))
+        proxy.attach(asyncio.get_running_loop(), "http://127.0.0.1:1")
+
+        proxy.drop_holds_of(["a-cancelled-fork"])  # what stopping the jobs does, on the loop
+        assert engine.release_all() == 1
+        assert forked.decision.action == "drop" and person.decision.action == "continue"
+
     async def test_events_are_published(self):
         engine = BreakpointEngine(bus=EventBus())
         async with engine.bus.subscribe() as queue:
