@@ -340,9 +340,31 @@ def _not_in_trash(kind: str, item: str) -> OperationError:
     )
 
 
+def _refuse_running(store: Store, plan: Purge) -> None:
+    """Refused while anything that would go is still at work. A fork started before its
+    source went to the trash runs on, and so may an experiment at one of its steps: found in
+    review, deleting the source took them with it, the fork's folders included, while its
+    harness was still working there."""
+    for launch_id in plan.launches:
+        launch = store.get_launch(launch_id)
+        if launch is not None and launch.status == "running":
+            raise OperationError(
+                f"{launch.kind} {launch.label or launch_id[:8]} is still running, and would go with it",
+                hint="wait for it, or cancel its job", code="busy",
+            )
+    for experiment_id in plan.experiments:
+        experiment = store.get_experiment(experiment_id)
+        if experiment is not None and experiment.status == "running":
+            raise OperationError(
+                f"a {experiment.kind} at step {experiment.step_idx} of run {(experiment.run_id or '?')[:8]} is still "
+                "running, and would go with it", hint="wait for it, or cancel its job", code="busy",
+            )
+
+
 def _remove(store: Store, plan: Purge, removal: Removal) -> None:
     from tuningfork.snapshots import SnapshotError, Snapshots
 
+    _refuse_running(store, plan)
     store.purge(plan)
     removal.add(plan.to_json())
     snapshots = Snapshots(store.home)

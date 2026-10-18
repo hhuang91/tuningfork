@@ -157,6 +157,26 @@ class TestDeletedForGood:
         assert survivor.forked_from_run is None
         assert store.rebuild_request(store.steps(alike)[0])["messages"][0]["content"] == "go t/1#b.0"
 
+    def test_a_fork_still_running_holds_back_its_source_from_going_for_good(self, store):
+        # A fork started before its source went to the trash runs on. Found in review: deleting
+        # the source for good took the fork's run and launch with it, its folders included,
+        # while its harness was still at work there.
+        launch, source = launched(store, label="t/1#b.0")
+        fork_launch = store.create_launch(kind="fork", label="t/1#b.0@1.0", task_id="t/1", harness="hermes", source_run=source.id)
+        threads = LaunchThreads(fork_launch.id, label=fork_launch.label, task_id="t/1", main_role="fork")
+        request = chat(user("go t/1#b.0"))
+        store.record_step(request=request, response=as_response(text_message("x")), assignment=threads.assign(request_path(request)))
+        trash.trash(store, "run", source.id)
+
+        for deleting in (lambda: trash.purge(store, "run", source.id), lambda: trash.empty(store)):
+            with pytest.raises(OperationError) as refused:
+                deleting()
+            assert refused.value.code == "busy" and "still running" in refused.value.message
+        assert store.get_run(source.id) is not None and store.get_launch(fork_launch.id) is not None
+
+        store.end_launch(fork_launch.id)
+        assert trash.purge(store, "run", source.id).to_json()["removed"]["launches"] == 2
+
     def test_an_experiment_goes_with_the_other_arm_of_its_ab(self, store):
         run = record_run(store, "r", [text_message("a")], task_id="t/1")
         step = store.steps(run)[0]
