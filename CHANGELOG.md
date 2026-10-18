@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.2.2 — a README for newcomers, and what its pictures showed
+
+- **The README, rebuilt for someone deciding in a few minutes whether to try tuningfork:** what
+  it does in one figure drawn from real runs, a quickstart with no GPU on the demo lab, where
+  every button works, the commands by the question each answers, and the web UI in screenshots
+  and a GIF. Reference moves to `docs/setup.md` (installing, the model server's flags and why,
+  the harnesses, the sandbox, a task's format), `docs/commands.md` (every command, by the
+  question it answers) and `docs/agents.md` (the MCP server, client by client);
+  `docs/images/README.md` says how each picture is taken. `tests/test_docs.py` fails on a
+  command the reference does not name, and on a link, to a page or an image, that leads nowhere.
+- **`examples/find-the-file/`: a step where the model wavers**, the runs behind the figure,
+  Hermes Agent on Gemma 4 31B: ten runs pass 4, the step where they split resampled, the
+  model's odds for the words where its reasoning forks, one line of the skill tested there,
+  and ten runs with it passing 10, each command shown with its output.
+- **An A/B shows the edit it tested:** its report starts with a line diff of the two texts,
+  read back from what it recorded rather than from files that can change since (its page,
+  `tuningfork experiment`, MCP's `show_experiment`), where one text holds the skill twice too.
+  The demo's seeded A/B swaps a real saved variant.
+- **Green and red only for a check's verdict.** A run's page ends with its verdict, coloured by
+  it, where a failed run used to end in a green reply. Any other significant result, an A/B's
+  shift or a step screen's survivor, is the accent's colour, its direction said in words, and
+  the behaviours a declared target counts are badged *target*, the others *not target*. The
+  divergence page colours each run by its own verdict.
+- **A refinement's page leads with its evidence:** where it stands, each proposal's screen and
+  the approved one's validation, linked to the detail below. What a proposer is shown moves
+  under the proposals, and the skill's paths into a closed *About this refinement*.
+- **A forking-token probe that found nothing says what it could have seen:** "No forced token
+  decided what the model did", and the smallest change its continuations would show
+  (`detectable`), on its page, the token panel and the CLI.
+- **The server advice is current:** the front page and the glossary recommend
+  `--no-cache-prompt`, and `--ctx-checkpoints 0` or `--swa-full`.
+- **Start takes the first click after typing in a field.** The field's change as it lost the
+  focus disabled Start under the click, on every form that starts work.
+- **A run stopped before it finished says so,** not that its task defines no check, and a run
+  launched from the command line shows its verdict without a reload.
+- **p-values below 0.01 print by their first figure** (`0.005`), never `0.00`. The tally's
+  footer, in `tuningfork tally` and MCP's `tally_failures`, says in plain words how it counts:
+  an agent reads new words there.
+
 ## 0.2.1 — the web UI catches up
 
 - **Screens run to the end, from the refinement page.** Its screen form asks how each sample
