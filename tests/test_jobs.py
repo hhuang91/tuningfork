@@ -323,6 +323,25 @@ class TestCancelling:
         assert stopped["status"] == "cancelled"
         assert 2 <= stopped["result"]["counted"] < 100
 
+    def test_a_queued_job_cancelled_twice_at_once_ends_once(self, runner, monkeypatch):
+        # The second cancel arrives after the first has taken the job out of its queue, before
+        # it has ended it: found in review, it took the job for queued still, and failed
+        # taking it out again.
+        runner.proxy.paused = True
+        job = runner.submit("count", {"steps": 1})
+        finish = runner._finish
+        second = []
+
+        def finish_after_another_cancel(held, status, **kwargs):
+            if not second:
+                second.append(runner.cancel(held.id))
+            finish(held, status, **kwargs)
+
+        monkeypatch.setattr(runner, "_finish", finish_after_another_cancel)
+        assert runner.cancel(job["id"])["status"] == "cancelled"
+        assert second[0]["status"] == "cancelled"
+        assert [kind for kind, payload in runner.bus.events if payload["job"]["status"] == "cancelled"] == ["job"]
+
     def test_cancelling_twice_or_after_the_end_changes_nothing(self, runner):
         job = runner.submit("count", {"steps": 1})
         settled(runner, job["id"])

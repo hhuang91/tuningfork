@@ -474,8 +474,12 @@ class JobRunner:
             queued = job.record.status == "queued"
             if queued:
                 self._queues[job.record.lane].remove(job)
+                # Ended here, under the lock: a second cancel before `_finish` has run finds it
+                # ended, not queued still (found in review: it failed taking the job out of its
+                # queue again, and the job stayed queued for good).
+                job.record.status = "interrupted" if reason == "shutdown" else "cancelled"
         if queued:
-            self._finish(job, "interrupted" if reason == "shutdown" else "cancelled")
+            self._finish(job, job.record.status)
         elif job.record.status == "running":
             job.cancel.cancel(reason)
             # A fork waiting at a breakpoint would wait for a decision no one will make.
