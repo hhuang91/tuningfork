@@ -401,8 +401,11 @@ def _entry(approval: dict[str, Any]) -> str:
 
 
 def _append_changelog(target: Target, approval: dict[str, Any]) -> None:
-    marker = MARKER.format(id=approval["id"])
-    if target.changelog.is_file() and marker in target.changelog.read_text(encoding="utf-8"):
+    # Looked for as bytes: what a person wrote in the changelog may be in any encoding, and
+    # read as UTF-8 it stopped the approval, after the skill's file was written, and every
+    # repair of it (found in review). The marker is ASCII.
+    marker = MARKER.format(id=approval["id"]).encode("utf-8")
+    if target.changelog.is_file() and marker in target.changelog.read_bytes():
         return
     fresh = not target.changelog.exists()
     with open(target.changelog, "a", encoding="utf-8", newline="\n") as handle:

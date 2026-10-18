@@ -250,6 +250,19 @@ def test_interrupted_between_its_last_two_marks_it_is_reported_and_marked(stack,
     assert changelog.count("<!-- tuningfork approval") == 1
 
 
+def test_a_changelog_not_in_utf8_takes_the_entry_all_the_same(stack):
+    # A person's notes in it saved in another encoding: found in review, the approval stopped
+    # at reading the changelog, after the skill's file was written, and so did every repair.
+    made, proposal = validated(stack)
+    changelog = stack.skill.parent.parent / "tally-report.changelog.md"
+    changelog.write_bytes(b"# tally-report\n\nNotes from the caf\xe9.\n\n")
+    plan = prepare_approve(stack.store, made.id, proposal.id)
+    execute_approve(stack.store, plan, confirm=plan.code, front_end="cli")
+    assert approve.state(stack.store, made.id)["state"] == "applied"
+    kept = changelog.read_bytes()
+    assert kept.startswith(b"# tally-report\n\nNotes from the caf\xe9.\n\n") and kept.count(b"<!-- tuningfork approval") == 1
+
+
 def test_interrupted_before_the_file_was_written_it_is_written_as_approved(stack, monkeypatch):
     made, proposal = validated(stack)
     before = stack.skill.read_bytes()
