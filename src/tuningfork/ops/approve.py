@@ -540,8 +540,9 @@ def approval(store: Store, refinement_ref: str) -> dict[str, Any] | None:
 
 def state(store: Store, refinement_ref: str) -> dict[str, Any] | None:
     """Where an approval stands: `applied`; or interrupted, with the file `not_written` or
-    `written`; or `diverged` — the file holds neither the bytes approved from nor those
-    approved, so nothing more is done to it. None without an approval."""
+    `written`, or applied with the refinement not yet marked (`unmarked`); or `diverged` —
+    the file holds neither the bytes approved from nor those approved, so nothing more is
+    done to it. None without an approval."""
     from tuningfork.ops import refine
 
     refinement = refine.get(store, refinement_ref)
@@ -553,6 +554,11 @@ def state(store: Store, refinement_ref: str) -> dict[str, Any] | None:
              "windows": intent.get("windows"), "changelog": intent["changelog"],
              "backup": str(Path(intent["history"]) / intent["backup_name"])}
     if (refinement.folder / APPLIED).is_file():
+        # The last two marks are two writes: between them the edit is applied and the
+        # refinement still open (found in review: read as applied, it was never marked).
+        if refinement.status == "open":
+            return {**shown, "state": "unmarked", "message": "the edit was written and its changelog entry made, "
+                    "but the approval was interrupted before the refinement was marked approved: repair marks it"}
         return {**shown, "state": "applied"}
     try:
         now = _sha(Path(intent["target"]).read_bytes())

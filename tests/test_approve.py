@@ -225,6 +225,31 @@ def test_interrupted_after_the_file_was_written_it_is_finished(stack, monkeypatc
     assert refine.get(stack.store, made.id).status == "approved"
 
 
+def test_interrupted_between_its_last_two_marks_it_is_reported_and_marked(stack, monkeypatch):
+    # Applied, the refinement not yet marked approved: found in review, it read as applied, so
+    # nothing said so and repair did nothing, and the refinement stayed open for good.
+    made, proposal = validated(stack)
+    plan = prepare_approve(stack.store, made.id, proposal.id)
+    real = refine._replace
+
+    def killed_at_the_mark(path, data):
+        if path.name == "status.json":
+            raise KeyboardInterrupt()
+        real(path, data)
+
+    monkeypatch.setattr(refine, "_replace", killed_at_the_mark)
+    with pytest.raises(KeyboardInterrupt):
+        execute_approve(stack.store, plan, confirm=plan.code, front_end="cli")
+    monkeypatch.setattr(refine, "_replace", real)
+    assert (made.folder / "applied.json").is_file() and refine.get(stack.store, made.id).status == "open"
+    assert approve.state(stack.store, made.id)["state"] == "unmarked"
+    assert refine.view(stack.store, made.id)["approval"]["state"] == "unmarked"
+    assert approve.repair(stack.store, made.id)["state"] == "applied"
+    assert refine.get(stack.store, made.id).status == "approved"
+    changelog = (stack.skill.parent.parent / "tally-report.changelog.md").read_text(encoding="utf-8")
+    assert changelog.count("<!-- tuningfork approval") == 1
+
+
 def test_interrupted_before_the_file_was_written_it_is_written_as_approved(stack, monkeypatch):
     made, proposal = validated(stack)
     before = stack.skill.read_bytes()
