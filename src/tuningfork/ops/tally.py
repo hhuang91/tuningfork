@@ -110,13 +110,18 @@ def made_along(runs: Iterable[Run]) -> dict[str, dict[str, Any]]:
             seen["at_end"] = seen["at_end"] or entry["at_end"]
         for key, seen in first.items():
             stat = found.setdefault(key, {"checked": len(checked), "runs": [], "steps": [], "repaired": 0,
-                                          "passing": 0})
+                                          "passing": 0, "passing_kept": 0})
+            passed = bool((run.result or {}).get("passed"))
             stat["runs"].append(run.id)
             stat["steps"].append(seen["step"])
             stat["repaired"] += 0 if seen["at_end"] else 1
-            stat["passing"] += 1 if (run.result or {}).get("passed") else 0
+            stat["passing"] += 1 if passed else 0
+            stat["passing_kept"] += 1 if passed and seen["at_end"] else 0
     for stat in found.values():
         stat["every_run"] = len(stat["runs"]) == stat["checked"] and stat["checked"] >= 2
+        # A mistake every run made only where every passing run undid it before the end, as
+        # where_it_holds asks: one they all kept is no mistake the passing ones repaired.
+        stat["shared"] = stat["every_run"] and stat["passing"] > 0 and stat["passing_kept"] == 0
     return found
 
 
@@ -134,7 +139,7 @@ def made_text(made: dict[str, Any]) -> str:
     text = f"made by a call in {runs} of {made.get('checked')} run(s) the check was run along ({made_steps(made)})"
     if made.get("repaired"):
         text += f"; gone by the end in {made['repaired']}"
-    if made.get("every_run") and made.get("passing"):
+    if made.get("shared"):
         text += f" — every run made it, the {made['passing']} that passed too, and repaired it later"
     return text
 
@@ -153,7 +158,7 @@ def shared_mistakes(report: dict[str, Any]) -> list[dict[str, Any]]:
     for group in report.get("groups") or []:
         for finding in group.get("findings") or []:
             made = finding.get("made") or {}
-            if made.get("every_run") and made.get("passing"):
+            if made.get("shared"):
                 found.append(finding)
     return found
 
