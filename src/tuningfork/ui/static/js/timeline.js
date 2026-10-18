@@ -31,6 +31,10 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   // The steps not recorded whose rows are drawn: a live update draws only those it has not
   // (found in review: each one below a new step was drawn again, every update).
   const gapsShown = new Set();
+  // The form asked for last: one asked for before it that loads later is not shown (found in
+  // review: "A/B a wording…", then "Resample…" before the A/B form had loaded, left the A/B
+  // form open while the address asked for the other — and on two steps, both open).
+  let asking = 0;
   const element = h("div", { class: "tl" });
   const rail = h("nav", { class: "tl-rail", "aria-label": "Steps of the run" });
   const seen = new IntersectionObserver((changes) => {
@@ -377,17 +381,19 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       return;
     }
     settle(`${base}/${idx}?${asked.toString()}`);
+    const mine = ++asking;
     await found.ready;
-    if (!found.slot) return;
+    if (!found.slot || mine !== asking) return;
     // One form at a time: a second would be a second plan on screen.
     for (const other of sections.values()) if (other !== found && other.slot) replace(other.slot);
     replace(found.slot, loading("Preparing the form…"));
     try {
       const form = await startForm(start, { run, idx }, asked, { go });
+      if (mine !== asking) return;
       replace(found.slot, form || failure(new Error(`There is no form called ${start}.`)));
       found.slot.scrollIntoView({ block: "nearest" });
     } catch (error) {
-      replace(found.slot, failure(error, "Could not open the form"));
+      if (mine === asking) replace(found.slot, failure(error, "Could not open the form"));
     }
   }
 
@@ -403,7 +409,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const asked = new URLSearchParams(text);
     const start = asked.get("start");
     if (!start) {
-      // "Close": the form goes, the step stays open.
+      // "Close": the form goes, the step stays open — and one still loading never comes.
+      asking += 1;
       const found = sections.get(idx);
       if (found?.slot) replace(found.slot);
       settle(`${base}/${idx}`);
