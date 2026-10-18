@@ -84,7 +84,10 @@ blobs, snapshot objects — with a two-minute grace for a recording in flight. A
 with what it made (`refine.made_by`): its screens, its validations' forks and fresh training
 runs, its proposals' saved texts and its folder — never the run it studies, nor the changelog
 and old versions an approval wrote beside the skill's folder. One in the trash is shown as it
-was and takes no new work (`refine.refuse_closed`).
+was and takes no new work (`refine.refuse_closed`). A fork an experiment drew goes to the
+trash, and is deleted, only with its experiment, as a thread goes with its run
+(`trash.experiment_of_fork`): its verdict is the experiment's, kept in its sample, and taking
+single forks out of a finished screen would choose which of them count.
 
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the

@@ -57,6 +57,24 @@ def _run(store: Store, reference: str) -> Any:
     return run
 
 
+def experiment_of_fork(store: Store, run: Any) -> str | None:
+    """The experiment a run is a sample of — a fork it drew, run to the end — or None. Such a
+    run goes to the trash with its experiment, never alone, as a thread goes with its run: its
+    verdict is the experiment's, kept in its sample. Found in review: a fork trashed, even
+    deleted for good, still counted in its screen; and taking single forks out of a finished
+    experiment would choose which of them count."""
+    launch = store.get_launch(run.launch_id) if run.launch_id else None
+    return launch.experiment_id if launch is not None and launch.experiment_id else None
+
+
+def _fork_alone(run: Any, experiment: str) -> OperationError:
+    return OperationError(
+        f"run {run.id[:8]} is a fork experiment {experiment[:8]} drew, one of its samples: it goes to the trash, "
+        "and is deleted, with that experiment",
+        hint=f"`tuningfork trash experiment {experiment[:8]}`", code="bad_params",
+    )
+
+
 def _experiments(store: Store, reference: str) -> tuple[str, list[Any]]:
     """An experiment, with the other arm of its A/B: (the id they are filed under, the arms)."""
     found = store.get_experiment(reference)
@@ -123,6 +141,9 @@ def trash(store: Store, kind: str, reference: str) -> dict[str, Any]:
         run = _run(store, reference)
         if run.trashed_at is not None:
             return {"kind": kind, "id": run.id, "moved": [], "already": True}
+        experiment = experiment_of_fork(store, run)
+        if experiment:
+            raise _fork_alone(run, experiment)
         launch = store.get_launch(run.launch_id) if run.launch_id else None
         if launch is not None and launch_status(launch) == "running":
             raise OperationError(f"run {run.id[:8]} is still running", hint="wait for it, or cancel its job", code="busy")
@@ -287,6 +308,11 @@ def purge(store: Store, kind: str, reference: str) -> Removal:
         run = _run(store, reference)
         if run.trashed_with != run.id:
             raise _not_in_trash(kind, run.id)
+        # One that went to the trash alone before forks went only with their experiments: its
+        # verdict would stay in the experiment. It comes back with `restore`.
+        experiment = experiment_of_fork(store, run)
+        if experiment:
+            raise _fork_alone(run, experiment)
         plan = store.purge_closure(runs=[run.id])
         removal.items.append({"kind": kind, "id": run.id, "label": run.label})
     else:
@@ -309,6 +335,16 @@ def empty(store: Store) -> Removal:
     found = store.trashed()
     runs = [run.id for run in found["runs"]]
     experiments = [experiment.id for experiment in found["experiments"]]
+    # A fork that went to the trash without the experiment that drew it (before forks went only
+    # with theirs) would leave its verdict standing there: it is restored, or its experiment goes too.
+    alone = [run for run in found["runs"] if (drew := experiment_of_fork(store, run)) and drew not in experiments]
+    if alone:
+        raise OperationError(
+            f"{len(alone)} fork run(s) in the trash went there without the experiment that drew them, whose "
+            f"verdict counts them: {', '.join(run.id[:8] for run in alone)}",
+            hint="restore each (`tuningfork trash restore <run>`), or move its experiment to the trash too",
+            code="bad_params",
+        )
     refinements = _trashed_refinements(store)
     for refinement in refinements:
         _refinement_busy(store, refinement)

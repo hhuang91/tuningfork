@@ -75,6 +75,8 @@ def launch_json(launch: Launch | None) -> dict[str, Any] | None:
         "spec_path": launch.spec_path,
         "status": launch_status(launch),
         "job_id": launch.job_id,
+        # A fork an experiment drew is one of its samples, and goes to the trash with it.
+        "experiment_id": launch.experiment_id,
         "workspace": launch.workspace,
         "check": describe_check(check),
         "check_kind": check_kind(check),

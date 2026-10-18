@@ -35,9 +35,14 @@ export async function runView(root, [reference, focus], scope) {
         h("h1", null, h("span", { class: "mono" }, `run ${short(run.id)}`), run.label ? h("span", { class: "h-sub" }, run.label) : null),
         h("p", { class: "sub" }, subLine(data))),
       h("div", { class: "actions" }, verdict(run.result), run.trashed_at ? null : again, toEnd, copyButton(run.id, "Copy id"),
-        // A thread goes to the trash with its run, never alone.
+        // A thread goes to the trash with its run, and a fork an experiment drew with the
+        // experiment: never alone.
         run.trashed_at || ["subagent", "side", "thread"].includes(run.role) ? null
-          : trashButton({ kind: "run", id: run.id, onDone: () => runView(root, [reference, focus], scope) }))),
+          : launch?.experiment_id
+            ? h("a", { class: "btn btn-small btn-quiet", href: `#/experiments/${launch.experiment_id}`,
+                title: "A fork an experiment drew is one of its samples: it goes to the trash with the experiment" },
+              "Its experiment")
+            : trashButton({ kind: "run", id: run.id, onDone: () => runView(root, [reference, focus], scope) }))),
     run.trashed_at && run.trashed_with === run.id
       ? trashedBanner({
           kind: "run", id: run.id, trashedAt: run.trashed_at,
