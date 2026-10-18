@@ -91,7 +91,7 @@ is labelled exploratory and corrected for every comparison it makes.
 [The example](examples/find-the-file/README.md) shows each command with its output.
 
 In the web UI, an A/B is a few clicks from a run's step (here on the demo's scripted model, which
-answers at once):
+answers at once; [the quickstart](#try-it-without-a-gpu-five-minutes) starts it):
 
 ![Opening a run in the web UI, choosing its write step, and A/B-testing an edited wording there: the original arm at 0 of 20, the edit at 20 of 20, with their intervals and Fisher's test](docs/images/ui-demo.gif)
 
@@ -112,13 +112,17 @@ git clone https://github.com/hhuang91/tuningfork.git
 cd tuningfork
 uv sync
 source .venv/bin/activate
-python tests/browser/demo.py seed ~/tuningfork-demo    # made-up recordings to look at
-tuningfork ui --home ~/tuningfork-demo
+python tests/browser/demo.py lab /tmp/tuningfork-lab 8790    # made-up runs, a scripted model
 ```
 
-Open <http://127.0.0.1:8788/_tuningfork/ui/>: nine runs of the example task, a resample and an
-A/B, all made up for the tour. [Part 1 of the guide](examples/README.md#part-1--tuningfork-without-a-model)
-walks through them, then stops a live call at a breakpoint and changes it, still with no model.
+Open the web UI at the address it prints. The runs are made up, nine of the example task with a
+resample and an A/B, but tuningfork's own proxy serves them, in front of a scripted model that
+answers at once, so every button works. To make the A/B above, open run `tally-report/1#demo.2`,
+its step 1, and *A/B a wording…*. The scripted model writes the keys the check wants only for a
+wording that names them in these exact words: `row_count and amount_total`
+([step by step](docs/images/README.md#the-gif-step-by-step)).
+[Part 1 of the guide](examples/README.md#part-1--tuningfork-without-a-model) tours runs like these
+from the terminal, then stops a live call at a breakpoint and changes it, still with no model.
 
 ### On your own agent
 
