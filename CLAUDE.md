@@ -451,6 +451,9 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                (every command by the question it answers), agents.md (the MCP
                                server, client by client); adapters/, one page per harness;
                                images/, the README's pictures (hero.py draws the figure)
+    scripts/                  tuningfork inside WSL from a checkout on Windows: tuningfork.ps1 for
+                               PowerShell, tuningfork for Git Bash, twins — the distro only ever
+                               the one TUNINGFORK_WSL_DISTRO names (tests/test_wsl_wrapper.py)
 
 A request is never stored whole: messages live in the content-addressed tree and are
 rebuilt by `Store.rebuild_request`. Never report a rate without its interval — see
