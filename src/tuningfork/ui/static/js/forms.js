@@ -16,10 +16,12 @@ export function field(label, control, { help, wide } = {}) {
     help ? h("span", { class: "form-help" }, help) : null);
 }
 
-export function input(name, { type = "text", value, placeholder, min, max, step } = {}) {
+export function input(name, { type = "text", value, placeholder, min, max, step, ...rest } = {}) {
+  // The rest goes on the element too: the batch form's `oninput` was dropped here, so a new
+  // spec typed in never put the task list back to its first (found in review).
   return h("input", {
     class: "field", name, type, value: value ?? "", placeholder, min, max, step,
-    autocomplete: "off", spellcheck: "false",
+    autocomplete: "off", spellcheck: "false", ...rest,
   });
 }
 

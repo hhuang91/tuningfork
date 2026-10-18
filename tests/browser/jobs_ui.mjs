@@ -172,6 +172,16 @@ try {
   // waited for a plan that never came — until something else was typed.
   await startButtonReady(page, "Start the runs");
   check(true, "Start is ready once the plan has named the task, with nothing else typed");
+  // Another spec typed in puts the task list back to its first (found in review: the field's
+  // listener was dropped, and the list kept the other spec's tasks); typed back, it plans again.
+  const specPath = await page.eval(`document.querySelector('.plan-form [name="spec"]').value`);
+  await page.type(`document.querySelector('.plan-form [name="spec"]')`, `${specPath}.other`);
+  check(await page.eval(`(() => { const options = document.querySelector('.plan-form [name="eval"]').options;
+    return options.length === 1 && options[0].value === "" && options[0].textContent === "its first task"; })()`),
+    "another spec typed in puts the task list back to its first");
+  await page.type(`document.querySelector('.plan-form [name="spec"]')`, specPath);
+  await planShows(page, "tally-lab/1");
+  await startButtonReady(page, "Start the runs");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "2");
   await planShows(page, "2 runs of fake");
   await startButtonReady(page, "Start the runs");
