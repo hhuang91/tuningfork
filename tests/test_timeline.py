@@ -295,3 +295,24 @@ def test_an_empty_run_has_an_empty_timeline(store):
     first = store.record_step(request=chat(user("go")))
     found = run_timeline(store, first.run_id).to_json()
     assert found["steps"][0]["position"] == 1 and found["reply"] is None
+
+
+def test_a_run_not_counted_says_why_and_where_its_checks_lines_came_from(store):
+    """The run's verdict closes its page: why the rates leave it out, and — where the check was
+    run along the run — the call that made each line it printed."""
+    run_id = record_pilot(store)
+    counted = run_timeline(store, run_id).to_json()
+    assert counted["run"]["exclusion"] is None and counted["made_by"] is None
+
+    along = {"steps": 2, "states": [
+        {"before_step": 0, "end": False, "findings": ["report.json: no total"]},
+        {"before_step": 2, "end": True, "findings": ["report.json: no total", "row_count: wrong"]},
+    ]}
+    store.annotate_run(run_id, result={"passed": False, "usable": False, "timed_out": True, "check_along": along})
+    found = run_timeline(store, run_id).to_json()
+
+    assert found["run"]["exclusion"] == "timed out"
+    assert [(line["line"], line["made_by"], line["at_end"]) for line in found["made_by"]] == [
+        ("report.json: no total", None, True),  # there from the start: work not done
+        ("row_count: wrong", 1, True),  # made by step 1's call
+    ]

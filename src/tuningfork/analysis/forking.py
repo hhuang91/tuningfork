@@ -124,6 +124,16 @@ class ForkingReport:
     letters: dict[str, str] = field(default_factory=dict)
     #: How often the baseline arms, taken together, reproduced the base's behaviour.
     reproduced: Rate | None = None
+    #: Continuations planned for each arm.
+    per_arm: int = 0
+
+    @property
+    def detectable(self) -> int | None:
+        """How many of an arm's continuations must change for a forced token to show, at best:
+        a probe that found nothing says so, never that nothing changed. Measured on
+        find-the-file: 'Wait' led to the search 4 times in 10 and 'According' once, and the
+        page said no forced token had changed what the model did."""
+        return detectable(self.per_arm, self.family, self.alpha) if self.per_arm else None
 
     def missed(self, why: str) -> list[int]:
         """The positions whose own token seldom led back to the target, for that reason."""
@@ -140,6 +150,8 @@ class ForkingReport:
             "letters": self.letters,
             "reproduced": self.reproduced.to_json() if self.reproduced else None,
             "missed": {why: self.missed(why) for why in ("too_fine", "undecided")},
+            "per_arm": self.per_arm,
+            "detectable": self.detectable,
         }
 
 
@@ -214,6 +226,7 @@ def forking_report(
         behaviours=behaviours,
         letters={cluster.outcome.key: cluster.letter for cluster in behaviours.clusters},
         reproduced=reproduced,
+        per_arm=per_arm,
     )
 
 

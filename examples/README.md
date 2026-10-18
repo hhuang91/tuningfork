@@ -99,16 +99,16 @@ tuningfork runs
 
 ```
  run       label                  steps  model        started      check
- a059f6e8  -                      1      gemma-4-31b  10-11 11:16  -
- 4ad4bebf  tally-report/1#demo.8  3      gemma-4-31b  10-11 11:16  pass
- a086fa96  tally-report/1#demo.7  3      gemma-4-31b  10-11 11:16  pass (not counted)
- 9d4bd185  tally-report/1#demo.6  3      gemma-4-31b  10-11 11:16  pass
- a50b7dc7  tally-report/1#demo.5  3      gemma-4-31b  10-11 11:16  pass (not counted)
- fcb1b99d  tally-report/1#demo.4  3      gemma-4-31b  10-11 11:16  fail
- e045d3ed  tally-report/1#demo.3  3      gemma-4-31b  10-11 11:16  pass
- d3cc248b  tally-report/1#demo.2  3      gemma-4-31b  10-11 11:16  fail
- 8b71444f  tally-report/1#demo.1  3      gemma-4-31b  10-11 11:16  pass
- 4b174d29  tally-report/1#demo.0  3      gemma-4-31b  10-11 11:16  pass
+ 47e2a902  -                      1      gemma-4-31b  10-16 19:15  -
+ 3737aa51  tally-report/1#demo.8  3      gemma-4-31b  10-16 19:15  pass
+ 40778f94  tally-report/1#demo.7  3      gemma-4-31b  10-16 19:15  pass (not counted)
+ 074730b3  tally-report/1#demo.6  3      gemma-4-31b  10-16 19:15  pass
+ cbd6d347  tally-report/1#demo.5  3      gemma-4-31b  10-16 19:15  pass (not counted)
+ ed7ad091  tally-report/1#demo.4  3      gemma-4-31b  10-16 19:15  fail
+ 41859728  tally-report/1#demo.3  3      gemma-4-31b  10-16 19:15  pass
+ c2b9abd3  tally-report/1#demo.2  3      gemma-4-31b  10-16 19:15  fail
+ eaae2001  tally-report/1#demo.1  3      gemma-4-31b  10-16 19:15  pass
+ c50bfc6c  tally-report/1#demo.0  3      gemma-4-31b  10-16 19:15  pass
 
 10 run(s), 28 step(s), 9 unique message(s) in /home/you/tuningfork-demo
 ```
@@ -137,10 +137,10 @@ tuningfork show "tally-report/1#demo.2"
 ```
 
 ```
-run d3cc248b  tally-report/1#demo.2
+run c2b9abd3  tally-report/1#demo.2
   task    tally-report/1
   model   gemma-4-31b
-  started 10-11 11:16:05
+  started 10-16 19:15:28
   harness hermes
   skills  a606f71e (1 file(s))
  k  outcome                                                       finish      ms      tokens  think
@@ -157,7 +157,7 @@ tuningfork step "tally-report/1#demo.2" 1
 ```
 
 ```
-run d3cc248b step 1
+run c2b9abd3 step 1
   model   gemma-4-31b
   params  {}
   server  {"n_ctx": 65536, "temperature": 1.0, "top_k": 64, "top_p": 0.95}
@@ -211,8 +211,14 @@ tuningfork experiment $(tuningfork experiments -q -n 1)
 ```
 
 ```
-ab at run 4b174d29 step 1 — after the result of read_file
-  swapped   skills/tally-report/SKILL.md → skills/tally-report/SKILL.v2.md
+ab at run c50bfc6c step 1 — after the result of read_file
+  swapped   /home/you/tuningfork-demo/batches/demo/skill-snapshot/tally-report/SKILL.md → /home/you/tuningfork-demo/variants/tally-report/name-the-keys.md
+  the edit  1 line changed
+    @@ line 5 @@
+      # Tally report
+
+    - Write the totals to report.json.
+    + Write the totals to report.json, using the keys row_count and amount_total.
 
    behaviour                                      original              variant               p adj.
 A  write_file(content='{"amount_total":61.5,"ro…  12/20  60% [39%-78%]  19/20  95% [76%-99%]  0.039
@@ -231,6 +237,9 @@ The 1 model-written message(s) before this step were generated under the origina
 arms inherit them. A checkpoint A/B is a fast screen; confirm a winner with full runs.
 ```
 
+It starts with what the A/B tested: the skill file the runs were given, the variant swapped in
+for it, and the line where they differ, read back from what each arm sent the model.
+
 ### 4. The same, in a browser
 
 ```bash
@@ -238,7 +247,7 @@ tuningfork ui
 ```
 
 ```
-tuningfork 0.1.0 — browsing /home/you/tuningfork-demo
+tuningfork 0.2.1 — browsing /home/you/tuningfork-demo
   open http://127.0.0.1:8788/_tuningfork/ui/
 ```
 
@@ -247,7 +256,8 @@ and its interval. Open run `…#demo.2`: its conversation, top to bottom, with e
 answer where it happened and the skill marked in the system prompt, mapped to its file line
 by line. Click step 1 for its details; *Exact context* shows everything that step was sent.
 *Where do they diverge?* on the task, and the **Experiments** page, show the last two
-commands' results. Stop it with Ctrl-C.
+commands' results; the A/B's page starts with the line its variant changes, and **Skills** keeps
+that variant among the skill's saved ones. Stop it with Ctrl-C.
 
 ### 5. Stop a live call, and change it
 
@@ -419,7 +429,7 @@ That is one slot of 131,072 tokens: Hermes needs 64,000.
 
 **Keep `-np 1`, `--ctx-checkpoints 0` and `--no-cache-prompt`.** With them, a request gets the
 same numbers whatever the server ran before it and whichever of its endpoints it goes to (see
-the [README](../README.md#start-llama-server-for-numbers-that-repeat)):
+[the setup page](../docs/setup.md#numbers-that-repeat), with what we measured without them):
 
 - With two slots, a request computed beside another in the second one gets other numbers.
   One slot computes each request alone.
@@ -448,7 +458,7 @@ tuningfork serve --upstream http://127.0.0.1:8081
 ```
 
 ```
-tuningfork 0.1.0
+tuningfork 0.2.1
   listening on  http://127.0.0.1:8787/v1
   forwarding to http://127.0.0.1:8081
   recording to  /home/you/tuningfork-guide
@@ -1775,8 +1785,10 @@ B  3/40   8%    [3%-20%]   search_files(pattern='data.csv', target='files')
 C  1/40   2%    [0%-13%]   execute_code(code='<ast:54d4c953>')
 D  1/40   2%    [0%-13%]   execute_code(code='<ast:852d48ec>')
 
-0 of 3 forced tokens changed what the model did (Holm-corrected over the 3 planned before sampling;
+No forced token decided what the model did (Holm-corrected over the 3 planned before sampling;
 α=0.05).
+With 10 continuations a token, only a token that changes about 6 of its 10 would show: a smaller
+shift can be real and go unseen (-n draws more).
 
 experiment 68e55106 · 3.6 min · `tuningfork experiment 68e55106` shows it again
 ```

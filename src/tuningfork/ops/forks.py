@@ -469,6 +469,18 @@ class ABEndToEnd:
     def significant(self) -> bool:
         return self.p_value is not None and self.p_value < self.alpha
 
+    @property
+    def direction(self) -> str | None:
+        """Which way the variant moved the pass rate — "up", "down" or "unchanged" — as a
+        step's A/B says of its target; None when an arm has no fork that counts."""
+        if self.original.rate is None or self.variant.rate is None:
+            return None
+        if self.variant.rate.point > self.original.rate.point:
+            return "up"
+        if self.variant.rate.point < self.original.rate.point:
+            return "down"
+        return "unchanged"
+
     def to_json(self) -> dict[str, Any]:
         return {
             "original": self.original.to_json(),
@@ -476,6 +488,7 @@ class ABEndToEnd:
             "p_value": self.p_value,
             "significant": self.significant,
             "alpha": self.alpha,
+            "direction": self.direction,
         }
 
 

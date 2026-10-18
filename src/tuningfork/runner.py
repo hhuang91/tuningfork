@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Sequence
 
+from tuningfork.analysis.conditions import exclusion_from
 from tuningfork.analysis.conditions import pass_rate  # noqa: F401 - long imported from here
 from tuningfork.harness.base import HarnessError, LaunchSpec
 from tuningfork.launches import launch_url
@@ -113,29 +114,12 @@ class RunOutcome:
         """Why the run is not counted, in words; None when it is."""
         if self.run_id is None:
             return "no model call was recorded"
-        if self.skills_changed:
-            return f"skills changed: {', '.join(self.skills_changed)}"
-        if self.timed_out:
-            return "timed out"
-        if self.edited_steps:
-            steps = ", ".join(map(str, self.edited_steps))
-            return f"edited at a breakpoint (step {steps})"
-        if self.failed_steps:
-            steps = ", ".join(map(str, self.failed_steps))
-            return f"model call failed (step {steps})"
-        if self.thread_trouble:
-            return f"a call failed or was edited in {', '.join(self.thread_trouble)}"
-        if self.departed:
-            where = f"step {self.departed.get('step')}"
-            if self.departed.get("thread"):
-                where = f"thread {self.departed['thread']} {where}"
-            return f"the replay departed from the recording at {where}"
-        if self.leaked:
-            steps = ", ".join(map(str, self.leaked))
-            return f"the original wording reached the model (step {steps})"
-        if not self.reached:
-            return f"the harness never reached step {self.fork_step}"
-        return None
+        return exclusion_from({
+            "skills_changed": self.skills_changed, "timed_out": self.timed_out,
+            "edited_steps": self.edited_steps, "failed_steps": self.failed_steps,
+            "thread_trouble": self.thread_trouble, "departed": self.departed,
+            "leaked": self.leaked, "reached": self.reached, "fork_step": self.fork_step,
+        })
 
     def to_json(self) -> dict[str, Any]:
         """How a run went, for a front end: its verdict and bookkeeping, without the

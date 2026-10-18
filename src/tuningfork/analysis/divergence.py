@@ -91,7 +91,7 @@ class DivergenceReport:
     def to_json(self, results: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
         """The report, with each behaviour's check pass rate when `results` gives the runs'
         verdicts — which of the competing behaviours at the divergence step goes on to pass."""
-        from tuningfork.analysis.conditions import pass_rate
+        from tuningfork.analysis.conditions import counted_verdict, pass_rate
 
         results = results or {}
 
@@ -101,6 +101,8 @@ class DivergenceReport:
 
         return {
             "run_ids": self.run_ids,
+            # Each run's own verdict, counted as the behaviours' pass rates count it.
+            "verdicts": {run_id: counted_verdict(results.get(run_id)) for run_id in self.run_ids},
             "divergence_index": self.divergence_index,
             "agreed_steps": self.agreed_steps,
             "mixed_skills": self.mixed_skills,

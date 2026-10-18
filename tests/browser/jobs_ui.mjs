@@ -64,6 +64,39 @@ try {
   await until(() => page.eval(`!!document.querySelector(".groups .letter")`), "the distribution");
   check(await page.eval(`document.querySelectorAll(".groups .group").length === 1`), "one behaviour: the wrong keys, every time");
 
+  // A form asks for its plan as it opens, and again when the page refreshes it — after work
+  // elsewhere that the plan reads — but not for an event that changes nothing it says (found
+  // in review: the one-press fix below had stopped a refresh asking).
+  const asked = await page.eval(`(async () => {
+    const { planForm } = await import(new URL("js/forms.js", location.href).href);
+    const { api } = await import(new URL("js/api.js", location.href).href);
+    const post = api.post;
+    let dry = 0;
+    api.post = (path, body) => { if (body && body.dry_run) dry += 1; return post(path, body); };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 1200));
+    const field = document.createElement("input");
+    const params = { run: ${JSON.stringify(run.id)}, step: "1", n: 2, concurrency: 1, max_tokens: 4096,
+      prompt_cache: false, normalizers: [], temperature: null, top_p: null, top_k: null };
+    const { element, refresh } = planForm({ kind: "resample", fields: [field], read: () => params,
+      render: () => document.createElement("div"), onStarted: () => {} });
+    document.body.append(element);
+    try {
+      await settle();
+      const opened = dry;
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle();
+      const unchanged = dry;
+      refresh();
+      await settle();
+      return { opened, unchanged, refreshed: dry, ready: !element.querySelector("button").disabled };
+    } finally {
+      api.post = post;
+      element.remove();
+    }
+  })()`);
+  check(asked.opened === 1 && asked.unchanged === 1 && asked.refreshed === 2 && asked.ready,
+    `a form asks for its plan as it opens, not for an event that changes nothing, and again when refreshed (${JSON.stringify(asked)})`);
+
   // --- 2. An A/B of a wording edited in the page, with a lettered target ----------------------
   console.log("A/B a wording edited in the page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "A/B a wording at this step").click()`);
@@ -75,15 +108,17 @@ try {
     (await page.eval(`document.querySelector('[name="variant_text"]').value`)).replace("Write the totals to report.json.", "Write the totals to report.json, using the keys row_count and amount_total."));
   check((await page.text(".editor-head .muted")).startsWith("1 line changed"), "the editor counts the changed line");
   const variantName = `browser-${Date.now().toString(36)}`;
-  await page.type(`document.querySelector('[name="variant_name"]')`, variantName);
+  // Typed for real, and left focused until Start is pressed: its change fires as the press moves the focus.
+  await page.enter(`document.querySelector('[name="variant_name"]')`, variantName);
   await page.eval(`document.querySelector('[name="target"][value="A"]').click()`);
   check(await page.eval(`document.querySelector('[name="target_kind"][value="letter"]').checked`), "picking a behaviour picks the lettered target");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "6");
   await planShows(page, "6 samples per arm");
   check(await page.eval(`document.querySelector(".plan-preview").textContent.includes(${JSON.stringify(`${variantName}.md`)})`), "the plan names where the variant will be saved");
   await startButtonReady(page, "Start the A/B");
-  await page.click("Start the A/B");
-  const abId = await until(async () => jobIdIn(await page.eval("location.hash")), "the A/B's job page");
+  await page.press("Start the A/B");
+  const abId = await until(async () => jobIdIn(await page.eval("location.hash")), "the A/B's job page, after one press of Start", 5000);
+  check(!!abId, "one press of Start starts the A/B, the name just typed still focused as it is pressed");
   const ab = await finished(abId);
   const target = ab.result?.comparison?.target;
   check(ab.status === "done" && target && target.original.successes === 6 && target.variant.successes === 0 && target.significant,
@@ -91,6 +126,27 @@ try {
   const variants = await api("/variants?skill=tally-report");
   check(variants.some((variant) => variant.name === variantName), "the variant was saved when the A/B started");
   await until(() => page.eval(`!!document.querySelector(".verdict-block.significant")`), "the verdict on the job page");
+  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
+  await until(() => page.eval(`location.hash.startsWith("#/experiments/")`), "the A/B's page");
+  const edit = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "The variant's edit")`;
+  await until(() => page.eval(`!!${edit}`), "the edit it tested");
+  check(await page.eval(`[...${edit}.querySelectorAll(".diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))
+    && ${edit}.querySelector(".panel-meta").textContent.includes(${JSON.stringify(`+ variant ${variantName}`)})`),
+    "the A/B's page leads with the edit it tested, as a diff, the variant by its saved name");
+  // The target first, then which way the variant moved it: the wrong keys, behaviour A, fell.
+  check(await page.eval(`(() => {
+    const block = document.querySelector(".verdict-block");
+    return block.classList.contains("significant") && !block.classList.contains("tone-ok")
+      && block.firstElementChild.classList.contains("verdict-target")
+      && block.querySelector(".verdict-target-text").textContent.startsWith("A from resample ")
+      && block.querySelector(".verdict-big").textContent === "The variant hit the target less often: 0 of 6 samples, against 6 of 6 with the original";
+  })()`), "the result says the target first, then which way the variant moved it, in the accent's colour, not green");
+  const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
+    [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
+  check(marked === "target:6/6", `the behaviours table marks the one the target counts: the original's every sample (${marked})`);
+  const others = await page.eval(`[...document.querySelectorAll(".table tbody tr")].filter((row) => !row.classList.contains("is-target")).map((row) =>
+    [row.querySelector(".chip.tone-not-target")?.textContent, row.children[3].textContent.split(" ")[0]].join(":")).join(",")`);
+  check(others === "not target:6/6", `and badges the other "not target", its 6/6 the variant's, not the target's (${others})`);
 
   // --- 3. A task run again from its run's page; a fork held at its step; forks to the end ----
   console.log("run a task again, fork at a step, and run forks to the end");
@@ -139,6 +195,17 @@ try {
   const fork = await finished(forkId, 90000);
   check(fork.status === "done" && fork.result.length === 1 && fork.result[0].run_id, "a fork stopped at its step for a person, then ran on");
 
+  // A fork cancelled while it waits at its step keeps no verdict, and its page says it was
+  // stopped, and why — never that the task defines no check (found in review).
+  const heldId = (await post("/jobs", { kind: "fork", params: { run: launched, step: "1", hold: "step", n: 1, concurrency: 1 } })).id;
+  const heldRun = await until(async () => (await api("/holds"))[0]?.run_id, "the second fork, held at its step", 60000);
+  await post(`/jobs/${heldId}/cancel`);
+  check((await finished(heldId, 60000)).status === "cancelled", "a second fork, held at its step, cancelled");
+  await page.eval(`location.hash = "#/runs/${heldRun}"`);
+  const stoppedText = await until(() => page.eval(`document.querySelector("#verdict")?.textContent || ""`), "the cancelled fork's verdict");
+  check(stoppedText.includes("the run was stopped") && stoppedText.includes("Cancelled before it finished") && !stoppedText.includes("defines no check"),
+    `a cancelled run says it was stopped, and why (${stoppedText})`);
+
   await openStepOf(page, launched, 1, "resample&reach=end");
   await planShows(page, "the task's check passes");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "2");
@@ -162,6 +229,14 @@ try {
   const abEnd = await finished(abEndId, 120000);
   check(abEnd.status === "done" && abEnd.result.original.passed === 0 && abEnd.result.variant.passed === 1,
     "an A/B to the end: the original fails the check, the variant passes");
+  await page.eval(`location.hash = "#/experiments/${abEnd.links.experiments[0]}"`);
+  await until(() => page.eval(`!!document.querySelector(".verdict-block .verdict-target-text")`), "the A/B to the end's page");
+  check(await page.eval(`(() => {
+    const block = document.querySelector(".verdict-block");
+    return block.querySelector(".verdict-target-text").textContent === "the task's check passes"
+      && block.querySelector(".verdict-big").textContent === "No significant difference: the variant's forks passed the check in 1 of 1, the original's in 0 of 1"
+      && !block.classList.contains("tone-ok") && !block.classList.contains("tone-bad");
+  })()`), "its page names the check as the target, and one fork an arm is said in words, not in green");
 
   // --- 4. Cancel a running job ------------------------------------------------------------
   console.log("cancel a job");
@@ -363,6 +438,20 @@ try {
   check(shown === shape.entries.filter((entry) => entry.origin !== "copy").length,
     `each message once, a step's own answer in place of the harness's copy (${shown} messages, ${shape.steps.length} steps)`);
   check(await page.eval(`!!document.querySelector(".tl-final .tl-final-label")`), "the final reply is marked at the end");
+  // Then its verdict, coloured by it: green and red are the check's alone, never the reply's.
+  const said = shape.run.result.passed ? "passed" : "failed";
+  check(shape.run.result.usable && await page.eval(`(() => {
+    const last = document.querySelector(".tl").lastElementChild;
+    const probe = document.body.appendChild(document.createElement("span"));
+    probe.style.color = "var(--ok)";
+    const ok = getComputedStyle(probe).color;
+    probe.remove();
+    return last.classList.contains("tl-verdict") && last.classList.contains("${said === "passed" ? "tone-ok" : "tone-bad"}")
+      && last.querySelector(".verdict-big").textContent === "The check ${said}"
+      && last.textContent.includes(${JSON.stringify((shape.run.result.check_output || "").trim())})
+      && document.querySelector(".tl-rail-verdict").textContent === "Verdict: ${said}"
+      && getComputedStyle(document.querySelector(".tl-final")).borderTopColor !== ok;
+  })()`), `the run ends with its verdict — ${said}, what the check printed — and so does the rail; the reply is not green`);
   // Opening a step happens in place: the page is not drawn again, and the address follows.
   await page.eval(`document.querySelector(".view").dataset.sentinel = "kept"`);
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
@@ -377,6 +466,27 @@ try {
   await until(() => page.eval(`(document.querySelector(".page-head h1")?.textContent || "").startsWith("Step 1")`), "the exact context");
   check(await page.eval(`document.querySelector(".page-head h1").textContent.includes("exact context") && document.querySelectorAll(".msg").length >= 2`),
     "the exact context a step was sent has a page of its own");
+
+  // --- 10b. Where a task's runs split: each run by its verdict; the checks' lines counted --
+  console.log("the divergence page: each run by its verdict, the checks' lines counted");
+  const split = await api(`/divergence?task=${encodeURIComponent("tally-report/1")}&limit=50`);
+  await page.eval(`location.hash = "#/divergence/${encodeURIComponent("tally-report/1")}"`);
+  await until(() => page.eval(`!!document.querySelector(".run-chips a.chip")`), "the behaviours at the split");
+  const tones = { passed: "tone-ok", failed: "tone-bad", "not counted": "tone-warn" };
+  const chips = await page.eval(`[...document.querySelectorAll(".run-chips a.chip")].map((chip) => [chip.getAttribute("href"), chip.className])`);
+  const wrong = chips.filter(([href, className]) => {
+    const id = href.split("/")[2];
+    return !className.split(" ").includes(tones[split.verdicts[id]] || "tone-muted");
+  });
+  check(chips.length > 1 && !wrong.length && chips.some(([, className]) => className.includes("tone-ok")) && chips.some(([, className]) => className.includes("tone-bad")),
+    `each run's chip is coloured by its own verdict (${chips.length} runs${wrong.length ? `; wrong: ${JSON.stringify(wrong)}` : ""})`);
+  check(await page.eval(`!document.querySelector(".group-rates .ci-track.tone-ok")`), "and a behaviour's \"then passed\" is a rate, never drawn green");
+  const tallied = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What the failed runs' checks said")`;
+  check(await page.eval(`(() => {
+    const panel = ${tallied};
+    return !!panel && panel.querySelector("th").textContent === "failed runs that printed it"
+      && panel.querySelector(".hint").textContent.startsWith("Each bar counts the failed runs that printed the line");
+  })()`), "the failed runs' checks are counted line by line, and the page says so plainly");
 
   // --- 11. A step's answer as tokens, and the token that decides it -------------------------
   console.log("score an answer, read its tokens, find the token that decides it");
@@ -464,7 +574,8 @@ try {
   check(await page.eval(`document.querySelector('.start-panel [name="target_kind"][value="describe"]').checked`), "describing the behaviour chooses that way of declaring it");
   await page.click("Start refining", `document.querySelector(".start-panel")`);
   const refinementId = await until(async () => /^#\/refine\/([0-9a-f]{32})$/.exec(await page.eval("location.hash"))?.[1], "the refinement's page");
-  await until(() => page.eval(`[...document.querySelectorAll("dt")].some((dt) => dt.textContent === "answers here")`), "the evidence");
+  await until(() => page.eval(`[...document.querySelectorAll(".packet-panel dt")].some((dt) => dt.textContent === "the original wording")`), "what a proposer is shown");
+  check(await page.eval(`!document.querySelector(".evidence-panel")`), "no evidence panel before there is a proposal to weigh");
   check(await page.eval(`document.querySelector(".page-head").textContent.includes('a behaviour that calls write_file, and mentions "row_count"')`), "the refinement states its target, declared before anything was proposed");
   await until(() => page.eval(`(document.querySelector(".propose-builtin .plan-preview")?.textContent || "").includes("through this proxy")`), "the proposer's plan");
   check(true, "the proposer's plan says where the evidence goes: through this proxy, never recorded");
@@ -506,7 +617,17 @@ try {
   const screenJob = await finished(screenJobId, 60000);
   check(screenJob.status === "done" && screenJob.result.screen.complete && screenJob.result.screen.survivors.length === 1,
     "the screen: the wording that names the keys survives the correction, the other does not");
-  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal shifted the target"`), "the verdict on the job's page");
+  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal hit the target more often than the original, past the correction"`), "the verdict on the job's page");
+  // At the step, a survivor is a shift of a behaviour, not a check passed: the accent's, never green.
+  check(await page.eval(`!document.querySelector(".verdict-block.tone-ok") && [...document.querySelectorAll(".screen-table .chip")]
+    .find((chip) => chip.textContent === "survives")?.classList.contains("tone-accent")`), "a step screen's survivor is the accent's colour, not a check's green");
+  // What the model did, by arm: the right keys are the target ("calls write_file and mentions row_count").
+  const byArm = await page.eval(`(() => {
+    const panel = [...document.querySelectorAll(".panel")].find((found) => found.querySelector("h2")?.textContent === "What the model did, by arm");
+    return [...panel.querySelectorAll("tbody tr")].map((row) =>
+      [row.querySelector(".chip.tone-target, .chip.tone-not-target")?.textContent, row.children[1].textContent.includes("row_count")].join(":")).join(",");
+  })()`);
+  check(byArm.split(",").sort().join(",") === "not target:false,target:true", `the screen's behaviours are badged target or not target (${byArm})`);
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
   check(await page.eval(`[...document.querySelectorAll(".screen-table .chip")].map((c) => c.textContent).sort().join(",") === "not significant,survives"`), "the screen's page gives each proposal its verdict");
@@ -514,6 +635,27 @@ try {
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Back to the refinement").click()`);
   await until(() => page.eval(`location.hash === "#/refine/${refinementId}" && [...document.querySelectorAll(".proposal .chip")].some((c) => c.textContent === "survived a screen")`), "the verdicts on the refinement's proposals");
   check(await page.eval(`[...document.querySelectorAll(".proposal .chip")].filter((c) => c.textContent === "hypothesis: not screened yet").length === 1`), "the screened carry their verdicts; the one not screened is still a hypothesis");
+  // The page leads with the evidence: where it stands, each proposal's screen, a step screen's survivor in the accent.
+  const evidence = await page.eval(`(() => {
+    const titles = [...document.querySelectorAll(".panel-head h2")].map((h2) => h2.textContent);
+    const block = document.querySelector(".evidence-panel .verdict-block");
+    const rows = [...document.querySelectorAll(".evidence-panel tbody tr")];
+    return {
+      order: titles.indexOf("The evidence") < titles.indexOf("Proposals (3)") && titles.indexOf("Proposals (3)") < titles.indexOf("What a proposer is shown"),
+      headline: block?.querySelector(".verdict-big")?.textContent,
+      accent: block?.classList.contains("significant") && !block.classList.contains("tone-ok"),
+      survivor: rows.some((row) => row.querySelector(".chip.tone-accent")?.textContent === "survived a screen"),
+      unscreened: rows.filter((row) => row.textContent.includes("hypothesis: not screened yet")).length,
+      chosen: rows.some((row) => row.classList.contains("is-chosen")),
+      about: !document.querySelector("details.about-refinement").open,
+    };
+  })()`);
+  check(evidence.order && evidence.headline === "1 of 3 proposals survived a screen" && evidence.accent,
+    `the refinement leads with the evidence: where it stands, in the accent for a step screen (${evidence.headline})`);
+  check(evidence.survivor && evidence.unscreened === 1 && !evidence.chosen, "each proposal's screen in a line, nothing chosen before a validation");
+  check(evidence.about, "the skill's paths wait in About this refinement, closed");
+  await until(() => page.eval(`(document.querySelector(".packet-panel")?.textContent || "").includes("the original wording")`),
+    "what a proposer is shown, below them: the original wording's answers, the problem and not the result");
 
   // --- 12b. Validate a survivor with full runs, held-out task included, and approve it ------
   console.log("validate a survivor with full runs, and approve it");
@@ -546,6 +688,25 @@ try {
     "the person's page shows each part, the held-out task's included");
   check(await page.eval(`[...document.querySelectorAll(".validation .gate-list .chip")].filter((c) => c.textContent === "low-powered").length === 2`),
     "the not-worse checks say they are low-powered");
+  const ready = await page.eval(`(() => {
+    const block = document.querySelector(".evidence-panel .verdict-block");
+    const row = document.querySelector(".evidence-panel tr.is-chosen");
+    return {
+      headline: block?.querySelector(".verdict-big")?.textContent,
+      green: block?.classList.contains("tone-ok"),
+      lines: block?.querySelector(".verdict-lines")?.textContent || "",
+      row: row ? [...row.querySelectorAll(".chip")].map((c) => c.textContent).join() : null,
+    };
+  })()`);
+  check(ready.headline === `Proposal ${keysFix.id.slice(0, 8)} meets the gate: ready to approve` && ready.green,
+    `a validation that meets the gate: the evidence names the proposal ready to approve, in the gate's green (${ready.headline})`);
+  check(ready.lines.includes("Survived its screen: 6/6 against the original's 0/6") && ready.lines.includes("on held-out task 2") && ready.lines.includes("checks met"),
+    `with its screen and its validation in a line each, the held-out task's included (${ready.lines})`);
+  check(ready.row === "ready to approve,survived a screen,meets the gate", `its row picked out (${ready.row})`);
+  const hash = await page.eval("location.hash");
+  await page.eval(`[...document.querySelectorAll(".evidence-panel .verdict-lines a")].find((a) => a.textContent.startsWith("validation ")).click()`);
+  check(await page.eval(`location.hash === ${JSON.stringify(hash)} && document.querySelector(".validation").getBoundingClientRect().top < innerHeight`),
+    "its link leads down the page to the validation, the address as it was");
   await page.click("Approve…", `document.querySelector(".validation")`);
   await until(() => page.eval(`!!document.querySelector(".approve-code strong")`), "the approval's plan");
   const code = await page.eval(`document.querySelector(".approve-code strong").textContent`);
@@ -563,7 +724,20 @@ try {
   const approved = await api(`/refinements/${made.id}`);
   check(approved.approval?.state === "applied" && approved.refinement.status === "approved",
     "the typed code writes it: the skill's own file, its old text and a changelog beside its folder");
-  check(await page.eval(`(document.querySelector(".banner-ok")?.textContent || "").includes("was written")`), "and the page says so");
+  const writtenView = await page.eval(`(() => {
+    const block = document.querySelector(".evidence-panel .verdict-block");
+    return {
+      headline: block?.querySelector(".verdict-big")?.textContent,
+      green: block?.classList.contains("tone-ok"),
+      row: [...(document.querySelector(".evidence-panel tr.is-chosen")?.querySelectorAll(".chip") || [])].map((c) => c.textContent).join(),
+      card: !!document.querySelector(".proposal.chosen") && [...document.querySelectorAll(".proposal.chosen .chip")].some((c) => c.textContent === "approved"),
+      about: document.querySelector("details.about-refinement").textContent,
+    };
+  })()`);
+  check(writtenView.headline === `Approved: proposal ${keysFix.id.slice(0, 8)}, written to the skill's own file` && writtenView.green,
+    `and the page says so first, with the evidence it stood on (${writtenView.headline})`);
+  check(writtenView.row === "approved,survived a screen,met the gate" && writtenView.card, `the approved proposal picked out, in the evidence and its card (${writtenView.row})`);
+  check(writtenView.about.includes(`${health.home}/lab-task/tally-report/SKILL.md`), "About this refinement says where it wrote");
 
   console.log("the proposer's key: set, never shown, cleared");
   await page.eval(`location.hash = "#/connections"`);

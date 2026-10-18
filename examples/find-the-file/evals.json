@@ -1,0 +1,33 @@
+{
+  "skill_name": "find-the-file",
+  "tuningfork": {
+    "skill_dir": "tally-report"
+  },
+  "evals": [
+    {
+      "id": "1",
+      "prompt": "Use the tally-report skill to summarize data.csv into report.json.",
+      "expected_output": "A report.json in the working directory with the line-item count and the amount total of data.csv, which is in the inputs folder.",
+      "files": [
+        {
+          "path": "inputs/data.csv",
+          "content": "id,item,amount\n1,widget,10.00\n2,gadget,25.50\n3,widget,6.00\n4,doohickey,20.00\n"
+        }
+      ],
+      "tuningfork": {
+        "check": "python3 -c \"import json,sys; d=json.load(open('report.json')); sys.exit(0 if d.get('row_count')==4 and abs(float(d.get('amount_total',0))-61.5)<0.01 else 1)\"",
+        "normalizers": [
+          "tool_call_json",
+          "python_ast",
+          "json_content"
+        ],
+        "held_out": false,
+        "skills": [
+          "tally-report"
+        ],
+        "max_turns": 8,
+        "timeout": 600
+      }
+    }
+  ]
+}

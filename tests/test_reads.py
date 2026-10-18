@@ -51,6 +51,20 @@ class TestDivergence:
         assert report["divergence_index"] == 1
         assert inspect.divergence_report(store, refs=["a", "b"])["divergence_index"] == 1
 
+    def test_each_run_says_its_verdict_as_the_pass_rates_count_it(self, store):
+        """The page colours each run by its own verdict: a run the rates leave out says so,
+        whatever its check said."""
+        read = tool_call_message("read_file", {"path": "a"})
+        runs = {name: record_run(store, name, [read, tool_call_message("write_file", {"path": name})], task_id="t/1")
+                for name in ("a", "b", "c", "d")}
+        store.annotate_run(runs["a"], result={"passed": True, "usable": True})
+        store.annotate_run(runs["b"], result={"passed": False, "usable": True})
+        store.annotate_run(runs["c"], result={"passed": True, "usable": False, "timed_out": True})
+
+        report = inspect.divergence_report(store, task="t/1")
+
+        assert report["verdicts"] == {runs["a"]: "passed", runs["b"]: "failed", runs["c"]: "not counted", runs["d"]: None}
+
     def test_it_needs_something_to_compare(self, store):
         with pytest.raises(OperationError) as refused:
             inspect.divergence_report(store)

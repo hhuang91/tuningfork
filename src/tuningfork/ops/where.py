@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 from typing import Any, Iterable, Sequence
 
-from tuningfork.analysis.stats import fisher_exact, rate
+from tuningfork.analysis.stats import fisher_exact, p_short, rate
 from tuningfork.ops.common import OperationError
 from tuningfork.store.db import Run, Store
 
@@ -558,8 +558,8 @@ def split_text(group: dict[str, Any], kind: str) -> str:
     if split.get("p") is None:
         return text + ": nothing to compare, with " + ("no failing run" if split.get("passing") else "no passing run")
     if split.get("goes_with"):
-        return text + f": it goes with {split['goes_with']} (Fisher p = {split['p']:.2f})"
-    return text + f": no split (Fisher p = {split['p']:.2f})"
+        return text + f": it goes with {split['goes_with']} (Fisher p = {p_short(split['p'])})"
+    return text + f": no split (Fisher p = {p_short(split['p'])})"
 
 
 def seen_text(group: dict[str, Any], kind: str) -> str | None:

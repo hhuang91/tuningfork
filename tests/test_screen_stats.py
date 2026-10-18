@@ -62,6 +62,14 @@ class TestTheScreen:
         assert (first["letter"], first["count"], first["by_arm"]) == ("A", 25, {"original": 20, "p1": 5})
         assert (second["letter"], second["by_arm"]) == ("B", {"original": 0, "p1": 15})
 
+    def test_each_behaviour_says_how_many_of_its_samples_the_target_counted(self):
+        """The page badges each row target or not target: a row's own counts say how often a
+        behaviour happened, never whether it was the one wanted."""
+        report = compare_to_baseline(arm(0, 20), {"p1": arm(15, 5)}, target=TARGET, planned=20)
+        assert [(found["outcome"]["label"], found["target_counted"]) for found in report.behaviours] == [
+            (MISS.label, 0), (HIT.label, 15),
+        ]
+
 
 @pytest.mark.parametrize(
     "baseline, family, needed",

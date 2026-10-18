@@ -671,6 +671,144 @@ async def execute_ab(
     )
 
 
+# --- what an A/B tested ----------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class Wording:
+    """The edit an A/B tested: its two texts, and the lines between them."""
+
+    #: Each side's file as the A/B named it (`path`), and a short name for it (`label`); a
+    #: variant saved in this home's variants folder adds its `skill` and `name`.
+    original: dict[str, Any]
+    variant: dict[str, Any]
+    #: `ops.diff.line_diff` from the original to the variant, numbered as the skill file's
+    #: lines; None when neither the records nor the files hold the texts it tested.
+    diff: dict[str, Any] | None = None
+    #: Where the texts were read: `sent` (its arms' requests), `fork` (a fork's launch) or
+    #: `files` (the files it names, each still holding the text it tested).
+    source: str | None = None
+    #: How the model read the skill, when read from what was sent: full, full-trimmed or body.
+    form: str | None = None
+    #: Why there is no diff.
+    missing: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "original": self.original, "variant": self.variant, "diff": self.diff,
+            "source": self.source, "form": self.form, "missing": self.missing,
+        }
+
+
+def ab_wording(store: Store, arms: dict[str, Any]) -> Wording | None:
+    """What an A/B changed, read back from what it recorded rather than from files that can
+    have changed since: a fork's launch keeps both texts whole, and a checkpoint A/B's arms
+    the requests they sent, the variant where the original was (`experiment.skill.swapped`).
+    Else the files the A/B names, each only while it still holds the text it tested. None for
+    an experiment that swapped no wording."""
+    from tuningfork.experiment.skill import swapped
+    from tuningfork.ops.diff import line_diff
+
+    info = next((arm.variant for arm in arms.values() if arm.variant), None)
+    if not info:
+        return None
+    found = Wording(original=_side(store, info, "original"), variant=_side(store, info, "variant"))
+    offset = 0
+    texts = _fork_texts(store, arms.get("variant"))
+    if texts is not None:
+        found.source = "fork"
+    elif {"original", "variant"} <= set(arms) and arms["variant"].settings.get("reach") != "end":
+        try:
+            read = swapped(
+                store.experiment_request(arms["original"]), store.experiment_request(arms["variant"]),
+                info.get("spans") or [],
+            )
+        except (OSError, KeyError, ValueError):
+            read = None
+        if read is not None:
+            before, after, span = read
+            texts = (before, after)
+            found.source, found.form = "sent", span.get("form")
+            # The skill as the model read it may start below the file's first line — its body,
+            # without the frontmatter: numbered as the file's lines, as show_skill numbers them.
+            offset = max(int(span.get("line_start") or 1) - 1, 0)
+    if texts is None:
+        texts = _file_texts(info)
+        found.source = "files" if texts is not None else None
+    if texts is None:
+        found.missing = "neither what its arms recorded nor the files it names hold the texts it tested"
+        return found
+    found.diff = _renumbered(line_diff(*texts), offset)
+    return found
+
+
+def _side(store: Store, info: dict[str, Any], which: str) -> dict[str, Any]:
+    """One side of an A/B: its file, and a short name — a saved variant's own, else the file's
+    folder and name."""
+    from tuningfork.ops.variants import NAME, root
+
+    path = info.get(f"{which}_path")
+    side: dict[str, Any] = {"path": path, "label": "/".join(Path(path).parts[-2:]) if path else "—"}
+    if not path:
+        return side
+    try:
+        skill, name = Path(path).resolve().relative_to(root(store.home).resolve()).parts
+    except (OSError, ValueError):
+        return side
+    stem = name[: -len(".md")] if name.endswith(".md") else ""
+    if NAME.fullmatch(skill) and NAME.fullmatch(stem):
+        side.update(label=stem, skill=skill, name=stem)
+    return side
+
+
+def _fork_texts(store: Store, arm: Any) -> tuple[str, str] | None:
+    """Both texts, as a fork of an A/B's variant arm was given them: its launch keeps them."""
+    if arm is None or arm.settings.get("reach") != "end":
+        return None
+    for sample in store.samples(arm.id):
+        run = store.get_run(sample.run_id) if sample.run_id else None
+        launch = store.get_launch(run.launch_id) if run is not None and run.launch_id else None
+        kept = (launch.variant or {}) if launch is not None else {}
+        if isinstance(kept.get("original_text"), str) and isinstance(kept.get("variant_text"), str):
+            return kept["original_text"], kept["variant_text"]
+    return None
+
+
+def _file_texts(info: dict[str, Any]) -> tuple[str, str] | None:
+    """The texts in the files an A/B names, each only if it is still the text the A/B
+    recorded (its digest: an A/B at a step digests it with its line endings plain, a fork as
+    read)."""
+    import hashlib
+
+    from tuningfork.experiment.skill import text_sha256
+
+    texts = []
+    for which in ("original", "variant"):
+        path = info.get(f"{which}_path")
+        try:
+            text = Path(path).read_text(encoding="utf-8") if path else None
+        except (OSError, ValueError):
+            text = None
+        digests = {text_sha256(text), hashlib.sha256(text.encode()).hexdigest()} if text is not None else set()
+        if info.get(f"{which}_sha256") not in digests:
+            return None
+        texts.append(text)
+    return texts[0], texts[1]
+
+
+def _renumbered(diff: dict[str, Any], offset: int) -> dict[str, Any]:
+    """A line diff's numbers moved down by `offset` lines."""
+    if offset:
+        for hunk in diff["hunks"]:
+            hunk["old_start"] += offset
+            hunk["new_start"] += offset
+            for line in hunk["lines"]:
+                for key in ("old", "new"):
+                    if key in line:
+                        line[key] += offset
+    return diff
+
+
 def _tracking(created: list[Any], progress: Progress | None) -> Progress:
     """Forward progress, keeping the experiments it reports as they are created."""
 

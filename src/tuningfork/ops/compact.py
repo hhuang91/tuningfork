@@ -638,6 +638,8 @@ def experiment(report: dict[str, Any]) -> dict[str, Any]:
             data[key] = report[key]
     if report.get("variant"):
         data["variant"] = report["variant"]
+    if report.get("wording"):
+        data["wording"] = wording(report["wording"])
     if "distribution" in report:
         data["distribution"] = distribution(report["distribution"])
     if "comparison" in report:
@@ -654,6 +656,31 @@ def experiment(report: dict[str, Any]) -> dict[str, Any]:
             for name, arm in (report.get("arms") or {}).items()
         }
     return {key: value for key, value in data.items() if value is not None}
+
+
+def wording(found: dict[str, Any]) -> dict[str, Any]:
+    """The edit an A/B tested: the lines it changed, as a refinement's proposals show theirs."""
+    diff = found.get("diff")
+    data = {
+        "original": (found.get("original") or {}).get("label"),
+        "variant": (found.get("variant") or {}).get("label"),
+        "changed": diff.get("changed") if diff else None,
+        "diff": [line for hunk in diff["hunks"] for line in hunk["lines"] if line["op"] != " "][:12] if diff else None,
+        "form": found.get("form"),
+        "missing": found.get("missing"),
+    }
+    return {key: value for key, value in data.items() if value is not None}
+
+
+def wording_lines(found: dict[str, Any] | None) -> list[str]:
+    if not found:
+        return []
+    if found.get("changed") is None:
+        return [f"the edit it tested is not shown: {found.get('missing')}"]
+    lines = [f"the edit it tested, original {found.get('original')} → variant {found.get('variant')}: "
+             f"{found['changed']} line(s) changed"]
+    lines += [f"  {line['op']} {clip(line['text'], 200)}" for line in (found.get("diff") or [])[:6]]
+    return lines
 
 
 def experiments(listed: Sequence[dict[str, Any]], *, limit: int = 30) -> dict[str, Any] | list[Any]:
@@ -944,7 +971,7 @@ def checkpoint_lines(found: dict[str, Any]) -> list[str]:
 
 def experiment_lines(found: dict[str, Any]) -> list[str]:
     head = f"experiment {found.get('id')} ({found.get('kind')}) at run {found.get('run')} step {found.get('step')}: {found.get('status')}"
-    lines = [head]
+    lines = [head, *wording_lines(found.get("wording"))]
     if found.get("screen"):
         return lines + screen_lines(found["screen"])
     if found.get("forking"):
@@ -1046,7 +1073,9 @@ def tally_lines(view: dict[str, Any]) -> list[str]:
             lines.append(f"  … {found['total'] - len(shown)} more finding(s)")
         if group.get("silent"):
             lines.append(f"  {group['silent']} failed run(s) whose check printed nothing")
-    lines.append("each line a check printed is one finding, numbers shown as #, colours as <color>; a run counts once a finding")
+    who = "failed forks" if view.get("scope") == "screen" else "failed runs"
+    lines.append(f"each count is the {who} whose check printed the line, once each however often; lines that differ "
+                 "only in numbers or colour codes count as one, shown with # and <color>")
     return lines
 
 

@@ -68,7 +68,7 @@ function setup(runs, scenarios, connections) {
     return panel("Browsing recordings", [h("p", { class: "hint" },
       "Everything recorded can be read here, but nothing can be started: that needs the proxy. Start it with ",
       h("code", null, "tuningfork serve --upstream <your inference server>"), " and open the address it prints."),
-    swaNote()]);
+    serverNote()]);
   }
   const server = connections?.server || {};
   const identity = server.identity || {};
@@ -116,20 +116,25 @@ function setup(runs, scenarios, connections) {
   // The recommendation stays in sight when the finished checklist folds away.
   if (done === items.length) {
     return [h("details", { class: "panel setup-done" }, h("summary", null, h("strong", null, "Set up"), h("span", { class: "muted" }, " — server, harness, a task and a run: all there")), h("div", { class: "panel-body" }, list)),
-      swaNote()];
+      serverNote()];
   }
-  return [panel(`Get set up · ${done} of ${items.length}`, list), swaNote()];
+  return [panel(`Get set up · ${done} of ${items.length}`, list), serverNote()];
 }
 
-// Measured: without --swa-full, llama-server reuses part of a sliding-window
-// model's cache between requests; without --no-cache-prompt, it answers a prompt from its cache of
-// an earlier one. Either way the same request behaves differently with what ran before.
-function swaNote() {
+// Measured (docs/setup.md): without --no-cache-prompt, llama-server answers a prompt from its cache
+// of an earlier one, so a step's samples share one state and a screen favours its proposals. For a
+// sliding-window model, without --ctx-checkpoints 0 or --swa-full, it cuts a prompt into batches at
+// places that differ between its chat endpoint and its raw one, so an answer scores differently
+// from how it was sampled.
+function serverNote() {
   return h("div", { class: "banner banner-warn" }, h("strong", null, "Strongly recommended: "), "start llama-server with ",
-    h("code", null, "--swa-full"), " (for a model with sliding-window layers: Gemma 2, 3, 4) and ",
-    h("code", null, "--no-cache-prompt"), ". Without them, a step's behaviour can depend on what the server ran before: a screen favours its proposals, and Claude Code's samples and every fork share one cached state — ",
-    h("a", { href: "#/guide?term=sliding-window" }, "why"), ", ", h("a", { href: "#/guide?term=prompt%20cache" }, "and why"),
-    ". The server check measures the prompt cache; nothing can see --swa-full.");
+    h("code", null, "--no-cache-prompt"), " and, for a model with sliding-window layers (Gemma 2, 3, 4), ",
+    h("code", null, "--ctx-checkpoints 0"), " or ", h("code", null, "--swa-full"),
+    ". Without the first, a step's behaviour can depend on what the server ran before: Claude Code's samples and every fork share one cached state, and a screen favours its proposals (",
+    h("a", { href: "#/guide?term=prompt%20cache" }, "why"),
+    "). Without the second, an answer scores differently on the raw endpoint than on the chat one it was sampled on (",
+    h("a", { href: "#/guide?term=sliding-window" }, "why"),
+    "). The server check measures prompt reuse; llama-server reports neither --ctx-checkpoints nor --swa-full.");
 }
 
 // --- the map --------------------------------------------------------------------------------------

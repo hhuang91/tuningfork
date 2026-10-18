@@ -212,6 +212,34 @@ class TestABComparison:
         assert result.target.direction == "up"
         assert result.target.p_value == pytest.approx(exact_fisher(2, 18, 19, 1), rel=1e-9)
 
+    def test_each_behaviour_says_how_many_of_its_samples_the_target_counted(self):
+        """The rows the target's own rates add up, as the A/B's page marks them: all of the
+        behaviour the target names, none of the others."""
+        original = [outcome("count/total")] * 18 + [outcome("row_count")] * 2
+        variant = [outcome("row_count")] * 19 + [outcome("count/total")] * 1
+
+        result = compare_arms(original, variant, target=target_by_pattern("row_count"))
+
+        counted = {shift.outcome.label: shift.target_counted for shift in result.shifts}
+        assert counted == {"row_count": 21, "count/total": 0}
+        assert {row["outcome"]["label"]: row["target_counted"] for row in result.to_json()["shifts"]} == counted
+
+    def test_a_pattern_can_count_part_of_one_behaviour(self):
+        """Two scripts that differ in a comment are one behaviour, and a pattern reading what
+        each says can meet one and not the other: the row says how many it counted."""
+        plain = Outcome("tool_call", "key:script", "script", text="print(1)")
+        noted = Outcome("tool_call", "key:script", "script", text="print(1)  # row_count")
+
+        result = compare_arms([plain] * 3, [noted] * 2 + [plain], target=target_by_pattern("row_count"))
+
+        (shift,) = result.shifts
+        assert shift.target_counted == 2 and result.target.variant.successes == 2
+
+    def test_without_a_target_no_behaviour_says_what_it_counted(self):
+        result = compare_arms([outcome("a")] * 3, [outcome("b")] * 3)
+        assert all(shift.target_counted is None for shift in result.shifts)
+        assert all("target_counted" not in row for row in result.to_json()["shifts"])
+
     def test_no_real_shift_is_not_significant(self):
         original = [outcome("read")] * 14 + [outcome("exec")] * 6
         variant = [outcome("read")] * 13 + [outcome("exec")] * 7

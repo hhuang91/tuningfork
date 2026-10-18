@@ -44,7 +44,7 @@ inside a region box whose bottom was at y = 550 to 620.
 
 - **Model and harness.** Gemma 4 31B (Q4_K_M) on llama.cpp's `llama-server` (b11108) on one 32 GB
   GPU: one 128k slot, `--jinja -c 131072 -np 1 --ctx-checkpoints 0 --no-cache-prompt -ctk q4_0 -ctv q4_0`
-  ([the top-level README](../../README.md) says why). Sampling is the server's default, as Hermes
+  ([the setup page](../../docs/setup.md#numbers-that-repeat) says why). Sampling is the server's default, as Hermes
   sends none. Hermes Agent 0.18.2 ran every run in tuningfork's sandbox, with its clock pinned.
 - **The check.** [`checks/diagram.py`](../../benchmark/architecture-diagram/checks/diagram.py) reads
   the saved SVG and judges it: are the components there, does a dashed boundary hold them, is the

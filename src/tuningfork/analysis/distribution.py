@@ -357,6 +357,10 @@ class ClusterShift:
     #: shows any reasoning.
     original_reasoned: int | None = None
     variant_reasoned: int | None = None
+    #: How many of its samples, both arms together, the declared target counted: all of them
+    #: for a behaviour that is the target, none for one that is not — some, where a pattern
+    #: meets what one script of the behaviour says and not another's. None with no target.
+    target_counted: int | None = None
 
 
 @dataclass(slots=True)
@@ -387,6 +391,7 @@ class ABComparison:
                     "adjusted_p": shift.adjusted_p,
                     **({"original_reasoned": shift.original_reasoned, "variant_reasoned": shift.variant_reasoned}
                        if shift.original_reasoned is not None else {}),
+                    **({"target_counted": shift.target_counted} if shift.target_counted is not None else {}),
                 }
                 for shift in self.shifts
             ],
@@ -423,6 +428,15 @@ def compare_arms(
     count_variant = Counter(outcome.key for outcome in kept_variant)
     pooled = {key: count_original[key] + count_variant[key] for key in first}
 
+    # Each sample the target counts, by its behaviour: the rows the target's own rates add up.
+    hits_original = [target.matches(outcome) for outcome in kept_original] if target is not None else []
+    hits_variant = [target.matches(outcome) for outcome in kept_variant] if target is not None else []
+    counted = Counter(
+        outcome.key
+        for outcome, hit in (*zip(kept_original, hits_original), *zip(kept_variant, hits_variant))
+        if hit
+    )
+
     ordered = _ordered_keys(pooled, first)
     tests = max(1, len(ordered))
     shifts = []
@@ -439,13 +453,13 @@ def compare_arms(
                 adjusted_p=min(1.0, p_value * tests),
                 original_reasoned=reasoned(original, reasoning[0], key) if shown else None,
                 variant_reasoned=reasoned(variant, reasoning[1], key) if shown else None,
+                target_counted=counted[key] if target is not None else None,
             )
         )
 
     target_test = None
     if target is not None:
-        a = sum(1 for outcome in kept_original if target.matches(outcome))
-        c = sum(1 for outcome in kept_variant if target.matches(outcome))
+        a, c = sum(hits_original), sum(hits_variant)
         target_test = TargetTest(
             description=target.description,
             original=rate(a, n_original),

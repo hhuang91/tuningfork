@@ -60,10 +60,16 @@ node tests/browser/jobs_ui.mjs
 
 It checks that a resample started from a step on the run's conversation runs through the
 proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter as its
-target, shows the known shift and saves the variant only when it starts; that no target is
+target, starts at one press of Start with the mouse, the name just typed still focused (the change
+event as the focus leaves it once lost that click) — a form asking for its plan again when the page
+refreshes it, and not for an event that changes nothing — shows the known shift, saves the variant only
+when it starts, and leads its page with the
+edit it tested, then the target and which way the variant moved it — in the accent's colour, never
+a check's green — with each behaviour badged target or not target; that no target is
 chosen for you; that a task runs again from its run's page, its check shown whole; that a
-fork stops at its step for a person and runs on when continued; that forks run to the end,
-for a resample and for an A/B; that a job's page, its event stream cut mid-job, catches up
+fork stops at its step for a person and runs on when continued, and one cancelled as it waits
+keeps no verdict, its page saying it was stopped and why; that forks run to the end,
+for a resample and for an A/B, whose page names the task's check as its target; that a job's page, its event stream cut mid-job, catches up
 with every event shown once; that cancelling takes two clicks and keeps what was
 sampled, and a running job's time moves while nothing is sent; that a scenario made in the
 page — its skill folder shown where it resolves, its check flagged as the shell command it
@@ -74,8 +80,11 @@ sampled behaviours and is filed under the step once the call is recorded, while 
 to the model comes back marked a hypothesis; on the Connections page, that a server
 check measures what the harnesses need, a protected endpoint is refused, and an idle proxy
 switches its server after a dry run; that Start… on the Jobs page leads to a step's form;
-that a run reads as one conversation — each message once, the final reply marked, a
-step opening in place with its form in it, and its exact context on a page of its own;
+that a run reads as one conversation — each message once, the final reply marked (and not
+green), its verdict closing the page and the step rail, coloured by it with what the check
+printed, a step opening in place with its form in it, and its exact context on a page of its own;
+that the divergence page colours each run by its own verdict, draws "then passed" as a rate, and
+says plainly how it counts the failed runs' check lines;
 that an answer scored from its Tokens view is rebuilt token for token and drawn once
 per token, a token shows what else the model weighed there, and a token selected there
 opens the forking-token form, whose probe finds that token decides the answer; that the
@@ -85,12 +94,18 @@ the step has done, and declared in words; that a refinement started from a step 
 target first, offering no exploratory choice; that the lab's built-in proposer, asked through
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have; that a person's own wording joins them; that a screen of two,
-Holm-corrected, finds the one that names the keys, and each proposal then carries its
-verdict; that a survivor, validated from its refinement's page, runs forks to the end, the
+Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
+behaviours badged target or not target — and each proposal then carries its
+verdict, the refinement's page leading with that evidence — where it stands, each proposal's
+screen in a line — above what a proposer is shown, the original wording's answers, with the
+skill's paths closed away in About; that a survivor, validated from its refinement's page, runs forks to the end, the
 training task and the lab's held-out task — named only by its id in the plan and the job,
-its text nowhere — and meets the gate, each part and check shown to the person; that
+its text nowhere — and meets the gate, each part and check shown to the person, the evidence
+then naming it ready to approve, its screen and its full runs in a line each and a link down
+to them; that
 approving shows the file it writes and the edit, writes nothing for a wrong code, and writes
-the skill's own file once the code shown is typed; and that the proposer's key, set on
+the skill's own file once the code shown is typed, the page then saying so first, the
+approved proposal picked out in the evidence and in its card; and that the proposer's key, set on
 Connections, is never on the page or in an answer again. On the way it checks that a batch's plan opens with
 how a run passes and offers the spec's task by what it asks, that Start is ready with nothing
 more typed, and that the Runs page says how a task passes. Last, it moves a run to the trash

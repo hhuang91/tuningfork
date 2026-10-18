@@ -21,7 +21,7 @@ from rich.table import Table
 from tuningfork import __version__
 from tuningfork.analysis.divergence import DivergenceReport, compare_runs
 from tuningfork.analysis.normalize import DEFAULT_NORMALIZERS, recorded_outcome
-from tuningfork.analysis.stats import samples_needed
+from tuningfork.analysis.stats import p_short, samples_needed
 from tuningfork.backends.base import BackendProfile, Support
 from tuningfork.backends.probe import probe_backend
 from tuningfork.config import Settings, default_home
@@ -1449,8 +1449,10 @@ def tally(
                           f"{escape(found.task_id or '<id>')}` runs it along each run, and the tally then says which "
                           "call made each finding.[/dim]", soft_wrap=True)
     console.print()
-    console.print("[dim]Each line a check printed is one finding, its numbers shown as # and its colours as "
-                  "<color>; a run counts once a finding. Intervals are Wilson 95%.[/dim]")
+    who = "failed forks" if found.scope == "screen" else "failed runs"
+    console.print(f"[dim]Each count is the {who} that printed the line, once each, however often it printed it. "
+                  "Lines that differ only in their numbers or colour codes count as one, shown with # and <color>. "
+                  "Intervals are Wilson 95%.[/dim]")
 
 
 @app.command("check-along")
@@ -1698,7 +1700,7 @@ def _print_divergence(
         console.print(
             f"\n[bold]by tool[/bold]  runs that called {escape(by_tool['tool'])} passed "
             f"{called['passed']}/{called['total']}, runs that never did {never['passed']}/{never['total']} "
-            f"(Fisher p = {by_tool['p']:.2f}): the tool {goes}, at whatever step each run called it"
+            f"(Fisher p = {p_short(by_tool['p'])}): the tool {goes}, at whatever step each run called it"
         )
     console.print(
         "\n[dim]Intervals are Wilson 95%. With this many runs they are wide; "
@@ -2271,10 +2273,18 @@ def _print_forking(report) -> None:
             console.print(f"  [dim]the chance of the target from here, weighted by each token's chance: {position.weighted:.0%}[/dim]")
     _print_distribution(report.behaviours, "behaviours, across the probe")
     flips = sum(len(position.flips()) for position in report.positions)
-    console.print(
-        f"\n{flips} of {report.family} forced tokens changed what the model did (Holm-corrected over "
-        f"the {report.family} planned before sampling; α={report.alpha})."
-    )
+    corrected = f"Holm-corrected over the {report.family} planned before sampling; α={report.alpha}"
+    if flips:
+        console.print(f"\n{flips} of {report.family} forced tokens changed what the model did ({corrected}).")
+        return
+    # A null is what the probe could see, never that nothing changed.
+    console.print(f"\nNo forced token decided what the model did ({corrected}).")
+    if report.detectable:
+        console.print(f"With {report.per_arm} continuations a token, only a token that changes about "
+                      f"{report.detectable} of its {report.per_arm} would show: a smaller shift can be real and "
+                      "go unseen (-n draws more).")
+    elif report.per_arm:
+        console.print(f"With {report.per_arm} continuations a token, no change could reach significance: raise -n.")
 
 
 def _print_screen(report, arms: dict) -> None:
@@ -3036,6 +3046,7 @@ def experiment(
         arm = next(iter(report.arms.values()))
         if report.kind == "interrupted":
             console.print(f"  [yellow]this A/B was interrupted: only its {arm.arm} arm ran[/yellow]")
+        _print_wording(report.wording)
         if report.to_end is not None:
             _print_end_to_end(report.to_end, f"{arm.arm} arm — {arm.sample_count} forks")
         else:
@@ -3043,7 +3054,9 @@ def experiment(
         return
     variant_info = report.arms["variant"].variant
     swapped = f"{variant_info.get('original_path')} → {variant_info.get('variant_path')}"
-    console.print(f"  swapped   {escape(swapped)}")
+    # Paths are printed whole, never broken across lines: they are copied.
+    console.print(f"  swapped   {escape(swapped)}", soft_wrap=True)
+    _print_wording(report.wording)
     if report.kind == "ab_to_end":
         _print_ab_to_end(report.to_end, k, alpha)
         return
@@ -3096,6 +3109,26 @@ def _who(entry: dict) -> str:
     if via == "mcp":
         return f"an agent over MCP ({entry.get('client') or 'unnamed'})"
     return "a person" if via == "person" else via
+
+
+def _print_wording(wording) -> None:
+    """The edit an A/B tested, as a line diff of its two texts."""
+    if wording is None:
+        return
+    if wording.diff is None:
+        console.print(f"  the edit  [yellow]not shown: {escape(wording.missing or '')}[/yellow]")
+        return
+    changed = wording.diff["changed"]
+    notes = []
+    if wording.source == "files":
+        notes.append("read from its files, which still hold the texts it tested")
+    if wording.form == "body":
+        notes.append("the model read the skill's body here, without its frontmatter")
+    console.print(
+        f"  the edit  {changed} line{'s' if changed != 1 else ''} changed"
+        + (f" [dim]({escape('; '.join(notes))})[/dim]" if notes else "")
+    )
+    _print_diff(wording.diff["hunks"])
 
 
 def _print_diff(hunks: list[dict]) -> None:

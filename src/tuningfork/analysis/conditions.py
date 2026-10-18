@@ -32,6 +32,48 @@ def pass_rate(results: Iterable[dict[str, Any]]) -> Rate | None:
     return rate(sum(verdicts), len(verdicts)) if verdicts else None
 
 
+def exclusion_from(result: dict[str, Any] | None) -> str | None:
+    """Why a run with this stored result (`runner.RunOutcome.to_result`) is not counted, in
+    words; None when nothing in it says so."""
+    result = result or {}
+
+    def steps(key: str) -> str:
+        return ", ".join(map(str, result[key]))
+
+    if result.get("skills_changed"):
+        return f"skills changed: {', '.join(result['skills_changed'])}"
+    if result.get("timed_out"):
+        return "timed out"
+    if result.get("edited_steps"):
+        return f"edited at a breakpoint (step {steps('edited_steps')})"
+    if result.get("failed_steps"):
+        return f"model call failed (step {steps('failed_steps')})"
+    if result.get("thread_trouble"):
+        return f"a call failed or was edited in {', '.join(result['thread_trouble'])}"
+    departed = result.get("departed")
+    if departed:
+        where = f"step {departed.get('step')}"
+        if departed.get("thread"):
+            where = f"thread {departed['thread']} {where}"
+        return f"the replay departed from the recording at {where}"
+    if result.get("leaked"):
+        return f"the original wording reached the model (step {steps('leaked')})"
+    if result.get("reached") is False:
+        return f"the harness never reached step {result.get('fork_step')}"
+    return None
+
+
+def counted_verdict(result: dict[str, Any] | None) -> str | None:
+    """How one run fared, as `pass_rate` counts it: "passed" or "failed"; "not counted" for a
+    verdict every rate leaves out; None for a run with no verdict."""
+    result = result or {}
+    if result.get("passed") is None:
+        return None
+    if not result.get("usable"):
+        return "not counted"
+    return "passed" if result["passed"] else "failed"
+
+
 @dataclass(slots=True)
 class Condition:
     task_id: str | None
