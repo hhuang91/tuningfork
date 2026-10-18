@@ -75,6 +75,16 @@ def test_what_is_short_or_mixed_is_named():
     assert not by_id(judge(record(complete=False), target_matches=True))["G2"].passed
 
 
+def test_runs_the_infrastructure_broke_are_not_enough_runs():
+    """Found in review: G2 counted every run drawn, the ones left out too, so one counted run an
+    arm met it, and every later check judged that one run — the gate passed."""
+    one = {"original": runs(0, 5), "edit": runs(1, broken=4)}
+    gate = judge(record(forward=one, training=one, held_out=[{"eval": "2", **one}]), target_matches=True)
+    reason = by_id(gate)["G2"].reason
+    assert not gate.passed and not by_id(gate)["G2"].passed
+    assert "training edit: 1 of at least 5 counted, 4 left out (a model call failed)" in reason
+
+
 def test_no_held_out_task_no_screen_a_changed_file_or_an_approval_each_refuse():
     assert not by_id(judge(record(held_out=[]), target_matches=True))["G1"].passed
     assert not by_id(judge(record(screen={"survived": False}), target_matches=True))["G0"].passed

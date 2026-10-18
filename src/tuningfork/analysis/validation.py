@@ -237,9 +237,15 @@ def judge(
         if not part:
             continue
         for arm in ("original", "edit"):
-            drawn = len(part.get(arm) or [])
-            if drawn < minimum:
-                short.append(f"{name} {arm}: {drawn} of at least {minimum}")
+            # Runs counted, not drawn (found in review): the ones the infrastructure broke are
+            # left out of every later check, so one counted run an arm met this and every later
+            # check judged that one run.
+            verdicts = part.get(arm) or []
+            counted = count(verdicts, minimum)
+            if counted.counted < minimum:
+                left = len(verdicts) - counted.counted
+                short.append(f"{name} {arm}: {counted.counted} of at least {minimum}"
+                             + (f" counted, {left} left out ({', '.join(sorted(set(counted.excluded)))})" if left else ""))
         found = {verdict.get("server_id") for arm in ("original", "edit") for verdict in part.get(arm) or []} - {None}
         if len(found) > 1:
             servers.append(name)
