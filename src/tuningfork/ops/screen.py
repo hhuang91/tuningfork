@@ -720,6 +720,19 @@ def prepare_screen_to_end(
     original_counts: list[int] = []
     for found, plan, count in zip(kept, baselines, per_checkpoint):
         earlier = [] if fresh_original else original_forks(store, refinement, found, plan)
+        if len(kept) > 1 and not quick:
+            # Pooled over several checkpoints, the arms must weigh each alike: never more of the
+            # original's forks at one than this screen draws of each proposal there, or the
+            # original's rate leans to that prefix (found in review: twenty drawn at the first by
+            # an earlier screen of it alone, against five of the proposal's). Whole arms, oldest
+            # first, while they fit; what is short is drawn. At one checkpoint, all count.
+            fitted, judged = [], 0
+            for arm in earlier:
+                forks = judged_forks(store, arm)
+                if judged + forks <= count:
+                    fitted.append(arm)
+                    judged += forks
+            earlier = fitted
         have = sum(judged_forks(store, arm) for arm in earlier)
         reused.append(earlier)
         reused_judged.append(have)
