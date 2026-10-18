@@ -85,9 +85,10 @@ function hypotheses(hold, scope) {
     onStarted: (job) => follow(job),
   });
 
-  function follow(job) {
+  function follow(job, newest = true) {
     const slot = h("div", { class: "reply" }, h("div", { class: "reply-head" }, chip("asking…", "muted"), h("span", { class: "muted small" }, job.params?.question || "")));
-    replies.prepend(slot);
+    if (newest) replies.prepend(slot);
+    else replies.append(slot);
     shown.add(job.id);
     watchJob(job.id, scope, (state) => {
       const found = state.job;
@@ -98,6 +99,12 @@ function hypotheses(hold, scope) {
   // Questions already asked at this hold, from this page or another.
   api.get("/jobs").then((jobs) => {
     for (const job of jobs.filter((j) => j.kind === "hold-console" && j.params?.hold === hold.id && !shown.has(j.id))) {
+      // One still being answered is followed until it is, as one asked here is (found in
+      // review: it was shown as an error, and never became its reply).
+      if (ACTIVE.has(job.status)) {
+        follow(job, false);
+        continue;
+      }
       shown.add(job.id);
       replies.append(h("div", { class: "reply" }, ...replyCard(job)));
     }
