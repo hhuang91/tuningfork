@@ -29,6 +29,7 @@ import logging
 import threading
 import time
 from collections import deque
+from contextlib import nullcontext
 from typing import Any
 
 from tuningfork.config import redact_json
@@ -190,6 +191,8 @@ class JobRunner:
         self._finished: deque[str] = deque(maxlen=50)
         self._queues: dict[str, deque[Job]] = {BACKGROUND: deque(), INTERACTIVE: deque()}
         self._running: dict[str, set[str]] = {BACKGROUND: set(), INTERACTIVE: set()}
+        #: Held from the check for the same work to the job's making: see `submit`.
+        self._submitting = threading.Lock()
         self._stopping = False
 
     # --- asking ------------------------------------------------------------------------
@@ -243,38 +246,42 @@ class JobRunner:
         parsed = kind.parse(params)
         started_by = asked_by(started_by)
         stored_params = kept_params(parsed)
-        if dedupe:
+        # Work that may be asked for twice is checked for and made one submission at a time:
+        # found in review, a second asked while the first was being prepared passed the check
+        # too, and the work started twice.
+        with self._submitting if dedupe or request_id is not None else nullcontext():
+            if dedupe:
+                with self._lock:
+                    same = next((
+                        job for job in self._jobs.values()
+                        if job.record.kind == kind.name and job.record.status in ("queued", "running")
+                        and job.record.params == stored_params
+                    ), None)
+                if same is not None:
+                    return {**self._summary(same), "deduplicated": True}
+            if request_id is not None:
+                if not isinstance(request_id, str) or not 0 < len(request_id) <= 100:
+                    raise OperationError("request_id must be text", code="bad_params", field="request_id")
+                with self._lock:
+                    known = next((job for job in self._jobs.values() if job.record.request_id == request_id), None)
+                if known is not None:
+                    return self._summary(known)
+                stored = self.store.job_for_request(request_id)
+                if stored is not None:
+                    return job_json(stored)
+            # Refused now, not after waiting its turn behind a long batch: it is prepared again
+            # when it starts, since what it depends on can change while it waits.
+            kind.prepare(JobContext(store=self.store, proxy=self.proxy, job_id=""), parsed)
+            record = self.store.create_job(
+                kind=kind.name, lane=kind.lane, params=stored_params, request_id=request_id,
+                started_by=started_by,
+            )
+            record.owner = self.owner
+            self.store.update_job(record.id, owner=self.owner)
+            job = Job(record, parsed)
             with self._lock:
-                same = next((
-                    job for job in self._jobs.values()
-                    if job.record.kind == kind.name and job.record.status in ("queued", "running")
-                    and job.record.params == stored_params
-                ), None)
-            if same is not None:
-                return {**self._summary(same), "deduplicated": True}
-        if request_id is not None:
-            if not isinstance(request_id, str) or not 0 < len(request_id) <= 100:
-                raise OperationError("request_id must be text", code="bad_params", field="request_id")
-            with self._lock:
-                known = next((job for job in self._jobs.values() if job.record.request_id == request_id), None)
-            if known is not None:
-                return self._summary(known)
-            stored = self.store.job_for_request(request_id)
-            if stored is not None:
-                return job_json(stored)
-        # Refused now, not after waiting its turn behind a long batch: it is prepared again
-        # when it starts, since what it depends on can change while it waits.
-        kind.prepare(JobContext(store=self.store, proxy=self.proxy, job_id=""), parsed)
-        record = self.store.create_job(
-            kind=kind.name, lane=kind.lane, params=stored_params, request_id=request_id,
-            started_by=started_by,
-        )
-        record.owner = self.owner
-        self.store.update_job(record.id, owner=self.owner)
-        job = Job(record, parsed)
-        with self._lock:
-            self._jobs[job.id] = job
-            self._queues[kind.lane].append(job)
+                self._jobs[job.id] = job
+                self._queues[kind.lane].append(job)
         self._announce(job)
         self.kick()
         return self._summary(job)

@@ -239,6 +239,28 @@ class TestAsking:
         assert runner.submit("count", {"steps": 1}, request_id="form-7")["id"] == first["id"]
         assert len(store.jobs()) == 1
 
+    @pytest.mark.parametrize("asked", [{"request_id": "form-8"}, {"dedupe": True}], ids=["request_id", "dedupe"])
+    def test_the_same_work_asked_twice_at_once_is_one_job(self, store, asked):
+        # The second asked while the first was still being checked: found in review, both
+        # passed the check for the same work, and it started twice.
+        def slowly(context, params):
+            time.sleep(0.3)
+            return prepare(context, params)
+
+        runner = JobRunner(store, Bus(), Proxy(), catalog=kinds(slow=Kind("slow", BACKGROUND, "Slowly.", CountParams, slowly, execute)))
+        runner.proxy.paused = True
+        try:
+            made = []
+            asking = [threading.Thread(target=lambda: made.append(runner.submit("slow", {"steps": 1}, **asked))) for _ in range(2)]
+            for thread in asking:
+                thread.start()
+            for thread in asking:
+                thread.join()
+            assert len(made) == 2 and made[0]["id"] == made[1]["id"]
+            assert len(store.jobs()) == 1
+        finally:
+            runner.shutdown(10)
+
     def test_an_mcp_servers_secrets_are_kept_masked_and_given_to_the_job(self, store):
         """A header or an environment variable of an MCP server is a secret whatever its name, which
         no pattern would know: kept and shown masked — on the Jobs page, to whoever reads the jobs
