@@ -13,7 +13,7 @@ The pictures in the top-level README.
 
 | File | What it shows | Taken from |
 |---|---|---|
-| `ui-demo.gif` | A run opened, its write step chosen, an edited wording A/B-tested there, and the result: the edit, then the original arm against it, with intervals and Fisher's test. 30 seconds at most, no sound | `demo.py lab`, [step by step](#the-gif-step-by-step) |
+| `ui-demo.gif` | A run opened, its write step chosen, an edited wording A/B-tested there, and the result on its job page: the original arm against the edit, with intervals and Fisher's test. About 30 seconds, no sound | `demo.py lab`, [step by step](#the-gif-step-by-step) |
 | `ui-guide.png` | The front page from its title down: where you left off, what is set up, and the loop from a skill to its next version | real recordings |
 | `ui-run.png` | A step's exact context: every message as the model saw it, the skill marked in it, and the call it made | real recordings |
 | `ui-divergence.png` | A task's divergence page: where the runs split, how each behaviour fared, and the step that best predicts the verdict | real recordings |
@@ -39,8 +39,8 @@ front of a scripted model that names the report's keys only for one wording of t
 address:
 
 ```bash
-python tests/browser/demo.py lab ~/tuningfork-lab 8790
-python tests/browser/demo.py live ~/tuningfork-live 8791
+python tests/browser/demo.py lab /tmp/tuningfork-lab 8790
+python tests/browser/demo.py live /tmp/tuningfork-live 8791
 ```
 
 How to take them:
@@ -49,7 +49,8 @@ How to take them:
   token.
 - **Nothing of one machine.** A screenshot is a tracked file like any other. Look for folders on
   the page — the Connections page, a run's sandbox, a swapped skill's path — and shoot from a
-  recordings folder whose path names nobody.
+  recordings folder whose path names nobody, under `/tmp` rather than your home folder: the A/B form
+  shows the skill's path in it, and its plan the variant's.
 - **One size.** A window 1440 pixels wide, browser zoom at 100%, the light theme; crop to the
   part the caption names.
 - **Small files.** PNGs under about 500 KB each (`oxipng` or `pngquant` shrinks them); the GIF
@@ -66,12 +67,14 @@ README with no other change.
 between them, gets the wrong keys in every sample, and the two arms come out the same. It has no
 randomness either: every sample of an arm is the same answer.
 
-1. Start `python tests/browser/demo.py lab ~/tuningfork-lab 8790` on a new folder (it seeds only
+1. Start `python tests/browser/demo.py lab /tmp/tuningfork-lab 8790` on a new folder (it seeds only
    an empty one), and open the address it prints.
 2. **Runs** → run `tally-report/1#demo.2` → step 1 → **A/B a wording…**
 3. In the editor, change `Write the totals to report.json.` to
    `Write the totals to report.json, using the keys row_count and amount_total.`
-4. For the target, choose *What the model does matches a pattern* and type `row_count`. Keep the
-   suggested name and 20 samples per arm, and start it.
-5. Its job's page links the result: the variant's edit as a diff, then 0/20 against 20/20, Fisher
-   exact p = 1.5e-11. Equal arms mean the sentence differs from the one above.
+4. For the target, choose *A behaviour I describe*: *Calls the tool* `write_file`, then *+ Add a
+   condition* twice, for *Mentions* `row_count` and *Mentions* `amount_total`. Keep the suggested
+   name and 20 samples per arm, and start it.
+5. Its job's page shows the result as it ends: the original's 0/20 against the variant's 20/20,
+   Fisher exact p = 1.5e-11. *See the result* opens the A/B's own page, which leads with the edit as
+   a diff. Equal arms mean the sentence differs from the one above.
