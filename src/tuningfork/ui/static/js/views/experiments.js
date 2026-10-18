@@ -85,6 +85,9 @@ export async function experimentView(root, [id], scope) {
   let base;
   // Forks run to the end: what their checks said, counted by arm, read again as forks finish.
   let tally = null;
+  // The question asked of a screen's forks: made once, so a running screen drawn again as its
+  // forks report keeps what is typed in it, and its answer (found in review).
+  let whereHolds = null;
   const loadTally = () => {
     if (experiment.reach !== "end") return;
     api.get(`/tally${query({ screen: experiment.id })}`)
@@ -175,9 +178,9 @@ export async function experimentView(root, [id], scope) {
         // A screen run to the end: one question asked of its forks, arm by arm — what the passing
         // forks wrote that the failing ones did not.
         experiment.screen && experiment.reach === "end"
-          ? panel("Where does it hold?", whereForm(null, { screen: experiment.id }), {
+          ? (whereHolds ??= panel("Where does it hold?", whereForm(null, { screen: experiment.id }), {
               meta: h("span", { class: "muted" }, "One question of every fork, arm by arm: what the passing forks have that the failing lack."),
-            })
+            }))
           : null,
         experiment.distribution ? distributionView(experiment.distribution) : null,
         experiment.settings?.logprobs && checkpoint
