@@ -29,6 +29,7 @@ from typing import Any, Iterable, Sequence
 
 from tuningfork.analysis.stats import rate
 from tuningfork.ops.common import OperationError
+from tuningfork.specs import CHECK_KEPT
 from tuningfork.store.db import Run, Store
 
 #: Numbers, as a check prints scores, counts and ratios: masked so that one finding is one key.
@@ -54,6 +55,17 @@ def finding_lines(output: str | None) -> list[str]:
         if text and text.lower() != "ok":
             lines.append(text)
     return lines
+
+
+def kept_output(output: str | None) -> str:
+    """A check's output as a verdict keeps it, its end (`specs.CHECK_KEPT` characters), to read
+    for findings. Cut there, its first line is most likely the end of a longer one: left out,
+    never counted as a finding of its own (found in review). One kept whole at just that
+    length, or cut where a line began, loses a whole line: one finding of one run."""
+    text = str(output or "")
+    if len(text) >= CHECK_KEPT and "\n" in text:
+        text = text.partition("\n")[2]
+    return text
 
 
 def findings(output: str | None) -> dict[str, str]:
@@ -255,7 +267,7 @@ def tally_task(store: Store, task_id: str, *, hidden: Iterable[str] = ()) -> Tal
     groups = []
     for condition in conditions(runs):
         judged = judged_runs(condition.runs)
-        failed = [(run.id, run.result.get("check_output")) for run in judged if run.result.get("passed") is False]
+        failed = [(run.id, kept_output(run.result.get("check_output"))) for run in judged if run.result.get("passed") is False]
         about = condition_json(condition)
         label = " · ".join(str(part) for part in (about["harness"], about["model"], about["skill_version"]) if part)
         group = counted(label, len(judged), failed, condition=about)
@@ -309,7 +321,7 @@ def tally_screen(store: Store, reference: str, *, hidden: Iterable[str] = ()) ->
         for sample in kept:
             if sample.passed is False and sample.run_id:
                 fork = store.get_run(sample.run_id)
-                failed.append((sample.run_id, (fork.result or {}).get("check_output") if fork else None))
+                failed.append((sample.run_id, kept_output((fork.result or {}).get("check_output")) if fork else None))
         label = "the original" if name == BASELINE else f"proposal {name[:8]}" if name != "variant" else "the variant"
         groups.append(counted(label, len(kept), failed, arm=name))
     return Tally(scope="screen", task_id=task_id, groups=groups, screen=group_id, run_id=found.run_id)

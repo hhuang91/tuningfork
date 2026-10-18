@@ -16,6 +16,7 @@ from tuningfork.ops.common import OperationError
 from tuningfork.ops.screen import execute_screen_to_end
 from tuningfork.ops.tally import finding_key, findings, tally_screen, tally_task
 from tuningfork.ops.trash import trash
+from tuningfork.specs import CHECK_KEPT
 from tests.helpers import record_run, task_stack, text_message
 
 API = "/_tuningfork/api"
@@ -78,6 +79,17 @@ def test_a_tasks_failed_runs_are_counted_the_most_common_first(store):
     assert {found["finding"]: found["runs"] for found in again["findings"]} == {
         "below full marks: tagline #": 2, "below full marks: owners #": 2}
     assert again["failed"] == 3
+
+
+def test_a_check_output_kept_from_its_end_is_not_counted_from_the_middle_of_a_line(store):
+    # A verdict keeps the end of its check's output. Found in review: cut there in the middle
+    # of a line, the line's end was counted as a finding of its own.
+    printed = "\n".join(f"booked twice: delivery {n} on day {n}" for n in range(200))
+    assert printed[-CHECK_KEPT - 1] != "\n"  # the cut falls inside a line
+    judged(store, "a", passed=False, output=printed[-CHECK_KEPT:])
+    judged(store, "b", passed=False, output="booked twice: delivery 1 on day 1")
+    (group,) = tally_task(store, "t/1").to_json()["groups"]
+    assert [(found["finding"], found["runs"]) for found in group["findings"]] == [("booked twice: delivery # on day #", 2)]
 
 
 def test_what_is_not_there_is_refused(store):
