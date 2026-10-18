@@ -53,6 +53,11 @@ How to take them:
   shows the skill's path in it, and its plan the variant's.
 - **One size.** A window 1440 pixels wide, browser zoom at 100%, the light theme; crop to the
   part the caption names.
+- **One pixel to one, for the GIF.** DevTools' *Capture screenshot* saves the page's own pixels,
+  but a screen recorder counts the screen's: on a screen scaled to 125%, a page 1200 pixels wide
+  covers 1500, and shrinking the recording afterwards blurs its text, whatever the filter. Record
+  from a browser started with `--force-device-scale-factor=1 --user-data-dir=<a new folder>`, the
+  page at the GIF's own size, about 1200 pixels wide, and keep the recording as it is.
 - **Small files.** PNGs under about 500 KB each (`oxipng` or `pngquant` shrinks them); the GIF
   under 10 MB, GitHub's limit for an image, and better around 3 to 5 MB, about 1200 pixels wide.
   A GIF plays by itself; a video on GitHub waits for a click.
