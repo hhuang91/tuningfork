@@ -12,8 +12,7 @@ from tuningfork.cli import app
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMANDS = ROOT / "docs" / "commands.md"
-#: The pages a newcomer reads first, and what they link to. The README's screenshots are added
-#: by hand (docs/images/README.md lists them), so an image may be missing; a page may not.
+#: The pages a newcomer reads first, and what they link to: pages and images alike.
 PAGES = ("README.md", "docs/setup.md", "docs/commands.md", "docs/agents.md", "docs/images/README.md",
          "examples/find-the-file/README.md")
 
@@ -64,6 +63,6 @@ def test_every_relative_link_leads_to_a_file():
             if re.match(r"^[a-z]+:", target) or target.startswith("#"):
                 continue
             path = (page.parent / target.partition("#")[0]).resolve()
-            if not path.exists() and not (path.parent.name == "images" and path.suffix in {".png", ".gif"}):
+            if not path.exists():
                 broken.append(f"{name}: {target}")
     assert not broken, "broken links:\n" + "\n".join(broken)
