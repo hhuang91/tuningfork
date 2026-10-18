@@ -86,6 +86,7 @@ def _refinement(store: Store, reference: str) -> Any:
 def _refinement_busy(store: Store, refinement: Any) -> None:
     """Refused while work on a refinement runs — a proposer asked, a screen, a validation —
     since what it made would be left without its refinement."""
+    from tuningfork.ops.inspect import arm_status
     from tuningfork.ops.refine import made_by
     from tuningfork.ops.validate import validations
 
@@ -102,7 +103,7 @@ def _refinement_busy(store: Store, refinement: Any) -> None:
         )
     for experiment_id in made_by(store, refinement).experiments:
         experiment = store.get_experiment(experiment_id)
-        if experiment is not None and experiment.status == "running":
+        if experiment is not None and arm_status(experiment) == "running":
             raise OperationError(
                 f"a {experiment.kind} of refinement {refinement.id[:8]} is still running", hint="wait for it",
                 code="busy",
@@ -113,16 +114,19 @@ def _refinement_busy(store: Store, refinement: Any) -> None:
 
 
 def trash(store: Store, kind: str, reference: str) -> dict[str, Any]:
-    """Move one item to the trash. Refused while it, or work on it, is still running."""
+    """Move one item to the trash. Refused while it, or work on it, is still running — by a
+    process still alive: work whose process died was cut off (`ops.inspect.launch_status`)."""
+    from tuningfork.ops.inspect import arm_status, launch_status
+
     kind = _kind(kind)
     if kind == "run":
         run = _run(store, reference)
         if run.trashed_at is not None:
             return {"kind": kind, "id": run.id, "moved": [], "already": True}
         launch = store.get_launch(run.launch_id) if run.launch_id else None
-        if launch is not None and launch.status == "running":
+        if launch is not None and launch_status(launch) == "running":
             raise OperationError(f"run {run.id[:8]} is still running", hint="wait for it, or cancel its job", code="busy")
-        running = [e for e in store.experiments(run_id=run.id, limit=10_000) if e.status == "running"]
+        running = [e for e in store.experiments(run_id=run.id, limit=10_000) if arm_status(e) == "running"]
         if running:
             raise OperationError(
                 f"an experiment is running at step {running[0].step_idx} of run {run.id[:8]}",
@@ -132,7 +136,7 @@ def trash(store: Store, kind: str, reference: str) -> dict[str, Any]:
         return {"kind": kind, "id": run.id, "label": run.label, "moved": moved}
     if kind == "experiment":
         root, arms = _experiments(store, reference)
-        if any(arm.status == "running" for arm in arms):
+        if any(arm_status(arm) == "running" for arm in arms):
             raise OperationError(f"experiment {arms[0].id[:8]} is still running", hint="wait for it, or cancel its job", code="busy")
         if all(arm.trashed_at is not None for arm in arms):
             return {"kind": kind, "id": root, "moved": [], "already": True}
@@ -344,17 +348,19 @@ def _refuse_running(store: Store, plan: Purge) -> None:
     """Refused while anything that would go is still at work. A fork started before its
     source went to the trash runs on, and so may an experiment at one of its steps: found in
     review, deleting the source took them with it, the fork's folders included, while its
-    harness was still working there."""
+    harness was still working there. Work whose process died was cut off, and holds nothing."""
+    from tuningfork.ops.inspect import arm_status, launch_status
+
     for launch_id in plan.launches:
         launch = store.get_launch(launch_id)
-        if launch is not None and launch.status == "running":
+        if launch is not None and launch_status(launch) == "running":
             raise OperationError(
                 f"{launch.kind} {launch.label or launch_id[:8]} is still running, and would go with it",
                 hint="wait for it, or cancel its job", code="busy",
             )
     for experiment_id in plan.experiments:
         experiment = store.get_experiment(experiment_id)
-        if experiment is not None and experiment.status == "running":
+        if experiment is not None and arm_status(experiment) == "running":
             raise OperationError(
                 f"a {experiment.kind} at step {experiment.step_idx} of run {(experiment.run_id or '?')[:8]} is still "
                 "running, and would go with it", hint="wait for it, or cancel its job", code="busy",

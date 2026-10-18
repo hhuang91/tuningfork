@@ -401,6 +401,34 @@ class TestStopping:
         assert store.get_launch(launch.id).status == "interrupted"
         assert store.get_job(mine.id).status == "running"  # its process is alive: this one
 
+    def test_launches_a_batch_killed_hard_left_running_are_marked_cut_off(self, store):
+        """A batch killed hard says nothing of its launches. Found in review: they stayed running
+        for good. The next proxy marks those whose process is gone, and those recorded before
+        launches named their process whose calls it could never take up again."""
+        import json
+
+        from tuningfork.launches import LaunchThreads, request_path
+        from tests.helpers import as_response, text_message
+
+        dead = {"pid": 2**22 + 12345, "host": _host(), "start": 1}
+        killed, older, unstarted, mine = (
+            store.create_launch(kind="batch", label=f"t/1#b.{index}", task_id="t/1") for index in range(4)
+        )
+        request = {"model": "m", "messages": [{"role": "user", "content": "go"}]}
+        store.record_step(request=request, response=as_response(text_message("x")),
+                          assignment=LaunchThreads(older.id, label=older.label, task_id="t/1").assign(request_path(request)))
+        store._conn.execute("UPDATE launches SET owner = ? WHERE id = ?", (json.dumps(dead), killed.id))
+        store._conn.execute("UPDATE launches SET owner = NULL WHERE id IN (?, ?)", (older.id, unstarted.id))
+        store._conn.commit()
+
+        JobRunner(store, Bus(), Proxy(), catalog=kinds()).sweep()
+
+        assert store.get_launch(killed.id).status == "interrupted"
+        assert store.get_launch(killed.id).exit == {"reason": "the process running it ended before it did"}
+        assert store.get_launch(older.id).status == "interrupted"
+        assert store.get_launch(unstarted.id).status == "running"  # no telling: it may yet make its first call
+        assert store.get_launch(mine.id).status == "running"  # its process is alive: this one
+
 
 def _host() -> str:
     import socket

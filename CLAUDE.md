@@ -223,14 +223,18 @@ on against a real server: `TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run p
 real_server tests/test_real_server.py`; skipped otherwise.
 
 A harness tuningfork starts is a *launch*: it talks to `/_launch/<token>/…` on the proxy, so
-every call it makes — a subagent's included — is attributed to it as it arrives. A call the
-harness adapter names a side call (`side_call`: Hermes's background review, which replays
-the whole conversation after the answer) starts a side thread, never the task's next step,
-and is never the run's final reply. A fork is a launch whose calls before step k are answered
-from the recording (`tuningfork.replay`); the proxy's `--max-inflight` must be at least the
-`--concurrency` of forks run through it. A launch is laid out as the harness installs itself
-(an adapter's layout "install": Hermes in `~/.hermes`, a skill in the category folder it
-declares; Claude Code in `~/.claude`), because the model reads those paths; each launch
+every call it makes — a subagent's included — is attributed to it as it arrives. It records the
+process running it, as a job and an experiment do: one still marked running after that process
+died — a batch killed hard says nothing of its launches — reads as interrupted
+(`ops.inspect.launch_status`), holds nothing back from the trash, and the next proxy marks it
+so (`JobRunner.sweep`). A call the harness adapter names a side call (`side_call`: Hermes's
+background review, which replays the whole conversation after the answer) starts a side
+thread, never the task's next step, and is never the run's final reply. A fork is a launch
+whose calls before step k are answered from the recording (`tuningfork.replay`); the proxy's
+`--max-inflight` must be at least the `--concurrency` of forks run through it. A launch is
+laid out as the harness installs itself (an adapter's layout "install": Hermes in
+`~/.hermes`, a skill in the category folder it declares; Claude Code in `~/.claude`),
+because the model reads those paths; each launch
 records its layout, and a fork is laid out as its source was ("flat" before layouts were
 recorded) and set up as it was (a harness option changes what the model is told: a fork
 told otherwise departs from the recording at its first step; an MCP server, recorded by

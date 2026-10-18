@@ -60,6 +60,7 @@ def launch_json(launch: Launch | None) -> dict[str, Any] | None:
     forking it, starts from — and where its harness worked, and how it passes."""
     if launch is None:
         return None
+    from tuningfork.ops.inspect import launch_status
     from tuningfork.specs import check_kind, describe_check
 
     check = ((launch.eval or {}).get("tuningfork") or {}).get("check")
@@ -72,7 +73,7 @@ def launch_json(launch: Launch | None) -> dict[str, Any] | None:
         "task_id": launch.task_id,
         "eval_id": (launch.eval or {}).get("id"),
         "spec_path": launch.spec_path,
-        "status": launch.status,
+        "status": launch_status(launch),
         "job_id": launch.job_id,
         "workspace": launch.workspace,
         "check": describe_check(check),
@@ -348,13 +349,13 @@ def run_timeline(store: Store, run_ref: str, *, adapters: Sequence[Any] | None =
     """A run as one conversation, from one walk of its last context: each message read once."""
     from tuningfork.analysis.normalize import recorded_outcome, reply_text
     from tuningfork.analysis.reasoning import ACTED, after_failed_call, reasons, status
-    from tuningfork.ops.inspect import arm_status
+    from tuningfork.ops.inspect import arm_status, launch_status
     from tuningfork.wire import get_wire
 
     run = resolve_run(store, run_ref)
     steps = store.steps(run.id)
     launch = store.get_launch(run.launch_id) if run.launch_id else None
-    ended = bool(run.result) or (launch is not None and launch.status not in (None, "running"))
+    ended = bool(run.result) or (launch is not None and launch_status(launch) not in (None, "running"))
     threads = _threads(store, run, steps)
     if not steps:
         return RunTimeline(run, launch_json(launch), None, [], [], [], [], [], threads, ended, None)

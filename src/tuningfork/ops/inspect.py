@@ -633,6 +633,18 @@ def arm_status(experiment: Any) -> str:
     return status
 
 
+def launch_status(launch: Any) -> str:
+    """How a launch stands: its stored status, but a running one whose process has gone was
+    cut off, and reads as interrupted. Found in review: a batch killed hard left its launches
+    running for good — none of their runs could go to the trash, and the run a fork of them
+    replayed could never be deleted for good."""
+    from tuningfork.owners import owner_alive
+
+    if launch.status == "running" and owner_alive(launch.owner) is False:
+        return "interrupted"
+    return launch.status
+
+
 def overall_status(statuses: Any) -> str:
     """An A/B's status from its arms': running while any arm is, else the worst ending."""
     statuses = list(statuses)

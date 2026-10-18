@@ -381,6 +381,9 @@ class Launch:
     skill_commit: str | None = None
     #: The job that started it, when one did (see tuningfork.jobs).
     job_id: str | None = None
+    #: The process running it (`tuningfork.owners`): one still "running" after that process
+    #: died was cut off, and never said so (`ops.inspect.launch_status`).
+    owner: dict[str, Any] | None = None
 
     @property
     def breakpoints(self) -> bool:
@@ -678,6 +681,9 @@ class Store:
         # Who asked for a job: `{"via": "mcp", "client": ...}`. Not `owner`, which is the
         # process that ran it, read by the sweep to tell live work from work cut off.
         ("jobs", "started_by", "TEXT"),
+        # The process running a launch, as for a job or an experiment: a batch killed hard
+        # never says how its launches ended.
+        ("launches", "owner", "TEXT"),
     )
 
     #: Indexes on migrated columns. They live here, not in SCHEMA: SCHEMA runs first, and on
@@ -1631,6 +1637,7 @@ class Store:
         token: str | None = None,
     ) -> Launch:
         from tuningfork.launches import new_token
+        from tuningfork.owners import current_owner
 
         launch = Launch(
             id=token or new_token(),
@@ -1654,13 +1661,14 @@ class Store:
             exit={},
             created_at=time.time(),
             ended_at=None,
+            owner=current_owner(),
         )
         with self._lock:
             self._conn.execute(
                 "INSERT INTO launches (id, kind, label, harness, model, task_id, eval,"
                 " spec_path, skill_dir, workspace, home, settings, source_run, source_step,"
-                " variant, experiment_id, sample_idx, status, exit, created_at, ended_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " variant, experiment_id, sample_idx, status, exit, created_at, ended_at, owner)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     launch.id, launch.kind, launch.label, launch.harness, launch.model,
                     launch.task_id, json.dumps(launch.eval), launch.spec_path,
@@ -1668,6 +1676,7 @@ class Store:
                     json.dumps(launch.settings), launch.source_run, launch.source_step,
                     json.dumps(launch.variant), launch.experiment_id, launch.sample_idx,
                     launch.status, json.dumps(launch.exit), launch.created_at, None,
+                    json.dumps(launch.owner),
                 ),
             )
             self._conn.commit()
@@ -1700,7 +1709,16 @@ class Store:
             final_commit=row["final_commit"],
             skill_commit=row["skill_commit"],
             job_id=row["job_id"],
+            owner=_loads(row["owner"], None),
         )
+
+    def running_launches(self) -> list[Launch]:
+        """Every launch still marked running: what the sweep reads (`jobs.JobRunner.sweep`)."""
+        with self._lock:
+            return [
+                self._launch_from_row(row)
+                for row in self._conn.execute("SELECT * FROM launches WHERE status = 'running'")
+            ]
 
     def set_launch_snapshots(self, launch_id: str, **commits: str | None) -> None:
         """Record a launch's snapshots: `initial_commit`, `final_commit`, `skill_commit`."""

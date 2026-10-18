@@ -177,6 +177,32 @@ class TestDeletedForGood:
         store.end_launch(fork_launch.id)
         assert trash.purge(store, "run", source.id).to_json()["removed"]["launches"] == 2
 
+    def test_work_whose_process_was_killed_holds_back_nothing(self, store):
+        # A batch killed hard never says how its launches ended. Found in review: each stayed
+        # running for good — its run could not go to the trash, nor the run a fork of it
+        # replayed be deleted for good — and nothing could mark it ended. Its process is gone.
+        import socket
+
+        from tuningfork.ops.timeline import launch_json
+
+        launch, source = launched(store, label="t/1#b.0")
+        fork_launch = store.create_launch(kind="fork", label="t/1#b.0@1.0", task_id="t/1", harness="hermes", source_run=source.id)
+        threads = LaunchThreads(fork_launch.id, label=fork_launch.label, task_id="t/1", main_role="fork")
+        request = chat(user("go t/1#b.0"))
+        store.record_step(request=request, response=as_response(text_message("x")), assignment=threads.assign(request_path(request)))
+        (fork,) = [run for run in store.launch_runs(fork_launch.id) if not run.is_thread]
+        assert store.get_launch(fork_launch.id).owner["pid"] == os.getpid()
+        with pytest.raises(OperationError, match="still running"):
+            trash.trash(store, "run", fork.id)  # its process alive, it holds as before
+
+        dead = {"pid": 2**22 + 12345, "host": socket.gethostname(), "start": 1}
+        store._conn.execute("UPDATE launches SET owner = ? WHERE id = ?", (json.dumps(dead), fork_launch.id))
+        store._conn.commit()
+        assert launch_json(store.get_launch(fork_launch.id))["status"] == "interrupted"
+        trash.trash(store, "run", fork.id)
+        trash.trash(store, "run", source.id)
+        assert trash.purge(store, "run", source.id).to_json()["removed"]["launches"] == 2
+
     def test_an_experiment_goes_with_the_other_arm_of_its_ab(self, store):
         run = record_run(store, "r", [text_message("a")], task_id="t/1")
         step = store.steps(run)[0]

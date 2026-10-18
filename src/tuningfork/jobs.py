@@ -523,7 +523,8 @@ class JobRunner:
 
     def sweep(self) -> int:
         """Mark work cut off by an earlier proxy's end: jobs it held, the experiments and
-        launches they left running. Another process still alive keeps its own."""
+        launches they left running — and launches a batch killed hard left running, which
+        never said how they ended. Another process still alive keeps its own."""
         swept = 0
         for record in self.store.jobs(unfinished=True, limit=1000):
             if record.owner and owner_alive(record.owner) is not False:
@@ -537,4 +538,10 @@ class JobRunner:
             if experiment.owner and owner_alive(experiment.owner) is False
         ]
         self.store.finish_experiments(stale, "interrupted")
+        for launch in self.store.running_launches():
+            # One recorded before launches named their process, with calls already recorded,
+            # can never go on through this proxy (`proxy.launches.LaunchRegistry.resolve`).
+            if owner_alive(launch.owner) is False or (launch.owner is None and self.store.launch_runs(launch.id)):
+                self.store.end_launch(launch.id, status="interrupted",
+                                      exit={"reason": "the process running it ended before it did"})
         return swept
