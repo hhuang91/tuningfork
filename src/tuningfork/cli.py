@@ -1449,8 +1449,10 @@ def tally(
                           f"{escape(found.task_id or '<id>')}` runs it along each run, and the tally then says which "
                           "call made each finding.[/dim]", soft_wrap=True)
     console.print()
-    console.print("[dim]Each line a check printed is one finding, its numbers shown as # and its colours as "
-                  "<color>; a run counts once a finding. Intervals are Wilson 95%.[/dim]")
+    who = "failed forks" if found.scope == "screen" else "failed runs"
+    console.print(f"[dim]Each count is the {who} that printed the line, once each, however often it printed it. "
+                  "Lines that differ only in their numbers or colour codes count as one, shown with # and <color>. "
+                  "Intervals are Wilson 95%.[/dim]")
 
 
 @app.command("check-along")

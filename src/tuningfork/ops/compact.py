@@ -1073,7 +1073,9 @@ def tally_lines(view: dict[str, Any]) -> list[str]:
             lines.append(f"  … {found['total'] - len(shown)} more finding(s)")
         if group.get("silent"):
             lines.append(f"  {group['silent']} failed run(s) whose check printed nothing")
-    lines.append("each line a check printed is one finding, numbers shown as #, colours as <color>; a run counts once a finding")
+    who = "failed forks" if view.get("scope") == "screen" else "failed runs"
+    lines.append(f"each count is the {who} whose check printed the line, once each however often; lines that differ "
+                 "only in numbers or colour codes count as one, shown with # and <color>")
     return lines
 
 
