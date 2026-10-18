@@ -1,5 +1,66 @@
 # Changelog
 
+## 0.2.3 — on Windows, and a code review's fixes
+
+Three rules changed in review, and what was recorded before reads by them now:
+
+- **A fork run to the end that timed out counts as a failure**, in a screen, an A/B and a
+  resample to the end, as the validation gate already counted it. Left out, an edit that made
+  the agent loop until it was stopped counted only its forks that finished, and could survive
+  its screen. A screen read again counts its timed-out forks, and its report says how many.
+- **Gate G0 reads a proposal's latest complete screen**, not any screen it survived: a screen
+  of more proposals, or one run to the end, can undo an earlier survival. Validation refuses a
+  proposal its latest screen dropped, and a validation's gate, read again, fails G0 when a
+  screen since has dropped it, and says which.
+- **A fork an experiment drew goes to the trash, and is deleted, only with its experiment**, as
+  a thread goes with its run: its verdict is the experiment's. Trashed alone, even deleted for
+  good, it still counted. One trashed alone before can be restored, and is never deleted alone.
+
+**On Windows** (`docs/setup.md`): installing WSL and a distro, working inside it as on Linux,
+the web UI in the Windows browser, and a model server running on Windows itself. Or keep the
+checkout where Windows editors see it: `scripts/tuningfork.ps1` (PowerShell) and
+`scripts/tuningfork` (Git Bash) run any tuningfork command inside WSL, the venv and the
+recordings in the distro's Linux file system. They run nothing until `TUNINGFORK_WSL_DISTRO`
+names the distro, and hand each argument over as it was typed.
+
+Fixed, each found in a review of the code and reproduced before it was fixed:
+
+- **The proxy:** a harness that hung up before its answer began kept its slot in the gate for
+  good, and with `--max-inflight 1` every later call waited for a restart. `serve --max-output`
+  raised a limit written as a float (`1024.0`) to the cap. Ctrl-C continued a cancelled job's
+  held calls before dropping them, so a fork killed at a breakpoint still sent its call.
+- **Recording and forks:** a call refused while the proxy was paused kept its step number: the
+  run skipped a number, forks of later steps went live a call late, and its last step could not
+  be forked. A fork's call at its step, refused that way, lost its "live from here" note.
+- **The trash:** deleting a run for good while a fork of it still ran took the fork's folders
+  from under its harness. A launch a batch killed hard stayed running for good and held back
+  the trash: launches record the process running them now, and read as interrupted once it has
+  gone. Deleting a chain link's run for good deleted the skill the link left.
+- **Counting:** gate G2's "enough runs" counted runs the infrastructure broke. A screen to the
+  end from several checkpoints could tilt the original's rate toward one of them. The tally
+  named a mistake every run kept as one the passing runs repaired, and counted the half line a
+  cut output starts with as a finding. A check output longer than the 2,000 characters a
+  verdict keeps says so now: on the run's page, in MCP's `show_run`, in the tally and in a trial
+  of the check.
+- **Refinements and approvals:** a record cut off mid-write stayed truncated, and a truncated
+  `approval.json` blocked its refinement for good. A crash between an approval's last two
+  writes left it open for good: it is reported (`unmarked`) and finished by repair. A changelog
+  that is not UTF-8 stopped approvals. A file that mixes line endings was written back all
+  CRLF: it takes the ending most of its lines use now, and the plan says so first. A proposal's
+  edit matched with its indentation ignored turned that line of a CRLF skill into LF.
+- **Jobs and scenarios:** two cancels of a queued job at once left it queued until a restart;
+  the same work submitted twice at once started two jobs; a scenario deleted twice in one
+  second landed in the first copy's trash folder.
+- **MCP and the CLI:** `job_status` showed a held-out task's jobs whole, and `list_scenarios`
+  its pass rates. Pointed at a proxy on another machine, the CLI read the local file its
+  `/health` named and sent it there as the token.
+- **The web UI:** the batch form kept the old spec's task list; a stopped run read "no check";
+  a live run's timeline drew its "not recorded" rows again at every update; on the Live page, a
+  question still being answered at a held call showed as an error; on the Jobs page, a late
+  answer filled the step list of the run chosen last; "Where does it hold?" lost what was typed
+  when the page redrew; a job's page could go back to "running" after the job ended; and two
+  step forms asked for quickly could leave the wrong one open, or both.
+
 ## 0.2.2 — a README for newcomers, and what its pictures showed
 
 - **The README, rebuilt for someone deciding in a few minutes whether to try tuningfork:** what
