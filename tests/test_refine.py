@@ -4,6 +4,7 @@ edits proposed for it — on runs a real batch made (the fake agent, the mock mo
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -34,6 +35,20 @@ def a_run(stack, **options) -> str:
 
 def start(stack, run_id, step="write_file", **target):
     return refine.create(stack.store, run_id, step, **(target or {"target_rules": RULES}))
+
+
+def test_a_record_written_once_is_there_whole_or_not_at_all(tmp_path):
+    # Cut off half-written (a crash, a Ctrl-C, a value that will not serialize), a record read
+    # as made. Found in review: a truncated approval.json refused every later approval, and
+    # the refinement's page with it.
+    path = tmp_path / "refinement" / "approval.json"
+    with pytest.raises(TypeError):
+        refine._write_once(path, {"a": "x" * 100_000, "z": object()})
+    assert not path.exists() and (not path.parent.exists() or os.listdir(path.parent) == [])
+    refine._write_once(path, {"a": 1})
+    with pytest.raises(FileExistsError):
+        refine._write_once(path, {"a": 2})
+    assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1} and os.listdir(path.parent) == ["approval.json"]
 
 
 class TestCreate:
