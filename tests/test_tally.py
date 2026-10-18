@@ -92,6 +92,37 @@ def test_a_check_output_kept_from_its_end_is_not_counted_from_the_middle_of_a_li
     assert [(found["finding"], found["runs"]) for found in group["findings"]] == [("booked twice: delivery # on day #", 2)]
 
 
+def test_a_check_that_printed_more_than_a_verdict_keeps_says_so_wherever_it_is_read(store, tmp_path):
+    """Asked in review whether anything says a check's output was cut: nothing did, and a finding
+    printed before its last CHECK_KEPT characters was never tallied. The verdict keeps how much
+    it cut; the tally, a failed run's word to an agent and a trial of the check say so."""
+    from tuningfork.mcp.tools import check_said
+    from tuningfork.ops import compact
+    from tuningfork.ops.checks import try_check
+    from tuningfork.runner import RunOutcome
+    from tuningfork.specs import run_check
+
+    check = 'for n in $(seq 1 300); do echo "booked twice: delivery $n"; done; exit 1'
+    full = "\n".join(f"booked twice: delivery {n}" for n in range(1, 301))
+    checked = run_check(check, tmp_path)
+    assert (checked.output, checked.cut) == (full[-CHECK_KEPT:], len(full) - CHECK_KEPT)
+    result = RunOutcome(index=0, label="t/1#b.0", run_id="r", passed=False, check=checked, duration_s=1.0,
+                        returncode=0, stdout="", stderr="").to_result()
+    assert result["check_output_cut"] == len(full) - CHECK_KEPT
+    store.annotate_run(judged(store, "a", passed=False), result=result)
+    judged(store, "b", passed=False, output="booked twice: delivery 7")
+
+    (group,) = tally_task(store, "t/1").to_json()["groups"]
+    assert group["cut"] == 1 and group["failed"] == 2
+    assert any("1 failed run(s) whose check printed more than the last 2,000 characters" in line
+               for line in compact.tally_lines(compact.tally(tally_task(store, "t/1").to_json())))
+    printed = CliRunner().invoke(app, ["tally", "--task", "t/1", "--home", str(store.home)], env={"COLUMNS": "200"})
+    assert "whose check printed more than the last 2,000 characters" in printed.output, printed.output
+    assert check_said(result).startswith("… booked twice: delivery ") and check_said({"passed": False, "check_output": "x"}) == "x"
+    trial = try_check(store, check, files=[{"path": "a.txt", "content": "x"}]).to_json()
+    assert trial["output_cut"] == len(full) - CHECK_KEPT
+
+
 def test_what_is_not_there_is_refused(store):
     with pytest.raises(OperationError) as missing:
         tally_task(store, "t/9")

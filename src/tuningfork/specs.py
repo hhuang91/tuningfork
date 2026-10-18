@@ -511,6 +511,8 @@ class CheckResult:
     passed: bool
     output: str
     returncode: int | None = None
+    #: Characters cut from the output's start to keep its end: said wherever it is shown.
+    cut: int = 0
 
 
 #: How much of the reply a reply check's output quotes.
@@ -568,10 +570,12 @@ def run_check(
     except subprocess.TimeoutExpired:
         return CheckResult(passed=False, output=f"check timed out after {timeout}s")
     output = ((completed.stdout or "") + (completed.stderr or "")).strip()
+    kept = output[-keep:] if keep is not None else output
     return CheckResult(
         passed=completed.returncode == 0,
-        output=output[-keep:] if keep is not None else output,
+        output=kept,
         returncode=completed.returncode,
+        cut=len(output) - len(kept),
     )
 
 

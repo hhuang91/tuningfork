@@ -1040,6 +1040,7 @@ def tally(report: dict[str, Any], show: int = 10) -> dict[str, Any]:
             "judged": group.get("judged"),
             "failed": group.get("failed"),
             "silent": group.get("silent"),
+            "cut": group.get("cut") or None,
             "findings": capped([{
                 "finding": clip(finding.get("finding"), LABEL),
                 "rate": rate(finding.get("rate")),
@@ -1085,6 +1086,11 @@ def tally_lines(view: dict[str, Any]) -> list[str]:
             lines.append(f"  … {found['total'] - len(shown)} more finding(s)")
         if group.get("silent"):
             lines.append(f"  {group['silent']} failed run(s) whose check printed nothing")
+        if group.get("cut"):
+            from tuningfork.specs import CHECK_KEPT
+
+            lines.append(f"  {group['cut']} failed run(s) whose check printed more than the last {CHECK_KEPT:,} "
+                         "characters a verdict keeps: what each printed before them is not counted")
     who = "failed forks" if view.get("scope") == "screen" else "failed runs"
     lines.append(f"each count is the {who} whose check printed the line, once each however often; lines that differ "
                  "only in numbers or colour codes count as one, shown with # and <color>")

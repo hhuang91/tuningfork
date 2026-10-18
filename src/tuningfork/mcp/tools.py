@@ -353,8 +353,14 @@ def check_said(result: dict[str, Any] | None) -> str | None:
     """The first line a failed run's check printed; None for a run that did not fail."""
     if not result or result.get("passed") is not False:
         return None
-    text = str(result.get("check_output") or "").strip()
-    return text.splitlines()[0][:200] if text else "(its check printed nothing)"
+    text = str(result.get("check_output") or "")
+    cut = bool(result.get("check_output_cut"))
+    if cut and "\n" in text:
+        text = text.partition("\n")[2]  # its start cut, the first line kept is the end of a longer one
+    text = text.strip()
+    if not text:
+        return "(its check printed nothing)"
+    return ("… " if cut else "") + text.splitlines()[0][:200]
 
 
 #: The toolsets that are the refine loop: its reads only, and its hints.
@@ -509,8 +515,16 @@ def show_run(context: Context, args: RunArgs) -> Answer:
     count = steps["total"] if isinstance(steps, dict) else len(steps)
     lines = [f"run {run['id']} of {run.get('task_id') or 'no task'}: {count} step(s); it {verdict}"]
     if result.get("passed") is False:
-        said = [line[:160] for line in str(result.get("check_output") or "").strip().splitlines()[:3]]
+        output, cut = str(result.get("check_output") or ""), result.get("check_output_cut")
+        if cut:
+            output = output.partition("\n")[2]  # the first line kept is the end of a longer one
+        said = [line[:160] for line in output.strip().splitlines()[:3]]
         lines.append("its check said: " + " | ".join(said) if said else "its check printed nothing")
+        if cut:
+            from tuningfork.specs import CHECK_KEPT
+
+            lines.append(f"its check printed {cut:,} characters more before that, not kept: a verdict keeps the last "
+                         f"{CHECK_KEPT:,}, and only they are tallied")
     shown = steps["shown"] if isinstance(steps, dict) else steps
     # Which calls changed the files, and what they ran: where a run did what its check saw. Its
     # last call was named here once, as the step to refine, and an agent refined a run's last

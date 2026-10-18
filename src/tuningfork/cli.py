@@ -29,6 +29,7 @@ from tuningfork.harness.base import HarnessError
 from tuningfork.ops import OperationError
 from tuningfork.ops.catalog import CACHE_HELP, SEED_HELP
 from tuningfork.runner import pass_rate
+from tuningfork.specs import CHECK_KEPT
 from tuningfork.store.db import Run, Store
 from tuningfork.store.tree import describe_message
 
@@ -1346,6 +1347,9 @@ def recheck(
     else:
         compared = f" — the run was judged {'pass' if recorded else 'fail'} when it ran"
     console.print(f"{verdict}{compared}")
+    if data.get("output_cut"):
+        console.print(f"  [yellow]{data['output_cut']:,} characters it printed before these are not shown[/yellow]: a "
+                      f"verdict keeps the last {CHECK_KEPT:,}, and only they are tallied")
     for line in (data["output"] or "").splitlines()[:40]:
         console.print(f"  {escape(line)}")
     if not trial.passed:
@@ -1432,6 +1436,9 @@ def tally(
             console.print(f"  … and {len(group.findings) - show} more finding(s): --show")
         if group.silent:
             console.print(f"  [dim]{group.silent} failed run(s) whose check printed nothing[/dim]")
+        if group.cut:
+            console.print(f"  [yellow]{group.cut} failed run(s) whose check printed more than the last "
+                          f"{CHECK_KEPT:,} characters a verdict keeps[/yellow]: what each printed before them is not counted")
     if found.scope == "task":
         from tuningfork.ops.tally import finding_words, shared_mistakes
 

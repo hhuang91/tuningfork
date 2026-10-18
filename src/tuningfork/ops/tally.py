@@ -188,6 +188,9 @@ class TallyGroup:
     condition: dict[str, Any] | None = None
     #: For a screen's forks: the arm's name — "original", or a proposal's id.
     arm: str | None = None
+    #: Failed runs whose check printed more than a verdict keeps (`specs.CHECK_KEPT`): what
+    #: each printed before its end is not counted.
+    cut: int = 0
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -196,6 +199,7 @@ class TallyGroup:
             "failed": self.failed,
             "passed": rate(self.judged - self.failed, self.judged).to_json() if self.judged else None,
             "silent": self.silent,
+            "cut": self.cut,
             "findings": [finding.to_json() for finding in self.findings],
             "condition": self.condition,
             "arm": self.arm,
@@ -222,9 +226,14 @@ class Tally:
         }
 
 
+def was_cut(result: dict[str, Any] | None) -> bool:
+    """Whether a run's check printed more than its verdict keeps, its start cut (`runner`)."""
+    return bool((result or {}).get("check_output_cut"))
+
+
 def counted(label: str, judged: int, failed: Sequence[tuple[str, str | None]], **where: Any) -> TallyGroup:
     """One group's findings: each failed run's (id, check output), counted; the most common first,
-    ties in the order first seen."""
+    ties in the order first seen. `where` may say how many of them were cut (`cut`)."""
     by_key: dict[str, Finding] = {}
     silent = 0
     for run_id, output in failed:
@@ -267,10 +276,11 @@ def tally_task(store: Store, task_id: str, *, hidden: Iterable[str] = ()) -> Tal
     groups = []
     for condition in conditions(runs):
         judged = judged_runs(condition.runs)
-        failed = [(run.id, kept_output(run.result.get("check_output"))) for run in judged if run.result.get("passed") is False]
+        failing = [run for run in judged if run.result.get("passed") is False]
+        failed = [(run.id, kept_output(run.result.get("check_output"))) for run in failing]
         about = condition_json(condition)
         label = " · ".join(str(part) for part in (about["harness"], about["model"], about["skill_version"]) if part)
-        group = counted(label, len(judged), failed, condition=about)
+        group = counted(label, len(judged), failed, condition=about, cut=sum(1 for run in failing if was_cut(run.result)))
         along = made_along(judged)
         for finding in group.findings:
             finding.made = along.get(finding.key)
@@ -317,11 +327,12 @@ def tally_screen(store: Store, reference: str, *, hidden: Iterable[str] = ()) ->
     for name in dict.fromkeys(names):
         samples = [sample for experiment in by_arm[name] for sample in store.samples(experiment.id)]
         kept = [sample for sample in samples if sample.exclusion is None and sample.passed is not None]
-        failed = []
+        failed, cut = [], 0
         for sample in kept:
             if sample.passed is False and sample.run_id:
                 fork = store.get_run(sample.run_id)
                 failed.append((sample.run_id, kept_output((fork.result or {}).get("check_output")) if fork else None))
+                cut += bool(fork) and was_cut(fork.result)
         label = "the original" if name == BASELINE else f"proposal {name[:8]}" if name != "variant" else "the variant"
-        groups.append(counted(label, len(kept), failed, arm=name))
+        groups.append(counted(label, len(kept), failed, arm=name, cut=cut))
     return Tally(scope="screen", task_id=task_id, groups=groups, screen=group_id, run_id=found.run_id)

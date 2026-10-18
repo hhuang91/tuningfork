@@ -45,6 +45,7 @@ from tuningfork.ops.common import Cancel, Cancelled
 from tuningfork.snapshots import SnapshotError, Snapshots
 from tuningfork.snapshots import available as snapshots_available
 from tuningfork.specs import (
+    CHECK_KEPT,
     CheckResult,
     Eval,
     TaskSpec,
@@ -140,7 +141,7 @@ class RunOutcome:
         """What the store keeps about how the run ended, for reading back later."""
         result = {
             "passed": self.passed if self.checked else None,
-            "check_output": self.check.output[-2000:],
+            "check_output": self.check.output[-CHECK_KEPT:],
             "returncode": self.returncode,
             "duration_s": round(self.duration_s, 2),
             "timed_out": self.timed_out,
@@ -150,6 +151,11 @@ class RunOutcome:
             "thread_trouble": self.thread_trouble,
             "usable": self.usable,
         }
+        # What a verdict does not keep of a longer output, said wherever it is shown: found in
+        # review, nothing said a finding printed early in one was never tallied.
+        cut = self.check.cut + max(0, len(self.check.output) - CHECK_KEPT)
+        if cut:
+            result["check_output_cut"] = cut
         if self.fork_step is not None:
             result.update(
                 fork_step=self.fork_step,

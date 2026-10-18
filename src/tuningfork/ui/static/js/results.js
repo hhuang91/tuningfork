@@ -338,7 +338,8 @@ export function tallyView(tally, { only = null } = {}) {
                 found.made_text ? h("div", { class: "faint small" }, found.made_text) : null))))))
         : group.failed ? null : h("p", { class: "muted small" }, "None failed."),
       group.findings.length > 12 ? h("p", { class: "faint small" }, `+${group.findings.length - 12} more line(s)`) : null,
-      group.silent ? h("p", { class: "faint small" }, `${plural(group.silent, forks ? "failed fork" : "failed run")} whose check printed nothing`) : null)),
+      group.silent ? h("p", { class: "faint small" }, `${plural(group.silent, forks ? "failed fork" : "failed run")} whose check printed nothing`) : null,
+      group.cut ? h("p", { class: "hint" }, `${plural(group.cut, forks ? "failed fork" : "failed run")} whose check printed more than the last 2,000 characters a verdict keeps: what each printed before them is not counted.`) : null)),
     h("p", { class: "hint" }, `Each bar counts the ${failed} that printed the line: once each, however many times it printed it. `
       + "Lines that differ only in their numbers or colour codes count as one, shown with # for each number and <color> for each colour. "
       + "The most common comes first: it is the failure to fix first."),
