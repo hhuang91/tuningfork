@@ -308,7 +308,11 @@ def _ignoring_indentation(text: str, old: str) -> list[tuple[str, str]]:
     for start in range(len(lines) - len(wanted) + 1):
         if stripped[start:start + len(wanted)] == wanted:
             first = lines[start]
-            hits.append(("\n".join(lines[start:start + len(wanted)]), first[:len(first) - len(first.lstrip())]))
+            block = lines[start:start + len(wanted)]
+            # The last line's carriage return is its line ending's, not its text: left out of the
+            # match, it stays when the lines are replaced, and a Windows file keeps its endings.
+            block[-1] = block[-1].removesuffix("\r")
+            hits.append(("\n".join(block), first[:len(first) - len(first.lstrip())]))
     return hits
 
 
