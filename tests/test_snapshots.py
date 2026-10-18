@@ -47,7 +47,12 @@ class TestTheStore:
         first = Racing(home)
         first.ensure()
         assert (home / "snapshots.git" / "HEAD").exists()
-        assert first.commit(root, "refs/launches/a/start") == Snapshots(home).commit(root, "refs/launches/b/start")
+        a = first.commit(root, "refs/launches/a/start")
+        b = Snapshots(home).commit(root, "refs/launches/b/start")
+        # Both committed the same workspace. A commit's id carries the second it was made in, so
+        # two made across a second boundary differ (seen once, on CI); what they hold does not.
+        assert first.resolve("refs/launches/a/start") == a and first.resolve("refs/launches/b/start") == b
+        assert first.tree_of(a) == first.tree_of(b)
         assert [p.name for p in home.iterdir()] == ["snapshots.git"]  # no staging left beside it
 
 
