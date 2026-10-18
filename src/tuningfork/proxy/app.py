@@ -558,6 +558,14 @@ def create_app(
         # into what the model sees; the harness's own request is recorded beside it.
         harness_payload: dict[str, Any] | None = None
         notes: dict[str, Any] = {}
+        decision = None
+
+        def give_back(assignment: Any) -> None:
+            """A launched call never recorded: its step number is its retry's, and so, at a
+            fork's step, is the step itself."""
+            launch.release(assignment)
+            if decision is not None and launch.replay is not None:
+                launch.replay.give_back(decision)
         # The workspace as it stands when the call arrives: every earlier tool effect is on
         # disk by now. Taken before anything else — a hold, the model — can touch it.
         workspace_commit = None
@@ -604,7 +612,7 @@ def create_app(
             # number, and a fork of a later step, which counts steps by place, went live a call
             # late.
             if assignment is not None and launch is not None:
-                launch.release(assignment)
+                give_back(assignment)
             return JSONResponse(
                 wire.error(
                     503,
@@ -640,7 +648,7 @@ def create_app(
                 body=body,
                 payload=payload,
                 assignment=assignment,
-                release=launch.release if launch is not None else None,
+                release=give_back if launch is not None else None,
                 harness_payload=harness_payload,
                 notes={**notes, "workspace_commit": workspace_commit},
             )
