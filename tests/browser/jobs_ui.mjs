@@ -1021,6 +1021,29 @@ try {
       && [...said.querySelectorAll(".chip")].some((chip) => chip.textContent === "continue after a cut reply");
   })()`), "Hermes's own nudge after a cut reply stays under its step, named, and says so in the conversation");
 
+  console.log("a chat that used two skills: both kept, and the work names the one it studies");
+  const tidyText = "---\nname: csv-tidy\n---\n\n# Tidy\n\nSort the rows.\n";
+  const used = [
+    { role: "user", content: "Tidy data.csv, then summarize it into report.json." },
+    { role: "assistant", content: "", tool_calls: [{ id: "a1", type: "function", function: { name: "skill_view", arguments: "{\"name\": \"csv-tidy\"}" } }] },
+    { role: "tool", tool_call_id: "a1", content: JSON.stringify({ success: true, name: "csv-tidy", content: tidyText }) },
+    { role: "assistant", content: "", tool_calls: [{ id: "a2", type: "function", function: { name: "skill_view", arguments: "{\"name\": \"tally-report\"}" } }] },
+    { role: "tool", tool_call_id: "a2", content: JSON.stringify({ success: true, name: "tally-report", content: skillText }) },
+    { role: "assistant", content: "Done." },
+  ];
+  const two = await post("/imports", { content: JSON.stringify({ id: "20261019_090000_dd33ee", source: "cli", model: "m",
+    title: "two skills", system_prompt: "You are Hermes.", started_at: 1760100000, messages: used }) });
+  check(two.skills.join(",") === "csv-tidy,tally-report" && two.skill === null, "both skills kept, and neither studied until the work names it");
+  await page.eval(`location.hash = "#/runs/${two.run}/2?start=refine"`);
+  await until(() => page.eval(`!!document.querySelector('.start-panel select[name="skill"]')`), "the refinement form's skill");
+  check(await page.eval(`[...document.querySelector('.start-panel select[name="skill"]').options].map((o) => o.value).filter(Boolean).join(",")`) === "csv-tidy,tally-report",
+    "the refinement form asks which skill it refines");
+  await page.eval(`location.hash = "#/runs/${two.run}/2?start=ab"`);
+  await until(() => page.eval(`!!document.querySelector('.start-panel select[name="skill"]') && !document.querySelector('.start-panel textarea[name="variant_text"]')`), "the A/B form, asking first");
+  await page.eval(`(() => { const pick = document.querySelector('.start-panel select[name="skill"]'); pick.value = "csv-tidy"; pick.dispatchEvent(new Event("change")); return true; })()`);
+  await until(() => page.eval(`(document.querySelector('.start-panel textarea[name="variant_text"]')?.value || "").includes("name: csv-tidy")`), "the chosen skill's text to edit");
+  check(true, "the A/B form edits the skill chosen, after asking which");
+
   check(page.problems.length === 0, `no page errors${page.problems.length ? `: ${page.problems.join(" | ")}` : ""}`);
   console.log("all passed");
 } catch (error) {

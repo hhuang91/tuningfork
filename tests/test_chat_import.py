@@ -135,7 +135,7 @@ class TestTheSkill:
         plan = imports.prepare_import(store, export(conversation(("tally-report", SKILL))))
         (found,) = plan.skills
         assert (found.name, found.source, found.step, found.text) == ("tally-report", "tool", 1, SKILL)
-        assert plan.skill is found and not plan.choose
+        assert plan.study == "tally-report" and plan.names == ["tally-report"]
         shown = plan.to_json()
         assert any("names no tools (Hermes's export keeps none)" in warning for warning in shown["warnings"])
         assert any("extracted from what the model read" in warning for warning in shown["warnings"])
@@ -146,17 +146,59 @@ class TestTheSkill:
         assert (found.name, found.source, found.step) == ("tally-report", "preloaded", 0)
         assert not any("names no tools" in warning for warning in plan.warnings)
 
-    def test_several_skills_wait_for_the_one_to_study(self, store):
+    def test_several_skills_are_each_kept_and_the_work_names_the_one_it_studies(self, store):
+        """A run studies one skill at a time, but what it keeps is every skill the agent used: the
+        one an A/B, a refinement or a scenario studies is named when it starts."""
+        from tuningfork.ops import experiments
+        from tuningfork.ops.timeline import run_timeline
+
         data = export(conversation(("tally-report", SKILL), ("csv-tidy", OTHER)))
         plan = imports.prepare_import(store, data)
-        assert plan.choose and plan.to_json()["choose_skill"] and [skill.name for skill in plan.skills] == ["tally-report", "csv-tidy"]
-        with pytest.raises(OperationError) as refused:
-            imports.execute_import(store, plan)
-        assert refused.value.code == "choose_skill" and "csv-tidy (in context from step 2)" in refused.value.hint
+        assert plan.names == ["tally-report", "csv-tidy"] and plan.study is None
+        assert any("it keeps 2 skills, tally-report and csv-tidy" in warning for warning in plan.warnings)
+        result = imports.execute_import(store, plan)
+        run = store.get_run(result.run_id)
+        assert result.skills == ["tally-report", "csv-tidy"] and result.skill is None
+        assert sorted(run.skill_hashes) == ["csv-tidy/SKILL.md", "tally-report/SKILL.md"]
+        assert "skill_snapshot_dir" not in run.parity
+        # Each one's text maps to its own kept file, where the run's page shows it.
+        assert {span["name"]: span["file"] for span in run_timeline(store, run.id).to_json()["skills"]} == {
+            "tally-report": "tally-report/SKILL.md", "csv-tidy": "csv-tidy/SKILL.md"}
+
+        rules = [{"if": "calls", "value": "write_file"}]
+        with pytest.raises(OperationError) as asked:
+            refine.create(store, run.id, "2", target_rules=rules)
+        assert asked.value.code == "choose_skill" and asked.value.hint == "the skills it kept: tally-report, csv-tidy"
+        made = refine.create(store, run.id, "2", target_rules=rules, skill="csv-tidy")
+        assert made.skill == "csv-tidy" and made.data["baseline"]["path"].endswith("csv-tidy/SKILL.md")
+        with pytest.raises(OperationError, match="kept no skill called 'nope'"):
+            refine.create(store, run.id, "2", target_rules=rules, skill="nope")
+        unnamed = experiments.recorded_skill(store, run.id)
+        assert unnamed.kept == ["tally-report", "csv-tidy"] and unnamed.text is None
+        assert experiments.recorded_skill(store, run.id, "tally-report").text == SKILL
+
         chosen = imports.prepare_import(store, data, skill="csv-tidy")
-        assert chosen.skill.name == "csv-tidy" and chosen.skill.step == 2
+        assert chosen.study == "csv-tidy"
+        studied = store.get_run(imports.execute_import(store, chosen).run_id)
+        assert refine.run_skill_file(store, studied).read_text(encoding="utf-8") == OTHER
         with pytest.raises(OperationError, match="no skill called 'nope'"):
             imports.prepare_import(store, data, skill="nope")
+
+    def test_each_skill_can_be_kept_from_its_own_folder(self, store, tmp_path):
+        folders = {}
+        for name, text in (("tally-report", SKILL), ("csv-tidy", OTHER)):
+            folders[name] = tmp_path / "skills" / name
+            folders[name].mkdir(parents=True)
+            (folders[name] / "SKILL.md").write_text(text, encoding="utf-8")
+        data = export(conversation(("tally-report", SKILL), ("csv-tidy", OTHER)))
+        plan = imports.prepare_import(store, data, skill_dir=[str(folders["csv-tidy"]), str(folders["tally-report"])])
+        assert plan.folders == {name: folder.resolve() for name, folder in folders.items()}
+        assert not any("extracted" in warning for warning in plan.warnings)
+        run = store.get_run(imports.execute_import(store, plan).run_id)
+        assert {name: imports.imported_source(run, name) for name in plan.names} == {
+            name: folder.resolve() for name, folder in folders.items()}
+        with pytest.raises(OperationError, match="two folders hold csv-tidy"):
+            imports.prepare_import(store, data, skill_dir=[str(folders["csv-tidy"])] * 2)
 
     def test_a_skill_in_a_harness_unknown_is_found_by_its_frontmatter(self, store):
         rows = [{"role": "system", "content": f"Follow this skill.\n\n{SKILL}"}, {"role": "user", "content": "go"},
@@ -172,7 +214,7 @@ class TestTheSkill:
         (folder / "scripts" / "check.py").write_text("print('ok')\n", encoding="utf-8")
         data = export(conversation(("tally-report", SKILL)))
         plan = imports.prepare_import(store, data, skill_dir=str(folder))
-        assert plan.skill.name == "tally-report" and plan.skill_dir == folder.resolve()
+        assert plan.study == "tally-report" and plan.folders == {"tally-report": folder.resolve()}
         assert not any("not the text the model read" in warning or "extracted" in warning for warning in plan.warnings)
         result = imports.execute_import(store, plan)
         kept = result.folder / "skills" / "tally-report"

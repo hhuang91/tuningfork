@@ -1,6 +1,7 @@
 // Import a conversation an agent had elsewhere as a run (`ops.imports`): pick its file, see what
-// it holds — its steps, the skills it shows, what the file lacked — choose the skill to study,
-// and import. The run then works at its steps as any recorded one does.
+// it holds — its steps, the skills it shows, what the file lacked — name a skill's folder where
+// it has one, and import. Every skill it shows is kept; the one an A/B, a refinement or a
+// scenario studies is named when it starts. The run then works at its steps as any recorded one.
 
 import { api } from "../api.js";
 import { guard } from "../auth.js";
@@ -33,11 +34,13 @@ export async function importView(root) {
   let content = null;
   let skill = null;
   let session = null;
+  // A folder for each skill that has one, by the skill it was typed for: kept with the run in
+  // place of the SKILL.md the model read. The server matches each folder to the skill it holds.
+  const folders = new Map();
   const file = h("input", { class: "field", type: "file", accept: ".json,.jsonl,application/json" });
   const harness = h("select", { class: "field", name: "harness" },
     h("option", { value: "" }, "as the file says"),
     ["hermes", "claude-code", "generic"].map((name) => h("option", { value: name }, name)));
-  const skillDir = input("skill_dir", { placeholder: "optional: the skill's folder on this machine" });
   const toolsFrom = input("tools_from", { placeholder: "optional: a run id, or its first characters" });
   const label = input("label", { placeholder: "optional" });
   const task = input("task_id", { placeholder: "optional: a task id to file the run under" });
@@ -51,7 +54,7 @@ export async function importView(root) {
     skill: skill || undefined,
     harness: harness.value || undefined,
     tools_from: toolsFrom.value.trim() || undefined,
-    skill_dir: skillDir.value.trim() || undefined,
+    skill_dir: [...folders.values()].map((value) => value.trim()).filter(Boolean),
     label: label.value.trim() || undefined,
     task_id: task.value.trim() || undefined,
   });
@@ -75,7 +78,7 @@ export async function importView(root) {
         return;
       }
       replace(preview, planView(found));
-      start.disabled = Boolean(found.choose_skill);
+      start.disabled = false;
     } catch (error) {
       if (mine !== asking) return;
       replace(preview);
@@ -93,20 +96,33 @@ export async function importView(root) {
           h("span", { class: "muted small" }, ` — ${plural(found.messages, "message")}${found.title ? `: ${found.title}` : ""}`))))));
   }
 
+  /** A folder field for one skill, keeping what was typed across previews. */
+  function folderField(key) {
+    const field = input(`skill_dir:${key}`, { placeholder: "optional: its folder on this machine" });
+    field.value = folders.get(key) || "";
+    field.addEventListener("change", () => { folders.set(key, field.value); look(); });
+    return field;
+  }
+
   function planView(plan) {
+    const several = plan.skills.length > 1;
     const skills = plan.skills.length
-      ? h("div", { class: "stack", style: { gap: "6px" } },
+      ? h("div", { class: "stack import-skills" },
           plan.skills.map((found) => {
-            const where = found.step === null ? "after the last step" : `in context from step ${found.step}`;
-            const text = h("span", null, h("strong", null, found.name),
-              h("span", { class: "muted small" }, ` — ${SOURCES[found.source] || found.source}; ${where}`));
-            return plan.skills.length > 1
-              ? h("label", { class: "target-choice" },
-                  h("input", { type: "radio", name: "skill", value: found.name, checked: found.name === plan.skill,
-                    onchange: () => { skill = found.name; look(); } }), text)
-              : h("div", null, text);
+            const where = found.step === null ? "not in the conversation" : `in context from step ${found.step}`;
+            const how = found.source ? `${SOURCES[found.source] || found.source}; ` : "";
+            return h("div", { class: "import-skill" },
+              h("div", null, h("strong", null, found.name), h("span", { class: "muted small" }, ` — ${how}${where}; kept `
+                + (found.folder ? `from ${found.folder}` : "as the model read it"))),
+              folderField(found.name),
+              several
+                ? h("label", { class: "small" },
+                    h("input", { type: "radio", name: "skill", value: found.name, checked: found.name === plan.skill,
+                      onchange: () => { skill = found.name; look(); } }),
+                    " studied by default — else an A/B, a refinement or a scenario names it")
+                : null);
           }))
-      : h("span", { class: "muted" }, "none shows in the conversation");
+      : h("div", { class: "stack" }, h("span", { class: "muted" }, "none shows in the conversation"), folderField(""));
     return h("div", { class: "stack" },
       panel("What it holds", kv([
         ["format", plan.format],
@@ -119,8 +135,6 @@ export async function importView(root) {
         ["tools", plan.tools ? `${plan.tools}${plan.tools_from ? ` from run ${plan.tools_from.slice(0, 8)}` : ""}` : "none in the file"],
         ["skills", skills],
       ])),
-      plan.choose_skill ? h("div", { class: "banner banner-warn" }, "Choose the skill to study: a run studies one. "
-        + "The others stay in its steps as they were.") : null,
       (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)));
   }
 
@@ -129,6 +143,7 @@ export async function importView(root) {
     content = null;
     session = null;
     skill = null;
+    folders.clear();
     if (chosen && chosen.size > MAX_BYTES) {
       replace(preview);
       replace(problem, formError(new Error(`${chosen.name} is larger than 64 MiB`)));
@@ -139,7 +154,6 @@ export async function importView(root) {
   });
   harness.addEventListener("change", () => { skill = null; look(); });
   toolsFrom.addEventListener("change", look);
-  skillDir.addEventListener("change", look);
 
   start.addEventListener("click", guard(async () => {
     start.disabled = true;
@@ -162,9 +176,9 @@ export async function importView(root) {
         + "through the same harness, whose tools each step then offers." }))),
     preview,
     panel("The run", h("div", { class: "stack" },
+      h("p", { class: "hint" }, "Every skill it shows is kept with the run: from its folder where you name one above — its "
+        + "scripts and references too — else its SKILL.md as the model read it."),
       h("div", { class: "form-grid" },
-        field("Skill folder", skillDir, { wide: true, help: "Kept with the run — its scripts and references too. Without "
-          + "one, the skill's SKILL.md is extracted from what the model read." }),
         field("Label", label),
         field("Task", task)),
       problem,
@@ -187,17 +201,39 @@ export async function scenarioFromRunView(root, [runId]) {
     return;
   }
   replace(root, ...head("Make a scenario"), loading());
+  const starts = (skill) => api.get(`/imports/${runId}/scenario${skill ? `?skill=${encodeURIComponent(skill)}` : ""}`);
   let found;
   try {
-    found = await api.get(`/imports/${runId}/scenario`);
+    found = await starts(null);
   } catch (error) {
     replace(root, ...head("Make a scenario"), formError(error));
     return;
   }
   const name = input("scenario_name", { placeholder: "a-name" });
-  const cut = h("select", { class: "field", name: "cut" },
-    found.turns.map((turn) => h("option", { value: String(turn.message), selected: turn.message === found.default },
+  // The run kept several skills: the scenario studies the one chosen, and starts, unless told
+  // otherwise, before that one came in.
+  const studies = h("select", { class: "field", name: "skill" },
+    h("option", { value: "", selected: !found.skill, disabled: true }, "choose the skill it studies"),
+    (found.skills || []).map((each) => h("option", { value: each, selected: each === found.skill }, each)));
+  const cut = h("select", { class: "field", name: "cut" });
+  const about = h("p", { class: "hint" });
+  const shown = () => {
+    replace(cut, found.turns.map((turn) => h("option", { value: String(turn.message), selected: turn.message === found.default },
       `message ${turn.message}${turn.message === found.default ? " (before the skill)" : ""} — ${turn.text || "(no text)"}`)));
+    replace(about, found.skill
+      ? `It studies ${found.skill}. Starting before the skill came in, the skill enters each run live, through the `
+        + "harness, so a variant replaces it everywhere the model reads it."
+      : (found.skills || []).length ? "Choose the skill it studies: a scenario studies one." : "The import kept no skill: a scenario studies one.");
+  };
+  shown();
+  studies.addEventListener("change", guard(async () => {
+    try {
+      found = await starts(studies.value);
+      shown();
+    } catch (error) {
+      replace(problem, formError(error));
+    }
+  }));
   const kind = h("select", { class: "field", name: "check_kind" },
     h("option", { value: "" }, "none yet"),
     h("option", { value: "shell" }, "a shell command, run in each run's workspace"),
@@ -210,6 +246,7 @@ export async function scenarioFromRunView(root, [runId]) {
     replace(problem);
     const text = check.value.trim();
     const body = { name: name.value.trim(), cut: Number(cut.value) };
+    if (found.skill) body.skill = found.skill;
     if (kind.value === "shell" && text) body.check = text;
     if (kind.value === "reply_contains" && text) body.check = { reply_contains: text };
     make.disabled = true;
@@ -226,11 +263,9 @@ export async function scenarioFromRunView(root, [runId]) {
   }));
   replace(root, ...head("Make a scenario"),
     panel("The scenario", h("div", { class: "stack" },
-      h("p", { class: "hint" }, found.skill
-        ? `It studies ${found.skill}. Starting before the skill came in, the skill enters each run live, through the `
-          + "harness, so a variant replaces it everywhere the model reads it."
-        : "The import kept no skill: a scenario studies one."),
+      about,
       h("div", { class: "form-grid" },
+        (found.skills || []).length > 1 ? field("Skill", studies, { help: "The one each run varies: it comes in live." }) : null,
         field("Name", name, { help: "lowercase letters, digits, - and _" }),
         field("Start from", cut, { wide: true, help: "The user turn each run's prompt is; the conversation before it is "
           + "each run's context." }),

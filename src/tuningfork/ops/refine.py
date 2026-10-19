@@ -96,12 +96,15 @@ def _read(path: Path) -> Any:
 # --- the skill a run was given, and where it came from --------------------------------------------
 
 
-def run_skill_file(store: Store, run: Run) -> Path | None:
-    """The SKILL.md a run was given: its batch's frozen copy, or a fork's launch folder."""
-    from tuningfork.ops.experiments import recorded_skill_file
+def run_skill_file(store: Store, run: Run, skill: str | None = None) -> Path | None:
+    """The SKILL.md of the skill a run was given: its batch's frozen copy, a fork's launch
+    folder, or — for an imported chat, which keeps each skill it shows — the one named by
+    `skill` (`experiments.study_skill`: refused where it kept several and none is named)."""
+    from tuningfork.ops.experiments import study_skill
 
-    found = recorded_skill_file(run)
-    if found is None and run.launch_id:
+    studied = study_skill(run, skill)
+    found = studied[1] if studied is not None else None
+    if found is None and skill is None and run.launch_id:
         launch = store.get_launch(run.launch_id)
         if launch is not None and launch.skill_dir:
             candidate = Path(launch.skill_dir) / "SKILL.md"
@@ -282,12 +285,13 @@ def create(
     target_rules: Sequence[dict[str, str]] | None = None,
     target_check: bool = False,
     created_by: dict[str, Any] | None = None,
+    skill: str | None = None,
 ) -> Refinement:
     """Start refining the skill a run was given, at one of its steps, toward a target
     declared now — before any proposal is made or sampled. The same checkpoint, target and
     skill give back the open refinement already there. `target_check` makes the task's own
     check the target, for a failure only the check can see: its screens run forks to the
-    end."""
+    end. `skill` names the one to refine where the run kept several: an imported chat."""
     from tuningfork.experiment import resolve_target
     from tuningfork.experiment.sampling import CheckpointError
     from tuningfork.experiment.skill import diagnose, locate, text_sha256
@@ -312,7 +316,7 @@ def create(
             hint="refine from a run of one of the skill's training tasks",
             code="held_out", field="run",
         )
-    found = run_skill_file(store, checkpoint.run)
+    found = run_skill_file(store, checkpoint.run, skill)
     if found is None:
         raise OperationError(
             f"run {checkpoint.run.id[:8]} kept no copy of the skill it was given",

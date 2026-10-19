@@ -8,7 +8,7 @@
 // from there, judged by the task's check. Only a run tuningfork launched can be forked.
 
 import { api, enc } from "./api.js";
-import { chip, command, h, kv, panel, plural, short } from "./dom.js";
+import { chip, command, failure, h, kv, loading, panel, plural, replace, short } from "./dom.js";
 import { cacheField, field, input, numberOf, planForm, samplingChoices, seedField, textOf } from "./forms.js";
 import { live } from "./live.js";
 import { describeBuilder, seenPreview } from "./targets.js";
@@ -331,11 +331,34 @@ function resampleForm(step) {
 // --- A/B ---------------------------------------------------------------------------------
 
 async function abForm(step, toEnd = false) {
-  const [skill, targets] = await Promise.all([
-    api.get(`/runs/${enc(step.run.id)}/skill`),
-    toEnd ? null : api.get(`/runs/${enc(step.run.id)}/steps/${step.idx}/targets`),
-  ]);
+  const first = await api.get(`/runs/${enc(step.run.id)}/skill`);
+  const kept = first.kept || [];
+  if (kept.length <= 1) return abBody(step, toEnd, first, null);
+  // A run that kept several skills — an imported chat — varies the one chosen here.
+  const pick = h("select", { class: "field", name: "skill" },
+    h("option", { value: "", selected: !first.text, disabled: true }, "choose the skill the variant replaces"),
+    kept.map((name) => h("option", { value: name, selected: Boolean(first.text) && name === first.skill }, name)));
+  const body = h("div");
+  const load = async () => {
+    replace(body, loading("Loading the skill…"));
+    try {
+      const skill = await api.get(`/runs/${enc(step.run.id)}/skill?skill=${enc(pick.value)}`);
+      replace(body, await abBody(step, toEnd, skill, pick.value));
+    } catch (error) {
+      replace(body, failure(error, "Could not load the skill"));
+    }
+  };
+  pick.addEventListener("change", load);
+  if (pick.value) await load();
+  return h("div", { class: "stack" },
+    field("Skill", pick, { help: "The run kept several: the variant replaces the one chosen." }), body);
+}
+
+async function abBody(step, toEnd, skill, named) {
+  const targets = toEnd ? null : await api.get(`/runs/${enc(step.run.id)}/steps/${step.idx}/targets`);
   const saved = await api.get(`/variants?skill=${enc(skill.skill)}`);
+  // The skill the variant replaces, where the run kept several.
+  const which = named ? { skill: named } : {};
   if (toEnd) {
     const { element } = planForm({
       kind: "ab-to-end",
@@ -364,6 +387,7 @@ async function abForm(step, toEnd = false) {
         run: step.run.id,
         step: String(step.idx),
         ...readVariant(form),
+        ...which,
         ...readTarget(form),
         ...readSampling(form),
       };

@@ -44,7 +44,12 @@ async def _body(request: Request) -> tuple[str, dict[str, Any]]:
     options = {}
     for name in OPTIONS:
         value = body.get(name)
-        if value is not None and not isinstance(value, str):
+        # A skill's folder for each skill that has one: one, or a list.
+        if name == "skill_dir" and isinstance(value, list):
+            if not all(isinstance(each, str) for each in value):
+                raise OperationError("skill_dir is a folder, or a list of folders", code="bad_params", field=name)
+            value = [each for each in value if each.strip()] or None
+        elif value is not None and not isinstance(value, str):
             raise OperationError(f"{name} is text", code="bad_params", field=name)
         if value:
             options[name] = value
@@ -82,18 +87,28 @@ def import_routes(*, store: Any) -> list[Route]:
 
     async def starts(request: Request) -> Response:
         """Where a scenario of an imported run can start: its user turns, and the one before
-        the skill came in, which it starts from unless told otherwise."""
+        the skill came in — `?skill=`, where it kept several — which it starts from unless told
+        otherwise."""
+        from tuningfork.ops.experiments import kept_skills, study_skill
+
         def look() -> dict[str, Any]:
             run = store.get_run(request.path_params["run"])
             if run is None:
                 raise OperationError(f"no run matching {request.path_params['run']!r}", code="not_found")
             chat = imports.chat_of(store, run)
-            skill = (run.parity.get("imported") or {}).get("skill")
+            try:
+                studied = study_skill(run, request.query_params.get("skill") or None)
+            except OperationError as error:
+                if error.code != "choose_skill":
+                    raise
+                studied = None
+            skill = studied[0] if studied else None
             try:
                 at, context, _ = imports.scenario_start(chat, skill or "", run.harness or "generic")
             except OperationError:
                 at, context = None, []
-            return {"run": run.id, "skill": skill, "turns": imports.turns(chat), "default": at, "context": len(context)}
+            return {"run": run.id, "skill": skill, "skills": list(kept_skills(run)), "turns": imports.turns(chat),
+                    "default": at, "context": len(context)}
 
         try:
             return JSONResponse(await asyncio.to_thread(look))
@@ -105,16 +120,19 @@ def import_routes(*, store: Any) -> list[Route]:
             cut = body.get("cut")
             if cut is not None and (isinstance(cut, bool) or not isinstance(cut, int)):
                 raise OperationError("cut is a message's index", code="bad_params", field="cut")
+            skill = body.get("skill")
+            if skill is not None and not isinstance(skill, str):
+                raise OperationError("skill is a skill's name", code="bad_params", field="skill")
             plan = imports.prepare_scenario(store, request.path_params["run"], str(body.get("name") or ""),
-                                            cut=cut, check=body.get("check"))
+                                            cut=cut, check=body.get("check"), skill=skill or None)
             made = imports.make_scenario(store, plan)
             return {"scenario": made.to_json(), "warnings": plan.warnings}
 
         try:
             raw = await _capped(request, 1024 * 1024)
             body = json.loads(raw) if raw else {}
-            if not isinstance(body, dict) or set(body) - {"name", "cut", "check"}:
-                raise OperationError("the body is {name, cut, check}", code="bad_params")
+            if not isinstance(body, dict) or set(body) - {"name", "cut", "check", "skill"}:
+                raise OperationError("the body is {name, cut, check, skill}", code="bad_params")
             found = await asyncio.to_thread(make, body)
         except ValueError:
             return _refusal(OperationError("the body is not JSON", code="bad_params"))

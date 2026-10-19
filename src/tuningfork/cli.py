@@ -1386,11 +1386,12 @@ def import_chat(
         None, "--session", help="From a file holding several sessions, the one to import: its id, or its first characters.",
     ),
     skill: Optional[str] = typer.Option(
-        None, "--skill", help="The skill to study, by name, where the conversation shows more than one: one a run.",
+        None, "--skill", help="Where the conversation shows several skills — each is kept — the one an A/B, a "
+        "refinement or --scenario studies when none is named.",
     ),
-    skill_dir: Optional[Path] = typer.Option(
-        None, "--skill-dir", help="The skill's folder, kept with the run in place of the SKILL.md the model read: "
-        "its scripts, templates and references too.",
+    skill_dir: Optional[list[Path]] = typer.Option(
+        None, "--skill-dir", help="A skill's folder, kept with the run in place of the SKILL.md the model read: "
+        "its scripts, templates and references too. Once for each skill that has one.",
     ),
     harness: Optional[str] = typer.Option(
         None, "--harness", help="The harness the conversation was had with, where the file does not say "
@@ -1441,7 +1442,7 @@ def import_chat(
     store = _store(home)
     try:
         plan = prepare_import(
-            store, data, session=session, skill=skill, skill_dir=str(skill_dir) if skill_dir else None,
+            store, data, session=session, skill=skill, skill_dir=[str(folder) for folder in skill_dir or []],
             harness=harness, label=label, task_id=task, tools_from=tools_from,
         )
     except OperationError as error:
@@ -1458,20 +1459,23 @@ def import_chat(
            if shown["tools"] else "no tools")
     )
     for found in shown["skills"]:
-        where = f"in context from step {found['step']}" if found["step"] is not None else "after the last step"
-        chosen = "  [bold]← studied[/bold]" if found["name"] == shown["skill"] else ""
-        console.print(f"  skill      {escape(found['name'])} ({SKILL_SOURCES.get(found['source'], found['source'])}; "
-                      f"{where}){chosen}")
+        where = f"in context from step {found['step']}" if found["step"] is not None else "not in the conversation"
+        how = SKILL_SOURCES.get(found["source"], found["source"]) + "; " if found["source"] else ""
+        kept = f"its folder {found['folder']}" if found["folder"] else "extracted from what the model read"
+        chosen = "  [bold]← studied unless another is named[/bold]" if found["name"] == shown["skill"] and len(shown["skills"]) > 1 else ""
+        console.print(f"  skill      {escape(found['name'])} ({escape(how + where)}); kept: {escape(kept)}{chosen}")
     if not shown["skills"]:
         console.print("  skill      [dim]none shows in the conversation[/dim]")
-    if shown["skill_dir"]:
-        console.print(f"  kept       {escape(shown['skill_dir'])}")
     for warning in shown["warnings"]:
         console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
     if scenario:
-        studied = plan.skill.name if plan.skill else (plan.skill_dir.name if plan.skill_dir else "")
+        if not plan.study:
+            _refuse(OperationError(
+                "a scenario studies one skill, and the conversation shows several: name it with --skill",
+                hint=f"the skills in it: {', '.join(plan.names)}", field="skill",
+            ))
         try:
-            at, context, prompt = scenario_start(plan.chat, studied, plan.harness, cut)
+            at, context, prompt = scenario_start(plan.chat, plan.study, plan.harness, cut)
         except OperationError as error:
             _refuse(error)
         first = prompt.strip().splitlines()[0] if prompt.strip() else ""
@@ -1489,12 +1493,13 @@ def import_chat(
         _refuse(error)
     run = result.run_id[:8]
     console.print(f"\nimported as run [bold]{run}[/bold]: {result.steps} step(s)")
+    named = " --skill <name>" if not result.skill and len(result.skills) > 1 else ""
     console.print(f"[dim]`tuningfork timeline {run}` reads it; `tuningfork resample {run} <step> -n 20` and "
-                  f"`tuningfork refine start {run} <step> …` work at its steps.[/dim]")
+                  f"`tuningfork refine start {run} <step>{escape(named)} …` work at its steps.[/dim]")
     if not scenario:
         return
     try:
-        planned = prepare_scenario(store, result.run_id, scenario, cut=cut, check=checked)
+        planned = prepare_scenario(store, result.run_id, scenario, cut=cut, check=checked, skill=plan.study)
         made = make_scenario(store, planned)
     except OperationError as error:
         _refuse(error)
@@ -2687,6 +2692,9 @@ def ab(
         help="The skill as it was when the run was recorded. Defaults to the copy a batch "
         "run was given, else SKILL.md beside the variant.",
     ),
+    skill: Optional[str] = typer.Option(
+        None, "--skill", help="Which skill the variant replaces, by name, where the run kept several: an imported chat.",
+    ),
     n: int = typer.Option(20, "-n", help="Samples per arm."),
     target: Optional[str] = typer.Option(
         None, "--target", help="Cluster letter from the latest resample at this checkpoint."
@@ -2746,7 +2754,7 @@ def ab(
             raise typer.Exit(code=1)
     try:
         prepared = prepare_ab(
-            store, run, reference, variant=variant, original=original, target=target,
+            store, run, reference, variant=variant, original=original, skill=skill, target=target,
             target_match=target_match, target_rules=rules, alpha=alpha, base_url=base_url, normalizers=normalizer,
             n=n, concurrency=concurrency, max_tokens=max_tokens, seed_base=seed_base, prompt_cache=prompt_cache,
         )
@@ -3350,6 +3358,9 @@ def refine_start(
         help="The task's own check as the target, for a failure only the check can see: its screens run "
         "forks to the end (refine screen --to-end).",
     ),
+    skill: Optional[str] = typer.Option(
+        None, "--skill", help="The skill to refine, by name, where the run kept several: an imported chat.",
+    ),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """Start refining a run's skill at one of its steps, toward a target declared now.
@@ -3368,7 +3379,7 @@ def refine_start(
     try:
         made = refine.create(
             store, run, reference, target=target, target_match=target_match, target_rules=rules,
-            target_check=target_check, created_by={"via": "person"},
+            target_check=target_check, created_by={"via": "person"}, skill=skill,
         )
     except OperationError as error:
         _refuse(error)

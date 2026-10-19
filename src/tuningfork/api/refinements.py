@@ -131,14 +131,14 @@ def refinement_routes(*, store: Any, writable: bool) -> list[Route]:
 
     async def create(request: Request) -> Response:
         try:
-            body = await _body(request, {"run", "step", "target", "target_match", "target_rules", "target_check"})
+            body = await _body(request, {"run", "step", "target", "target_match", "target_rules", "target_check", "skill"})
         except OperationError as error:
             return _refusal(error)
         return await answer(lambda: refine.create(
             store, str(body.get("run") or ""), str(body.get("step") if body.get("step") is not None else ""),
             target=body.get("target") or None, target_match=body.get("target_match") or None,
             target_rules=body.get("target_rules") or None, target_check=body.get("target_check") is True,
-            created_by={"via": "person"},
+            created_by={"via": "person"}, skill=str(body["skill"]) if body.get("skill") else None,
         ), status=201)
 
     async def propose(request: Request) -> Response:

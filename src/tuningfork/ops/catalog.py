@@ -245,6 +245,7 @@ class ABParams(Sampling):
     variant_text: str | None = field(default=None, metadata=_help("The variant's text, when edited in the browser: saved as a variant when the A/B starts."))
     variant_name: str | None = field(default=None, metadata=_help("The name to save variant_text under."))
     original: str | None = field(default=None, metadata=_help("The skill file as the run was given it. Default: the copy its batch kept."))
+    skill: str | None = field(default=None, metadata=_help("Which skill the variant replaces, by name, where the run kept several: an imported chat."))
     target: str | None = field(default=None, metadata=_help("The target: a behaviour's letter from an earlier resample of this step."))
     target_match: str | None = field(default=None, metadata=_help("The target: a regex over what the model did."))
     target_rules: list[dict[str, str]] = field(default_factory=list, metadata=_help("The target, described: conditions that must all hold, each {if: calls | not_calls | contains | not_contains, value}.", schema=RULE_LIST))
@@ -280,10 +281,10 @@ def prepare_ab_job(context: JobContext, params: ABParams) -> Any:
         if not params.variant_name:
             raise OperationError("name the variant, to save it under", code="bad_params", field="variant_name")
         checkpoint = load(context.store, params.run, params.step)
-        variant = str(variants.path_for(context.home, _skill_of(context, checkpoint.run), params.variant_name))
+        variant = str(variants.path_for(context.home, _skill_of(context, checkpoint.run, params.skill), params.variant_name))
     return prepare_ab(
         context.store, params.run, params.step,
-        variant=variant, variant_text=params.variant_text, original=params.original,
+        variant=variant, variant_text=params.variant_text, original=params.original, skill=params.skill,
         target=params.target, target_match=params.target_match, target_rules=params.target_rules or None,
         alpha=params.alpha, base_url=context.model_url, normalizers=params.normalizers, **_sampling(params),
     )
@@ -355,12 +356,14 @@ def prepare_ab_to_end_job(context: JobContext, params: ABToEndParams) -> Any:
     )
 
 
-def _skill_of(context: JobContext, run: Any) -> str:
-    """The skill a run was given, by name: where a variant of it is kept."""
+def _skill_of(context: JobContext, run: Any, skill: str | None = None) -> str:
+    """The skill a run was given, by name — `skill`, where it kept several: where a variant of it
+    is kept."""
     from tuningfork.ops import variants
-    from tuningfork.ops.experiments import recorded_skill_file
+    from tuningfork.ops.experiments import study_skill
 
-    found = recorded_skill_file(run)
+    studied = study_skill(run, skill)
+    found = studied[1] if studied is not None else None
     if found is None and run.launch_id:
         launch = context.store.get_launch(run.launch_id)
         if launch is not None and launch.skill_dir:

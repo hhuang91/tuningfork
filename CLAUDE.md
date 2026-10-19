@@ -100,10 +100,13 @@ that does not ask); each message as the harness changes its own copy before ever
 (`HarnessAdapter.as_sent`: Hermes strips each one and writes tool-call arguments compactly, keys
 sorted) — so the step tools work on it. What a history never kept stays out: the block Hermes
 puts after the system prompt at every call when it answers on a messaging platform (the chat,
-the user's name), and the tools, which its export leaves out. The skill under study, one a run, is found
-where its harness shows skills (`skill_spans`) and kept beside the run, `<home>/imports/<run>/`
-(the folder named, or the SKILL.md the model read, extracted), where the run's
-`parity.skill_snapshot_dir` points, as a batch run's does; the conversation is kept there too.
+the user's name), and the tools, which its export leaves out. Every skill it shows is found where
+its harness shows skills (`skill_spans`) and kept beside the run, `<home>/imports/<run>/skills/`
+(a folder the person names for it, or the SKILL.md the model read, extracted; `parity.skill_dirs`).
+The one an A/B, a refinement or a scenario studies is named when it starts (`skill`,
+`experiments.study_skill`, refused where several were kept and none is named), unless the import
+named one or kept only one: the run's `parity.skill_snapshot_dir` points at that, as a batch
+run's does. The conversation is kept there too.
 Its steps are recorded under an assignment of the run's own, never a pending label a live call
 could take; nothing launched it, so it forks nowhere, and deleting it for good takes its folder.
 

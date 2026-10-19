@@ -29,7 +29,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from tuningfork.ops.common import OperationError
 from tuningfork.store.db import Store
@@ -330,37 +330,46 @@ def _frontmatter(messages: list[dict[str, Any]]) -> list[Any]:
 
 @dataclass(slots=True)
 class ImportPlan:
-    """What an import will record, shown before it does."""
+    """What an import will record, shown before it does. It keeps every skill the conversation
+    shows; which one an A/B, a refinement or a scenario studies is named when it starts."""
 
     chat: Chat
     label: str
     task_id: str | None
     harness: str
     skills: list[FoundSkill]
-    #: The skill under study, and its folder when the person named one (else its text is kept).
-    skill: FoundSkill | None
-    skill_dir: Path | None
+    #: The folders the person named, by the skill each holds: kept in place of the SKILL.md the
+    #: model read, its scripts and references with it.
+    folders: dict[str, Path] = field(default_factory=dict)
+    #: The skill studied where none is named: the one the person named, or the only one. None
+    #: where the conversation shows several and none was named.
+    study: str | None = None
     warnings: list[str] = field(default_factory=list)
     #: Where the tools came from, when the file named none and a recorded run's were taken.
     tools_from: str | None = None
 
     @property
-    def choose(self) -> bool:
-        """Whether the person must name the skill to study first: the conversation shows several,
-        and a run studies one."""
-        return self.skill is None and self.skill_dir is None and len(self.skills) > 1
+    def names(self) -> list[str]:
+        """Every skill it keeps: those the conversation shows, as they came in, then any folder
+        named for a skill it does not show."""
+        shown = [skill.name for skill in self.skills]
+        return shown + [name for name in self.folders if name not in shown]
 
     def to_json(self) -> dict[str, Any]:
         chat = self.chat
+        shown = {skill.name: skill for skill in self.skills}
         return {
             "format": chat.format, "session_id": chat.session_id, "title": chat.title, "model": chat.model,
             "harness": self.harness, "label": self.label, "task_id": self.task_id,
             "messages": len(chat.messages), "steps": len(chat.steps), "system_prompt": chat.system_prompt,
             "tools": len(chat.tools or []), "tools_from": self.tools_from,
-            "skills": [skill.to_json() for skill in self.skills],
-            "skill": self.skill.name if self.skill else None,
-            "skill_dir": str(self.skill_dir) if self.skill_dir else None,
-            "choose_skill": self.choose,
+            "skills": [
+                {**(shown[name].to_json() if name in shown else {"name": name, "source": None, "message": None,
+                                                                   "step": None, "chars": 0}),
+                 "folder": str(self.folders[name]) if name in self.folders else None}
+                for name in self.names
+            ],
+            "skill": self.study,
             "warnings": self.warnings,
         }
 
@@ -371,14 +380,16 @@ def prepare_import(
     *,
     session: str | None = None,
     skill: str | None = None,
-    skill_dir: str | Path | None = None,
+    skill_dir: str | Path | Sequence[str | Path] | None = None,
     harness: str | None = None,
     label: str | None = None,
     task_id: str | None = None,
     tools_from: str | None = None,
 ) -> ImportPlan:
     """An import, checked and shown before anything is recorded: the conversation, the skills it
-    shows, the one under study, and what the file lacked."""
+    shows — each kept, extracted from what the model read or from a folder the person names
+    (`skill_dir`, one or several) — the one studied where none is named (`skill`), and what the
+    file lacked."""
     from tuningfork.harness import ADAPTERS
     from tuningfork.paths import resolve_path
 
@@ -407,45 +418,65 @@ def prepare_import(
                         "this conversation")
 
     skills = find_skills(chat, harness)
-    folder = resolve_path(str(skill_dir)).path if skill_dir else None
-    if folder is not None and not (folder / "SKILL.md").is_file():
-        raise OperationError(f"{folder} holds no SKILL.md", field="skill_dir")
-    chosen = _chosen(skills, skill, folder)
-    if chosen is None and folder is None:
-        if not skills:
-            warnings.append("no skill shows in the conversation: an A/B or a refinement needs one (skill_dir)")
-        elif len(skills) > 1:
-            warnings.append(f"the conversation shows {len(skills)} skills: name the one to study — a run studies one; "
-                            "the others stay in its steps as they were")
-    elif folder is not None:
-        text = (folder / "SKILL.md").read_text(encoding="utf-8", errors="replace")
-        if chosen is None:
-            warnings.append(f"{folder.name} does not show in the conversation: nothing at a step reads it")
-        elif not _locatable(chat, chosen, text):
+    folders: dict[str, Path] = {}
+    for given in [skill_dir] if isinstance(skill_dir, (str, Path)) else list(skill_dir or []):
+        folder = resolve_path(str(given)).path
+        if not (folder / "SKILL.md").is_file():
+            raise OperationError(f"{folder} holds no SKILL.md", field="skill_dir")
+        held = _held_by(folder, skills)
+        if held in folders:
+            raise OperationError(f"two folders hold {held}: {folders[held]} and {folder}", field="skill_dir")
+        folders[held] = folder
+    plan = ImportPlan(chat=chat, label="", task_id=task_id or None, harness=harness, skills=skills, folders=folders,
+                      warnings=warnings, tools_from=origin)
+    names = plan.names
+    if skill and skill not in names:
+        raise OperationError(f"no skill called {skill!r} shows in the conversation",
+                             hint=f"the skills in it: {', '.join(names) or 'none'}", field="skill")
+    plan.study = skill or (names[0] if len(names) == 1 else None)
+
+    if not names:
+        warnings.append("no skill shows in the conversation: an A/B or a refinement needs one (skill_dir)")
+    for held, folder in folders.items():
+        shown = next((found for found in skills if found.name == held), None)
+        if shown is None:
+            warnings.append(f"{held} does not show in the conversation: nothing at a step reads it")
+        elif not _locatable(chat, shown, (folder / "SKILL.md").read_text(encoding="utf-8", errors="replace")):
             warnings.append(f"{folder}/SKILL.md is not the text the model read in the conversation: an A/B or a "
                             "refinement finds the skill by its text, and would not find it")
-    elif chosen.step is None:
-        warnings.append(f"{chosen.name} came in after the last assistant turn: no step reads it")
-    if chosen is not None and folder is None:
-        warnings.append(f"{chosen.name}'s SKILL.md is extracted from what the model read: the rest of its folder — "
-                        "scripts, templates, references — the chat never showed (skill_dir names the folder)")
+    for found in skills:
+        if found.step is None:
+            warnings.append(f"{found.name} came in after the last assistant turn: no step reads it")
+    extracted = [found.name for found in skills if found.name not in folders]
+    if extracted:
+        warnings.append(f"the SKILL.md of {_listed(extracted)} is extracted from what the model read: the rest of "
+                        "its folder — scripts, templates, references — the chat never showed (skill_dir names a "
+                        "skill's folder)")
+    if plan.study is None and len(names) > 1:
+        warnings.append(f"it keeps {len(names)} skills, {_listed(names)}: an A/B, a refinement or a scenario names "
+                        "the one it studies")
     name = chat.title or (f"session {chat.session_id}" if chat.session_id else "a chat")
-    return ImportPlan(
-        chat=chat, label=label or f"imported: {name}"[:120], task_id=task_id or None, harness=harness,
-        skills=skills, skill=chosen, skill_dir=folder, warnings=warnings, tools_from=origin,
-    )
+    plan.label = label or f"imported: {name}"[:120]
+    return plan
 
 
-def _chosen(skills: list[FoundSkill], name: str | None, folder: Path | None) -> FoundSkill | None:
-    wanted = name or (folder.name if folder is not None else None)
-    if wanted:
-        found = next((skill for skill in skills if skill.name == wanted), None)
-        if found is None and name:
-            shown = ", ".join(skill.name for skill in skills) or "none"
-            raise OperationError(f"no skill called {name!r} shows in the conversation", hint=f"the skills in it: {shown}",
-                                 field="skill")
-        return found
-    return skills[0] if len(skills) == 1 else None
+def _held_by(folder: Path, skills: list[FoundSkill]) -> str:
+    """The skill a folder holds: the one of those shown that its SKILL.md's name, or its own
+    name, matches — else that name."""
+    match = FRONTMATTER.match((folder / "SKILL.md").read_text(encoding="utf-8", errors="replace"))
+    names = [match["name"].strip().strip("'\"")] if match else []
+    names.append(folder.name)
+    shown = {skill.name for skill in skills}
+    return next((name for name in names if name in shown), names[0])
+
+
+def _listed(names: Sequence[str]) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _folder_name(skill: str) -> str:
+    """A skill's name as a folder's: a name a harness was given can hold a slash."""
+    return re.sub(r"[^\w.-]+", "-", skill).strip(".-") or "skill"
 
 
 def _locatable(chat: Chat, skill: FoundSkill, text: str) -> bool:
@@ -471,43 +502,43 @@ def _tools_of(store: Store, reference: str) -> tuple[list[dict[str, Any]], str]:
 class ImportResult:
     run_id: str
     steps: int
+    #: The skill studied where none is named; None where it kept several and none was named.
     skill: str | None
     folder: Path
     warnings: list[str]
+    #: Every skill it kept, as the conversation showed them.
+    skills: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
-        return {"run": self.run_id, "steps": self.steps, "skill": self.skill, "folder": str(self.folder),
-                "warnings": self.warnings}
+        return {"run": self.run_id, "steps": self.steps, "skill": self.skill, "skills": self.skills,
+                "folder": str(self.folder), "warnings": self.warnings}
 
 
 def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
     """Record the conversation as a run, step by step, and keep beside it what it was imported
-    from and the skill under study. The run is its own from the first step: it never waits on
-    the label a live call could take (`Store.begin_run`)."""
+    from and every skill it shows (`parity.skill_dirs`), the one studied where none is named as
+    the run's own (`parity.skill_snapshot_dir`). The run is its own from the first step: it never
+    waits on the label a live call could take (`Store.begin_run`)."""
     from tuningfork.launches import Assignment
     from tuningfork.specs import hash_tree
 
-    if plan.choose:
-        raise OperationError(
-            f"the conversation shows {len(plan.skills)} skills: name the one to study — a run studies one",
-            hint="the skills in it: " + ", ".join(f"{skill.name} (in context from step {skill.step})" for skill in plan.skills),
-            code="choose_skill", field="skill",
-        )
     chat = plan.chat
     run_id = uuid.uuid4().hex
     folder = root(store.home) / run_id
     folder.mkdir(parents=True)
+    shown = {skill.name: skill for skill in plan.skills}
+    kept: dict[str, Path] = {}
     try:
         (folder / "chat.json").write_text(json.dumps(chat.to_json(), ensure_ascii=False, indent=1), encoding="utf-8")
         skills = folder / "skills"
-        kept = None
-        if plan.skill_dir is not None:
-            kept = skills / plan.skill_dir.name
-            shutil.copytree(plan.skill_dir, kept, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-        elif plan.skill is not None:
-            kept = skills / plan.skill.name
-            kept.mkdir(parents=True)
-            (kept / "SKILL.md").write_text(plan.skill.text, encoding="utf-8")
+        for name in plan.names:
+            place = skills / _folder_name(name)
+            if name in plan.folders:
+                shutil.copytree(plan.folders[name], place, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            else:
+                place.mkdir(parents=True)
+                (place / "SKILL.md").write_text(shown[name].text, encoding="utf-8")
+            kept[name] = place
         for number, index in enumerate(chat.steps):
             store.record_step(
                 request=chat.request(index), response=chat.response(index), harness=plan.harness,
@@ -517,21 +548,29 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True)
         raise
+    study = plan.study
     imported = {
         "format": chat.format, "session_id": chat.session_id, "title": chat.title, "model": chat.model,
-        "at": time.time(), "tools_from": plan.tools_from, "skill": kept.name if kept else None,
-        "skill_source": ("folder" if plan.skill_dir is not None else "extracted") if kept else None,
-        # The folder it was copied from: the skill a scenario made from it tunes, while it is there.
-        "skill_dir": str(plan.skill_dir) if plan.skill_dir is not None else None,
+        "at": time.time(), "tools_from": plan.tools_from,
+        # Each skill kept, and the folder it was copied from — the skill a scenario made from it
+        # tunes, while it is there — or none, its SKILL.md extracted from what the model read.
+        "skills": [{"name": name, "source": "folder" if name in plan.folders else "extracted",
+                    "dir": str(plan.folders[name]) if name in plan.folders else None} for name in plan.names],
+        "skill": study,
+        # The studied one's, as an import kept before it kept several: what older readers look for.
+        "skill_source": ("folder" if study in plan.folders else "extracted") if study else None,
+        "skill_dir": str(plan.folders[study]) if study in plan.folders else None,
         "warnings": plan.warnings,
     }
+    parity: dict[str, Any] = {"imported": imported, "skill_dirs": {name: str(place) for name, place in kept.items()}}
+    if study:
+        parity["skill_snapshot_dir"] = str(kept[study])
     store.annotate_run(
         run_id, harness=plan.harness, task_id=plan.task_id, label=plan.label,
-        skill_hashes=hash_tree([skills]) if kept else None,
-        parity={"imported": imported, **({"skill_snapshot_dir": str(kept)} if kept else {})},
+        skill_hashes=hash_tree([skills]) if kept else None, parity=parity,
     )
-    return ImportResult(run_id=run_id, steps=len(chat.steps), skill=kept.name if kept else None, folder=folder,
-                        warnings=plan.warnings)
+    return ImportResult(run_id=run_id, steps=len(chat.steps), skill=study, folder=folder, warnings=plan.warnings,
+                        skills=list(kept))
 
 
 # --- a scenario from an import ---------------------------------------------------------------------
@@ -632,12 +671,16 @@ def scenario_start(chat: Chat, skill: str, harness: str, cut: int | None = None)
     return cut, context, prompt
 
 
-def prepare_scenario(store: Store, reference: str, name: str, *, cut: int | None = None, check: Any = None) -> ScenarioPlan:
+def prepare_scenario(
+    store: Store, reference: str, name: str, *, cut: int | None = None, check: Any = None, skill: str | None = None,
+) -> ScenarioPlan:
     """A scenario from an imported run, checked: the conversation before the user turn `cut`
     is the context each run continues — by default before the turn that led to the skill,
     which then comes in live, through the harness, as a variant would — that turn is the
-    prompt, and the skill is the folder the import named, else the SKILL.md it kept."""
+    prompt, and the skill — `skill`, where the import kept several — is the folder the import
+    named for it, else the SKILL.md it kept."""
     from tuningfork.ops import scenarios
+    from tuningfork.ops.experiments import study_skill
     from tuningfork.specs import check_problems
 
     run = store.get_run(reference)
@@ -647,19 +690,19 @@ def prepare_scenario(store: Store, reference: str, name: str, *, cut: int | None
     scenarios.check_name(name)
     if (scenarios.folder(store.home, name) / scenarios.SPEC).exists():
         raise OperationError(f"a scenario called {name!r} exists already", code="conflict", field="name")
-    imported = run.parity["imported"]
-    kept = run.parity.get("skill_snapshot_dir")
-    if not imported.get("skill") or not kept:
+    studied = study_skill(run, skill)
+    if studied is None:
         raise OperationError(f"run {run.id[:8]} kept no skill: a scenario studies one", field="run",
-                             hint="import it again naming the skill (--skill) or its folder (--skill-dir)")
+                             hint="import it again naming the skill's folder (--skill-dir)")
+    studied_name, kept = studied
     problems = check_problems(check, "check")
     if problems:
         raise OperationError(f"the check {problems[0].message}", field="check")
     warnings: list[str] = []
-    cut, context, prompt = scenario_start(chat, imported["skill"], run.harness or "generic", cut)
-    source = imported.get("skill_dir")
-    folder = Path(source) if source and (Path(source) / "SKILL.md").is_file() else Path(kept)
-    if folder == Path(kept) and imported.get("skill_source") == "extracted":
+    cut, context, prompt = scenario_start(chat, studied_name, run.harness or "generic", cut)
+    source = imported_source(run, studied_name)
+    folder = source if source is not None else kept.parent
+    if source is None:
         warnings.append(f"its skill folder is the SKILL.md the import extracted, {folder}: an approved edit is written "
                         "there; point tuningfork.skill_dir at the skill's own folder to tune that one")
     if check is None:
@@ -667,8 +710,18 @@ def prepare_scenario(store: Store, reference: str, name: str, *, cut: int | None
     if any(message.get("tool_calls") for message in context):
         warnings.append("the conversation's tool calls read and wrote files the runs will not have: add them as the "
                         "scenario's inputs where the model needs them")
-    return ScenarioPlan(run_id=run.id, name=name, cut=cut, prompt=prompt, context=context, skill=imported["skill"],
+    return ScenarioPlan(run_id=run.id, name=name, cut=cut, prompt=prompt, context=context, skill=studied_name,
                         skill_dir=folder, check=check, warnings=warnings)
+
+
+def imported_source(run: Any, skill: str) -> Path | None:
+    """The folder an imported run's copy of `skill` was made from, while it is still there: the
+    one the person named at import. None where its SKILL.md was extracted from the chat."""
+    imported = (run.parity or {}).get("imported") or {}
+    named = next((each.get("dir") for each in imported.get("skills") or [] if each.get("name") == skill), None)
+    if named is None and imported.get("skill") == skill:
+        named = imported.get("skill_dir")  # an import from before it kept several
+    return Path(named) if named and (Path(named) / "SKILL.md").is_file() else None
 
 
 def make_scenario(store: Store, plan: ScenarioPlan) -> Any:

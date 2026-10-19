@@ -67,15 +67,23 @@ export async function refinementsView(root, _, scope) {
 /** The form a step opens with `?start=refine`: the target, declared before anything else. */
 export async function refineStartForm(step) {
   const run = step.run.id;
-  const [targets, existing] = await Promise.all([
+  const [targets, existing, skill] = await Promise.all([
     api.get(`/runs/${enc(run)}/steps/${step.idx}/targets`),
     api.get(`/refinements?run=${enc(run)}`),
+    api.get(`/runs/${enc(run)}/skill`),
   ]);
   const here = existing.filter((each) => each.step === step.idx);
   const picker = targetPicker(targets, {
     run, idx: step.idx, exploratory: false,
     legend: "What the model should do at this step — declared before anything is proposed or sampled",
   });
+  // A run that kept several skills — an imported chat — refines the one chosen here.
+  const kept = skill.kept || [];
+  const studies = kept.length > 1
+    ? h("select", { class: "field", name: "skill" },
+        h("option", { value: "", selected: !skill.text, disabled: true }, "choose the skill to refine"),
+        kept.map((name) => h("option", { value: name, selected: Boolean(skill.text) && name === skill.skill }, name)))
+    : null;
   const error = h("div");
   const button = h("button", { class: "btn btn-primary", type: "submit", "data-control": true }, "Start refining");
   const form = h("form", {
@@ -90,9 +98,13 @@ export async function refineStartForm(step) {
         replace(error, formError(failed));
         return;
       }
+      if (studies && !studies.value) {
+        replace(error, formError(Object.assign(new Error("Choose the skill to refine: the run kept several."), { field: "skill" })));
+        return;
+      }
       button.disabled = true;
       try {
-        const made = await api.post("/refinements", { run, step: String(step.idx), ...target });
+        const made = await api.post("/refinements", { run, step: String(step.idx), ...target, ...(studies ? { skill: studies.value } : {}) });
         location.hash = `#/refine/${made.id}`;
       } catch (failed) {
         button.disabled = false;
@@ -106,6 +118,7 @@ export async function refineStartForm(step) {
         ". The same target opens that one again.")
     : null,
   h("p", { class: "hint" }, "The skill as this run was given it is copied into the refinement, and every proposal edits that copy. The skill's own folder is never written."),
+  studies ? field("Skill", studies, { help: "The run kept several: the refinement edits the one chosen." }) : null,
   picker,
   // A target no answer at this step can express: what the run wrote, as the task's check reads it.
   h("label", { class: "target-choice" },

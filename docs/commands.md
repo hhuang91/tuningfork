@@ -161,10 +161,12 @@ step each is in context — and what the file lacked, before recording anything.
 Runs page has the same: **Import a chat…**.
 
 - `--session <id>` — from a file of several sessions, the one to import.
-- `--skill <name>` — the skill to study, where the conversation shows several: a run studies one,
-  and the others stay in its steps as they were. Its SKILL.md is extracted from what the model
-  read; `--skill-dir <folder>` keeps the skill's own folder with the run instead, its scripts and
-  references too.
+- Every skill the conversation shows is kept with the run, its SKILL.md extracted from what the
+  model read; `--skill-dir <folder>`, once for each skill that has one, keeps the skill's own
+  folder instead, its scripts and references too.
+- `--skill <name>` — where it shows several, the one studied when none is named. Otherwise an
+  A/B, a refinement or a scenario names the one it studies when it starts (`ab --skill`,
+  `refine start --skill`, the forms' **Skill**).
 - `--tools-from <run>` — where the file names no tools, a run recorded through the same harness
   whose tools each step offers.
 - `--scenario <name>` — makes a scenario of it too: runs of the skill through its harness, each
@@ -261,7 +263,8 @@ tuningfork ab <run> write_file --variant examples/variants/tally-report/SKILL.v2
 ```
 
 - `--variant <file>` — the edited skill (required). `--original <file>` — the skill as it was
-  recorded; by default, the copy a batch run was given.
+  recorded; by default, the copy a batch run was given. `--skill <name>` — for an imported chat
+  that kept several skills, the one the variant replaces.
 - `--target`, `--target-match`, `--target-rules` — the target, declared before sampling;
   `--alpha` (default 0.05).
 - `--to-end` — each sample a fork run to the end, both arms compared on the task's check: the
@@ -373,7 +376,8 @@ walks through it from the target to the approval.
 Starts refining a run's skill at one of its steps, toward a target declared now, before anything
 is proposed or sampled: `--target <letter>`, `--target-match`, `--target-rules`, or
 `--target-check` — the task's own check, for a failure only the check can see, whose screens run
-forks to the end.
+forks to the end. `--skill <name>` names the skill to refine, for an imported chat that kept
+several.
 
 ```bash
 tuningfork refine start <run> write_file --target-rules \
