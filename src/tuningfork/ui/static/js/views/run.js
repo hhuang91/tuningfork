@@ -110,6 +110,11 @@ export async function runView(root, [reference, focus], scope) {
 function subLine({ run, steps }) {
   const parts = [plural(steps.length, "step"), run.harness, run.model, `started ${when(run.started_at)}`];
   if (run.fork_of) parts.push(`a fork of run ${short(run.fork_of)}, live from step ${run.fork_step}`);
+  if (run.imported) {
+    const from = run.imported.format === "hermes-export" ? "a Hermes export" : run.imported.format === "hermes-snapshot"
+      ? "a Hermes session file" : "a list of messages";
+    parts.push(`imported from ${from}${run.imported.session_id ? ` (session ${run.imported.session_id})` : ""}`);
+  }
   if (run.parent_run_id && run.role !== "main" && run.role !== "fork") {
     parts.push(`${run.role} of run ${short(run.parent_run_id)}${run.spawned_at != null ? `, from its step ${run.spawned_at}` : ""}`);
   }

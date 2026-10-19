@@ -1356,6 +1356,90 @@ def recheck(
         raise typer.Exit(code=1)
 
 
+#: How a conversation showed a skill, in words.
+SKILL_SOURCES = {"preloaded": "preloaded in the system prompt", "tool": "loaded by a call",
+                 "frontmatter": "found by its frontmatter"}
+
+
+@app.command("import")
+def import_chat(
+    file: Path = typer.Argument(
+        ..., help="A conversation: a Hermes session file (~/.hermes/sessions/session_<id>.json), a Hermes export "
+        "(`hermes sessions export`), or an OpenAI-style list of messages.",
+    ),
+    session: Optional[str] = typer.Option(
+        None, "--session", help="From a file holding several sessions, the one to import: its id, or its first characters.",
+    ),
+    skill: Optional[str] = typer.Option(
+        None, "--skill", help="The skill to study, by name, where the conversation shows more than one: one a run.",
+    ),
+    skill_dir: Optional[Path] = typer.Option(
+        None, "--skill-dir", help="The skill's folder, kept with the run in place of the SKILL.md the model read: "
+        "its scripts, templates and references too.",
+    ),
+    harness: Optional[str] = typer.Option(
+        None, "--harness", help="The harness the conversation was had with, where the file does not say "
+        "(hermes, claude-code, generic).",
+    ),
+    tools_from: Optional[str] = typer.Option(
+        None, "--tools-from", help="Where the file names no tools: a run recorded through the same harness, whose "
+        "tools each step offers.",
+    ),
+    label: Optional[str] = typer.Option(None, "--label", help="The run's label."),
+    task: Optional[str] = typer.Option(None, "--task", help="A task id to file the run under."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be imported, and record nothing."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """Import a conversation an agent had outside tuningfork as a run: each assistant turn a step,
+    rebuilt with everything before it as its context, so resample, ab, forking-tokens and refine
+    work at its steps. The skill under study is kept beside it."""
+    from tuningfork.ops.imports import execute_import, prepare_import
+    from tuningfork.paths import resolve_path
+
+    try:
+        data = resolve_path(str(file)).path.read_bytes()  # a Windows path, under WSL, read as it is meant
+    except OSError as exc:
+        _refuse(OperationError(f"cannot read {file}: {exc.strerror or exc}", field="file"))
+    store = _store(home)
+    try:
+        plan = prepare_import(
+            store, data, session=session, skill=skill, skill_dir=str(skill_dir) if skill_dir else None,
+            harness=harness, label=label, task_id=task, tools_from=tools_from,
+        )
+    except OperationError as error:
+        _refuse(error)
+    shown = plan.to_json()
+    console.print(f"[bold]{escape(shown['label'])}[/bold] · {shown['format']} · {shown['harness']}")
+    if shown["session_id"]:
+        console.print(f"  session    {escape(shown['session_id'])}")
+    console.print(f"  model      {escape(shown['model'] or '-')}")
+    console.print(
+        f"  steps      {shown['steps']}, one an assistant turn, of {shown['messages']} messages; "
+        f"{'a' if shown['system_prompt'] else 'no'} system prompt, "
+        + (f"{shown['tools']} tools" + (f" from run {shown['tools_from'][:8]}" if shown["tools_from"] else "")
+           if shown["tools"] else "no tools")
+    )
+    for found in shown["skills"]:
+        where = f"in context from step {found['step']}" if found["step"] is not None else "after the last step"
+        chosen = "  [bold]← studied[/bold]" if found["name"] == shown["skill"] else ""
+        console.print(f"  skill      {escape(found['name'])} ({SKILL_SOURCES.get(found['source'], found['source'])}; "
+                      f"{where}){chosen}")
+    if not shown["skills"]:
+        console.print("  skill      [dim]none shows in the conversation[/dim]")
+    if shown["skill_dir"]:
+        console.print(f"  kept       {escape(shown['skill_dir'])}")
+    for warning in shown["warnings"]:
+        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    if dry_run:
+        console.print("\n[dim]nothing recorded (--dry-run)[/dim]")
+        return
+    result = execute_import(store, plan)
+    run = result.run_id[:8]
+    console.print(f"\nimported as run [bold]{run}[/bold]: {result.steps} step(s)")
+    console.print(f"[dim]`tuningfork timeline {run}` reads it; `tuningfork resample {run} <step> -n 20` and "
+                  f"`tuningfork refine start {run} <step> …` work at its steps.[/dim]")
+
+
 @app.command()
 def diff(
     run_a: str = typer.Argument(..., help="First run."),

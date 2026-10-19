@@ -15,6 +15,7 @@ import { connectionsView } from "./views/connections.js";
 import { scenariosView, scenarioView } from "./views/scenarios.js";
 import { experimentsView, experimentView } from "./views/experiments.js";
 import { homeView } from "./views/home.js";
+import { importView } from "./views/import.js";
 import { jobsView, jobView } from "./views/jobs.js";
 import { liveView } from "./views/live.js";
 import { refinementsView, refinementView } from "./views/refine.js";
@@ -41,6 +42,7 @@ const ROUTES = [
   [/^\/skills$/, skillsView, "skills"],
   [/^\/skills\/([^/]+)$/, skillView, "skills"],
   [/^\/batch$/, batchView, "runs"],
+  [/^\/import$/, importView, "runs"],
   [/^\/chains$/, chainsView, "runs"],
   [/^\/chains\/([0-9a-f]+)$/, chainView, "runs"],
   [/^\/connections$/, connectionsView, "connections"],

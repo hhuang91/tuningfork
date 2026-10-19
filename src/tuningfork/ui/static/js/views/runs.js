@@ -29,6 +29,7 @@ export async function runsView(root, _params, scope) {
     h("div", { class: "page-head" },
       h("div", null, h("h1", null, "Runs"), h("p", { class: "sub" }, "Recorded runs by task. Forks sit under the run they branched from; tick two runs to diff them.")),
       h("div", { class: "actions" }, search,
+        live.mode === "live" ? h("a", { class: "btn", href: "#/import", "data-control": true }, "Import a chat…") : null,
         live.mode === "live" ? h("a", { class: "btn btn-primary", href: "#/batch", "data-control": true }, "Run a task…") : null)),
     body,
     compareBar,

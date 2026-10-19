@@ -27,6 +27,7 @@ from starlette.routing import Route
 
 from tuningfork.api import control_routes, data_routes
 from tuningfork.api.connections import connection_routes
+from tuningfork.api.imports import import_routes
 from tuningfork.api.jobs import job_routes
 from tuningfork.api.refinements import refinement_routes
 from tuningfork.api.scenarios import scenario_routes
@@ -815,6 +816,7 @@ def create_app(
         *job_routes(store=recorder.store, runner=jobs),
         *connection_routes(),
         *scenario_routes(store=recorder.store, writable=True),
+        *import_routes(store=recorder.store),
         *refinement_routes(store=recorder.store, writable=True),
         *trash_routes(store=recorder.store, writable=True),
         *data_routes(store=recorder.store, adapters=[a() for a in ADAPTERS.values()]),

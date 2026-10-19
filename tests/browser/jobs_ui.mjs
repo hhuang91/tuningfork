@@ -888,6 +888,43 @@ try {
   await until(() => page.eval(`!!document.querySelector(".skill-controls + div .lines")`), "the text as written, numbered");
   check(true, "the text rendered, or as written with its line numbers");
 
+  // --- 16. A chat had elsewhere, imported as a run ------------------------------------------------
+  console.log("a Hermes export imported from the Runs page: its session chosen, its skill found, a run made");
+  const skillText = "---\nname: tally-report\n---\n\n# Tally report\n\nWrite the totals to report.json.\n";
+  const rows = [
+    { role: "user", content: "Summarize data.csv into report.json." },
+    { role: "assistant", content: "", tool_calls: [{ id: "v1", type: "function", function: { name: "skill_view", arguments: "{\"name\": \"tally-report\"}" } }] },
+    { role: "tool", tool_call_id: "v1", content: JSON.stringify({ success: true, name: "tally-report", content: skillText }) },
+    { role: "assistant", content: "Done." },
+  ];
+  const exported = [0, 1].map((n) => JSON.stringify({ id: `20261018_12000${n}_aa11bb`, source: "cli", model: "m",
+    title: `chat ${n}`, system_prompt: "You are Hermes.", started_at: 1760000000 + n, messages: rows })).join("\n");
+  await page.eval(`location.hash = "#/runs"`);
+  await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "Import a chat…")`), "Import a chat… on the Runs page");
+  await page.eval(`[...document.querySelectorAll(".page-head a")].find((a) => a.textContent === "Import a chat…").click()`);
+  await until(() => page.eval(`location.hash === "#/import" && !!document.querySelector('input[type="file"]')`), "the import page");
+  await page.eval(`(() => {
+    const picker = document.querySelector('input[type="file"]');
+    const files = new DataTransfer();
+    files.items.add(new File([${JSON.stringify(exported)}], "export.jsonl", { type: "application/json" }));
+    picker.files = files.files;
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  })()`);
+  await until(() => page.eval(`document.querySelectorAll('input[name="session"]').length === 2`), "a file of two sessions asks which");
+  await page.eval(`(() => { const choice = document.querySelector('input[name="session"][value="20261018_120001_aa11bb"]'); choice.click(); return true; })()`);
+  await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "What it holds")`), "what the chosen session holds");
+  check(await page.eval(`document.querySelector("main").textContent.includes("tally-report — loaded by a call; in context from step 1")`),
+    "the skill it shows, and from which step it is in context");
+  check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("names no tools"))`),
+    "what the file lacked, said before anything is recorded");
+  await page.eval(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Import" && !b.disabled).click()`);
+  await until(() => page.eval(`/^#\\/runs\\/[0-9a-f]{32}$/.test(location.hash)`), "the imported run's page");
+  await until(() => page.eval(`(document.querySelector(".page-head .sub")?.textContent || "").includes("imported from a Hermes export (session 20261018_120001_aa11bb)")`),
+    "the run says where it came from");
+  const imported = (await api(`/runs/${(await page.eval("location.hash")).split("/")[2]}`)).run;
+  check(imported.label === "imported: chat 1" && imported.harness === "hermes", "labelled by its session's title, its harness Hermes");
+
   check(page.problems.length === 0, `no page errors${page.problems.length ? `: ${page.problems.join(" | ")}` : ""}`);
   console.log("all passed");
 } catch (error) {
