@@ -1,4 +1,4 @@
-run <run pilot>  pilot
+run <run pilot>  pilot  (recorded live)
   task    tally-report/1
   model   mock-model
   started <when>

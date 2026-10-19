@@ -17,6 +17,9 @@ import { banners, detailsPanel, skillsSummary, summaryStrip, toolsOffered, works
 import { tokensPanel } from "./tokens.js";
 
 const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking tokens" };
+// With this many of the person's turns or more — a long session — the rail starts with all
+// but the last folded to their turn's line.
+const FOLD_FROM = 3;
 
 /** The timeline for `data`, a run's `/timeline`. Returns its element and its step rail, and
  *  `start()` — to call once both are on the page — `update(data)` for a run still going,
@@ -51,6 +54,11 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   // The tools offered, always first: above the system prompt, as a request carries them.
   let toolsNode = null;
   let toolsDrawn = "";
+  // The person's turns the rail folds, by each turn's entry, as the person folded or opened them
+  // — kept across redraws — the exchanges drawn last, and the button folding them all.
+  const folds = new Map();
+  let exchanges = [];
+  let foldAll = null;
   draw();
 
   return {
@@ -197,13 +205,14 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const withSkill = state.skills.some((span) => span.message_index === entry.index);
     // Short turns start open, and any carrying a skill; system prompts and long results fold.
     const open = withSkill || (entry.message.role !== "system" && messageSize(entry.message) < 1500);
-    // A message the harness added after a step has a line of its own in the rail, under it.
-    const added = entry.origin === "harness" && entry.after !== null;
-    const node = h("div", { class: ["tl-entry", `tl-${entry.origin}`], dataset: added ? { entry: entry.index } : null },
+    // A message the harness added after a step has a line of its own in the rail, under it, and
+    // so has each of the conversation the run's first call continued, but its system prompt.
+    const lined = (entry.origin === "harness" && entry.after !== null) || (entry.origin === "start" && entry.message.role !== "system");
+    const node = h("div", { class: ["tl-entry", `tl-${entry.origin}`], dataset: lined ? { entry: entry.index } : null },
       messageView(entry.message, entry.index, {
         spans: state.skills, names, open, recorded, extra: [note, tag, ...marks], idPrefix: "t",
       }));
-    if (added) seen.observe(node);
+    if (lined) seen.observe(node);
     return node;
   }
 
@@ -341,9 +350,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     // What came after each step — its tools' results, the harness's own notes, a person's next
     // turn — drawn in the conversation, so each one's line leads there.
     const added = group(state.entries.filter((entry) => entry.origin === "harness" && entry.after !== null), (entry) => entry.after);
-    replace(rail,
-      h("div", { class: "tl-rail-head" }, plural(state.steps.length, "step")),
-      state.steps.map((step) => [
+    // The conversation the run's first call continued, as the page shows it: the person's turns,
+    // the model's answers in it — none of them a call this run made — and what came after each.
+    const before = state.entries.filter((entry) => entry.origin === "start" && entry.message.role !== "system");
+    const earlier = before.filter((entry) => entry.message.role === "assistant").length;
+    const lines = [
+      ...before.map((entry) => (entry.message.role === "assistant" ? earlierAnswer(entry) : railEntry(entry, null, names))),
+      ...state.steps.flatMap((step) => [
         h("a", {
           class: ["tl-rail-step", step.outcome.kind === "error" && "tl-rail-error", step.kept === "retried" && "tl-rail-retried"],
           href: `${base}/${step.idx}`, dataset: { idx: step.idx },
@@ -353,8 +366,18 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
           },
         }, h("span", { class: "mono" }, String(step.idx)), h("span", { class: "tl-rail-what" }, railLabel(step)),
         step.variant || step.edited.request || step.edited.response ? h("span", { class: "tl-dot", title: "changed by tuningfork" }) : null),
-        (added.get(step.idx) || []).map((entry) => railEntry(entry, step, names)),
+        ...(added.get(step.idx) || []).map((entry) => railEntry(entry, step, names)),
       ]),
+    ];
+    exchanges = foldable(lines);
+    foldAll = exchanges.length >= FOLD_FROM
+      ? h("button", { class: "tl-rail-foldall", type: "button", onclick: () => foldEvery(exchanges.some((each) => !each.folded)) })
+      : null;
+    replace(rail,
+      h("div", { class: "tl-rail-head", title: earlier ? "The run's first call continued a conversation: its answers come "
+        + "first, unnumbered, then the steps this run recorded" : null },
+        h("span", null, plural(state.steps.length, "step") + (earlier ? ` · after ${plural(earlier, "earlier answer")}` : "")), foldAll),
+      lines,
       h("a", {
         class: ["tl-rail-verdict", verdict.tone], href: base, title: "What the task's check said: the end of the run",
         onclick: (event) => {
@@ -362,6 +385,75 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
           verdictNode?.scrollIntoView({ block: "start" });
         },
       }, verdict.rail));
+    drawFoldAll();
+  }
+
+  /** Each person's turn heads the lines after it, to the next one's: an exchange the rail folds
+   *  to its turn's line. With many, all but the last start folded — or the one holding the step
+   *  the address opened — unless the person folded or opened it themselves, which a redraw keeps. */
+  function foldable(lines) {
+    const found = [];
+    for (const line of lines) {
+      if (line.classList.contains("tl-rail-turn")) found.push({ turn: line, members: [], folded: false });
+      else if (found.length) {
+        found[found.length - 1].members.push(line);
+        line.dataset.turn = found[found.length - 1].turn.dataset.entry;
+      }
+    }
+    found.forEach((exchange, i) => {
+      const key = Number(exchange.turn.dataset.entry);
+      const button = exchange.turn.querySelector(".tl-rail-fold");
+      button.classList.toggle("tl-rail-fold-none", !exchange.members.length);
+      button.addEventListener("click", () => {
+        folds.set(key, !exchange.folded);
+        setFolded(exchange, !exchange.folded);
+        drawFoldAll();
+      });
+      const holdsFocus = focus !== null && exchange.members.some((line) => line.dataset.idx !== undefined && Number(line.dataset.idx) === focus);
+      setFolded(exchange, folds.has(key) ? folds.get(key) : found.length >= FOLD_FROM && i < found.length - 1 && !holdsFocus);
+    });
+    return found;
+  }
+
+  function setFolded(exchange, folded) {
+    exchange.folded = folded && exchange.members.length > 0;
+    for (const line of exchange.members) line.classList.toggle("tl-folded", exchange.folded);
+    const button = exchange.turn.querySelector(".tl-rail-fold");
+    button.setAttribute("aria-expanded", String(!exchange.folded));
+    button.setAttribute("aria-label", exchange.folded ? "Unfold this turn" : "Fold this turn");
+    replace(exchange.turn.querySelector(".tl-rail-folded"), exchange.folded ? foldedSummary(exchange.members) : null);
+  }
+
+  /** What a folded turn holds, said on its line: the model's earlier answers, and the steps. */
+  function foldedSummary(members) {
+    const answers = members.filter((line) => line.classList.contains("tl-rail-earlier")).length;
+    const steps = members.filter((line) => line.dataset.idx !== undefined).map((line) => Number(line.dataset.idx));
+    const said = [];
+    if (answers) said.push(plural(answers, "answer"));
+    if (steps.length) said.push(steps.length === 1 ? `step ${steps[0]}` : `steps ${steps[0]}–${steps[steps.length - 1]}`);
+    return said.join(", ") || plural(members.length, "line");
+  }
+
+  function foldEvery(folded) {
+    for (const exchange of exchanges) {
+      folds.set(Number(exchange.turn.dataset.entry), folded);
+      setFolded(exchange, folded);
+    }
+    drawFoldAll();
+  }
+
+  function drawFoldAll() {
+    if (foldAll) replace(foldAll, exchanges.some((each) => !each.folded && each.members.length) ? "fold all" : "unfold all");
+  }
+
+  /** A line folded away opens with its turn: a step revealed, wherever it was asked for. */
+  function unfoldAround(line) {
+    if (!line?.classList.contains("tl-folded")) return;
+    const exchange = exchanges.find((each) => each.turn.dataset.entry === line.dataset.turn);
+    if (!exchange) return;
+    folds.set(Number(exchange.turn.dataset.entry), false);
+    setFolded(exchange, false);
+    drawFoldAll();
   }
 
   function railLabel(step) {
@@ -371,36 +463,67 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return finalReply(step) ? "reply" : "text";
   }
 
-  /** A message the harness added after `step`, on a line of its own. A tool's result goes under
-   *  the step, by the tool's name, and so does a user message the harness wrote itself, by what
+  /** A message the harness added after `step`, on a line of its own — or, with no step, one of
+   *  the conversation the run's first call continued. A tool's result goes under the answer that
+   *  called it, by the tool's name, and so does a user message the harness wrote itself, by what
    *  it is; a person's turn starts a new exchange, unindented, in their words. Each leads to the
    *  message in the conversation, opened. */
   function railEntry(entry, step, names) {
     const message = entry.message;
-    const show = (event) => {
+    const href = step ? `${base}/${step.idx}` : base;
+    const where = step ? `after step ${step.idx}` : "in the conversation the run's first call continued";
+    if (message.role === "user" && !entry.note) {
+      // Its fold, drawn by its look alone, so the line still reads as the person's words — in
+      // full where the rail cuts them, for turns that all start alike.
+      const words = entry.words ?? (firstLine(messageText(message), 80) || "(no text)");
+      return h("div", { class: "tl-rail-turn", dataset: { entry: entry.index } },
+        h("button", { class: "tl-rail-fold", type: "button", "aria-expanded": "true", "aria-label": "Fold this turn" }),
+        h("a", { class: "tl-rail-turn-link", href, title: `A person's turn, ${where}: ${words}`, onclick: openMessage(entry) },
+          h("span", { class: "tl-rail-who" }, "user"), h("span", { class: "tl-rail-what" }, words)),
+        h("span", { class: "tl-rail-folded" }));
+    }
+    const what = message.role === "tool" ? `${names.get(message.tool_call_id) || "tool"} result` : entry.note || `${message.role} message`;
+    return h("a", {
+      class: "tl-rail-result", href, dataset: { entry: entry.index },
+      title: entry.note ? `Written by the harness itself ${where}, not by a person` : step ? `${what}, added by the harness ${where}` : `${what}, ${where}`,
+      onclick: openMessage(entry),
+    }, h("span", { class: "tl-rail-arrow", "aria-hidden": "true" }, "↳"), h("span", { class: "tl-rail-what" }, what));
+  }
+
+  /** An answer of the conversation the run's first call continued, on a line as a step's is, but
+   *  with no number: the model gave it in a call this run never made, so it has no step to open. */
+  function earlierAnswer(entry) {
+    const calls = (entry.message.tool_calls || []).map((call) => call.function?.name || "?");
+    return h("a", {
+      class: "tl-rail-step tl-rail-earlier", href: base, dataset: { entry: entry.index },
+      title: "An answer in the conversation the run's first call continued: not a call this run made",
+      onclick: openMessage(entry),
+    }, h("span", { class: "mono", "aria-hidden": "true" }, "·"), h("span", { class: "tl-rail-what" }, calls.length ? calls.join(", ") : "reply"));
+  }
+
+  /** What a rail line for a message does: opens the message in the conversation, there. */
+  function openMessage(entry) {
+    return (event) => {
       event.preventDefault();
       const shown = element.querySelector(`#tm${entry.index}`);
       if (!shown) return;
       shown.open = true;
       shown.scrollIntoView({ block: "start" });
     };
-    if (message.role === "user" && !entry.note) {
-      return h("a", {
-        class: "tl-rail-turn", href: `${base}/${step.idx}`, dataset: { entry: entry.index },
-        title: `A person's turn, after step ${step.idx}`, onclick: show,
-      }, h("span", { class: "tl-rail-who" }, "user"), h("span", { class: "tl-rail-what" }, firstLine(messageText(message), 80) || "(no text)"));
-    }
-    const what = message.role === "tool" ? `${names.get(message.tool_call_id) || "tool"} result` : entry.note || `${message.role} message`;
-    return h("a", {
-      class: "tl-rail-result", href: `${base}/${step.idx}`, dataset: { entry: entry.index },
-      title: entry.note ? `Written by the harness itself after step ${step.idx}, not by a person` : `${what}, added by the harness after step ${step.idx}`,
-      onclick: show,
-    }, h("span", { class: "tl-rail-arrow", "aria-hidden": "true" }, "↳"), h("span", { class: "tl-rail-what" }, what));
   }
 
   function markCurrent({ idx = null, entry = null }) {
-    for (const link of rail.querySelectorAll(".tl-rail-step")) link.classList.toggle("current", Number(link.dataset.idx) === idx);
-    for (const link of rail.querySelectorAll(".tl-rail-result, .tl-rail-turn")) link.classList.toggle("current", Number(link.dataset.entry) === entry);
+    let current = null;
+    for (const link of rail.querySelectorAll(".tl-rail-step:not(.tl-rail-earlier)")) {
+      link.classList.toggle("current", Number(link.dataset.idx) === idx);
+      if (Number(link.dataset.idx) === idx) current = link;
+    }
+    for (const link of rail.querySelectorAll(".tl-rail-result, .tl-rail-turn, .tl-rail-earlier")) {
+      link.classList.toggle("current", Number(link.dataset.entry) === entry);
+      if (Number(link.dataset.entry) === entry) current = link;
+    }
+    // A line folded away under its turn: the turn's own line says where the page is.
+    if (current?.classList.contains("tl-folded")) rail.querySelector(`.tl-rail-turn[data-entry="${current.dataset.turn}"]`)?.classList.add("current");
   }
 
   // --- a step, opened -------------------------------------------------------------------------
@@ -461,6 +584,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   async function reveal(idx, { start = null, query: asked = new URLSearchParams() } = {}) {
     const found = sections.get(idx);
     if (!found) return;
+    unfoldAround(rail.querySelector(`.tl-rail-step[data-idx="${idx}"]`));
     setOpen(found, true);
     found.section.scrollIntoView({ block: "start" });
     if (!start) {

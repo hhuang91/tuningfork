@@ -302,7 +302,19 @@ thread, never the task's next step, and is never the run's final reply. A user m
 harness writes itself — Hermes's nudge to go on after a cut reply, Claude Code's reminders — its
 adapter names (`harness_note`; for a run recorded as it happened, whichever adapter knows it):
 a run's page puts it under the step it followed, and a person's turn on a line of its own, a
-new exchange. A fork is a launch
+new exchange, in their own words (`words`: the harness's parts beside them left out). A run
+nothing launched nor imported was recorded live (`Run.recorded`: `launched`, `imported`, `live`),
+and says so where a label would name it — the Runs list, its page, `tuningfork runs` and `show`.
+Its first call may continue a conversation already going on, a session of many turns: its rail
+lists that conversation first, as its own exchanges — each person's turn, the model's answers
+unnumbered, no call of the run's, and what came after each — then the steps it recorded. Each
+person's turn folds there to its own line, saying what it holds; with three or more, all but the
+last start folded, but the one holding the step the address opens, and a step revealed opens its
+turn. A call
+joins the run whose latest message its history holds (`Store._existing_run_for`); one that joins
+none starts a run, marked a branch of the run whose history holds the most of its own — more than
+its first message, which every session of one harness may share as its system prompt — at the
+message where the two part (`Store._branch_of`, `forked_at_depth`): a mark that groups nothing. A fork is a launch
 whose calls before step k are answered from the recording (`tuningfork.replay`); the proxy's
 `--max-inflight` must be at least the `--concurrency` of forks run through it. A launch is
 laid out as the harness installs itself (an adapter's layout "install": Hermes in

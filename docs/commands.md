@@ -77,7 +77,9 @@ runs under another wording or model are another sample, never pooled. `--task <i
 
 ### `runs`
 
-The recorded runs, newest first.
+The recorded runs, newest first. A run recorded live — a harness's calls through the proxy, with
+no batch launching it — has no label unless you gave it one ([`label-next`](#label-next)), and
+without one is listed as `(recorded live)`.
 
 - `-n N` — how many (default 20); `-q` — ids only.
 - `--task <id>` — one task's runs.
