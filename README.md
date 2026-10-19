@@ -151,14 +151,17 @@ bubblewrap`), so that every run sees the same folders: the model reads them
    tuningfork serve --upstream http://127.0.0.1:8081
    ```
 
-   `--upstream` is the model server it forwards each call to; a harness talks to tuningfork in
-   its place. The harnesses tuningfork launches are pointed there for you. Your own agent is
-   recorded as you use it once its base URL is `http://127.0.0.1:8787/v1` for an OpenAI-style
-   API, as Hermes Agent's, or `http://127.0.0.1:8787` for Anthropic's, as Claude Code's.
-   `--port` (or `TUNINGFORK_PORT`) moves it, and `TUNINGFORK_PROXY` then tells the other commands
-   where it is. Keep it on `127.0.0.1`, the default: anything that can reach the port can read
-   your recordings and send calls to your model ([what it guards](SECURITY.md)). From another
-   machine, forward the port over SSH instead: `ssh -L 8787:127.0.0.1:8787 <host>`.
+   `--upstream` is the model server it forwards each call to. The harnesses tuningfork
+   launches are pointed at tuningfork's own proxy for you. To record running agents as you
+   use them, connect them by setting their base URL (where they send their model calls) to
+   tuningfork's proxy:
+   `http://127.0.0.1:8787/v1` for agents that use an OpenAI-style API, such as Hermes Agent,
+   or `http://127.0.0.1:8787` for those that use Anthropic's, such as Claude Code.
+   `--port` (or `TUNINGFORK_PORT`) moves the proxy to another port, and `TUNINGFORK_PROXY` then
+   tells the other commands where it is. Keep it on `127.0.0.1`, the default: anything that can
+   reach the port can read your recordings and send calls to your model
+   ([what it guards](SECURITY.md)). From another machine, forward the port over SSH instead:
+   `ssh -L 8787:127.0.0.1:8787 <host>`.
 
 3. **Check the server**, in a second terminal with the venv activated: can it do what the
    harnesses need, and does it process every prompt whole?
