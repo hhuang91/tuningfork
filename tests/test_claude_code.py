@@ -199,6 +199,12 @@ class TestAdapter:
         assert adapter.harness_note({"role": "user", "content": said["text"]}) is None
         assert adapter.harness_note({"role": "user", "content": [{"type": "image_url"}]}) is None
 
+    def test_the_skill_a_call_loads_is_named(self):
+        view = ANTHROPIC.view(claude_code_request())
+        (loading,) = [call for message in view for call in message.get("tool_calls") or []]
+        assert ClaudeCodeAdapter().skill_load(loading) == "tally-report"
+        assert ClaudeCodeAdapter().skill_load({"function": {"name": "Write", "arguments": "{}"}}) is None
+
 
 class TestSkillFiles:
     def test_a_body_without_frontmatter_maps_to_its_file_and_lines(self, store, tmp_path):

@@ -9,7 +9,7 @@
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
 import { checkTester } from "../checktry.js";
-import { ago, chip, crumbs, firstLine, h, loading, panel, plural, rateBar, replace, when } from "../dom.js";
+import { ago, chip, crumbs, firstLine, h, loading, panel, plural, rateBar, replace, short, verdict, when } from "../dom.js";
 import { field, formError, input, textArea } from "../forms.js";
 import { live } from "../live.js";
 import { leaving } from "../nav.js";
@@ -19,6 +19,7 @@ const NORMALIZERS = ["tool_call_json", "python_ast", "json_content", "tool_name"
 const NAME = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 
 export async function scenariosView(root, _, scope) {
+  if (scope.query.get("from") === "run") return runPickView(root, scope);
   replace(root, loading());
   const found = await api.get("/scenarios");
   const importer = live.mode === "live" ? importForm() : null;
@@ -27,7 +28,9 @@ export async function scenariosView(root, _, scope) {
       h("div", null, h("h1", null, "Scenarios"),
         h("p", { class: "sub" }, "Tasks kept in the recordings folder: an evals.json and its input files, each run as a batch.")),
       live.mode === "live"
-        ? h("div", { class: "actions" }, h("a", { class: "btn btn-primary", href: "#/scenarios/new", "data-control": true }, "New scenario"))
+        ? h("div", { class: "actions" },
+            h("a", { class: "btn", href: "#/scenarios?from=run", "data-control": true }, "From a run…"),
+            h("a", { class: "btn btn-primary", href: "#/scenarios/new", "data-control": true }, "New scenario"))
         : null),
     h("div", { class: "stack" },
       found.length
@@ -49,9 +52,69 @@ export async function scenariosView(root, _, scope) {
                 h("td", { class: "faint", title: when(scenario.modified) }, ago(scenario.modified))))))))
         : h("div", { class: "panel empty" }, h("h2", null, "No scenarios yet"),
             h("p", null, live.mode === "live"
-              ? "Make one here, or import a spec you already have — its input files are copied in, its skill folder kept where it is."
+              ? "Make one here, make one from a run — a chat imported, a run launched or recorded — or import a spec you "
+                + "already have: its input files are copied in, its skill folder kept where it is."
               : "Scenarios are made with a running proxy (tuningfork serve).")),
       importer));
+}
+
+// Which run a scenario is made of: any run but a thread — imported, launched, or recorded as it
+// happened — newest first, filtered as the Runs page filters; each opens the run's scenario form.
+// A chat had elsewhere is imported first, and its scenario's form follows.
+async function runPickView(root, scope) {
+  const head = [
+    crumbs([["Scenarios", "#/scenarios"], ["From a run"]]),
+    h("div", { class: "page-head" },
+      h("div", null, h("h1", null, "A scenario from a run"),
+        h("p", { class: "sub" }, "Any run — a chat imported, a run tuningfork launched, one recorded as it happened — "
+          + "continued from the person's message before its skill came in, each run of the scenario sent it again.")),
+      live.mode === "live"
+        ? h("div", { class: "actions" },
+            h("a", { class: "btn", href: "#/import?then=scenario", "data-control": true }, "Import a chat…"))
+        : null),
+  ];
+  if (live.mode !== "live") {
+    replace(root, ...head, h("div", { class: "banner banner-warn" },
+      "Making a scenario needs a running proxy (tuningfork serve). From a terminal: tuningfork scenario <run> <name>"));
+    return;
+  }
+  replace(root, ...head, loading());
+  // Threads are left out by the list itself; a run with no step has no conversation to continue.
+  const runs = (await api.get("/runs?limit=1000")).filter((run) => run.step_count > 0);
+  if (!scope.active) return;
+  let filter = "";
+  const list = h("div", { class: "stack" });
+  const search = h("input", {
+    class: "field search", type: "search", placeholder: "Filter by run, label, task or model", "aria-label": "Filter runs",
+    oninput: (event) => {
+      filter = event.target.value.trim().toLowerCase();
+      draw();
+    },
+  });
+  const draw = () => {
+    const shown = runs.filter((run) => !filter
+      || [run.id, run.label, run.task_id, run.model].some((value) => value && String(value).toLowerCase().includes(filter)));
+    replace(list, !runs.length
+      ? h("div", { class: "panel empty" }, h("h2", null, "No runs yet"),
+          h("p", null, "Import a chat an agent had elsewhere, or record one: point a harness at this proxy, or run a task."))
+      : !shown.length ? h("p", { class: "muted" }, "No runs match the filter.")
+        : h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
+            h("thead", null, h("tr", null, h("th", null, "run"), h("th", null, "label"), h("th", null, "task"),
+              h("th", null, "harness"), h("th", { class: "num" }, "steps"), h("th", null, "verdict"), h("th", null, "recorded"))),
+            h("tbody", null, shown.map((run) => {
+              const href = `#/runs/${run.id}/scenario`;
+              return h("tr", { class: "clickable", onclick: () => (location.hash = href) },
+                h("td", null, h("a", { class: "mono", href }, short(run.id))),
+                h("td", null, run.label || "", run.imported ? [" ", chip("imported", "muted")] : null),
+                h("td", { class: "mono" }, run.task_id || "—"),
+                h("td", null, run.harness || "—"),
+                h("td", { class: "num" }, String(run.step_count)),
+                h("td", null, verdict(run.result)),
+                h("td", { class: "faint", title: when(run.started_at) }, ago(run.started_at)));
+            }))))));
+  };
+  replace(root, ...head, h("div", { class: "stack" }, h("div", { class: "actions" }, search), list));
+  draw();
 }
 
 function importForm() {
@@ -272,6 +335,21 @@ export async function scenarioView(root, [name], scope) {
       h("div", { class: "form-grid" },
         field("Max turns", bind(input(`turns-${index}`, { type: "number", value: options.max_turns, min: 1 }), (v) => (options.max_turns = Number(v)))),
         field("Timeout (s)", bind(input(`timeout-${index}`, { type: "number", value: options.timeout, min: 1 }), (v) => (options.timeout = Number(v))))),
+      // A scenario of a chat that went on to another skill, which no run of this one has: each
+      // run ends where the model loads it, and the check judges the workspace then.
+      h("div", null,
+        h("label", { class: "check" },
+          h("input", {
+            type: "checkbox", name: `stop-${index}`, checked: options.stop_at_next_skill === true, disabled: !editable,
+            onchange: (event) => {
+              if (event.target.checked) options.stop_at_next_skill = true;
+              else delete options.stop_at_next_skill;
+              changed();
+            },
+          }),
+          " Stop where the model loads another skill"),
+        h("p", { class: "hint" }, "Each run ends there, and the check judges the workspace as it is then: for a chat that "
+          + "went on to a skill no run of this one has.")),
       field("Normalizers", normalizers, { help: "How behaviours are told apart when runs are compared; none ticked means the defaults.", wide: true }),
       editable && draft.evals.length > 1
         ? h("button", { class: "btn btn-quiet btn-small", type: "button", onclick: () => {
@@ -466,15 +544,35 @@ export async function scenarioView(root, [name], scope) {
 
 /** The conversation a scenario made from a chat continues (`tuningfork.context`): each message
  *  to read, and the whole of it as JSON, to edit and save. */
-function contextPanel(name, messages, editable) {
+/** The conversation a scenario continues: the messages before its prompt — a list, as it was
+ *  kept before — and, as {before, in_turn}, the model's earlier steps of the prompt's own turn. */
+function contextPanel(name, context, editable) {
   const status = h("div");
+  const parts = (found) => (Array.isArray(found) ? { before: found, inTurn: [] }
+    : { before: found?.before || [], inTurn: found?.in_turn || [] });
   const said = (message) => (message.tool_calls?.length
     ? `calls ${message.tool_calls.map((call) => call.function?.name || "?").join(", ")}`
     : firstLine(typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? ""), 140));
   const listOf = (found) => found.map((message) => h("li", null, h("strong", null, `${message.role}: `), said(message)));
-  const list = h("ol", { class: "small" }, listOf(messages));
+  const about = h("p", { class: "hint" });
+  const reading = h("div", { class: "stack" });
+  const show = (found) => {
+    const { before, inTurn } = parts(found);
+    replace(about, (before.length
+      ? `${plural(before.length, "message")} from an imported chat, put after the harness's instructions in every call of each `
+        + "run: the eval's prompt is its next turn."
+      : "Nothing comes before the eval's prompt: it is the chat's first turn.")
+      + (inTurn.length ? ` Then ${plural(inTurn.length, "message")} of that turn, the model's earlier steps — done already, `
+        + "an earlier skill among them — follow the prompt, so the skill comes in live." : ""));
+    replace(reading,
+      h("div", null, h("div", { class: "label" }, "Before the prompt"), before.length ? h("ol", { class: "small" }, listOf(before))
+        : h("p", { class: "muted small" }, "nothing: the prompt is the chat's first turn")),
+      inTurn.length ? h("div", null, h("div", { class: "label" }, "In the prompt's turn, taken as done"),
+        h("ol", { class: "small" }, listOf(inTurn))) : null);
+  };
+  show(context);
   const editor = h("textarea", { class: "field mono", rows: 16, spellcheck: "false", disabled: !editable,
-    value: JSON.stringify(messages, null, 1) });
+    value: JSON.stringify(context, null, 1) });
   const save = guard(async () => {
     replace(status);
     let parsed;
@@ -486,16 +584,15 @@ function contextPanel(name, messages, editable) {
     }
     try {
       const done = await api.put(`/scenarios/${enc(name)}/context`, JSON.stringify({ messages: parsed }), "application/json");
-      replace(list, listOf(parsed));
+      show(parsed);
       replace(status, h("p", { class: "hint" }, `Saved: ${plural(done.messages, "message")}.`));
     } catch (error) {
       replace(status, formError(error));
     }
   });
   return panel("The conversation it continues", h("div", { class: "stack" },
-    h("p", { class: "hint" }, `${plural(messages.length, "message")} from an imported chat, put after the harness's `
-      + "instructions in every call of each run: the eval's prompt is its next turn."),
-    h("details", { class: "fold" }, h("summary", null, "Read it"), list),
+    about,
+    h("details", { class: "fold" }, h("summary", null, "Read it"), reading),
     h("details", { class: "fold" }, h("summary", null, "Edit it as JSON"), editor,
       editable ? h("div", { class: "actions" },
         h("button", { class: "btn", type: "button", "data-control": true, onclick: save }, "Save the conversation")) : null,

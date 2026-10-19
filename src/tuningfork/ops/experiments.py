@@ -160,6 +160,46 @@ def recorded_skill_file(run: Run) -> Path | None:
     return candidate if candidate and candidate.is_file() else None
 
 
+def kept_skills(run: Run) -> dict[str, Path]:
+    """Each skill a run kept a copy of, by name, with its SKILL.md: every one an imported chat
+    showed (`parity.skill_dirs`), else the one a batch run was given."""
+    from tuningfork.ops.variants import skill_name
+
+    kept = {
+        name: Path(folder) / "SKILL.md"
+        for name, folder in (run.parity.get("skill_dirs") or {}).items()
+        if (Path(folder) / "SKILL.md").is_file()
+    }
+    own = recorded_skill_file(run)
+    if not kept and own is not None:
+        kept[(run.parity.get("imported") or {}).get("skill") or skill_name(run, own)] = own
+    return kept
+
+
+def study_skill(run: Run, skill: str | None = None) -> tuple[str, Path] | None:
+    """The skill to study in `run`, by name, and its SKILL.md: the one named, else the run's own —
+    a batch run's, the one an import was told to study, or the only one it kept. None where it
+    kept none; refused where it kept several and none is named, or none by the name given."""
+    kept = kept_skills(run)
+    if skill:
+        found = kept.get(skill)
+        if found is None:
+            raise OperationError(
+                f"run {run.id[:8]} kept no skill called {skill!r}",
+                hint=f"the skills it kept: {', '.join(kept) or 'none'}", field="skill",
+            )
+        return skill, found
+    own = recorded_skill_file(run)
+    if own is not None:
+        return next((name for name, path in kept.items() if path == own), own.parent.name), own
+    if len(kept) > 1:
+        raise OperationError(
+            f"run {run.id[:8]} kept {len(kept)} skills: name the one to study",
+            hint=f"the skills it kept: {', '.join(kept)}", code="choose_skill", field="skill",
+        )
+    return next(iter(kept.items()), None)
+
+
 def make_plan(
     *,
     n: int = 20,
@@ -403,6 +443,8 @@ class RecordedSkill:
     skill: str
     path: Path | None
     text: str | None
+    #: Every skill the run kept, by name: more than one for an imported chat that showed several.
+    kept: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         from tuningfork.experiment.skill import text_sha256
@@ -410,22 +452,32 @@ class RecordedSkill:
         return {
             "run_id": self.run_id,
             "skill": self.skill,
+            "kept": self.kept,
             "path": str(self.path) if self.path else None,
             "text": self.text,
             "sha256": text_sha256(self.text) if self.text is not None else None,
         }
 
 
-def recorded_skill(store: Store, run: str) -> RecordedSkill:
+def recorded_skill(store: Store, run: str, skill: str | None = None) -> RecordedSkill:
+    """The skill a run kept, to vary: `skill` where it kept several (`study_skill`). Not yet
+    named where it kept several, it says which (`kept`) and gives no text."""
     from tuningfork.ops.variants import skill_name
 
     found = resolve_run(store, run)
-    path = recorded_skill_file(found)
+    try:
+        studied = study_skill(found, skill)
+    except OperationError as error:
+        if error.code != "choose_skill":
+            raise
+        studied = None
+    path = studied[1] if studied is not None else None
     return RecordedSkill(
         run_id=found.id,
         skill=skill_name(found, path),
         path=path,
         text=path.read_text(encoding="utf-8") if path else None,
+        kept=list(kept_skills(found)),
     )
 
 
@@ -513,9 +565,11 @@ def prepare_ab(
     normalizers: Sequence[str] = (),
     variant_text: str | None = None,
     target_rules: Sequence[dict[str, str]] | None = None,
+    skill: str | None = None,
     **plan: Any,
 ) -> ABPlan:
-    """An A/B at a checkpoint, checked before any sample is drawn.
+    """An A/B at a checkpoint, checked before any sample is drawn. Without `original`, the
+    original is the skill the run kept — `skill` names it where the run kept several.
 
     `variant` is the variant's file. With `variant_text`, that is where the text will be
     saved when the A/B starts — a wording edited in the browser is written only then.
@@ -544,7 +598,8 @@ def prepare_ab(
                 field=name,
             )
     variant = Path(host_path(str(variant)))
-    recorded = recorded_skill_file(checkpoint.run)
+    studied = None if original else study_skill(checkpoint.run, skill)
+    recorded = studied[1] if studied is not None else None
     if original:
         original = Path(host_path(str(original)))
     elif recorded is not None:

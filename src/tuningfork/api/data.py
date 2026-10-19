@@ -308,10 +308,12 @@ def data_routes(*, store: Store, adapters: Sequence[Any]) -> list[Route]:
         return build
 
     async def skill(request: Request) -> Response:
-        """The skill file a run was given: the baseline a variant is edited from."""
+        """The skill file a run was given: the baseline a variant is edited from — `?skill=`
+        names it where the run kept several (an imported chat)."""
         from tuningfork.ops.experiments import recorded_skill
 
-        return await threaded(op(lambda: recorded_skill(store, request.path_params["run"])))
+        named = request.query_params.get("skill") or None
+        return await threaded(op(lambda: recorded_skill(store, request.path_params["run"], named)))
 
     async def targets(request: Request) -> Response:
         """What an A/B at this step can declare as its target: the lettered behaviours of

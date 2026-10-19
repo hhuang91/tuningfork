@@ -278,8 +278,14 @@ tuningfork's own settings under a `tuningfork` key.
 - **`context`** names a conversation each run continues: a JSON file beside the spec holding
   OpenAI-style user, assistant and tool messages. The proxy puts it after the harness's own
   instructions in every call of the run, so the prompt is that conversation's next turn. A
-  scenario made from an imported chat has one (`tuningfork import <file> --scenario <name>`).
-  The harness must speak OpenAI chat, as Hermes does.
+  scenario made from a run's conversation has one (`tuningfork scenario <run> <name>`, or
+  `tuningfork import <file> --scenario <name>`).
+  The harness must speak OpenAI chat, as Hermes does. As `{"before": [...], "in_turn": [...]}`,
+  it also holds the model's earlier steps of the prompt's own turn — when the chat loaded the
+  studied skill after another one in the same turn — which follow the prompt, taken as done.
+- **`stop_at_next_skill`** ends each run where the model loads a skill other than the spec's,
+  and the check judges the workspace as it is then: for a scenario of a chat that went on to
+  another skill, which no run of this one has. A check of the final reply finds none there.
 
 `expected_output` is a note for people. Try a check before trusting it:
 `tuningfork recheck <run> --check '…'` judges a recorded run again, and `--reply` with

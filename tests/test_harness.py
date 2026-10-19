@@ -72,6 +72,17 @@ def test_hermes_names_the_user_messages_it_writes_itself(adapter):
     assert not hasattr(GenericHarness(), "harness_note")
 
 
+def test_hermes_names_the_skill_a_call_loads(adapter):
+    def tool(name, arguments):
+        return {"id": "c", "type": "function", "function": {"name": name, "arguments": json.dumps(arguments)}}
+
+    assert adapter.skill_load(tool("skill_view", {"name": "tally-report"})) == "tally-report"
+    assert adapter.skill_load(tool("skill_view", {"name": "  "})) is None
+    assert adapter.skill_load(tool("terminal", {"command": "ls"})) is None
+    assert adapter.skill_load({"function": {"name": "skill_view", "arguments": "{not json"}}) is None
+    assert not hasattr(GenericHarness(), "skill_load")
+
+
 class TestIsolatedHome:
     def test_config_points_at_the_proxy(self, adapter, tmp_path):
         home = adapter.prepare_home(

@@ -94,6 +94,9 @@ def job_schema(kind: Kind, *, max_wait: int) -> dict[str, Any]:
         properties.pop("hold", None)
     # A held-out eval judges an edit: an agent never runs one, so it is never offered the way.
     properties.pop("include_held_out", None)
+    # Which of an imported chat's skills an A/B varies: imports are a person's, not an agent's,
+    # and every run tuningfork records keeps one.
+    properties.pop("skill", None)
     if kind.name == "check-trial" and "check" in properties:
         properties["check"] = {
             **AGENT_CHECK,

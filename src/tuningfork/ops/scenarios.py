@@ -2,7 +2,9 @@
 
 A scenario is `<home>/scenarios/<name>/evals.json` — the same evals.json convention as any
 spec — with its input files in `inputs/` beside it. Its skill folder is a reference to a
-folder elsewhere, never copied in. Everything a scenario can be told to write stays inside
+folder elsewhere, never copied in — but for one made from a run whose skill has no folder of
+its own to be found (`ops.imports.prepare_scenario`), which keeps a copy in `skill/`.
+Everything a scenario can be told to write stays inside
 its own folder: names are checked, input paths may not climb out, and uploads have limits.
 A later phase lets a model drive this same API, which is why it is a jail.
 
@@ -337,8 +339,9 @@ def put_input(home: Path | str, name: str, relative: str, data: bytes) -> InputF
     return InputFile(target.relative_to(folder(home, name) / INPUTS).as_posix(), len(data))
 
 
-def read_context(home: Path | str, name: str) -> list[dict[str, Any]] | None:
-    """The conversation the scenario continues, as its `context.json` holds it; None without one."""
+def read_context(home: Path | str, name: str) -> list[dict[str, Any]] | dict[str, Any] | None:
+    """The conversation the scenario continues, as its `context.json` holds it — a list of the
+    messages before its prompt, or {"before": [...], "in_turn": [...]} — None without one."""
     path = folder(home, name) / CONTEXT
     if not path.is_file():
         return None
@@ -346,12 +349,14 @@ def read_context(home: Path | str, name: str) -> list[dict[str, Any]] | None:
         found = json.loads(path.read_text(encoding="utf-8"))
     except ValueError as exc:
         raise OperationError(f"{path} is not valid JSON: {exc}") from None
-    return found if isinstance(found, list) else None
+    return found if isinstance(found, (list, dict)) else None
 
 
 def put_context(home: Path | str, name: str, messages: Any, *, new: bool = False) -> int:
-    """Write the conversation the scenario continues, checked as one a harness can continue
-    (`specs.check_context`). `new`: for a scenario whose spec is written next, which names it."""
+    """Write the conversation the scenario continues — a list of messages before its prompt, or
+    {"before": [...], "in_turn": [...]} — checked as one a harness can continue
+    (`specs.check_context`); how many messages it holds. `new`: for a scenario whose spec is
+    written next, which names it."""
     from tuningfork.specs import SpecError, check_context
 
     target = folder(home, name)
@@ -361,14 +366,14 @@ def put_context(home: Path | str, name: str, messages: Any, *, new: bool = False
         checked = check_context(messages)
     except SpecError as error:
         raise OperationError(str(error), code="invalid", field="context") from None
-    data = (json.dumps(checked, indent=1, ensure_ascii=False) + "\n").encode("utf-8")
+    data = (json.dumps(checked.to_json(), indent=1, ensure_ascii=False) + "\n").encode("utf-8")
     if len(data) > MAX_FILE:
         raise OperationError(f"the conversation is larger than {MAX_FILE // (1024 * 1024)} MiB", code="too_large")
     target.mkdir(parents=True, exist_ok=True)
     temporary = target / f".{CONTEXT}.{os.getpid()}.tmp"
     temporary.write_bytes(data)
     os.replace(temporary, target / CONTEXT)
-    return len(checked)
+    return checked.messages
 
 
 def delete_input(home: Path | str, name: str, relative: str) -> None:

@@ -501,6 +501,18 @@ class HermesAdapter:
             return "background review"
         return None
 
+    def skill_load(self, call: dict[str, Any]) -> str | None:
+        """The skill a tool call loads, by name: `skill_view`'s."""
+        function = call.get("function") if isinstance(call, dict) else None
+        if not isinstance(function, dict) or function.get("name") != "skill_view":
+            return None
+        try:
+            arguments = json.loads(function.get("arguments") or "{}")
+        except (TypeError, ValueError):
+            return None
+        name = arguments.get("name") if isinstance(arguments, dict) else None
+        return name.strip() if isinstance(name, str) and name.strip() else None
+
     def harness_note(self, message: dict[str, Any]) -> str | None:
         """A user message Hermes wrote itself — a nudge to go on after a cut reply, the summary it
         asks for at the turn limit (`NOTES`) — named in a few words; None for a person's turn,

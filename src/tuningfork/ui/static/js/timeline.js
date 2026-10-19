@@ -119,9 +119,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const result = run.result || {};
     const output = String(result.check_output || "").trim();
     const made = (state.made_by || []).filter((line) => line.at_end);
+    // A scenario's run that stopped where the model loaded another skill, as its scenario says.
+    const stopped = result.stopped_at_skill;
     return h("section", { class: ["verdict-block", "tl-verdict", verdict.tone || "not-significant"], id: "verdict" },
       h("div", { class: "verdict-big" }, verdict.headline),
       verdict.detail ? h("p", { class: "hint" }, verdict.detail) : null,
+      stopped ? h("p", { class: "hint" }, `It stopped where the model loaded ${stopped.skill}, after step ${stopped.after_step}: `
+        + "its scenario studies one skill, so the check judged the workspace as it was then.") : null,
       kv([
         ["the check", launch?.check
           ? launch.check_kind === "shell"

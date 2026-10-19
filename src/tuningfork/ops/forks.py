@@ -247,6 +247,7 @@ def prepare_fork(
             initial_commit=initial_commit,
             skill_commit=skill_commit,
             context=(launch.settings.get("context") if launch is not None else None) or None,
+            stop=(launch.settings.get("stop_at_next_skill") if launch is not None else None) or None,
         ),
         checkpoint=checkpoint,
         harness=harness,

@@ -87,7 +87,10 @@ def text_of(store: Store, run: Run) -> str | None:
             return Snapshots(store.home).read(launch.skill_commit, "SKILL.md").decode("utf-8", "replace")
         except SnapshotError:
             pass
-    found = run_skill_file(store, run)
+    try:
+        found = run_skill_file(store, run)
+    except OperationError:
+        return None  # an imported chat that kept several skills, none of them its own
     return _read(found) if found is not None else None
 
 

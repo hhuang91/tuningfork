@@ -35,9 +35,10 @@ export async function runView(root, [reference, focus], scope) {
         h("h1", null, h("span", { class: "mono" }, `run ${short(run.id)}`), run.label ? h("span", { class: "h-sub" }, run.label) : null),
         h("p", { class: "sub" }, subLine(data))),
       h("div", { class: "actions" }, verdict(run.result), run.trashed_at ? null : again, toEnd, copyButton(run.id, "Copy id"),
-        // An imported conversation can become a scenario: runs of its skill continuing it.
-        run.imported && !run.trashed_at && live.mode === "live"
-          ? h("a", { class: "btn btn-small", href: `#/import/${run.id}/scenario`, "data-control": true }, "Make a scenario…") : null,
+        // Any run's conversation can become a scenario: runs of its skill continuing it. A
+        // thread's calls are its own, never a task's.
+        !run.trashed_at && live.mode === "live" && !["subagent", "side", "thread"].includes(run.role) && data.steps.length
+          ? h("a", { class: "btn btn-small", href: `#/runs/${run.id}/scenario`, "data-control": true }, "Make a scenario…") : null,
         // A thread goes to the trash with its run, and a fork an experiment drew with the
         // experiment: never alone.
         run.trashed_at || ["subagent", "side", "thread"].includes(run.role) ? null
@@ -113,7 +114,11 @@ export async function runView(root, [reference, focus], scope) {
 function subLine({ run, steps, launch }) {
   const parts = [plural(steps.length, "step"), run.harness, run.model, `started ${when(run.started_at)}`];
   if (run.fork_of) parts.push(`a fork of run ${short(run.fork_of)}, live from step ${run.fork_step}`);
-  if (launch?.context) parts.push(`continuing a conversation of ${plural(launch.context.messages, "message")} (${launch.context.file})`);
+  if (launch?.context) {
+    parts.push(`continuing a conversation of ${plural(launch.context.messages, "message")}`
+      + (launch.context.in_turn ? `, and ${plural(launch.context.in_turn, "earlier step")} of its turn` : "")
+      + ` (${launch.context.file})`);
+  }
   if (run.imported) {
     const from = run.imported.format === "hermes-export" ? "a Hermes export" : run.imported.format === "hermes-snapshot"
       ? "a Hermes session file" : "a list of messages";

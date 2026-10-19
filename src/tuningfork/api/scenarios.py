@@ -138,7 +138,8 @@ def scenario_routes(*, store: Any, writable: bool) -> list[Route]:
             except ValueError:
                 raise OperationError("the body is not JSON", code="bad_params") from None
             if not isinstance(body, dict) or set(body) != {"messages"}:
-                raise OperationError('the body is {"messages": [...]}', code="bad_params")
+                raise OperationError('the body is {"messages": [...]}, or {"messages": {"before": [...], '
+                                     '"in_turn": [...]}}', code="bad_params")
         except OperationError as error:
             return _refusal(error)
         return await answer(

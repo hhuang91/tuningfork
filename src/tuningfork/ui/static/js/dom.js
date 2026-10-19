@@ -184,7 +184,7 @@ export function longText(text, { limit = 1600, lines = 24, open = false, classNa
     "details",
     { class: "fold", open },
     h("summary", null, h("span", { class: "fold-preview" }, firstLine(value)),
-      h("span", { class: "faint" }, `${count(value.length)} chars · ${count(lineCount)} lines`)),
+      h("span", { class: "faint" }, `${count(value.length)} chars · ${plural(lineCount, "line")}`)),
     h("pre", { class: className }, value),
   );
 }

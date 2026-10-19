@@ -7,7 +7,7 @@ which gives them all. For a walk through them on a real task, see
 - [How commands name things](#how-commands-name-things)
 - [Does my skill work?](#does-my-skill-work) — `batch`, `tasks`, `runs`, `recheck`, `label-next`, `chain`
 - [What happened in a run?](#what-happened-in-a-run) — `show`, `timeline`, `step`, `files`, `diff`, `spend`,
-  `import`
+  `import`, `scenario`
 - [Where do the runs go wrong?](#where-do-the-runs-go-wrong) — `divergence`, `tally`, `check-along`, `where`
 - [Bad luck, or the wording?](#bad-luck-or-the-wording) — `resample`, `ab`, `fork`, `experiments`
 - [Which token decided it?](#which-token-decided-it) — `tokens`, `forking-tokens`
@@ -161,23 +161,70 @@ step each is in context — and what the file lacked, before recording anything.
 Runs page has the same: **Import a chat…**.
 
 - `--session <id>` — from a file of several sessions, the one to import.
-- `--skill <name>` — the skill to study, where the conversation shows several: a run studies one,
-  and the others stay in its steps as they were. Its SKILL.md is extracted from what the model
-  read; `--skill-dir <folder>` keeps the skill's own folder with the run instead, its scripts and
-  references too.
+- Every skill the conversation shows is kept with the run, its SKILL.md extracted from what the
+  model read; `--skill-dir <folder>`, once for each skill that has one, keeps the skill's own
+  folder instead, its scripts and references too.
+- `--skill <name>` — where it shows several, the one studied when none is named. Otherwise an
+  A/B, a refinement or a scenario names the one it studies when it starts (`ab --skill`,
+  `refine start --skill`, the forms' **Skill**).
 - `--tools-from <run>` — where the file names no tools, a run recorded through the same harness
   whose tools each step offers.
 - `--scenario <name>` — makes a scenario of it too: runs of the skill through its harness, each
   continuing the conversation. The user turn before the skill first came in is the prompt, and
   everything before it is each run's context (`tuningfork.context`, its `context.json`), so the
-  skill enters each run live and a variant replaces it everywhere. `--cut <message>` starts it
-  from another user turn; `--check '<command>'` or `--reply-contains <text>` gives it its check,
-  which is yours to write. An imported run's page has the same: **Make a scenario…**.
+  skill enters each run live and a variant replaces it everywhere. Where the chat loaded another
+  skill first in that same turn, its steps up to the studied skill — that skill's load and
+  results among them — follow the prompt, taken as done; where it went on to another skill
+  after, each run stops where the model loads one (`tuningfork.stop_at_next_skill`), the check
+  judging the workspace then. `--cut <message>` starts it from another user turn, where the skill
+  never came in or came preloaded (see [`scenario`](#scenario)); `--check '<command>'` or
+  `--reply-contains <text>` gives it its check, which is yours to write. Any run's page has the
+  same: **Make a scenario…**.
 - `--dry-run` — shows what it would import, and records nothing.
 
 The answers in it are the model's that had the conversation: an experiment at a step samples
 your server's model, given that conversation. Nothing launched an imported run, so it cannot be
 forked to the end; its scenario's runs, which tuningfork launches, can.
+
+### `scenario`
+
+Any run as a scenario: `tuningfork scenario <run> <name>` makes a task of its conversation —
+runs of its skill through the harness, each continuing the conversation from one of its user
+turns — whether tuningfork launched the run, recorded it as it happened through the proxy, or
+imported it. As with `import --scenario`, the user turn the skill first came in after is the
+prompt and everything before it each run's context.
+
+- **The starting prompt.** That turn's words as the chat had them, or yours: `--prompt <text>`
+  — a file the chat named on another machine, say, where the scenario's inputs put it.
+  `--cut <message>` starts it from another user turn (`tuningfork timeline` shows the turns),
+  only where the skill never came in or came preloaded: a run starting before the turn it came
+  in is never sent that turn, and one starting after has it in its context as the chat had it,
+  where a variant never reaches it. What it prints says the step each run's first call stands
+  for, and the turn's steps it takes as done.
+- **The skill.** `--skill-dir <folder>` names the skill's own folder, which the scenario tunes.
+  By default it is the folder the run's skill came from — the one an import named, or a launched
+  run's task's — else a copy kept in the scenario's own folder (`skill/<name>/`): the copy the run
+  kept, or the SKILL.md the model read. `--skill <name>` chooses where the run shows several.
+- **The check.** `--check '<command>'` or `--reply-contains <text>`. A launched run's is its
+  task's own by default, and what that check reads from the task's folder
+  (`$TUNINGFORK_SPEC_DIR/…`) is copied beside the scenario's spec, where no run sees it;
+  `--no-check` leaves it without one.
+- **The input files.** A launched run's workspace as the scenario's first call finds it — at the
+  start, or after the steps it takes as done — from the snapshots tuningfork took as the run went.
+  A run tuningfork did not launch kept no files: what is made names those its conversation's calls
+  name, for you to add on the scenario's page.
+- Its eval is named by the scenario, so its runs are a task of their own (`<skill>/<scenario>`),
+  never counted with the task of the run it came from.
+- `--harness <name>` — the harness the conversation was had with, where the run does not say.
+- `--dry-run` — shows what it would make, and writes nothing.
+
+The web UI has the same, from a run's page (**Make a scenario…**) or from the Scenarios page
+(**From a run…**, which lists the runs to choose from, and imports a chat first where it is not
+a run yet). Its form sets each run beside the chat, for the skill chosen: first what each run is
+given — its harness's own system prompt and tools (the chat's shown, never sent), the
+conversation before the starting prompt, and the prompt, which can be rewritten there — then the
+conversation's steps from there on: given as done, where each run starts, where it stops. Claude Code's calls cannot yet carry a conversation before the prompt, so a
+scenario of a Claude Code run starts at its first turn.
 
 ## Where do the runs go wrong?
 
@@ -261,7 +308,8 @@ tuningfork ab <run> write_file --variant examples/variants/tally-report/SKILL.v2
 ```
 
 - `--variant <file>` — the edited skill (required). `--original <file>` — the skill as it was
-  recorded; by default, the copy a batch run was given.
+  recorded; by default, the copy a batch run was given. `--skill <name>` — for an imported chat
+  that kept several skills, the one the variant replaces.
 - `--target`, `--target-match`, `--target-rules` — the target, declared before sampling;
   `--alpha` (default 0.05).
 - `--to-end` — each sample a fork run to the end, both arms compared on the task's check: the
@@ -373,7 +421,8 @@ walks through it from the target to the approval.
 Starts refining a run's skill at one of its steps, toward a target declared now, before anything
 is proposed or sampled: `--target <letter>`, `--target-match`, `--target-rules`, or
 `--target-check` — the task's own check, for a failure only the check can see, whose screens run
-forks to the end.
+forks to the end. `--skill <name>` names the skill to refine, for an imported chat that kept
+several.
 
 ```bash
 tuningfork refine start <run> write_file --target-rules \
