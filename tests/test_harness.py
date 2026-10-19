@@ -38,6 +38,40 @@ def test_hermes_names_its_background_review(adapter):
     assert GenericHarness().side_call(review) is None
 
 
+def test_hermes_names_the_user_messages_it_writes_itself(adapter):
+    """Each note Hermes 0.18.2 sends as a user message, as its source words it; a person's turn,
+    a document's note before their words included, is none of them."""
+    written = {
+        "continue after a cut reply": "[System: Your previous response was truncated by the output length limit. "
+                                      "Continue exactly where you left off. Do not restart or repeat prior text. "
+                                      "Finish the answer directly.]",
+        "continue after a broken stream": "[System: The previous response was cut off by a network error mid-stream. "
+                                          "Continue exactly where you left off.]",
+        "a tool call too large to send": "[System: Your previous tool call (write_file) was too large and the stream "
+                                         "timed out before it could be delivered.]",
+        "nudge after an empty answer": "You just executed tool calls but returned an empty response. Please process "
+                                       "the tool results above and continue with the task.",
+        "nudge to act, not announce": "[System: Continue now. Execute the required tool calls and only send your "
+                                      "final answer after completing the task.]",
+        "nudge to verify edited code": "[System: You edited code in this turn, but the workspace does not have fresh "
+                                       "passing verification evidence yet.\n\nVerification status: unverified]",
+        "summary at the turn limit": "You've reached the maximum number of tool-calling iterations allowed. Please "
+                                     "provide a final response summarizing what you've found and accomplished so far, "
+                                     "without calling any more tools.",
+        "continue after a compression": "Continue from the compressed conversation context above. This marker exists "
+                                        "because the compacted transcript contained no preserved user turn.",
+        "background review": REVIEW,
+    }
+    for name, text in written.items():
+        assert adapter.harness_note({"role": "user", "content": text}) == name
+        assert adapter.harness_note({"role": "user", "content": [{"type": "text", "text": text}]}) == name
+    for said in ("Thanks. Now the same for march.csv.",
+                 "[The user sent a document: 'receipt.pdf'. It is saved at: /tmp/receipt.pdf.]\n\nFile this one.",
+                 "[System: a wording no version of Hermes tuningfork has read]"):
+        assert adapter.harness_note({"role": "user", "content": said}) is None
+    assert not hasattr(GenericHarness(), "harness_note")
+
+
 class TestIsolatedHome:
     def test_config_points_at_the_proxy(self, adapter, tmp_path):
         home = adapter.prepare_home(

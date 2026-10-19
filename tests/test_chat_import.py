@@ -87,7 +87,33 @@ class TestReading:
         assert not any("reasoning_content" in message or "reasoning" in message for message in second["messages"])
         assert chat.response(4)["choices"][0]["message"]["reasoning_content"] == "Now write it."
         assert chat.response(4)["choices"][0]["finish_reason"] == "tool_calls"
-        assert second["messages"][0] == {"role": "system", "content": SYSTEM} and "tools" not in second
+        # Stripped, as Hermes sends every message.
+        assert second["messages"][0] == {"role": "system", "content": SYSTEM.strip()} and "tools" not in second
+
+    def test_each_request_is_what_hermes_sends_not_what_it_kept(self):
+        """Hermes strips each message and writes tool-call arguments compactly, keys sorted, on the
+        copy it sends (found against a session recorded through the proxy: a document's
+        note joined to an empty caption was kept with two newlines the model never saw)."""
+        rows = [
+            {"role": "user", "content": "[The user sent a document: 'receipt.pdf'.]\n\n"},
+            {"role": "assistant", "content": "", "reasoning": "Read it.", "finish_reason": "tool_calls",
+             "tool_calls": [{"id": "t1", "type": "function", "function": {
+                 "name": "terminal", "arguments": '{"timeout": 30, "command": "pdftotext r.pdf - | grep Café"}'}}]},
+            {"role": "tool", "tool_call_id": "t1", "tool_name": "terminal", "content": "  Total: $12.00\n"},
+            {"role": "assistant", "content": "Filed.", "finish_reason": "stop"},
+        ]
+        chat = imports.read_chat(export(rows))
+        sent = chat.request(chat.steps[1])["messages"]
+        assert [message["content"] for message in sent if message["role"] != "assistant"] == [
+            SYSTEM.strip(), "[The user sent a document: 'receipt.pdf'.]", "Total: $12.00"]
+        (resent,) = sent[2]["tool_calls"]
+        assert resent["function"]["arguments"] == '{"command":"pdftotext r.pdf - | grep Caf\\u00e9","timeout":30}'
+        # The answer is the model's, as kept: only what the harness sends again is changed.
+        (answered,) = chat.response(chat.steps[0])["choices"][0]["message"]["tool_calls"]
+        assert answered["function"]["arguments"] == '{"timeout": 30, "command": "pdftotext r.pdf - | grep Café"}'
+        # A list of messages from no harness tuningfork knows goes as it was kept.
+        plain = imports.read_chat(json.dumps(rows))
+        assert plain.request(plain.steps[1])["messages"][0]["content"].endswith("\n\n")
 
     def test_a_session_file_keeps_its_tools(self):
         chat = imports.read_chat(snapshot(conversation()))
@@ -168,6 +194,10 @@ class TestTheRun:
         assert (run.label, run.task_id, run.harness) == ("the report, as it went", "tally-report/1", "hermes")
         assert [store.rebuild_request(step) for step in steps] == [plan.chat.request(index) for index in plan.chat.steps]
         assert store.response(steps[2])["choices"][0]["message"]["content"] == "Done: report.json holds the totals."
+        # Each answer is found again in the next request, though it goes there as Hermes resends it.
+        from tuningfork.ops.timeline import run_timeline
+
+        assert [step["kept"] for step in run_timeline(store, run.id).steps] == ["same", "same", None]
         imported = run.parity["imported"]
         assert imported["format"] == "hermes-export" and imported["session_id"] == "20261018_090000_ab12cd"
         assert imported["skill"] == "tally-report" and imported["skill_source"] == "extracted"
@@ -178,6 +208,12 @@ class TestTheRun:
         # A refinement at the step after the skill came in: its text is found there, in the tool's result.
         made = refine.create(store, run.id, "1", target_rules=[{"if": "calls", "value": "write_file"}])
         assert made.run_id == run.id and made.step_idx == 1
+
+    def test_a_list_of_messages_named_as_hermess_goes_as_hermes_sends_it(self, store):
+        rows = [{"role": "user", "content": "go\n\n"}, {"role": "assistant", "content": "ok"},
+                {"role": "user", "content": "again"}, {"role": "assistant", "content": "done"}]
+        plan = imports.prepare_import(store, json.dumps(rows), harness="hermes")
+        assert plan.chat.harness == "hermes" and plan.chat.request(plan.chat.steps[1])["messages"][0]["content"] == "go"
 
     def test_deleted_for_good_its_folder_goes_with_it(self, store):
         result = imports.execute_import(store, imports.prepare_import(store, export(conversation(("tally-report", SKILL)))))
@@ -212,6 +248,9 @@ def test_a_person_imports_from_the_terminal(store, tmp_path):
     assert done.exit_code == 0, done.output
     (run,) = store.runs(limit=10)
     assert f"imported as run {run.id[:8]}" in done.output
+    # Read back, it says what the file lacked where the tools would be.
+    shown = runner.invoke(app, ["timeline", run.id[:8], "--home", str(store.home)], env={"COLUMNS": "160"})
+    assert shown.exit_code == 0 and "no tools recorded: Hermes's export keeps none" in shown.output, shown.output
 
 
 async def test_the_web_ui_previews_then_imports(proxy_client, recorder):
@@ -293,6 +332,17 @@ class TestAScenarioOfAnImport:
         first = imports.prepare_scenario(store, result.run_id, "from-the-start", cut=1)
         assert first.context == [] and "context" not in imports.make_scenario(store, first).spec["evals"][0]["tuningfork"]
         assert any("no check" in warning for warning in first.warnings)
+
+    def test_its_conversation_goes_as_its_harness_would_have_sent_it(self, store):
+        """The proxy puts the conversation in after the harness has made its own copy ready, so it
+        is kept as the harness would have sent it."""
+        earlier = [{"id": 2, "role": "user", "content": "Our data lives in data.csv.\n", "timestamp": 0.5},
+                   {"id": 3, "role": "assistant", "content": "Understood.  \n", "finish_reason": "stop", "timestamp": 0.6}]
+        data = export(earlier + conversation(("tally-report", SKILL)))
+        result = imports.execute_import(store, imports.prepare_import(store, data))
+        plan = imports.prepare_scenario(store, result.run_id, "as-sent")
+        assert plan.context == [{"role": "user", "content": "Our data lives in data.csv."},
+                                {"role": "assistant", "content": "Understood."}]
 
     def test_the_skills_own_folder_is_the_one_it_tunes(self, store, tmp_path):
         folder = tmp_path / "tally-report"

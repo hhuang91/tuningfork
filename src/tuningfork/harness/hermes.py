@@ -28,6 +28,24 @@ from tuningfork.ops.common import OperationError
 #: recording, where the review was cut off when Hermes exited after its answer.
 REVIEW_PROMPT = "Review the conversation above and "
 
+#: The user messages Hermes 0.18.2 writes itself, by how each one opens, and what each is: its
+#: loop's nudges to go on (`agent/conversation_loop.py`), the summary it asks for at the turn
+#: limit (`agent/chat_completion_helpers.py`), its check for edited code
+#: (`agent/verification_stop.py`), the marker after a compression
+#: (`agent/conversation_compression.py`) and its background review. Any other is a person's turn.
+NOTES = (
+    ("[System: Your previous response was truncated by the output length limit.", "continue after a cut reply"),
+    ("[System: The previous response was cut off by a network error", "continue after a broken stream"),
+    ("[System: Your previous tool call (", "a tool call too large to send"),
+    ("You just executed tool calls but returned an empty response.", "nudge after an empty answer"),
+    ("[System: Continue now. Execute the required tool calls", "nudge to act, not announce"),
+    ("[System: You edited code in this turn, but the workspace does not have fresh passing verification",
+     "nudge to verify edited code"),
+    ("You've reached the maximum number of tool-calling iterations allowed.", "summary at the turn limit"),
+    ("Continue from the compressed conversation context above.", "continue after a compression"),
+    (REVIEW_PROMPT, "background review"),
+)
+
 #: How Hermes 0.18.2 inlines a skill preloaded with `-s`: its own marker, a blank line, the
 #: complete SKILL.md, then a line naming the skill directory. Verified from a recording.
 PRELOADED_SKILL = re.compile(
@@ -243,6 +261,20 @@ LAYOUTS = ("install", "flat")
 
 #: A category is a folder name: nothing that could climb out of `skills/`.
 _FOLDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _compact_call(call: Any) -> Any:
+    """A tool call with its arguments as Hermes resends them: `json.dumps(…, separators=(",",
+    ":"), sort_keys=True)`, ASCII-escaped as that leaves it. Arguments that do not parse are
+    left as kept; Hermes repairs those its own way."""
+    function = call.get("function") if isinstance(call, dict) else None
+    if not isinstance(function, dict) or not isinstance(function.get("arguments"), str):
+        return call
+    try:
+        arguments = json.loads(function["arguments"])
+    except ValueError:
+        return call
+    return {**call, "function": {**function, "arguments": json.dumps(arguments, separators=(",", ":"), sort_keys=True)}}
 
 
 def skill_category(skill_md: Path) -> str | None:
@@ -468,6 +500,39 @@ class HermesAdapter:
         if len(users) > 1 and content_text(users[-1].get("content")).startswith(REVIEW_PROMPT):
             return "background review"
         return None
+
+    def harness_note(self, message: dict[str, Any]) -> str | None:
+        """A user message Hermes wrote itself — a nudge to go on after a cut reply, the summary it
+        asks for at the turn limit (`NOTES`) — named in a few words; None for a person's turn,
+        which is also what a note of another version's wording reads as."""
+        from tuningfork.analysis.normalize import content_text
+
+        text = content_text(message.get("content")).strip()
+        return next((name for opening, name in NOTES if text.startswith(opening)), None)
+
+    def as_sent(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """A kept history as Hermes 0.18.2 sends it: what its conversation loop does to its own
+        copy before every call, and never to what it keeps (`agent/conversation_loop.py`) —
+        each message's text stripped, and each tool call's arguments written compactly with
+        their keys sorted. Found setting a session recorded through the proxy beside Hermes's
+        own record of it: a document's note, joined to an empty caption, was kept with two
+        newlines the model never saw.
+
+        What Hermes adds at call time and keeps nowhere is not here to rebuild: the block about
+        the chat and its user it puts after the system prompt when it answers on a messaging
+        platform, a memory provider's recall or a plugin's context added to the turn, prefill
+        messages. It also drops a turn that holds only reasoning, but only where the reasoning is
+        still on its copy, for a provider it sends reasoning back to (DeepSeek, Kimi, MiMo); to
+        any other, the turn goes as an empty answer, as it does here."""
+        shaped = []
+        for message in messages:
+            message = dict(message)
+            if isinstance(message.get("content"), str):
+                message["content"] = message["content"].strip()
+            if message.get("tool_calls"):
+                message["tool_calls"] = [_compact_call(call) for call in message["tool_calls"]]
+            shaped.append(message)
+        return shaped
 
     def skill_spans(self, request: dict[str, Any]) -> list[SkillSpan]:
         """Skills in a Hermes payload: preloaded ones in the system prompt, and any

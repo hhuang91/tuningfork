@@ -9,11 +9,11 @@
 // verdict: what its task's check said, coloured by it — the only green or red on the page.
 
 import { api, enc } from "./api.js";
-import { chip, count, failure, h, kv, loading, longText, millis, outcome, plural, replace, short, toggle } from "./dom.js";
+import { chip, count, failure, firstLine, h, kv, loading, longText, millis, outcome, plural, replace, short, toggle } from "./dom.js";
 import { settle } from "./nav.js";
-import { messageSize, messageView, noReasoning, outputView, toolNames } from "./payload.js";
+import { messageSize, messageText, messageView, noReasoning, outputView, toolNames } from "./payload.js";
 import { startForm, startPanel } from "./start.js";
-import { banners, detailsPanel, skillsSummary, summaryStrip, workspacePanel } from "./stepinfo.js";
+import { banners, detailsPanel, skillsSummary, summaryStrip, toolsOffered, workspacePanel } from "./stepinfo.js";
 import { tokensPanel } from "./tokens.js";
 
 const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking tokens" };
@@ -37,14 +37,20 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   let asking = 0;
   const element = h("div", { class: "tl" });
   const rail = h("nav", { class: "tl-rail", "aria-label": "Steps of the run" });
+  // What is being read marks its line in the rail: a step, or a message the harness added.
   const seen = new IntersectionObserver((changes) => {
     for (const change of changes) {
-      if (change.isIntersecting) markCurrent(Number(change.target.dataset.idx));
+      if (!change.isIntersecting) continue;
+      const { idx, entry } = change.target.dataset;
+      markCurrent(entry !== undefined ? { entry: Number(entry) } : { idx: Number(idx) });
     }
   }, { rootMargin: "-30% 0px -60% 0px" });
   let state = data;
   // The run's verdict, always the timeline's last element: "Jump to the end" lands on it.
   let verdictNode = null;
+  // The tools offered, always first: above the system prompt, as a request carries them.
+  let toolsNode = null;
+  let toolsDrawn = "";
   draw();
 
   return {
@@ -66,8 +72,42 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     gapsShown.clear();
     seen.disconnect();
     verdictNode = verdictSection();
-    replace(element, nodesFrom(0, () => true), verdictNode);
+    toolsNode = toolsSection();
+    replace(element, toolsNode, nodesFrom(0, () => true), verdictNode);
     drawRail();
+  }
+
+  /** The tools the run's first call offered, before its system prompt: the model reads them as
+   *  part of its prompt, though no message holds them. Where later calls offered others, it
+   *  says which steps; where none were recorded, why. */
+  function toolsSection() {
+    const offered = state.tools_offered || [];
+    const changed = toolChanges();
+    toolsDrawn = toolsKey();
+    if (offered.length) {
+      const note = changed.length
+        ? h("p", { class: "hint" }, "What the first call offered. Later calls offered others: ", changed.map((step, i) => {
+            const names = [...step.extras_changed.tools_added.map((name) => `+${name}`), ...step.extras_changed.tools_removed.map((name) => `−${name}`)];
+            return `${i ? "; " : ""}step ${step.idx}, ${names.join(" ")}`;
+          }), ".")
+        : null;
+      return h("div", { class: "tl-tools" }, toolsOffered(offered, { note }));
+    }
+    const imported = state.run.imported;
+    return h("p", { class: "tl-tools tl-note" }, !imported
+      ? "No tools offered: the model was sent none."
+      : imported.format === "hermes-export"
+        ? "No tools recorded: Hermes's export keeps none, so each step was rebuilt without the ones the model was offered. Imported again with Tools from naming a run recorded through the same harness, its steps take that run's."
+        : "No tools recorded: the file named none, so each step was rebuilt without any.");
+  }
+
+  /** The steps whose call offered other tools than the call before. */
+  function toolChanges() {
+    return state.steps.filter((step) => step.extras_changed?.tools_added?.length || step.extras_changed?.tools_removed?.length);
+  }
+
+  function toolsKey() {
+    return `${(state.tools_offered || []).length}|${toolChanges().map((step) => step.idx).join(",")}`;
   }
 
   /** How the run fared against its task's check, and why: the check, what it printed, and —
@@ -142,6 +182,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const tag = entry.origin === "harness" && entry.after !== null
       ? h("span", { class: "tl-tag", title: `Added to the conversation by the harness after step ${entry.after}` }, `after step ${entry.after}`)
       : null;
+    // A user message the harness wrote itself says so: no person said it.
+    const note = entry.note ? chip(entry.note, "muted", "Written by the harness itself, not by a person") : null;
     const marks = (entry.changed_for_model || []).map((mark) =>
       h("a", {
         class: "tl-changed",
@@ -151,10 +193,14 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const withSkill = state.skills.some((span) => span.message_index === entry.index);
     // Short turns start open, and any carrying a skill; system prompts and long results fold.
     const open = withSkill || (entry.message.role !== "system" && messageSize(entry.message) < 1500);
-    return h("div", { class: ["tl-entry", `tl-${entry.origin}`] },
+    // A message the harness added after a step has a line of its own in the rail, under it.
+    const added = entry.origin === "harness" && entry.after !== null;
+    const node = h("div", { class: ["tl-entry", `tl-${entry.origin}`], dataset: added ? { entry: entry.index } : null },
       messageView(entry.message, entry.index, {
-        spans: state.skills, names, open, recorded, extra: [tag, ...marks], idPrefix: "t",
+        spans: state.skills, names, open, recorded, extra: [note, tag, ...marks], idPrefix: "t",
       }));
+    if (added) seen.observe(node);
+    return node;
   }
 
   function gap(idx) {
@@ -287,9 +333,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
 
   function drawRail() {
     const verdict = verdictOf(state.run, state.launch, state.ended);
+    const names = toolNames([...state.entries.map((entry) => entry.message), ...state.steps.map((step) => step.output || {})]);
+    // What came after each step — its tools' results, the harness's own notes, a person's next
+    // turn — drawn in the conversation, so each one's line leads there.
+    const added = group(state.entries.filter((entry) => entry.origin === "harness" && entry.after !== null), (entry) => entry.after);
     replace(rail,
       h("div", { class: "tl-rail-head" }, plural(state.steps.length, "step")),
-      state.steps.map((step) =>
+      state.steps.map((step) => [
         h("a", {
           class: ["tl-rail-step", step.outcome.kind === "error" && "tl-rail-error", step.kept === "retried" && "tl-rail-retried"],
           href: `${base}/${step.idx}`, dataset: { idx: step.idx },
@@ -298,7 +348,9 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
             reveal(step.idx);
           },
         }, h("span", { class: "mono" }, String(step.idx)), h("span", { class: "tl-rail-what" }, railLabel(step)),
-        step.variant || step.edited.request || step.edited.response ? h("span", { class: "tl-dot", title: "changed by tuningfork" }) : null)),
+        step.variant || step.edited.request || step.edited.response ? h("span", { class: "tl-dot", title: "changed by tuningfork" }) : null),
+        (added.get(step.idx) || []).map((entry) => railEntry(entry, step, names)),
+      ]),
       h("a", {
         class: ["tl-rail-verdict", verdict.tone], href: base, title: "What the task's check said: the end of the run",
         onclick: (event) => {
@@ -315,8 +367,36 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return finalReply(step) ? "reply" : "text";
   }
 
-  function markCurrent(idx) {
+  /** A message the harness added after `step`, on a line of its own. A tool's result goes under
+   *  the step, by the tool's name, and so does a user message the harness wrote itself, by what
+   *  it is; a person's turn starts a new exchange, unindented, in their words. Each leads to the
+   *  message in the conversation, opened. */
+  function railEntry(entry, step, names) {
+    const message = entry.message;
+    const show = (event) => {
+      event.preventDefault();
+      const shown = element.querySelector(`#tm${entry.index}`);
+      if (!shown) return;
+      shown.open = true;
+      shown.scrollIntoView({ block: "start" });
+    };
+    if (message.role === "user" && !entry.note) {
+      return h("a", {
+        class: "tl-rail-turn", href: `${base}/${step.idx}`, dataset: { entry: entry.index },
+        title: `A person's turn, after step ${step.idx}`, onclick: show,
+      }, h("span", { class: "tl-rail-who" }, "user"), h("span", { class: "tl-rail-what" }, firstLine(messageText(message), 80) || "(no text)"));
+    }
+    const what = message.role === "tool" ? `${names.get(message.tool_call_id) || "tool"} result` : entry.note || `${message.role} message`;
+    return h("a", {
+      class: "tl-rail-result", href: `${base}/${step.idx}`, dataset: { entry: entry.index },
+      title: entry.note ? `Written by the harness itself after step ${step.idx}, not by a person` : `${what}, added by the harness after step ${step.idx}`,
+      onclick: show,
+    }, h("span", { class: "tl-rail-arrow", "aria-hidden": "true" }, "↳"), h("span", { class: "tl-rail-what" }, what));
+  }
+
+  function markCurrent({ idx = null, entry = null }) {
     for (const link of rail.querySelectorAll(".tl-rail-step")) link.classList.toggle("current", Number(link.dataset.idx) === idx);
+    for (const link of rail.querySelectorAll(".tl-rail-result, .tl-rail-turn")) link.classList.toggle("current", Number(link.dataset.entry) === entry);
   }
 
   // --- a step, opened -------------------------------------------------------------------------
@@ -448,6 +528,15 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const fresh = verdictSection();
     verdictNode.replaceWith(fresh);
     verdictNode = fresh;
+    // A new step may have offered other tools: said again, left open if it was.
+    if (toolsKey() !== toolsDrawn) {
+      const open = Boolean(toolsNode.querySelector("details.tools-offered")?.open);
+      const tools = toolsSection();
+      const list = tools.querySelector("details.tools-offered");
+      if (list) list.open = open;
+      toolsNode.replaceWith(tools);
+      toolsNode = tools;
+    }
     drawRail();
   }
 }

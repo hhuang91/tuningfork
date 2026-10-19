@@ -185,6 +185,20 @@ class TestAdapter:
         assert span.text == SKILL_BODY.rstrip()
         assert view[span.message_index]["content"][span.start:span.end] == span.text
 
+    def test_the_user_messages_it_writes_itself_are_named(self):
+        """A skill's text after the `Skill` call, and a message of nothing but reminders, are
+        Claude Code's own; a person's words are their turn, reminders beside them or not."""
+        adapter = ClaudeCodeAdapter()
+        view = ANTHROPIC.view(claude_code_request())
+        assert adapter.harness_note(view[-1]) == "skill text"
+        reminder = {"type": "text", "text": "<system-reminder>\nThe date has changed.\n</system-reminder>"}
+        said = {"type": "text", "text": "Now the same for march.csv."}
+        assert adapter.harness_note({"role": "user", "content": [reminder]}) == "reminder"
+        assert adapter.harness_note({"role": "user", "content": reminder["text"] + "\n"}) == "reminder"
+        assert adapter.harness_note({"role": "user", "content": [reminder, said]}) is None
+        assert adapter.harness_note({"role": "user", "content": said["text"]}) is None
+        assert adapter.harness_note({"role": "user", "content": [{"type": "image_url"}]}) is None
+
 
 class TestSkillFiles:
     def test_a_body_without_frontmatter_maps_to_its_file_and_lines(self, store, tmp_path):

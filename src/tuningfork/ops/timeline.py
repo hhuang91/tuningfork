@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from tuningfork.analysis.conditions import exclusion_from
@@ -112,6 +112,14 @@ def _adapters(adapters: Sequence[Any] | None) -> list[Any]:
     from tuningfork.harness import ADAPTERS
 
     return [adapter() for adapter in ADAPTERS.values()]
+
+
+def _namers(run: Run, adapters: Sequence[Any] | None) -> list[Any]:
+    """What names the user messages a harness writes itself (`harness_note`): the run's own
+    adapter, or — for a run whose harness is not known, recorded as it happened — each one."""
+    found = _adapters(adapters)
+    own = [adapter for adapter in found if getattr(adapter, "name", None) == run.harness]
+    return [adapter.harness_note for adapter in own or found if hasattr(adapter, "harness_note")]
 
 
 def mapped_skills(
@@ -250,8 +258,10 @@ class RunTimeline:
 
     `entries` is the last step's context as the harness sent it, in view form. Each entry's
     `origin` says how it got there: `start`, the context the run began with; `harness`, added
-    by the harness after step `after` (tool results, reminders, a skill's body); `copy`, the
-    harness's copy of step `after`'s output — shown in its place from the recording instead.
+    by the harness after step `after` (tool results, reminders, a skill's body; a user message
+    there carries a `note` when the harness wrote it itself, and is a person's turn without
+    one); `copy`, the harness's copy of step `after`'s output — shown in its place from the
+    recording instead.
     Each of `steps` sits before `entries[position]`: its context was the entries above it.
     """
 
@@ -269,6 +279,11 @@ class RunTimeline:
     ended: bool
     #: The last step's reply, as the harness received it; None when it said nothing.
     reply: str | None
+    #: The tools the first call offered, as the harness sent them — each one's name, what it
+    #: says it does and its parameters, whatever its wire's shape. The model reads them as
+    #: part of its prompt, though no message holds them; where a later call offered others,
+    #: its step's `extras_changed` says which.
+    offered: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def made_by(self) -> list[dict[str, Any]] | None:
@@ -294,6 +309,7 @@ class RunTimeline:
             "ended": self.ended,
             "reply": self.reply,
             "made_by": self.made_by,
+            "tools_offered": self.offered,
         }
 
 
@@ -333,6 +349,26 @@ def _tool_names(extras: dict[str, Any]) -> list[str]:
         if isinstance(name, str):
             names.append(name)
     return names
+
+
+def _tools_offered(extras: dict[str, Any]) -> list[dict[str, Any]]:
+    """The tools a request offered, each as its name, its description and its parameters: an
+    OpenAI function's `parameters` or an Anthropic tool's `input_schema`."""
+    offered = []
+    for tool in extras.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        function = tool["function"] if isinstance(tool.get("function"), dict) else tool
+        name = function.get("name")
+        if not isinstance(name, str):
+            continue
+        description = function.get("description")
+        offered.append({
+            "name": name,
+            "description": description if isinstance(description, str) else "",
+            "parameters": function.get("parameters", function.get("input_schema")),
+        })
+    return offered
 
 
 def _extras_signature(step: Step) -> str:
@@ -457,6 +493,15 @@ def run_timeline(store: Store, run_ref: str, *, adapters: Sequence[Any] | None =
                 else:
                     mark["steps"].append(step.idx)
 
+    # A user message the harness added after a step is a person's turn, or the harness's own —
+    # a nudge to go on, a reminder — which its adapter names (`note`).
+    namers = _namers(run, adapters)
+    for entry in entries:
+        if entry["origin"] == "harness" and entry["message"].get("role") == "user":
+            note = next((said for name in namers if (said := name(entry["message"]))), None)
+            if note:
+                entry["note"] = note
+
     extras_changed = _extras_changes(store, steps)
     experiments = _experiments(store, run, arm_status)
     # Which answers have been scored — one query for the run; the tokens load when opened.
@@ -516,6 +561,9 @@ def run_timeline(store: Store, run_ref: str, *, adapters: Sequence[Any] | None =
         threads=threads,
         ended=ended,
         reply=reply,
+        # The first call's tools: read again only where its extras are not the last call's.
+        offered=_tools_offered(extras if _extras_signature(steps[0]) == _extras_signature(steps[final])
+                               else store.harness_extras(steps[0])),
     )
 
 

@@ -136,6 +136,36 @@ skills_list, terminal, text_to_speech, todo, vision_analyze, write_file
 `delegate_task` is the subagent mechanism — the thing to watch when working out how
 subagent traffic appears on the wire.
 
+### What it changes in the copy it sends
+
+Before every call Hermes strips each message's text and writes each tool call's arguments
+compactly with their keys sorted, on the copy it sends and never on what it keeps
+(`agent/conversation_loop.py`). A request rebuilt from its record — an imported session —
+does the same (`HermesAdapter.as_sent`). What it adds at call time and keeps nowhere cannot
+be rebuilt: on a messaging platform, a block after the system prompt about the chat and its
+user; a memory provider's recall and a plugin's context added to the turn.
+
+### User messages it writes itself
+
+Hermes sends some user messages no person wrote, each worded the same every time (0.18.2's
+source). The adapter names them (`harness_note`), and a run's page shows each under the step
+it followed instead of as a person's turn:
+
+| It opens | Named |
+|---|---|
+| `[System: Your previous response was truncated by the output length limit.` | continue after a cut reply |
+| `[System: The previous response was cut off by a network error` | continue after a broken stream |
+| `[System: Your previous tool call (` | a tool call too large to send |
+| `You just executed tool calls but returned an empty response.` | nudge after an empty answer |
+| `[System: Continue now. Execute the required tool calls` | nudge to act, not announce |
+| `[System: You edited code in this turn, but the workspace does not have fresh passing verification` | nudge to verify edited code |
+| `You've reached the maximum number of tool-calling iterations allowed.` | summary at the turn limit |
+| `Continue from the compressed conversation context above.` | continue after a compression |
+| `Review the conversation above and ` | background review |
+
+A version that words one differently shows it as a person's turn: a note too prominent,
+never a person buried.
+
 ### Skills
 
 Two routes into the context, both verified from recordings:

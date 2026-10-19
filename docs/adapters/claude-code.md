@@ -94,6 +94,11 @@ Every model call is `POST /v1/messages?beta=true`, streamed, with `anthropic-ver
   (`<total_tokens>N tokens left</total_tokens>`) appended after every tool result;
 - a `<system-reminder>` text block ahead of the task in the first user message.
 
+Some user messages are Claude Code's own: after a `Skill` call, the skill's text (see
+[Skills](#skills)), and messages of nothing but `<system-reminder>`s. The adapter names them
+(`harness_note`), and a run's page shows each under the step it followed; a person's words,
+reminders beside them or not, are their turn.
+
 Responses stream as standard Anthropic events. llama.cpp maps Gemma's reasoning to
 **`thinking` blocks**, which Claude Code sends back in later requests.
 
