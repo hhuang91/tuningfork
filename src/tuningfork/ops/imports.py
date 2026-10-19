@@ -6,8 +6,10 @@ A history keeps what the agent kept, not the requests it sent, so each step's re
 from it as its harness sends one: the system prompt, every message before the step, and the
 tools where the file names them (Hermes's export does not). An assistant turn's reasoning is in
 its own step's answer, never in a later request: Hermes sends none back to a server that does not
-ask for it. The run says it was imported and what the file lacked (`parity.imported`); nothing
-launched it, so nothing can fork it to the end.
+ask for it. Each message is as the harness changes its own copy before a call
+(`HarnessAdapter.as_sent`: Hermes strips each one and writes tool-call arguments compactly),
+while each step's answer stays as the model gave it. The run says it was imported and what the
+file lacked (`parity.imported`); nothing launched it, so nothing can fork it to the end.
 
 Read: Hermes's session snapshot (`~/.hermes/sessions/session_<id>.json`: the system prompt, the
 tools and the messages), Hermes's export (`hermes sessions export`: one session a line, without
@@ -72,7 +74,7 @@ class Chat:
 
     def request(self, index: int) -> dict[str, Any]:
         """The request the assistant turn at `index` answered, as its harness sends one."""
-        request: dict[str, Any] = {"model": self.model or "imported", "messages": [sent(m) for m in self.messages[:index]]}
+        request: dict[str, Any] = {"model": self.model or "imported", "messages": as_sent(self.harness, self.messages[:index])}
         if self.tools:
             request["tools"] = self.tools
         return request
@@ -98,6 +100,17 @@ class Chat:
 def sent(message: dict[str, Any]) -> dict[str, Any]:
     """A message as a later request carries it: without the turn's reasoning."""
     return {key: value for key, value in message.items() if key not in ("reasoning_content", "reasoning")}
+
+
+def as_sent(harness: str | None, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A kept history as `harness` sends it in a call: without each turn's reasoning, and as the
+    harness changes its own copy before every call (`HarnessAdapter.as_sent`)."""
+    from tuningfork.harness import ADAPTERS
+
+    kept = [sent(message) for message in messages]
+    adapter = ADAPTERS.get(harness or "generic")
+    shape = getattr(adapter(), "as_sent", None) if adapter is not None else None
+    return shape(kept) if shape is not None else kept
 
 
 # --- reading a file ------------------------------------------------------------------------------
@@ -373,6 +386,9 @@ def prepare_import(
     harness = harness or chat.harness or "generic"
     if harness not in ADAPTERS:
         raise OperationError(f"no harness called {harness!r}", hint=f"one of {', '.join(ADAPTERS)}", field="harness")
+    # The harness that had the conversation sends its history its own way: each step's request
+    # is rebuilt as it would have sent it.
+    chat.harness = harness
     if not chat.steps:
         raise OperationError("the conversation has no assistant turn: nothing the model did to study", field="file")
     warnings: list[str] = []
@@ -602,7 +618,9 @@ def scenario_start(chat: Chat, skill: str, harness: str, cut: int | None = None)
     if cut is None or cut not in users:
         raise OperationError(f"message {cut} is not a user turn of the conversation", field="cut",
                              hint=f"the user turns, by message: {', '.join(map(str, users)) or 'none'}")
-    context = [sent(message) for message in chat.messages[:cut] if message["role"] != "system"]
+    # The proxy puts it in after the harness has made its own copy ready: it goes as the harness
+    # would have sent it.
+    context = as_sent(harness, [message for message in chat.messages[:cut] if message["role"] != "system"])
     prompt = _text(chat.messages[cut].get("content"))
     if not prompt.strip():
         raise OperationError(f"the user turn at message {cut} holds no text to start from", field="cut")

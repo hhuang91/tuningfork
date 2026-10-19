@@ -104,6 +104,10 @@ class HarnessAdapter(Protocol):
       session the launch just ran one more user turn, in the same home and workspace — how a
       chain tells the harness what the task's check made of its result, as a person who
       looked would (`ops.chain`, `tell`). Hermes resumes its most recent session.
+    - `as_sent(messages)`: a history as the harness kept it, as it sends it in a call — what it
+      does to its own copy before every one (Hermes strips each message and writes tool-call
+      arguments compactly) — for a request rebuilt from a kept history (`ops.imports`).
+      Without one, a history is sent as kept.
     """
 
     name: str

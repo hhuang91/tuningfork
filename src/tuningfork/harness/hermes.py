@@ -245,6 +245,20 @@ LAYOUTS = ("install", "flat")
 _FOLDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
+def _compact_call(call: Any) -> Any:
+    """A tool call with its arguments as Hermes resends them: `json.dumps(…, separators=(",",
+    ":"), sort_keys=True)`, ASCII-escaped as that leaves it. Arguments that do not parse are
+    left as kept; Hermes repairs those its own way."""
+    function = call.get("function") if isinstance(call, dict) else None
+    if not isinstance(function, dict) or not isinstance(function.get("arguments"), str):
+        return call
+    try:
+        arguments = json.loads(function["arguments"])
+    except ValueError:
+        return call
+    return {**call, "function": {**function, "arguments": json.dumps(arguments, separators=(",", ":"), sort_keys=True)}}
+
+
 def skill_category(skill_md: Path) -> str | None:
     """The category a Hermes skill declares in its frontmatter — `metadata: hermes:
     category:`, Hermes's own convention, or a top-level `category:` — if it is a plain
@@ -468,6 +482,30 @@ class HermesAdapter:
         if len(users) > 1 and content_text(users[-1].get("content")).startswith(REVIEW_PROMPT):
             return "background review"
         return None
+
+    def as_sent(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """A kept history as Hermes 0.18.2 sends it: what its conversation loop does to its own
+        copy before every call, and never to what it keeps (`agent/conversation_loop.py`) —
+        each message's text stripped, and each tool call's arguments written compactly with
+        their keys sorted. Found setting a session recorded through the proxy beside Hermes's
+        own record of it: a document's note, joined to an empty caption, was kept with two
+        newlines the model never saw.
+
+        What Hermes adds at call time and keeps nowhere is not here to rebuild: the block about
+        the chat and its user it puts after the system prompt when it answers on a messaging
+        platform, a memory provider's recall or a plugin's context added to the turn, prefill
+        messages. It also drops a turn that holds only reasoning, but only where the reasoning is
+        still on its copy, for a provider it sends reasoning back to (DeepSeek, Kimi, MiMo); to
+        any other, the turn goes as an empty answer, as it does here."""
+        shaped = []
+        for message in messages:
+            message = dict(message)
+            if isinstance(message.get("content"), str):
+                message["content"] = message["content"].strip()
+            if message.get("tool_calls"):
+                message["tool_calls"] = [_compact_call(call) for call in message["tool_calls"]]
+            shaped.append(message)
+        return shaped
 
     def skill_spans(self, request: dict[str, Any]) -> list[SkillSpan]:
         """Skills in a Hermes payload: preloaded ones in the system prompt, and any

@@ -96,7 +96,11 @@ import`, the Runs page's Import a chat…, `POST /imports`): a Hermes session fi
 an OpenAI-style message list. Each assistant turn is a step whose request is rebuilt from the
 history as its harness sends one — the system prompt, the messages before it, the tools where the
 file names them; an earlier turn's reasoning is never sent back (Hermes sends none to a server
-that does not ask) — so the step tools work on it. The skill under study, one a run, is found
+that does not ask); each message as the harness changes its own copy before every call
+(`HarnessAdapter.as_sent`: Hermes strips each one and writes tool-call arguments compactly, keys
+sorted) — so the step tools work on it. What a history never kept stays out: the block Hermes
+puts after the system prompt at every call when it answers on a messaging platform (the chat,
+the user's name), and the tools, which its export leaves out. The skill under study, one a run, is found
 where its harness shows skills (`skill_spans`) and kept beside the run, `<home>/imports/<run>/`
 (the folder named, or the SKILL.md the model read, extracted), where the run's
 `parity.skill_snapshot_dir` points, as a batch run's does; the conversation is kept there too.
