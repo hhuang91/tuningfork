@@ -615,7 +615,8 @@ a.chip:hover { text-decoration: none; filter: brightness(0.97); }
 summary.msg-head { cursor: pointer; list-style: none; }
 summary.msg-head::-webkit-details-marker { display: none; }
 summary.msg-head::before,
-.fold > summary::before {
+.fold > summary::before,
+.tool > summary::before {
   content: "";
   flex: none;
   width: 6px;
@@ -627,7 +628,8 @@ summary.msg-head::before,
   transition: transform 0.1s;
 }
 details[open] > summary.msg-head::before,
-.fold[open] > summary::before { transform: rotate(45deg); }
+.fold[open] > summary::before,
+.tool[open] > summary::before { transform: rotate(45deg); }
 .msg-preview {
   flex: 1;
   min-width: 0;
@@ -1252,6 +1254,21 @@ details.about-run[open] > summary::before { transform: rotate(90deg); }
 details.about-run:not([open]) > summary { border-bottom: none; }
 .banners { margin-bottom: 4px; }
 .tools-offered { margin-bottom: 10px; }
+.tl-tools .tools-offered { margin-bottom: 0; }
+/* The tools a call offered (js/stepinfo.js): one on a line, opening to what it says and takes. */
+.tool-list { display: flex; flex-direction: column; margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+.tool + .tool { border-top: 1px solid var(--border); }
+.tool > summary { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 10px; font-size: 12.5px; list-style: none; cursor: pointer; }
+.tool > summary::-webkit-details-marker { display: none; }
+.tool > summary:hover { background: var(--panel-2); }
+.tool-name { flex: none; font-weight: 600; }
+.tool-gist { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.tool[open] > summary .tool-gist { visibility: hidden; }
+.tool-body { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 10px 26px; }
+.tool-body pre.text, .tool-body > p { margin: 0; }
+.tool-body pre.text { max-height: 360px; overflow: auto; }
+.tool-params { margin: 0; padding-left: 16px; font-size: 12.5px; }
+.tool-params li + li { margin-top: 3px; }
 .skills-list { margin-bottom: 12px; }
 @media (max-width: 1000px) {
   .tl-layout { grid-template-columns: minmax(0, 1fr); }

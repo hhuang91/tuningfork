@@ -120,7 +120,9 @@ tokens, and how long the model reasoned first (`think`, in characters).
 ### `timeline`
 
 The run as one conversation: its last context read once, with each step's answer where it
-happened, reasoning included. `--full` prints whole messages; `--json` gives what the web UI reads.
+happened, reasoning included. It opens with the tools the first call offered, which no message
+holds though the model reads them. `--full` prints whole messages, and each tool's first line;
+`--json` gives what the web UI reads.
 
 ### `step`
 

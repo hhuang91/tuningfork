@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from tuningfork.analysis.conditions import exclusion_from
@@ -269,6 +269,11 @@ class RunTimeline:
     ended: bool
     #: The last step's reply, as the harness received it; None when it said nothing.
     reply: str | None
+    #: The tools the first call offered, as the harness sent them — each one's name, what it
+    #: says it does and its parameters, whatever its wire's shape. The model reads them as
+    #: part of its prompt, though no message holds them; where a later call offered others,
+    #: its step's `extras_changed` says which.
+    offered: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def made_by(self) -> list[dict[str, Any]] | None:
@@ -294,6 +299,7 @@ class RunTimeline:
             "ended": self.ended,
             "reply": self.reply,
             "made_by": self.made_by,
+            "tools_offered": self.offered,
         }
 
 
@@ -333,6 +339,26 @@ def _tool_names(extras: dict[str, Any]) -> list[str]:
         if isinstance(name, str):
             names.append(name)
     return names
+
+
+def _tools_offered(extras: dict[str, Any]) -> list[dict[str, Any]]:
+    """The tools a request offered, each as its name, its description and its parameters: an
+    OpenAI function's `parameters` or an Anthropic tool's `input_schema`."""
+    offered = []
+    for tool in extras.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        function = tool["function"] if isinstance(tool.get("function"), dict) else tool
+        name = function.get("name")
+        if not isinstance(name, str):
+            continue
+        description = function.get("description")
+        offered.append({
+            "name": name,
+            "description": description if isinstance(description, str) else "",
+            "parameters": function.get("parameters", function.get("input_schema")),
+        })
+    return offered
 
 
 def _extras_signature(step: Step) -> str:
@@ -516,6 +542,9 @@ def run_timeline(store: Store, run_ref: str, *, adapters: Sequence[Any] | None =
         threads=threads,
         ended=ended,
         reply=reply,
+        # The first call's tools: read again only where its extras are not the last call's.
+        offered=_tools_offered(extras if _extras_signature(steps[0]) == _extras_signature(steps[final])
+                               else store.harness_extras(steps[0])),
     )
 
 

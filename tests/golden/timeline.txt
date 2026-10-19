@@ -1,5 +1,6 @@
 run <run pilot>  pilot
   task tally-report/1 · model mock-model · 2 steps · started <when>
+  1 tool offered: read_file
 
   [0] system: You are an agent.  [IMPORTANT: The user launched this CLI session with the "tally-report" skill prel…
       skill tally-report · no recorded file matches

@@ -99,6 +99,9 @@ def test_claude_codes_turns_are_placed_in_the_views_positions(store):
     assert found["steps"][0]["copy"] == 3 and found["steps"][0]["kept"] == "same"
     assert found["steps"][1]["output"]["reasoning_content"] == "Four rows."
     assert found["tools"] == ["Skill", "Write"]
+    # Offered whole, an Anthropic tool's `input_schema` as its parameters.
+    assert found["tools_offered"] == [{"name": "Skill", "description": "", "parameters": {}},
+                                      {"name": "Write", "description": "", "parameters": {}}]
     assert [span["message_index"] for span in found["skills"]] == [5]
 
 
@@ -216,16 +219,22 @@ def test_a_subagent_is_placed_after_the_step_that_spawned_it(store):
 
 
 def test_tools_offered_that_change_between_steps_are_noted(store):
-    first = store.record_step(request=chat(user("go"), tools=[tool("read")]), response=as_response(text_message("a")))
+    read = {"type": "function", "function": {"name": "read", "description": "Read a file.",
+                                             "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}}}
+    first = store.record_step(request=chat(user("go"), tools=[read]), response=as_response(text_message("a")))
     store.record_step(
-        request=chat(user("go"), text_message("a"), user("more"), tools=[tool("read"), tool("Agent")]),
+        request=chat(user("go"), text_message("a"), user("more"), tools=[read, tool("Agent")]),
         response=as_response(text_message("b")),
     )
 
-    steps = run_timeline(store, first.run_id).to_json()["steps"]
+    found = run_timeline(store, first.run_id).to_json()
+    steps = found["steps"]
 
     assert steps[0]["extras_changed"] is None
     assert steps[1]["extras_changed"] == {"fields": ["tools"], "tools_added": ["Agent"], "tools_removed": []}
+    # What the first call offered, whole: the model reads it, though no message holds it.
+    assert found["tools_offered"] == [{"name": "read", "description": "Read a file.",
+                                       "parameters": read["function"]["parameters"]}]
 
 
 def test_an_ab_is_one_experiment_at_its_step(store):

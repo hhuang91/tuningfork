@@ -976,6 +976,21 @@ def timeline(
         f"{count} step{'' if count == 1 else 's'}", f"started {_when(target.started_at)}",
     ]
     console.print("  " + escape(" · ".join(facts)))
+    # The tools the first call offered: no message holds them, but the model reads them.
+    offered = data["tools_offered"]
+    if offered:
+        names = ", ".join(tool["name"] for tool in offered)
+        console.print("  " + escape(f"{len(offered)} tool{'' if len(offered) == 1 else 's'} offered: ") + _clip(names, full, limit=160))
+        if full:
+            for tool in offered:
+                gist = tool["description"].strip().split("\n", 1)[0]
+                console.print(f"      {escape(tool['name'])}" + (f"  [dim]{_clip(gist, False, limit=120)}[/dim]" if gist else ""))
+    else:
+        imported = (target.parity or {}).get("imported")
+        said = ("no tools offered" if not imported
+                else "no tools recorded: Hermes's export keeps none (import it again with --tools-from <run>)"
+                if imported.get("format") == "hermes-export" else "no tools recorded: the file named none")
+        console.print(f"  [dim]{escape(said)}[/dim]")
     console.print()
 
     skills: dict[int, list[dict]] = {}

@@ -13,7 +13,7 @@ import { chip, count, failure, h, kv, loading, longText, millis, outcome, plural
 import { settle } from "./nav.js";
 import { messageSize, messageView, noReasoning, outputView, toolNames } from "./payload.js";
 import { startForm, startPanel } from "./start.js";
-import { banners, detailsPanel, skillsSummary, summaryStrip, workspacePanel } from "./stepinfo.js";
+import { banners, detailsPanel, skillsSummary, summaryStrip, toolsOffered, workspacePanel } from "./stepinfo.js";
 import { tokensPanel } from "./tokens.js";
 
 const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking tokens" };
@@ -45,6 +45,9 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   let state = data;
   // The run's verdict, always the timeline's last element: "Jump to the end" lands on it.
   let verdictNode = null;
+  // The tools offered, always first: above the system prompt, as a request carries them.
+  let toolsNode = null;
+  let toolsDrawn = "";
   draw();
 
   return {
@@ -66,8 +69,42 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     gapsShown.clear();
     seen.disconnect();
     verdictNode = verdictSection();
-    replace(element, nodesFrom(0, () => true), verdictNode);
+    toolsNode = toolsSection();
+    replace(element, toolsNode, nodesFrom(0, () => true), verdictNode);
     drawRail();
+  }
+
+  /** The tools the run's first call offered, before its system prompt: the model reads them as
+   *  part of its prompt, though no message holds them. Where later calls offered others, it
+   *  says which steps; where none were recorded, why. */
+  function toolsSection() {
+    const offered = state.tools_offered || [];
+    const changed = toolChanges();
+    toolsDrawn = toolsKey();
+    if (offered.length) {
+      const note = changed.length
+        ? h("p", { class: "hint" }, "What the first call offered. Later calls offered others: ", changed.map((step, i) => {
+            const names = [...step.extras_changed.tools_added.map((name) => `+${name}`), ...step.extras_changed.tools_removed.map((name) => `−${name}`)];
+            return `${i ? "; " : ""}step ${step.idx}, ${names.join(" ")}`;
+          }), ".")
+        : null;
+      return h("div", { class: "tl-tools" }, toolsOffered(offered, { note }));
+    }
+    const imported = state.run.imported;
+    return h("p", { class: "tl-tools tl-note" }, !imported
+      ? "No tools offered: the model was sent none."
+      : imported.format === "hermes-export"
+        ? "No tools recorded: Hermes's export keeps none, so each step was rebuilt without the ones the model was offered. Imported again with Tools from naming a run recorded through the same harness, its steps take that run's."
+        : "No tools recorded: the file named none, so each step was rebuilt without any.");
+  }
+
+  /** The steps whose call offered other tools than the call before. */
+  function toolChanges() {
+    return state.steps.filter((step) => step.extras_changed?.tools_added?.length || step.extras_changed?.tools_removed?.length);
+  }
+
+  function toolsKey() {
+    return `${(state.tools_offered || []).length}|${toolChanges().map((step) => step.idx).join(",")}`;
   }
 
   /** How the run fared against its task's check, and why: the check, what it printed, and —
@@ -448,6 +485,15 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const fresh = verdictSection();
     verdictNode.replaceWith(fresh);
     verdictNode = fresh;
+    // A new step may have offered other tools: said again, left open if it was.
+    if (toolsKey() !== toolsDrawn) {
+      const open = Boolean(toolsNode.querySelector("details.tools-offered")?.open);
+      const tools = toolsSection();
+      const list = tools.querySelector("details.tools-offered");
+      if (list) list.open = open;
+      toolsNode.replaceWith(tools);
+      toolsNode = tools;
+    }
     drawRail();
   }
 }

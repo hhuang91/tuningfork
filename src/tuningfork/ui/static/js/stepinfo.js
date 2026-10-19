@@ -3,7 +3,7 @@
 // context, and the workspace its call found.
 
 import { api, enc } from "./api.js";
-import { chip, count, h, kv, millis, panel, plural, pretty, replace, short } from "./dom.js";
+import { chip, count, firstLine, h, kv, millis, panel, plural, pretty, replace, short } from "./dom.js";
 import { fileChip, skillAnchor } from "./payload.js";
 
 export function summaryStrip(step) {
@@ -107,15 +107,60 @@ export function jumpTo(id) {
   target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-export function toolsOffered(tools) {
+export function toolsOffered(tools, { note = null } = {}) {
   if (!tools?.length) return null;
-  const names = tools.map((tool) => tool.function?.name || tool.name || "?");
+  const offered = tools.map(toolOf);
   return h(
     "details",
     { class: "fold tools-offered" },
-    h("summary", null, h("span", null, `${plural(names.length, "tool")} offered: `), h("span", { class: "fold-preview" }, names.join(", "))),
-    h("pre", { class: "code" }, pretty(tools)),
+    h("summary", null, h("span", null, `${plural(offered.length, "tool")} offered`),
+      h("span", { class: "fold-preview" }, offered.map((tool) => tool.name).join(", "))),
+    note,
+    h("div", { class: "tool-list" }, offered.map(toolView)),
   );
+}
+
+/** A tool as the model reads it, whatever its wire's shape: an OpenAI function, an Anthropic
+ *  tool, or the timeline's own `{name, description, parameters}`. */
+function toolOf(tool) {
+  const spec = tool.function && typeof tool.function === "object" ? tool.function : tool;
+  return {
+    name: spec.name || "?",
+    description: typeof spec.description === "string" ? spec.description : "",
+    parameters: spec.parameters ?? spec.input_schema ?? null,
+  };
+}
+
+/** One tool on a line — its name and what it says it does — opening to the whole description
+ *  and its parameters, then the schema as sent. */
+function toolView(tool) {
+  const properties = tool.parameters?.properties && typeof tool.parameters.properties === "object" ? tool.parameters.properties : {};
+  const required = new Set(Array.isArray(tool.parameters?.required) ? tool.parameters.required : []);
+  const names = Object.keys(properties);
+  return h(
+    "details",
+    { class: "tool" },
+    h("summary", null, h("span", { class: "mono tool-name" }, tool.name), h("span", { class: "tool-gist" }, firstLine(tool.description, 160))),
+    h("div", { class: "tool-body" },
+      tool.description ? h("pre", { class: "text" }, tool.description) : h("p", { class: "muted small" }, "It says nothing of what it does."),
+      names.length
+        ? h("ul", { class: "tool-params" }, names.map((name) => {
+            const param = properties[name] && typeof properties[name] === "object" ? properties[name] : {};
+            return h("li", null, h("span", { class: "mono" }, name), h("span", { class: "faint" }, ` ${typeName(param)}`),
+              required.has(name) ? [" ", chip("required", "muted")] : null,
+              typeof param.description === "string" && param.description ? h("span", { class: "muted" }, ` — ${param.description}`) : null);
+          }))
+        : h("p", { class: "muted small" }, "No parameters."),
+      tool.parameters ? h("details", { class: "fold" }, h("summary", null, "Its parameters, as sent"), h("pre", { class: "code" }, pretty(tool.parameters))) : null),
+  );
+}
+
+function typeName(param) {
+  if (Array.isArray(param.enum)) return param.enum.map((value) => JSON.stringify(value)).join(" | ");
+  if (Array.isArray(param.type)) return param.type.join(" | ");
+  if (param.type === "array" && param.items?.type) return `${param.items.type}[]`;
+  if (Array.isArray(param.anyOf)) return param.anyOf.map((each) => each?.type || "…").join(" | ");
+  return typeof param.type === "string" ? param.type : "";
 }
 
 /** The workspace as this call found it: every tool effect before it, on disk. Only a run

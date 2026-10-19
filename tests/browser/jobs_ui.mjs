@@ -464,6 +464,19 @@ try {
       && document.querySelector(".tl-rail-verdict").textContent === "Verdict: ${said}"
       && getComputedStyle(document.querySelector(".tl-final")).borderTopColor !== ok;
   })()`), `the run ends with its verdict — ${said}, what the check printed — and so does the rail; the reply is not green`);
+  // The tools its first call offered come first, above the system prompt: no message holds
+  // them, but the model reads them.
+  const offered = shape.tools_offered.map((tool) => tool.name);
+  check(offered.length > 0 && await page.eval(`(() => {
+    const first = document.querySelector(".tl").firstElementChild;
+    const summary = first.querySelector("details.tools-offered > summary");
+    return first.classList.contains("tl-tools") && summary.textContent.startsWith("${offered.length} tools offered")
+      && first.nextElementSibling.classList.contains("tl-entry")
+      && ${shape.entries[0].message.role === "system"} === !!first.nextElementSibling.querySelector(".msg-system");
+  })()`), `the tools the first call offered come first, before the system prompt (${offered.join(", ")})`);
+  await page.eval(`document.querySelector(".tl-tools details.tools-offered").open = true`);
+  check(await page.eval(`[...document.querySelectorAll(".tl-tools .tool .tool-name")].map((n) => n.textContent).join(",")`) === offered.join(","),
+    "opened, each tool on a line of its own");
   // Opening a step happens in place: the page is not drawn again, and the address follows.
   await page.eval(`document.querySelector(".view").dataset.sentinel = "kept"`);
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
@@ -932,6 +945,8 @@ try {
     "the run says where it came from");
   const imported = (await api(`/runs/${(await page.eval("location.hash")).split("/")[2]}`)).run;
   check(imported.label === "imported: chat 1" && imported.harness === "hermes", "labelled by its session's title, its harness Hermes");
+  check(await page.eval(`(document.querySelector(".tl-tools summary")?.textContent || "").startsWith("${offered.length} tools offered")`),
+    "its steps offer the recorded run's tools, shown above its system prompt");
 
   console.log("a scenario of it: from the turn before the skill, its conversation on the scenario's page");
   await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "Make a scenario…")`), "Make a scenario… on the imported run");
@@ -946,6 +961,30 @@ try {
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Open the scenario").click()`);
   await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "The conversation it continues")`), "the scenario's conversation");
   check(await page.eval(`document.querySelector("main").textContent.includes("2 messages from an imported chat")`), "the two turns before it, as each run's context");
+
+  console.log("an import whose file kept no tools says so where they would be; a session file's tools, each opened");
+  const bare = await post("/imports", { content: exported, session: "20261018_120000_aa11bb" });
+  await page.eval(`location.hash = "#/runs/${bare.run}"`);
+  await until(() => page.eval(`!!document.querySelector(".tl-tools")`), "the bare import's page");
+  check(await page.eval(`document.querySelector(".tl-tools").textContent.startsWith("No tools recorded: Hermes's export keeps none")`),
+    "no tools recorded, and why, where they would be");
+  const sessionFile = JSON.stringify({
+    session_id: "20261018_130000_cc22dd", model: "m", base_url: "http://x/v1", platform: "cli", session_start: "2026-10-18T13:00:00",
+    system_prompt: "You are Hermes.", message_count: rows.length, messages: rows,
+    tools: [{ type: "function", function: { name: "write_file", description: "Write a file.\nIt replaces what is there.", parameters: {
+      type: "object", properties: { path: { type: "string", description: "Where to write" }, content: { type: "string" } }, required: ["path"] } } }],
+  });
+  const rich = await post("/imports", { content: sessionFile });
+  await page.eval(`location.hash = "#/runs/${rich.run}"`);
+  await until(() => page.eval(`!!document.querySelector(".tl-tools details.tools-offered")`), "the session file's tools");
+  await page.eval(`(() => { const list = document.querySelector(".tl-tools details.tools-offered"); list.open = true; list.querySelector(".tool").open = true; return true; })()`);
+  check(await page.eval(`(() => {
+    const tool = document.querySelector(".tl-tools .tool");
+    const params = [...tool.querySelectorAll(".tool-params li")].map((li) => li.textContent);
+    return tool.querySelector(".tool-gist").textContent === "Write a file."
+      && tool.querySelector(".tool-body pre.text").textContent === "Write a file.\\nIt replaces what is there."
+      && params.join(" / ") === "path string required — Where to write / content string";
+  })()`), "each tool opens to what it says it does and the parameters it takes");
 
   check(page.problems.length === 0, `no page errors${page.problems.length ? `: ${page.problems.join(" | ")}` : ""}`);
   console.log("all passed");

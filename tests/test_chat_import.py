@@ -248,6 +248,9 @@ def test_a_person_imports_from_the_terminal(store, tmp_path):
     assert done.exit_code == 0, done.output
     (run,) = store.runs(limit=10)
     assert f"imported as run {run.id[:8]}" in done.output
+    # Read back, it says what the file lacked where the tools would be.
+    shown = runner.invoke(app, ["timeline", run.id[:8], "--home", str(store.home)], env={"COLUMNS": "160"})
+    assert shown.exit_code == 0 and "no tools recorded: Hermes's export keeps none" in shown.output, shown.output
 
 
 async def test_the_web_ui_previews_then_imports(proxy_client, recorder):
