@@ -123,9 +123,11 @@ or theirs (`--prompt`), and the conversation before it — as its harness sends 
 scenario's `context.json` (`tuningfork.context`, checked by `specs.check_context`). Another turn
 (`--cut`) only where the skill could still come in live (`Start.starts`): it never came in, or came
 preloaded — a run starting before its turn is never sent that turn, one after has it in its
-context, where a variant never reaches it. The form lays out the conversation's steps from the
-prompt on, each by what a run does with it (`Start.steps`, `STEP_PARTS`: given as done, where each
-run starts, made by its model, past where it stops, after the person's next turn).
+context, where a variant never reaches it. The form sets each run beside the chat: what it is
+given — its harness's own system prompt and tools, the chat's shown and never sent
+(`scenario_choices`' `system`, `tools`), the conversation before the prompt, the prompt — then the
+steps from the prompt on, each by what a run does with it (`Start.steps`, `STEP_PARTS`: given as
+done, where each run starts, made by its model, past where it stops, after the person's next turn).
 The skill is the folder the person names, the import named or a launched run's task's (an approval
 writes there), else a copy in the scenario's own folder (`skill/<name>/`: the copy the run kept, or
 the SKILL.md the model read, given frontmatter where its harness showed none) — never the run's own

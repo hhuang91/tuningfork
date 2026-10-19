@@ -980,11 +980,19 @@ try {
     return text.includes("From message 3 of the chat") && text.includes("The person's other message is not offered")
       && document.querySelector('select[name="cut"]').closest("label").hidden; })()`),
     "their earlier message is not offered, and the page says why: there is no choice to make");
-  check(await page.eval(`(() => { const row = document.querySelector(".start-steps tbody tr");
+  check(await page.eval(`(() => { const row = document.querySelector(".start-steps tbody tr.step");
     return !!row && row.classList.contains("part-first") && row.textContent.includes("skill_view") && row.textContent.includes("each run starts here"); })()`),
     "the chat's steps from there, each run starting where the model loaded the skill");
+  check(await page.eval(`(() => { const row = (part) => document.querySelector(".start-steps tr.part-" + part)?.textContent || "";
+    return row("system").includes("You are Hermes.") && row("system").includes("its harness's own, not the chat's")
+      && row("tools").includes("${offered.length} tools offered") && row("before").includes("2 messages before the starting prompt")
+      && row("prompt").includes("Summarize data.csv into report.json.") && row("prompt").includes("sent as the person's message"); })()`),
+    "before the steps, what each run is given beside the chat's: the system prompt, the tools, the conversation before, the prompt");
   await page.type(`document.querySelector('textarea[name="prompt"]')`, "Summarize inputs/data.csv into report.json.");
   check(await page.eval(`document.querySelector('textarea[name="prompt"]').classList.contains("field-changed")`), "a prompt rewritten shows as changed");
+  check(await page.eval(`(() => { const row = document.querySelector(".start-steps tr.part-prompt").textContent;
+    return row.includes("yours, in place of the chat's") && row.includes("Summarize inputs/data.csv into report.json."); })()`),
+    "and the table says each run is sent it in place of the chat's words");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-the-chat");
   await page.click("Make the scenario");
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "Open the scenario")`), "the scenario made");
@@ -1081,8 +1089,13 @@ try {
   await until(() => page.eval(`document.querySelectorAll("main table tbody tr").length === 1`), "the filter to leave the one run");
   await page.eval(`document.querySelector("main table tbody tr a").click()`);
   await until(() => page.eval(`location.hash === "#/runs/${two.run}/scenario" && !!document.querySelector('select[name="skill"]')`), "the run's scenario form");
-  // Each row's part, and what it says a run does there.
-  const laidOut = () => page.eval(`[...document.querySelectorAll(".start-steps tbody tr")].map((row) => row.className + ":" + row.lastElementChild.textContent).join(" | ")`);
+  check(await page.eval(`(() => { const pick = document.querySelector('select[name="skill"]');
+    const prompt = document.querySelector('textarea[name="prompt"]');
+    return pick.closest("label").classList.contains("wide") && pick.classList.contains("field-ask")
+      && prompt.disabled && prompt.placeholder.startsWith("Choose the skill it studies first"); })()`),
+    "the skill asked for first, on a row of its own, and the starting prompt says to choose it");
+  // Each step's row: its part, and what it says a run does there.
+  const laidOut = () => page.eval(`[...document.querySelectorAll(".start-steps tbody tr.step")].map((row) => row.className.replace("step ", "") + ":" + row.lastElementChild.textContent).join(" | ")`);
   const study = async (skill) => {
     const before = await laidOut();
     await page.eval(`(() => { const pick = document.querySelector('select[name="skill"]'); pick.value = ${JSON.stringify(skill)}; pick.dispatchEvent(new Event("change")); return true; })()`);

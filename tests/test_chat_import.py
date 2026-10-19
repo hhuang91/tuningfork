@@ -424,6 +424,16 @@ class TestAScenarioOfAnImport:
             imports.prepare_scenario(store, result.run_id, "no-words", prompt=" \n")
         assert empty.value.field == "prompt"
 
+    def test_the_form_sees_what_the_chats_calls_held_before_the_prompt(self, store):
+        """The system prompt and the tools the chat's calls held — never sent, each run's harness
+        bringing its own — and a skill preloaded there, which each run's harness preloads too."""
+        result = imports.execute_import(store, imports.prepare_import(store, snapshot(conversation(), system=SYSTEM + PRELOADED)))
+        choices = imports.scenario_choices(store, result.run_id)
+        assert choices["system"].startswith("You are Hermes, an agent.") and "tally-report" in choices["system"]
+        assert choices["tools"] == TOOLS and choices["preloaded"] and choices["before"] == [] and choices["cut"] == 1
+        called = {"role": "assistant", "content": "", "tool_calls": [call("r1", "read_file", {"path": "data.csv"})]}
+        assert imports._gist(called) == {"role": "assistant", "said": "read_file(path='data.csv')"}
+
     def test_a_skill_the_chat_never_shows_starts_from_any_turn(self, store, tmp_path):
         """A skill the conversation never showed, named by its folder: a run can start from any of
         the person's turns, with what came before it as its context."""
@@ -513,6 +523,10 @@ class TestAScenarioOfAnImport:
         assert [(turn["message"], turn["offered"]) for turn in choices["turns"]] == [(1, False), (3, True)]
         assert choices["prompt"] == "Summarize data.csv into report.json."
         assert [(entry["step"], entry["part"]) for entry in choices["steps"]] == [(1, "first"), (2, "live"), (3, "live")]
+        # Beside the steps, what its calls held before the prompt: as the model was sent them.
+        assert choices["system"] == SYSTEM.strip() and choices["tools"] == [] and not choices["preloaded"]
+        assert choices["before"] == [{"role": "user", "said": "Our data lives in data.csv; keep reports small."},
+                                     {"role": "assistant", "said": "Understood: small reports."}]
         plan = imports.prepare_scenario(store, run.id, "as-it-happened")
         assert plan.cut == 3 and len(plan.context.before) == 2 and plan.extract == SKILL and not plan.files
         assert any("the scenario keeps the SKILL.md the model read" in warning for warning in plan.warnings)

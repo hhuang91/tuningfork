@@ -5,9 +5,10 @@
 
 import { api } from "../api.js";
 import { guard } from "../auth.js";
-import { chip, command, crumbs, h, kv, loading, panel, plural, replace } from "../dom.js";
+import { chip, command, crumbs, firstLine, h, kv, loading, longText, panel, plural, replace } from "../dom.js";
 import { field, formError, input } from "../forms.js";
 import { live } from "../live.js";
+import { toolsOffered } from "../stepinfo.js";
 
 const SOURCES = {
   preloaded: "preloaded in the system prompt",
@@ -243,14 +244,23 @@ export async function scenarioFromRunView(root, [runId]) {
   // the chat named on another machine, say, where the scenario's inputs put it.
   const prompt = h("textarea", { class: "field", name: "prompt", rows: 4, spellcheck: "false" });
   let edited = false;
+  // What each run is sent, in the table's prompt row: the chat's words, or the person's.
+  const promptRun = h("span", { class: "start-step-run" });
+  const drawPromptRun = () => replace(promptRun, edited
+    ? [chip("yours, in place of the chat's", "accent", "What you wrote above is each run's prompt."),
+       h("span", { class: "small start-prompt-yours", title: prompt.value }, firstLine(prompt.value, 80))]
+    : chip("sent as the person's message", "muted", "Each run is sent these words, as the chat had them."));
   prompt.addEventListener("input", () => {
     edited = prompt.value !== (found.prompt ?? "");
     prompt.classList.toggle("field-changed", edited);
+    drawPromptRun();
   });
   const fromNote = h("p", { class: "hint", style: { gridColumn: "1 / -1" } });
-  const about = h("p", { class: "hint" });
-  // The conversation from the starting prompt on, each step with what a run does with it: across
-  // the form's width, so that the fields after it keep their places.
+  // What it studies: under the choice of skill, or alone where there is none to make.
+  const about = h("span");
+  const several = (found.skills || []).length > 1;
+  // What each run is given and does, beside the chat: across the form's width, so that the
+  // fields after it keep their places.
   const steps = h("div", { class: "form-field wide" });
   // A launched run's task had a check: the scenario takes it unless told otherwise.
   const kind = h("select", { class: "field", name: "check_kind" });
@@ -260,6 +270,8 @@ export async function scenarioFromRunView(root, [runId]) {
     replace(studies,
       h("option", { value: "", selected: !found.skill, disabled: true }, "choose the skill it studies"),
       (found.skills || []).map((each) => h("option", { value: each, selected: each === found.skill }, each)));
+    // Asked for first: until it is chosen, nothing below can say where each run starts.
+    studies.classList.toggle("field-ask", !found.skill && (found.skills || []).length > 1);
     const offered = (found.turns || []).filter((turn) => turn.offered);
     replace(from, offered.map((turn) => h("option", { value: String(turn.message), selected: turn.message === found.cut },
       `message ${turn.message} — ${turn.text || "(no text)"}`)));
@@ -271,7 +283,13 @@ export async function scenarioFromRunView(root, [runId]) {
       edited = false;
       prompt.classList.remove("field-changed");
     }
-    prompt.disabled = found.prompt === null || found.prompt === undefined;
+    const unknown = found.prompt === null || found.prompt === undefined;
+    prompt.disabled = unknown;
+    prompt.placeholder = !unknown ? ""
+      : !found.skill && (found.skills || []).length
+        ? "Choose the skill it studies first: where each run starts, and so its prompt, depends on it."
+        : "The conversation has no message of the person's to start from.";
+    drawPromptRun();
     replace(fromNote, startNote(found, offered));
     replace(about, found.skill
       ? found.came_in
@@ -280,8 +298,8 @@ export async function scenarioFromRunView(root, [runId]) {
         : `It studies ${found.skill}, which never came into the conversation: each run starts from the message chosen.`
       : (found.skills || []).length ? "Choose the skill it studies: a scenario studies one."
         : "No skill shows in the conversation: name its folder below.");
-    replace(steps, found.cut === null || found.cut === undefined ? null
-      : [h("span", { class: "form-label" }, "From the starting prompt on, as the chat went"), stepsView(found)]);
+    replace(steps, unknown ? null
+      : [h("span", { class: "form-label" }, "Each run beside the chat: what it is given, then what it does"), stepsView(found, promptRun)]);
     const chosen = kind.value;
     replace(kind,
       hasCheck()
@@ -343,12 +361,13 @@ export async function scenarioFromRunView(root, [runId]) {
   }));
   replace(root, ...head("Make a scenario"),
     panel("The scenario", h("div", { class: "stack" },
-      about,
+      several ? null : h("p", { class: "hint" }, about),
       h("div", { class: "form-grid" },
         found.recorded_harness ? null
           : field("Harness", harness, { help: "The agent the conversation was had with: the run does not say, so this is "
             + "what its conversation looks like." }),
-        (found.skills || []).length > 1 ? field("Skill", studies, { help: "The one each run varies: it comes in live." }) : null,
+        // A row of its own, first: the rest of the form follows from it.
+        several ? field("The skill it studies", studies, { wide: true, help: about }) : null,
         field("Its folder", folder, { wide: true, help: "Where the skill lives on this machine, with its scripts and "
           + "references: the scenario tunes it there. Left empty: the folder the run's skill came from, else a copy "
           + "kept in the scenario's own folder." }),
@@ -374,8 +393,7 @@ export async function scenarioFromRunView(root, [runId]) {
 function startNote(found, offered) {
   if (found.cut === null || found.cut === undefined) return null;
   const others = (found.turns || []).length - offered.length;
-  return `From message ${found.cut} of the chat, `
-    + (found.context ? `with the ${plural(found.context, "message")} before it as each run's context.` : "with no conversation before it.")
+  return `From message ${found.cut} of the chat.`
     + (others && found.skill
       ? ` The person's ${others === 1 ? "other message is" : `${others} other messages are`} not offered: ${found.skill} `
         + `came in after message ${found.cut}, so a run starting from another would never vary it.`
@@ -391,14 +409,12 @@ const PARTS = {
 // Steps alike in a row, each shown up to this many; past it, the first two and the last.
 const FOLD = 6;
 
-// The conversation from the starting prompt on, as the chat went: each step with what a run does
-// with it — given as done, where each run starts, where it stops — a stretch of steps alike folded,
-// and the steps no run gets to in one row.
-function stepsView(found) {
+// Each run beside the chat: first what it is given — the harness's instructions and tools, the
+// conversation before the prompt, the prompt — then each step from there, as the chat went, with
+// what a run does with it: given as done, where each run starts, where it stops. A stretch of
+// steps alike is folded, and the steps no run gets to are one row.
+function stepsView(found, promptRun) {
   const steps = found.steps || [];
-  if (!steps.length) {
-    return h("p", { class: "hint" }, "The chat has no step after this message: each run starts with its model's first answer to it.");
-  }
   // Stretches of steps a run treats alike; where each starts, and a stop, are each their own.
   const groups = [];
   for (const step of steps) {
@@ -407,7 +423,9 @@ function stepsView(found) {
     if (last && last[0].part === step.part && !lone(step) && !lone(last[last.length - 1])) last.push(step);
     else groups.push([step]);
   }
-  const said = [];
+  const said = ["Each run's harness writes its own instructions and offers its own tools: the chat's are shown for "
+    + "reference, and never sent."];
+  if (!steps.length) said.push("The chat has no step after the prompt: each run starts with its model's first answer to it.");
   if (found.in_turn) {
     said.push(`The steps given as done are in each run's context, as the chat had them: ${found.skill || "the skill"} still comes in `
       + "live, loaded by the model itself.");
@@ -417,12 +435,51 @@ function stepsView(found) {
       + `${found.next_skill.step === null || found.next_skill.step === undefined ? "" : ` at step ${found.next_skill.step}`}: `
       + `each run stops where its model loads a skill other than ${found.skill || "the one studied"}, and the check judges the workspace as it is then.`);
   }
-  said.push("Where each run starts, its model makes its own steps: the ones listed after it are the chat's.");
+  if (steps.length) said.push("Where each run starts, its model makes its own steps: the ones listed after it are the chat's.");
   return [
     h("div", { class: "table-wrap" }, h("table", { class: "table start-steps" },
-      h("thead", null, h("tr", null, h("th", null, "step"), h("th", null, "in the chat"), h("th", null, "in each run"))),
-      h("tbody", null, groups.flatMap((group) => groupRows(group, found))))),
+      h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "in the chat"), h("th", null, "in each run"))),
+      h("tbody", null, givenRows(found, promptRun), groups.flatMap((group) => groupRows(group, found))))),
     h("p", { class: "hint" }, said.join(" ")),
+  ];
+}
+
+// What each run is given before its model's first answer, beside what the chat's calls held: the
+// harness's instructions and tools — each run's harness brings its own — the conversation before
+// the prompt, and the prompt.
+function givenRows(found, promptRun) {
+  const own = found.launched ? "its harness's own, as this run's" : "its harness's own, not the chat's";
+  const why = "Each run's harness writes its own instructions and offers its own tools, as tuningfork launches it"
+    + (found.launched ? " — as it did for this run" : "") + ". The chat's are shown for reference, and are never sent.";
+  const ownCell = (text) => h("td", null, h("span", { class: "faint small", title: why }, text));
+  const what = (text) => h("td", { class: "start-step-what" }, text);
+  const before = found.before || [];
+  return [
+    h("tr", { class: "given part-system" },
+      what("system prompt"),
+      h("td", { class: "start-step-body" }, found.system ? longText(found.system, { limit: 0 })
+        : h("span", { class: "muted" }, "none in the chat")),
+      ownCell(found.preloaded && found.skill ? `${own}, ${found.skill} preloaded as in the chat` : own)),
+    h("tr", { class: "given part-tools" },
+      what("tools"),
+      h("td", { class: "start-step-body" }, (found.tools || []).length ? toolsOffered(found.tools)
+        : h("span", { class: "muted" }, "none recorded in the chat")),
+      ownCell(own)),
+    before.length
+      ? h("tr", { class: "given part-before" },
+          what("before it"),
+          h("td", { class: "start-step-body" }, h("details", { class: "fold" },
+            h("summary", null, `${plural(before.length, "message")} before the starting prompt`),
+            h("ol", { class: "small start-before" }, before.map((message) =>
+              h("li", null, h("strong", null, `${message.role}: `), message.said || "(nothing)"))))),
+          h("td", null, h("span", { class: "start-step-run" }, chip("given as context", "muted",
+            "Put after the harness's instructions in every call of each run, as the chat had it."))))
+      : null,
+    h("tr", { class: "given part-prompt" },
+      what("starting prompt"),
+      h("td", { class: "start-step-body" }, h("span", { class: "faint small" }, `message ${found.cut}: `),
+        found.prompt.length <= 160 && !found.prompt.includes("\n") ? found.prompt : longText(found.prompt, { limit: 0 })),
+      h("td", null, promptRun)),
   ];
 }
 
@@ -441,8 +498,8 @@ function groupRows(group, found) {
 
 function stepRow(step, found) {
   const [say, tone, why] = PARTS[step.part] || [];
-  return h("tr", { class: `part-${step.part}` },
-    h("td", { class: "mono num" }, step.step === null ? "" : String(step.step)),
+  return h("tr", { class: `step part-${step.part}` },
+    h("td", { class: "start-step-what" }, step.step === null ? "" : `step ${step.step}`),
     h("td", { class: "mono start-step-label", title: step.label }, step.label),
     h("td", null, h("span", { class: "start-step-run" },
       say ? chip(say, tone, why) : h("span", { class: "faint small" }, "made by its model"),
@@ -453,7 +510,7 @@ function stepRow(step, found) {
 function folded(group, text) {
   const first = group[0].step;
   const last = group[group.length - 1].step;
-  const where = first === null || last === null ? "" : first === last ? String(first) : `${first}–${last}`;
-  return h("tr", { class: `folded part-${group[0].part}` },
-    h("td", { class: "mono num" }, where), h("td", { colspan: "2" }, text));
+  const where = first === null || last === null ? "" : first === last ? `step ${first}` : `steps ${first}–${last}`;
+  return h("tr", { class: `step folded part-${group[0].part}` },
+    h("td", { class: "start-step-what" }, where), h("td", { colspan: "2" }, text));
 }

@@ -220,9 +220,10 @@ prompt and everything before it each run's context.
 
 The web UI has the same, from a run's page (**Make a scenario…**) or from the Scenarios page
 (**From a run…**, which lists the runs to choose from, and imports a chat first where it is not
-a run yet). Its form lays out the conversation's steps from the starting prompt on — given as
-done, where each run starts, where it stops — for the skill chosen, and its starting prompt can
-be rewritten there. Claude Code's calls cannot yet carry a conversation before the prompt, so a
+a run yet). Its form sets each run beside the chat, for the skill chosen: first what each run is
+given — its harness's own system prompt and tools (the chat's shown, never sent), the
+conversation before the starting prompt, and the prompt, which can be rewritten there — then the
+conversation's steps from there on: given as done, where each run starts, where it stops. Claude Code's calls cannot yet carry a conversation before the prompt, so a
 scenario of a Claude Code run starts at its first turn.
 
 ## Where do the runs go wrong?

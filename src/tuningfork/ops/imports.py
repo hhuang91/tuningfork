@@ -632,13 +632,16 @@ def chat_of(store: Store, run: Any, harness: str | None = None) -> Chat:
         raise OperationError(f"run {run.id[:8]} has no step: no conversation to start from", field="run")
     last = steps[-1]
     wire = get_wire(last.wire)
-    messages = [dict(message) for message in wire.view(store.rebuild_request(last))
+    request = store.rebuild_request(last)
+    messages = [dict(message) for message in wire.view(request)
                 if isinstance(message, dict) and isinstance(message.get("role"), str)]
     answer = ((store.delivered_response(last) or {}).get("choices") or [{}])[0].get("message")
     if isinstance(answer, dict):
         messages.append(sent({"role": "assistant", **{key: value for key, value in answer.items()
                                                       if key in ("content", "tool_calls")}}))
-    chat = Chat(format="recorded", messages=messages, model=run.model, started_at=run.started_at)
+    tools = request.get("tools")
+    chat = Chat(format="recorded", messages=messages, model=run.model, started_at=run.started_at,
+                tools=tools if isinstance(tools, list) else None)
     chat.harness = harness or run.harness or _guessed_harness(chat, wire.name)
     # Each step's answer comes after the messages its call held. A scenario's run had its
     # conversation spliced into every call (OpenAI chat only), whose turns are none of its steps.
@@ -1028,7 +1031,9 @@ def scenario_choices(store: Store, reference: str, *, skill: str | None = None, 
     come in live in a run starting there; the one it starts from — `cut`, else the turn before
     the skill came in — its words, the starting prompt unless the person writes another, and the
     conversation's steps from there on, each with what a run does with it; where its runs stop;
-    and the check its task had, for a run tuningfork launched."""
+    and the check its task had, for a run tuningfork launched. Beside them, what the chat's calls
+    held before the prompt, for the whole of what each run is given: its system prompt and tools
+    — never sent, each run's harness bringing its own — and the conversation before it, in brief."""
     run = _scenario_run(store, reference)
     chat = chat_of(store, run, harness)
     harness = chat.harness or "generic"
@@ -1059,8 +1064,25 @@ def scenario_choices(store: Store, reference: str, *, skill: str | None = None, 
         "steps": start.steps if start else [],
         "context": len(start.context.before) if start else 0, "in_turn": len(start.context.in_turn) if start else 0,
         "next_skill": start.next_skill if start else None, "came_in": start.came_in if start else None,
+        "preloaded": bool(start and start.preloaded),
+        "system": _text(chat.messages[0].get("content")) if chat.system_prompt else None,
+        "tools": chat.tools or [],
+        "before": [_gist(message) for message in start.context.before] if start else [],
         "check": (task.get("tuningfork") or {}).get("check"),
     }
+
+
+def _gist(message: dict[str, Any]) -> dict[str, Any]:
+    """A message of the conversation before a prompt, on one line: an answer's calls as a run's
+    page names a step's, any other message the first line of what it says."""
+    from tuningfork.analysis.normalize import outcome_for
+
+    if message.get("role") == "assistant" and message.get("tool_calls"):
+        said = outcome_for({"choices": [{"message": message, "finish_reason": "tool_calls"}]}).label
+    else:
+        text = _text(message.get("content")).strip()
+        said = text.splitlines()[0][:160] if text else ""
+    return {"role": message.get("role"), "said": said}
 
 
 def prepare_scenario(
