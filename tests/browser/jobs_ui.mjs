@@ -477,6 +477,23 @@ try {
   await page.eval(`document.querySelector(".tl-tools details.tools-offered").open = true`);
   check(await page.eval(`[...document.querySelectorAll(".tl-tools .tool .tool-name")].map((n) => n.textContent).join(",")`) === offered.join(","),
     "opened, each tool on a line of its own");
+  // Each message the harness added after a step has a line in the rail, under that step.
+  const added = shape.entries.filter((entry) => entry.origin === "harness" && entry.after !== null);
+  const result = added.find((entry) => entry.message.role === "tool");
+  const called = shape.steps.flatMap((step) => step.output?.tool_calls || []).find((call) => call.id === result.message.tool_call_id);
+  check(added.length > 0 && await page.eval(`document.querySelectorAll(".tl-rail-result").length`) === added.length,
+    `each message the harness added has its line in the rail (${added.length})`);
+  check(await page.eval(`(() => {
+    const line = document.querySelector('.tl-rail-result[data-entry="${result.index}"]');
+    let above = line.previousElementSibling;
+    while (above && above.classList.contains("tl-rail-result")) above = above.previousElementSibling;
+    return above?.dataset.idx === "${result.after}" && line.textContent === "↳${called.function.name} result";
+  })()`), `a tool's result named for its tool, under the step that called it (${called.function.name}, step ${result.after})`);
+  await page.eval(`document.querySelector("#tm${result.index}").open = false`);
+  await page.eval(`document.querySelector('.tl-rail-result[data-entry="${result.index}"]').click()`);
+  await until(() => page.eval(`document.querySelector("#tm${result.index}").open`), "the result opened from the rail");
+  check(await page.eval(`(() => { const top = document.querySelector("#tm${result.index}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`),
+    "its line leads to it in the conversation, opened");
   // Opening a step happens in place: the page is not drawn again, and the address follows.
   await page.eval(`document.querySelector(".view").dataset.sentinel = "kept"`);
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);

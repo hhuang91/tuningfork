@@ -1243,6 +1243,12 @@ pre.code { color: var(--muted); }
 .tl-rail-error { color: var(--bad); }
 .tl-rail-retried { opacity: 0.6; }
 .tl-dot { flex: none; width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: var(--skill); }
+/* What the harness added after a step — a tool's result — on a line of its own, under it. */
+.tl-rail-result { display: flex; align-items: center; gap: 4px; padding: 1px 6px 1px 16px; border-radius: 6px; color: var(--muted); font-size: 11.5px; text-decoration: none; }
+.tl-rail-result:hover { background: var(--panel); color: var(--text); }
+.tl-rail-result.current { background: var(--accent-soft); color: var(--accent); }
+.tl-rail-arrow { flex: none; color: var(--faint); }
+.tl-entry .msg { scroll-margin-top: calc(var(--topbar) + 12px); }
 .tl-rail-verdict { margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-weight: 600; text-decoration: none; color: var(--muted); background: var(--panel-2); }
 .tl-rail-verdict.tone-ok { color: var(--ok); background: var(--ok-soft); }
 .tl-rail-verdict.tone-bad { color: var(--bad); background: var(--bad-soft); }
@@ -1273,6 +1279,8 @@ details.about-run:not([open]) > summary { border-bottom: none; }
 @media (max-width: 1000px) {
   .tl-layout { grid-template-columns: minmax(0, 1fr); }
   .tl-rail { position: static; order: -1; flex-direction: row; flex-wrap: wrap; max-height: none; padding-left: 0; border-left: none; }
+  /* A row of steps above the conversation: their results would crowd it. */
+  .tl-rail-result { display: none; }
 }
 
 /* --- trying a check (js/checktry.js) ------------------------------------------------------ */

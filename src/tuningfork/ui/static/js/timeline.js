@@ -37,9 +37,12 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   let asking = 0;
   const element = h("div", { class: "tl" });
   const rail = h("nav", { class: "tl-rail", "aria-label": "Steps of the run" });
+  // What is being read marks its line in the rail: a step, or a message the harness added.
   const seen = new IntersectionObserver((changes) => {
     for (const change of changes) {
-      if (change.isIntersecting) markCurrent(Number(change.target.dataset.idx));
+      if (!change.isIntersecting) continue;
+      const { idx, entry } = change.target.dataset;
+      markCurrent(entry !== undefined ? { entry: Number(entry) } : { idx: Number(idx) });
     }
   }, { rootMargin: "-30% 0px -60% 0px" });
   let state = data;
@@ -188,10 +191,14 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const withSkill = state.skills.some((span) => span.message_index === entry.index);
     // Short turns start open, and any carrying a skill; system prompts and long results fold.
     const open = withSkill || (entry.message.role !== "system" && messageSize(entry.message) < 1500);
-    return h("div", { class: ["tl-entry", `tl-${entry.origin}`] },
+    // A message the harness added after a step has a line of its own in the rail, under it.
+    const added = entry.origin === "harness" && entry.after !== null;
+    const node = h("div", { class: ["tl-entry", `tl-${entry.origin}`], dataset: added ? { entry: entry.index } : null },
       messageView(entry.message, entry.index, {
         spans: state.skills, names, open, recorded, extra: [tag, ...marks], idPrefix: "t",
       }));
+    if (added) seen.observe(node);
+    return node;
   }
 
   function gap(idx) {
@@ -324,9 +331,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
 
   function drawRail() {
     const verdict = verdictOf(state.run, state.launch, state.ended);
+    const names = toolNames([...state.entries.map((entry) => entry.message), ...state.steps.map((step) => step.output || {})]);
+    // What the harness added after each step — its tools' results, a turn of its own — drawn
+    // in the conversation, so each one's line leads there.
+    const added = group(state.entries.filter((entry) => entry.origin === "harness" && entry.after !== null), (entry) => entry.after);
     replace(rail,
       h("div", { class: "tl-rail-head" }, plural(state.steps.length, "step")),
-      state.steps.map((step) =>
+      state.steps.map((step) => [
         h("a", {
           class: ["tl-rail-step", step.outcome.kind === "error" && "tl-rail-error", step.kept === "retried" && "tl-rail-retried"],
           href: `${base}/${step.idx}`, dataset: { idx: step.idx },
@@ -335,7 +346,9 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
             reveal(step.idx);
           },
         }, h("span", { class: "mono" }, String(step.idx)), h("span", { class: "tl-rail-what" }, railLabel(step)),
-        step.variant || step.edited.request || step.edited.response ? h("span", { class: "tl-dot", title: "changed by tuningfork" }) : null)),
+        step.variant || step.edited.request || step.edited.response ? h("span", { class: "tl-dot", title: "changed by tuningfork" }) : null),
+        (added.get(step.idx) || []).map((entry) => railEntry(entry, step, names)),
+      ]),
       h("a", {
         class: ["tl-rail-verdict", verdict.tone], href: base, title: "What the task's check said: the end of the run",
         onclick: (event) => {
@@ -352,8 +365,27 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return finalReply(step) ? "reply" : "text";
   }
 
-  function markCurrent(idx) {
+  /** A message the harness added after `step`, on its line under it: a tool's result by the
+   *  tool's name. It leads to the message in the conversation, opened. */
+  function railEntry(entry, step, names) {
+    const message = entry.message;
+    const what = message.role === "tool" ? `${names.get(message.tool_call_id) || "tool"} result` : `${message.role} message`;
+    return h("a", {
+      class: "tl-rail-result", href: `${base}/${step.idx}`, dataset: { entry: entry.index },
+      title: `${what}, added by the harness after step ${step.idx}`,
+      onclick: (event) => {
+        event.preventDefault();
+        const shown = element.querySelector(`#tm${entry.index}`);
+        if (!shown) return;
+        shown.open = true;
+        shown.scrollIntoView({ block: "start" });
+      },
+    }, h("span", { class: "tl-rail-arrow", "aria-hidden": "true" }, "↳"), h("span", { class: "tl-rail-what" }, what));
+  }
+
+  function markCurrent({ idx = null, entry = null }) {
     for (const link of rail.querySelectorAll(".tl-rail-step")) link.classList.toggle("current", Number(link.dataset.idx) === idx);
+    for (const link of rail.querySelectorAll(".tl-rail-result")) link.classList.toggle("current", Number(link.dataset.entry) === entry);
   }
 
   // --- a step, opened -------------------------------------------------------------------------
