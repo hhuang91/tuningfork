@@ -65,6 +65,8 @@ def ancestor_memory(workspace: Path) -> list[str]:
 
 class ClaudeCodeAdapter:
     name = "claude-code"
+    #: The wire format its calls take.
+    wire = "anthropic-messages"
     requirements = (
         Requirement(
             "anthropic_messages",

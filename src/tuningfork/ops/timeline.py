@@ -49,6 +49,9 @@ def run_json(run: Run) -> dict[str, Any]:
         # For a fork: the run it replayed, and the step it went live at.
         "fork_of": run.parity.get("fork_of") if run.is_fork else None,
         "fork_step": run.parity.get("fork_step") if run.is_fork else None,
+        # Imported from a conversation an agent had elsewhere (`ops.imports`): from what, and what
+        # its file lacked.
+        "imported": run.parity.get("imported"),
         # In the trash: when, and what it went with (itself, its run, or an experiment).
         "trashed_at": run.trashed_at,
         "trashed_with": run.trashed_with,
@@ -77,6 +80,8 @@ def launch_json(launch: Launch | None) -> dict[str, Any] | None:
         "job_id": launch.job_id,
         # A fork an experiment drew is one of its samples, and goes to the trash with it.
         "experiment_id": launch.experiment_id,
+        # A scenario's run continues a conversation (`tuningfork.context`): how long, from which file.
+        "context": {key: value for key, value in (settings.get("context") or {}).items() if key != "blob"} or None,
         "workspace": launch.workspace,
         "check": describe_check(check),
         "check_kind": check_kind(check),

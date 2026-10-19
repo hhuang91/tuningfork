@@ -48,6 +48,7 @@ from tuningfork.specs import (
     CHECK_KEPT,
     CheckResult,
     Eval,
+    load_context,
     TaskSpec,
     hash_tree,
     materialize_files,
@@ -886,6 +887,17 @@ class BatchRunner(Launcher):
             shutil.copyfile(self.skill_file, snapshot / "SKILL.md")
         return snapshot
 
+    def _context(self, item: Eval, spec_dir: Path) -> dict[str, Any]:
+        """The conversation a run continues (`tuningfork.context`), kept in the store for the
+        proxy to put before the harness's own messages: its blob, how many messages, and the
+        file it was read from. A fork carries its source's (`ForkSource.context`), never the file
+        as it reads now."""
+        if not item.tuningfork.context:
+            return {}
+        messages = load_context(spec_dir, item.tuningfork.context)
+        return {"context": {"blob": self.store.blobs.put_json(messages), "messages": len(messages),
+                            "file": item.tuningfork.context}}
+
     def _run_once(
         self,
         spec: TaskSpec,
@@ -910,7 +922,8 @@ class BatchRunner(Launcher):
             skill_dir=str(skill.resolve()) if skill else None,
             workspace=str(workspace.resolve()),
             home=str(home.resolve()),
-            settings={"breakpoints": True, **layout_setting(self.adapter, self.sandbox), **settings},
+            settings={"breakpoints": True, **layout_setting(self.adapter, self.sandbox), **settings,
+                      **self._context(item, spec.directory)},
         )
         if self.on_launch:
             self.on_launch(launch, index)
@@ -940,6 +953,8 @@ class ForkSource:
     #: fork starts from exactly what its source did, whatever the spec says now.
     initial_commit: str | None = None
     skill_commit: str | None = None
+    #: The conversation the source continued (its launch's `context` setting), when it did.
+    context: dict[str, Any] | None = None
 
 
 class ForkRunner(Launcher):
@@ -978,7 +993,8 @@ class ForkRunner(Launcher):
             skill_dir=str(source.skill.resolve()) if source.skill else None,
             workspace=str(workspace.resolve()),
             home=str(home.resolve()),
-            settings={"breakpoints": source.breakpoints, **layout_setting(self.adapter, self.sandbox)},
+            settings={"breakpoints": source.breakpoints, **layout_setting(self.adapter, self.sandbox),
+                      **({"context": source.context} if source.context else {})},
             source_run=run.id,
             source_step=source.step,
             variant=source.variant,

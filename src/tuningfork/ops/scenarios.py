@@ -28,6 +28,8 @@ NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,62}")
 FOLDER = "scenarios"
 SPEC = "evals.json"
 INPUTS = "inputs"
+#: The conversation a scenario made from a chat continues (`tuningfork.context`), beside its spec.
+CONTEXT = "context.json"
 TRASH = ".trash"
 #: Limits on what can be uploaded into a scenario.
 MAX_FILE = 10 * 1024 * 1024
@@ -177,6 +179,14 @@ def check_spec(data: Any, *, home: Path | str | None = None, name: str | None = 
                     f"eval {item.get('id', index)} preloads a skill called {preloaded!r}, and the "
                     f"skill folder is {skill.name!r}: the harness finds skills by folder name"
                 )
+        context = options.get("context")
+        if home is not None and name and NAME.fullmatch(name) and isinstance(context, str) and context:
+            from tuningfork.specs import SpecError, load_context
+
+            try:
+                load_context(folder(home, name), context)
+            except SpecError as error:
+                checked.problems.append({"where": f"evals[{index}].tuningfork.context", "message": str(error)})
         if home is not None and name:
             for entry in item.get("files") or []:
                 source = entry.get("source") if isinstance(entry, dict) else None
@@ -206,6 +216,8 @@ class Scenario:
     inputs: list[InputFile]
     checked: Checked
     modified: float
+    #: The conversation it continues, as `context.json` holds it, for a scenario made from a chat.
+    context: list[dict[str, Any]] | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -215,6 +227,7 @@ class Scenario:
             "inputs": [found.to_json() for found in self.inputs],
             "checked": self.checked.to_json(),
             "modified": self.modified,
+            "context": self.context,
         }
 
 
@@ -227,9 +240,13 @@ def read_scenario(home: Path | str, name: str) -> Scenario:
         spec = json.loads(raw)
     except ValueError as exc:
         raise OperationError(f"{path} is not valid JSON: {exc}") from None
+    try:
+        context = read_context(home, name)
+    except OperationError:
+        context = None  # its problem is the spec check's to say
     return Scenario(
         name=name, spec=spec, etag=_etag(raw), inputs=inputs(home, name),
-        checked=check_spec(spec, home=home, name=name), modified=path.stat().st_mtime,
+        checked=check_spec(spec, home=home, name=name), modified=path.stat().st_mtime, context=context,
     )
 
 
@@ -318,6 +335,40 @@ def put_input(home: Path | str, name: str, relative: str, data: bytes) -> InputF
     temporary.write_bytes(data)
     os.replace(temporary, target)
     return InputFile(target.relative_to(folder(home, name) / INPUTS).as_posix(), len(data))
+
+
+def read_context(home: Path | str, name: str) -> list[dict[str, Any]] | None:
+    """The conversation the scenario continues, as its `context.json` holds it; None without one."""
+    path = folder(home, name) / CONTEXT
+    if not path.is_file():
+        return None
+    try:
+        found = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise OperationError(f"{path} is not valid JSON: {exc}") from None
+    return found if isinstance(found, list) else None
+
+
+def put_context(home: Path | str, name: str, messages: Any, *, new: bool = False) -> int:
+    """Write the conversation the scenario continues, checked as one a harness can continue
+    (`specs.check_context`). `new`: for a scenario whose spec is written next, which names it."""
+    from tuningfork.specs import SpecError, check_context
+
+    target = folder(home, name)
+    if not new and not (target / SPEC).is_file():
+        raise OperationError(f"no scenario called {name!r}", code="not_found")
+    try:
+        checked = check_context(messages)
+    except SpecError as error:
+        raise OperationError(str(error), code="invalid", field="context") from None
+    data = (json.dumps(checked, indent=1, ensure_ascii=False) + "\n").encode("utf-8")
+    if len(data) > MAX_FILE:
+        raise OperationError(f"the conversation is larger than {MAX_FILE // (1024 * 1024)} MiB", code="too_large")
+    target.mkdir(parents=True, exist_ok=True)
+    temporary = target / f".{CONTEXT}.{os.getpid()}.tmp"
+    temporary.write_bytes(data)
+    os.replace(temporary, target / CONTEXT)
+    return len(checked)
 
 
 def delete_input(home: Path | str, name: str, relative: str) -> None:

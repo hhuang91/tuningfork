@@ -120,6 +120,13 @@ class OpenAIChat:
         sent.pop("stream_options", None)
         return sent
 
+    def with_context(self, request: dict[str, Any], context: list[dict[str, Any]]) -> dict[str, Any] | None:
+        messages = list(request.get("messages") or [])
+        # After the instructions: the leading system (or developer) messages.
+        at = next((index for index, message in enumerate(messages)
+                   if not (isinstance(message, dict) and message.get("role") in ("system", "developer"))), len(messages))
+        return {**request, "messages": [*messages[:at], *copy.deepcopy(context), *messages[at:]]}
+
     def fresh_request(
         self, system: str, user: str, *, model: str | None, max_tokens: int, temperature: float | None = None
     ) -> dict[str, Any]:

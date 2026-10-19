@@ -6,7 +6,8 @@ which gives them all. For a walk through them on a real task, see
 
 - [How commands name things](#how-commands-name-things)
 - [Does my skill work?](#does-my-skill-work) — `batch`, `tasks`, `runs`, `recheck`, `label-next`, `chain`
-- [What happened in a run?](#what-happened-in-a-run) — `show`, `timeline`, `step`, `files`, `diff`, `spend`
+- [What happened in a run?](#what-happened-in-a-run) — `show`, `timeline`, `step`, `files`, `diff`, `spend`,
+  `import`
 - [Where do the runs go wrong?](#where-do-the-runs-go-wrong) — `divergence`, `tally`, `check-along`, `where`
 - [Bad luck, or the wording?](#bad-luck-or-the-wording) — `resample`, `ab`, `fork`, `experiments`
 - [Which token decided it?](#which-token-decided-it) — `tokens`, `forking-tokens`
@@ -145,6 +146,36 @@ Two runs, step by step: `tuningfork diff <runA> <runB>`.
 
 What work cost, counted from the records: model calls, tokens in and out, and time. Name the
 work with `--run`, `--experiment`, `--job`, `--chain` or `--task`.
+
+### `import`
+
+A conversation an agent had outside tuningfork, as a run: `tuningfork import session.json`. Each
+assistant turn is a step, its request rebuilt with everything before it as its context, so
+`resample`, `ab`, `forking-tokens` and `refine` work at its steps. It reads a Hermes session file
+(`~/.hermes/sessions/session_<id>.json`: its system prompt, tools and messages), Hermes's export
+(`hermes sessions export`, one session a line, without tools), or an OpenAI-style list of
+messages. It says what it found — the steps, the skills the conversation shows and from which
+step each is in context — and what the file lacked, before recording anything. The web UI's
+Runs page has the same: **Import a chat…**.
+
+- `--session <id>` — from a file of several sessions, the one to import.
+- `--skill <name>` — the skill to study, where the conversation shows several: a run studies one,
+  and the others stay in its steps as they were. Its SKILL.md is extracted from what the model
+  read; `--skill-dir <folder>` keeps the skill's own folder with the run instead, its scripts and
+  references too.
+- `--tools-from <run>` — where the file names no tools, a run recorded through the same harness
+  whose tools each step offers.
+- `--scenario <name>` — makes a scenario of it too: runs of the skill through its harness, each
+  continuing the conversation. The user turn before the skill first came in is the prompt, and
+  everything before it is each run's context (`tuningfork.context`, its `context.json`), so the
+  skill enters each run live and a variant replaces it everywhere. `--cut <message>` starts it
+  from another user turn; `--check '<command>'` or `--reply-contains <text>` gives it its check,
+  which is yours to write. An imported run's page has the same: **Make a scenario…**.
+- `--dry-run` — shows what it would import, and records nothing.
+
+The answers in it are the model's that had the conversation: an experiment at a step samples
+your server's model, given that conversation. Nothing launched an imported run, so it cannot be
+forked to the end; its scenario's runs, which tuningfork launches, can.
 
 ## Where do the runs go wrong?
 

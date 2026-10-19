@@ -279,6 +279,8 @@ def skill_category(skill_md: Path) -> str | None:
 
 class HermesAdapter:
     name = "hermes"
+    #: The wire format its calls take.
+    wire = "openai-chat"
     requirements = (
         Requirement(
             "n_ctx", minimum=64000,

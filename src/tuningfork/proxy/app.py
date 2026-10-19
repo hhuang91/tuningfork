@@ -27,6 +27,7 @@ from starlette.routing import Route
 
 from tuningfork.api import control_routes, data_routes
 from tuningfork.api.connections import connection_routes
+from tuningfork.api.imports import import_routes
 from tuningfork.api.jobs import job_routes
 from tuningfork.api.refinements import refinement_routes
 from tuningfork.api.scenarios import scenario_routes
@@ -481,12 +482,20 @@ def create_app(
         )
         if compared:
             note["workspace"] = compared
+        # A scenario's fork: what the model would have seen holds the conversation too.
+        recorded, harness_request, context = payload, None, None
+        if launch.in_context(assignment):
+            continued = wire.with_context(payload, launch.context)
+            if continued is not None:
+                recorded, harness_request, context = continued, payload, {"messages": len(launch.context)}
         spawn_recording(
             recorder.record(
                 method=request.method,
                 path=path,
                 request_body=b"",
-                request_payload=payload,
+                request_payload=recorded,
+                harness_request=harness_request,
+                context=context,
                 status=200,
                 timings=timings,
                 response_json=native,
@@ -588,13 +597,31 @@ def create_app(
                 )
                 if compared:
                     notes["replay"]["workspace"] = compared
-            if launch.replay.variant is not None:
-                sent, info = launch.replay.variant.apply(payload)
-                if info:
-                    notes["substitution"] = info
-                if sent is not payload:
-                    harness_payload, payload = payload, sent
-                    body = json.dumps(sent).encode()
+
+        # A scenario's run continues a conversation it was not given (`tuningfork.context`):
+        # put after the harness's instructions in what the model sees, each call of the main
+        # thread; the harness's own request is recorded beside it. Then a fork's variant, which
+        # replaces the skill's text wherever the model would read it, the context included.
+        if assignment is not None and launch is not None and launch.in_context(assignment):
+            continued = wire.with_context(payload, launch.context)
+            if continued is None:
+                give_back(assignment)
+                return JSONResponse(
+                    wire.error(400, f"this run continues a conversation, which a {wire.name} call cannot "
+                                    "carry yet", "tuningfork_context"),
+                    status_code=400, headers={"x-should-retry": "false"},
+                )
+            harness_payload, payload = payload, continued
+            notes["context"] = {"messages": len(launch.context)}
+        if assignment is not None and launch is not None and launch.replay is not None and launch.replay.variant is not None:
+            sent, info = launch.replay.variant.apply(payload)
+            if info:
+                notes["substitution"] = info
+            if sent is not payload:
+                harness_payload = payload if harness_payload is None else harness_payload
+                payload = sent
+        if harness_payload is not None:
+            body = json.dumps(payload).encode()
 
         # A proxy started with a cap holds every call a harness makes through it to that many
         # output tokens — a retry asking for more included: a reply looping to the harness's own
@@ -687,6 +714,7 @@ def create_app(
                     harness_request=harness_payload,
                     replay=notes.get("replay"),
                     substitution=notes.get("substitution"),
+                    context=notes.get("context"),
                     output_cap=notes.get("output_cap"),
                     workspace_commit=workspace_commit,
                 )
@@ -788,6 +816,7 @@ def create_app(
                 harness_request=harness_payload,
                 replay=notes.get("replay"),
                 substitution=notes.get("substitution"),
+                context=notes.get("context"),
                 output_cap=notes.get("output_cap"),
                 workspace_commit=workspace_commit,
             )
@@ -815,6 +844,7 @@ def create_app(
         *job_routes(store=recorder.store, runner=jobs),
         *connection_routes(),
         *scenario_routes(store=recorder.store, writable=True),
+        *import_routes(store=recorder.store),
         *refinement_routes(store=recorder.store, writable=True),
         *trash_routes(store=recorder.store, writable=True),
         *data_routes(store=recorder.store, adapters=[a() for a in ADAPTERS.values()]),

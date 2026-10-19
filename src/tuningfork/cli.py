@@ -1356,6 +1356,140 @@ def recheck(
         raise typer.Exit(code=1)
 
 
+#: How a conversation showed a skill, in words.
+SKILL_SOURCES = {"preloaded": "preloaded in the system prompt", "tool": "loaded by a call",
+                 "frontmatter": "found by its frontmatter"}
+
+
+@app.command("import")
+def import_chat(
+    file: Path = typer.Argument(
+        ..., help="A conversation: a Hermes session file (~/.hermes/sessions/session_<id>.json), a Hermes export "
+        "(`hermes sessions export`), or an OpenAI-style list of messages.",
+    ),
+    session: Optional[str] = typer.Option(
+        None, "--session", help="From a file holding several sessions, the one to import: its id, or its first characters.",
+    ),
+    skill: Optional[str] = typer.Option(
+        None, "--skill", help="The skill to study, by name, where the conversation shows more than one: one a run.",
+    ),
+    skill_dir: Optional[Path] = typer.Option(
+        None, "--skill-dir", help="The skill's folder, kept with the run in place of the SKILL.md the model read: "
+        "its scripts, templates and references too.",
+    ),
+    harness: Optional[str] = typer.Option(
+        None, "--harness", help="The harness the conversation was had with, where the file does not say "
+        "(hermes, claude-code, generic).",
+    ),
+    tools_from: Optional[str] = typer.Option(
+        None, "--tools-from", help="Where the file names no tools: a run recorded through the same harness, whose "
+        "tools each step offers.",
+    ),
+    label: Optional[str] = typer.Option(None, "--label", help="The run's label."),
+    task: Optional[str] = typer.Option(None, "--task", help="A task id to file the run under."),
+    scenario: Optional[str] = typer.Option(
+        None, "--scenario", help="Also make a scenario of it, by this name: runs of the skill through the harness, "
+        "each continuing the conversation from the user turn before the skill came in.",
+    ),
+    cut: Optional[int] = typer.Option(
+        None, "--cut", help="With --scenario: the user turn it starts from, by its message's index, in place of the "
+        "one before the skill came in.",
+    ),
+    check: Optional[str] = typer.Option(None, "--check", help="With --scenario: its check, a shell command run in each run's workspace."),
+    reply_contains: Optional[str] = typer.Option(None, "--reply-contains", help="With --scenario: its check, the final reply holds this text."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be imported, and record nothing."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """Import a conversation an agent had outside tuningfork as a run: each assistant turn a step,
+    rebuilt with everything before it as its context, so resample, ab, forking-tokens and refine
+    work at its steps. The skill under study is kept beside it. --scenario makes a scenario of it
+    too, whose runs continue the conversation."""
+    from tuningfork.ops import scenarios as scenario_files
+    from tuningfork.ops.imports import execute_import, make_scenario, prepare_import, prepare_scenario, scenario_start
+    from tuningfork.paths import resolve_path
+
+    if scenario:
+        try:
+            scenario_files.check_name(scenario)
+        except OperationError as error:
+            _refuse(error)
+    if check is not None and reply_contains is not None:
+        _refuse(OperationError("name one check: --check or --reply-contains", field="check"))
+    checked = {"reply_contains": reply_contains} if reply_contains is not None else check
+    if (cut is not None or checked is not None) and not scenario:
+        _refuse(OperationError("--cut and a check are a scenario's: name it with --scenario", field="scenario"))
+
+    try:
+        data = resolve_path(str(file)).path.read_bytes()  # a Windows path, under WSL, read as it is meant
+    except OSError as exc:
+        _refuse(OperationError(f"cannot read {file}: {exc.strerror or exc}", field="file"))
+    store = _store(home)
+    try:
+        plan = prepare_import(
+            store, data, session=session, skill=skill, skill_dir=str(skill_dir) if skill_dir else None,
+            harness=harness, label=label, task_id=task, tools_from=tools_from,
+        )
+    except OperationError as error:
+        _refuse(error)
+    shown = plan.to_json()
+    console.print(f"[bold]{escape(shown['label'])}[/bold] · {shown['format']} · {shown['harness']}")
+    if shown["session_id"]:
+        console.print(f"  session    {escape(shown['session_id'])}")
+    console.print(f"  model      {escape(shown['model'] or '-')}")
+    console.print(
+        f"  steps      {shown['steps']}, one an assistant turn, of {shown['messages']} messages; "
+        f"{'a' if shown['system_prompt'] else 'no'} system prompt, "
+        + (f"{shown['tools']} tools" + (f" from run {shown['tools_from'][:8]}" if shown["tools_from"] else "")
+           if shown["tools"] else "no tools")
+    )
+    for found in shown["skills"]:
+        where = f"in context from step {found['step']}" if found["step"] is not None else "after the last step"
+        chosen = "  [bold]← studied[/bold]" if found["name"] == shown["skill"] else ""
+        console.print(f"  skill      {escape(found['name'])} ({SKILL_SOURCES.get(found['source'], found['source'])}; "
+                      f"{where}){chosen}")
+    if not shown["skills"]:
+        console.print("  skill      [dim]none shows in the conversation[/dim]")
+    if shown["skill_dir"]:
+        console.print(f"  kept       {escape(shown['skill_dir'])}")
+    for warning in shown["warnings"]:
+        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    if scenario:
+        studied = plan.skill.name if plan.skill else (plan.skill_dir.name if plan.skill_dir else "")
+        try:
+            at, context, prompt = scenario_start(plan.chat, studied, plan.harness, cut)
+        except OperationError as error:
+            _refuse(error)
+        first = prompt.strip().splitlines()[0] if prompt.strip() else ""
+        console.print(f"  scenario   {escape(scenario)}: starts at message {at} ({_clip(first, False, limit=70)}), "
+                      f"continuing {len(context)} message(s)")
+    if dry_run:
+        console.print("\n[dim]nothing recorded (--dry-run)[/dim]")
+        return
+    # A scenario's name is checked before anything is recorded: a clash leaves no run behind.
+    if scenario and (scenario_files.folder(store.home, scenario) / scenario_files.SPEC).exists():
+        _refuse(OperationError(f"a scenario called {scenario!r} exists already", field="scenario"))
+    try:
+        result = execute_import(store, plan)
+    except OperationError as error:
+        _refuse(error)
+    run = result.run_id[:8]
+    console.print(f"\nimported as run [bold]{run}[/bold]: {result.steps} step(s)")
+    console.print(f"[dim]`tuningfork timeline {run}` reads it; `tuningfork resample {run} <step> -n 20` and "
+                  f"`tuningfork refine start {run} <step> …` work at its steps.[/dim]")
+    if not scenario:
+        return
+    try:
+        planned = prepare_scenario(store, result.run_id, scenario, cut=cut, check=checked)
+        made = make_scenario(store, planned)
+    except OperationError as error:
+        _refuse(error)
+    for warning in [*planned.warnings, *made.checked.warnings]:
+        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    spec_file = scenario_files.spec_path(store.home, scenario)
+    console.print(f"scenario [bold]{escape(scenario)}[/bold] made: {escape(str(spec_file))}")
+    console.print(f"[dim]`tuningfork batch {spec_file} -n 10` runs it, each run continuing the conversation.[/dim]")
+
+
 @app.command()
 def diff(
     run_a: str = typer.Argument(..., help="First run."),

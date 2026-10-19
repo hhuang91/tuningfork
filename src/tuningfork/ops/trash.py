@@ -420,6 +420,14 @@ def _remove(store: Store, plan: Purge, removal: Removal) -> None:
         if folder is not None:
             shutil.rmtree(folder, ignore_errors=True)
             removal.folders += 1
+    # An imported run's conversation and skill, kept beside it (`ops.imports`).
+    from tuningfork.ops.imports import root as imports
+
+    for run_id in plan.runs:
+        kept = imports(home) / run_id
+        if kept.is_dir():
+            shutil.rmtree(kept, ignore_errors=True)
+            removal.folders += 1
 
 
 def _remove_refinement(refinement: Any, variants: Sequence[Path], removal: Removal) -> None:

@@ -275,6 +275,11 @@ tuningfork's own settings under a `tuningfork` key.
 - **`max_turns`** and **`timeout`** bound a run (12 turns and 900 seconds by default);
   **`normalizers`** say which differences between two answers do not count as a different
   behaviour.
+- **`context`** names a conversation each run continues: a JSON file beside the spec holding
+  OpenAI-style user, assistant and tool messages. The proxy puts it after the harness's own
+  instructions in every call of the run, so the prompt is that conversation's next turn. A
+  scenario made from an imported chat has one (`tuningfork import <file> --scenario <name>`).
+  The harness must speak OpenAI chat, as Hermes does.
 
 `expected_output` is a note for people. Try a check before trusting it:
 `tuningfork recheck <run> --check '…'` judges a recorded run again, and `--reply` with

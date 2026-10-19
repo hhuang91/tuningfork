@@ -67,6 +67,8 @@ Inspecting and experimenting (all take `--home <recordings dir>`):
     tuningfork files <run> <k|start|end>  # the workspace as a call found it (--diff: since the step
                                           #   before; at the end, since the start; --out)
     tuningfork recheck <run> [--check …]  # try a check on a run's end state; records nothing
+    tuningfork import <chat.json>         # a conversation had elsewhere, as a run (a Hermes session
+                                          #   file or export, a message list): the step tools work on it
     tuningfork experiments / experiment   # list, or re-report without new samples
     tuningfork servers                    # which servers answered, and what each was
     tuningfork skills / skill <name>      # each version of a skill: text, pass rates (--text, --diff A B)
@@ -88,6 +90,31 @@ was and takes no new work (`refine.refuse_closed`). A fork an experiment drew go
 trash, and is deleted, only with its experiment, as a thread goes with its run
 (`trash.experiment_of_fork`): its verdict is the experiment's, kept in its sample, and taking
 single forks out of a finished screen would choose which of them count.
+
+A conversation an agent had elsewhere is imported as a run (`ops/imports.py`; `tuningfork
+import`, the Runs page's Import a chat…, `POST /imports`): a Hermes session file, its export, or
+an OpenAI-style message list. Each assistant turn is a step whose request is rebuilt from the
+history as its harness sends one — the system prompt, the messages before it, the tools where the
+file names them; an earlier turn's reasoning is never sent back (Hermes sends none to a server
+that does not ask) — so the step tools work on it. The skill under study, one a run, is found
+where its harness shows skills (`skill_spans`) and kept beside the run, `<home>/imports/<run>/`
+(the folder named, or the SKILL.md the model read, extracted), where the run's
+`parity.skill_snapshot_dir` points, as a batch run's does; the conversation is kept there too.
+Its steps are recorded under an assignment of the run's own, never a pending label a live call
+could take; nothing launched it, so it forks nowhere, and deleting it for good takes its folder.
+
+An imported run becomes a scenario (`imports.prepare_scenario`; `import --scenario`, its page's
+Make a scenario…, `POST /imports/{run}/scenario`): the user turn before the skill first came in
+(`--cut` another) is the eval's prompt, the conversation before it — as its harness sends history —
+the scenario's `context.json` (`tuningfork.context`, checked by `specs.check_context`), the skill
+the folder the import named (an approval writes there), else its extracted copy, and the check
+the person's. Each run continues that conversation: the runner keeps it as a blob named in the
+launch's `settings.context` (kept live by `Store.live_blobs`; a fork carries its source's, never
+the file as it reads now), and the proxy puts it after the harness's instructions in every call
+of the main thread (`WireFormat.with_context`; OpenAI chat only, a batch refusing a harness whose
+wire cannot carry it, a call refused rather than sent without it), recording the harness's own
+request beside the model's and a step's `context` note — never an edit, so the run still counts.
+A subagent's calls and the harness's side calls are its own: they get no context.
 
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
@@ -409,7 +436,8 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                only, through a private proxy), approve (the gate met, the code
                                typed, the skill's file written back, history and changelog
                                beside it), skills (each skill's versions, texts and rates; its
-                               folder now), glossary (the words, once); the job catalog;
+                               folder now), glossary (the words, once), imports (a conversation
+                               had elsewhere, as a run); the job catalog;
                                `common`: events, cancellation, strict parameters
     src/tuningfork/jobs.py     the job runner inside `serve`: lanes, progress, cancel, sweep
     src/tuningfork/access.py   the access token and the MCP token; endpoints.py: protected endpoints
@@ -424,7 +452,7 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     src/tuningfork/snapshots.py workspace snapshots in the home's own git object store
     src/tuningfork/breakpoints/ conditions, the hold engine, the live event bus
     src/tuningfork/api/        HTTP API for the UI and CLI: control, data, jobs, connections,
-                               scenarios, trash, refinements (and the proposer's settings);
+                               scenarios, imports, trash, refinements (and the proposer's settings);
                                guard (Host, Origin, token)
     src/tuningfork/mcp/        the operations as MCP tools: schema (which kinds, how an agent
                                may call them), tools (the registry; reads), server (the SDK's

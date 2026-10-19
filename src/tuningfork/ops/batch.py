@@ -232,6 +232,22 @@ def prepare_batch(
             f"({spec.directory}): {', '.join(map(str, missing))}",
             field="spec",
         )
+    # A scenario's conversation, read now: one the runs could not carry is refused before any runs.
+    context: list[Any] = []
+    if item.tuningfork.context:
+        from tuningfork.specs import SpecError, load_context
+        from tuningfork.wire import get_wire
+
+        try:
+            context = load_context(spec.directory, item.tuningfork.context)
+        except SpecError as exc:
+            raise OperationError(str(exc), field="spec") from None
+        speaks = getattr(adapter, "wire", "openai-chat")
+        if get_wire(speaks).with_context({"messages": []}, []) is None:
+            raise OperationError(
+                f"eval {item.id} continues a conversation, which {adapter.name}'s calls ({speaks}) cannot carry yet",
+                field="harness",
+            )
 
     server = proxy.raw.get("server") or {}
     served = [m for m in server.get("models") or [] if isinstance(m, str)]
@@ -268,6 +284,12 @@ def prepare_batch(
             "warning",
             f"eval {item.id} is held out, and its runs will be recorded here, where an agent "
             "reading these recordings can see them: it no longer tests what it was held out for",
+        ))
+    if context:
+        notes.append(Note(
+            "note",
+            f"each run continues a conversation of {len(context)} message(s) ({item.tuningfork.context}), put after "
+            f"{adapter.name}'s instructions in every call of the run: its prompt is that conversation's next turn",
         ))
     if skill_dir and skill_dir.exists():
         lookalikes = lookalike_skill_files(skill_dir)

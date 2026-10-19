@@ -110,6 +110,10 @@ class RawCompletion:
     def normalize_message(self, message: dict[str, Any]) -> dict[str, Any]:
         return message
 
+    def with_context(self, request: dict[str, Any], context: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """Never: a raw completion is a prompt, not a conversation."""
+        return None
+
     def with_user_message(
         self, request: dict[str, Any], text: str, *, answer: dict[str, Any] | None = None
     ) -> dict[str, Any]:
