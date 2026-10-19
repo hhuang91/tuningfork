@@ -124,6 +124,12 @@ export async function scenarioView(root, [name], scope) {
   const loaded = isNew ? null : await api.get(`/scenarios/${enc(name)}`);
   let draft = loaded ? structuredClone(loaded.spec) : blank();
   draft.tuningfork ??= { skill_dir: "" };
+  // A spec written elsewhere — imported from a file, made from a chat — may leave out what this
+  // page writes: each eval with every field, defaults where it is silent.
+  draft.evals = (draft.evals || []).map((item) => {
+    const blankEval = newEval(String(item.id ?? ""));
+    return { ...blankEval, ...item, tuningfork: { ...blankEval.tuningfork, ...(item.tuningfork || {}) } };
+  });
   let etag = loaded?.etag ?? null;
   let inputs = loaded?.inputs ?? [];
   let saved = JSON.stringify(cleaned(draft));
