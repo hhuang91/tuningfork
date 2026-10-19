@@ -1475,12 +1475,16 @@ def import_chat(
                 hint=f"the skills in it: {', '.join(plan.names)}", field="skill",
             ))
         try:
-            at, context, prompt = scenario_start(plan.chat, plan.study, plan.harness, cut)
+            start = scenario_start(plan.chat, plan.study, plan.harness, cut)
         except OperationError as error:
             _refuse(error)
-        first = prompt.strip().splitlines()[0] if prompt.strip() else ""
-        console.print(f"  scenario   {escape(scenario)}: starts at message {at} ({_clip(first, False, limit=70)}), "
-                      f"continuing {len(context)} message(s)")
+        first = start.prompt.strip().splitlines()[0] if start.prompt.strip() else ""
+        in_turn = len(start.context.in_turn)
+        console.print(f"  scenario   {escape(scenario)}: starts at message {start.cut} ({_clip(first, False, limit=70)}), "
+                      f"continuing {len(start.context.before)} message(s)"
+                      + (f", and {in_turn} of its turn taken as done" if in_turn else "")
+                      + (escape(f"; each run stops where the model loads a skill other than {plan.study}")
+                         if start.next_skill else ""))
     if dry_run:
         console.print("\n[dim]nothing recorded (--dry-run)[/dim]")
         return

@@ -113,7 +113,11 @@ export async function runView(root, [reference, focus], scope) {
 function subLine({ run, steps, launch }) {
   const parts = [plural(steps.length, "step"), run.harness, run.model, `started ${when(run.started_at)}`];
   if (run.fork_of) parts.push(`a fork of run ${short(run.fork_of)}, live from step ${run.fork_step}`);
-  if (launch?.context) parts.push(`continuing a conversation of ${plural(launch.context.messages, "message")} (${launch.context.file})`);
+  if (launch?.context) {
+    parts.push(`continuing a conversation of ${plural(launch.context.messages, "message")}`
+      + (launch.context.in_turn ? `, and ${plural(launch.context.in_turn, "earlier step")} of its turn` : "")
+      + ` (${launch.context.file})`);
+  }
   if (run.imported) {
     const from = run.imported.format === "hermes-export" ? "a Hermes export" : run.imported.format === "hermes-snapshot"
       ? "a Hermes session file" : "a list of messages";

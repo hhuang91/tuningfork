@@ -333,6 +333,15 @@ class TestTheContext:
         assert [m["content"] for m in sent["messages"]] == ["be good", "earlier", "noted", "now"]
         assert request["messages"][1]["content"] == "now"  # the harness's own request untouched
         assert get_wire("anthropic-messages").with_context(request, context) is None
+        # The model's earlier steps of the prompt's own turn go right after the prompt, before
+        # whatever the harness's own conversation holds after it.
+        in_turn = [{"role": "assistant", "content": "", "tool_calls": [call("t1", "skill_view", {"name": "csv-tidy"})]},
+                   {"role": "tool", "tool_call_id": "t1", "content": "tidy"}]
+        going = {**request, "messages": [*request["messages"], {"role": "assistant", "content": "next"}]}
+        sent = get_wire("openai-chat").with_context(going, context, in_turn)
+        assert [m["role"] for m in sent["messages"]] == ["system", "user", "assistant", "user", "assistant", "tool", "assistant"]
+        assert sent["messages"][3]["content"] == "now" and sent["messages"][4:6] == in_turn
+        assert get_wire("openai-chat").with_context({"messages": [{"role": "system", "content": "x"}]}, [], in_turn) is None
 
     def test_it_is_checked_as_a_conversation_a_harness_can_continue(self):
         from tuningfork.specs import SpecError, check_context, validate_spec
@@ -350,6 +359,27 @@ class TestTheContext:
         problems = validate_spec({"skill_name": "s", "evals": [{"id": "1", "prompt": "p", "tuningfork": {"context": "../x.json"}}]})
         assert any(problem.where.endswith("tuningfork.context") for problem in problems)
 
+    def test_the_prompts_own_turn_is_checked_as_the_model_left_it(self):
+        from tuningfork.specs import SpecError, check_context, validate_spec
+
+        loaded = [{"role": "assistant", "content": "", "tool_calls": [call("t1", "skill_view", {"name": "csv-tidy"})]},
+                  {"role": "tool", "tool_call_id": "t1", "content": "tidy"}]
+        found = check_context({"before": [], "in_turn": loaded})
+        assert found.before == [] and found.in_turn == loaded and found.to_json() == {"before": [], "in_turn": loaded}
+        assert check_context([{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]).to_json() == [
+            {"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}]
+        for bad, said in (
+            ({"before": [], "in_turn": []}, "holds no message"),
+            ({"in_turn": [{"role": "tool", "tool_call_id": "t1", "content": "x"}]}, "starts with the model's first answer"),
+            ({"in_turn": loaded[:1]}, "in_turn ends with a tool call not answered"),
+            ({"in_turn": [*loaded, {"role": "assistant", "content": "done"}]}, "the turn was over"),
+            ({"before": [], "after": []}, "must be a list of messages, or"),
+        ):
+            with pytest.raises(SpecError, match=said):
+                check_context(bad)
+        stopping = {"skill_name": "s", "evals": [{"id": "1", "prompt": "p", "tuningfork": {"stop_at_next_skill": "yes"}}]}
+        assert any(problem.where.endswith("stop_at_next_skill") for problem in validate_spec(stopping))
+
 
 class TestAScenarioOfAnImport:
     def test_it_starts_at_the_turn_before_the_skill_came_in(self, store):
@@ -357,11 +387,11 @@ class TestAScenarioOfAnImport:
         plan = imports.prepare_scenario(store, result.run_id, "tally-chat", check={"reply_contains": "report.json"})
         # system 0, the earlier turn 1-2, the task's turn 3, then the skill_view.
         assert plan.cut == 3 and plan.prompt == "Summarize data.csv into report.json."
-        assert plan.context == [{"role": "user", "content": "Our data lives in data.csv; keep reports small."},
+        assert plan.context.in_turn == [] and plan.context.before == [{"role": "user", "content": "Our data lives in data.csv; keep reports small."},
                                 {"role": "assistant", "content": "Understood: small reports."}]  # no reasoning sent back
         assert any("SKILL.md the import extracted" in warning for warning in plan.warnings)
         made = imports.make_scenario(store, plan)
-        assert made.checked.ok and made.context == plan.context
+        assert made.checked.ok and made.context == plan.context.before
         (item,) = made.spec["evals"]
         assert item["prompt"] == plan.prompt and item["tuningfork"]["context"] == "context.json"
         assert item["tuningfork"]["check"] == {"reply_contains": "report.json"}
@@ -372,7 +402,7 @@ class TestAScenarioOfAnImport:
         with pytest.raises(OperationError, match="not a user turn"):
             imports.prepare_scenario(store, result.run_id, "other", cut=2)
         first = imports.prepare_scenario(store, result.run_id, "from-the-start", cut=1)
-        assert first.context == [] and "context" not in imports.make_scenario(store, first).spec["evals"][0]["tuningfork"]
+        assert not first.context.messages and "context" not in imports.make_scenario(store, first).spec["evals"][0]["tuningfork"]
         assert any("no check" in warning for warning in first.warnings)
 
     def test_its_conversation_goes_as_its_harness_would_have_sent_it(self, store):
@@ -383,8 +413,33 @@ class TestAScenarioOfAnImport:
         data = export(earlier + conversation(("tally-report", SKILL)))
         result = imports.execute_import(store, imports.prepare_import(store, data))
         plan = imports.prepare_scenario(store, result.run_id, "as-sent")
-        assert plan.context == [{"role": "user", "content": "Our data lives in data.csv."},
+        assert plan.context.before == [{"role": "user", "content": "Our data lives in data.csv."},
                                 {"role": "assistant", "content": "Understood."}]
+
+    def test_a_skill_loaded_later_in_its_turn_starts_after_the_steps_before_it(self, store):
+        """One turn that loaded two skills: a scenario of the second starts after the first one's
+        load and result, taken as done, and one of the first stops its runs where the chat went on
+        to the second."""
+        from tuningfork.ops import scenarios
+
+        rows = conversation(("csv-tidy", OTHER), ("tally-report", SKILL))
+        result = imports.execute_import(store, imports.prepare_import(store, export(rows)))
+        plan = imports.prepare_scenario(store, result.run_id, "after-tidy", skill="tally-report")
+        assert plan.cut == 1 and plan.context.before == [] and plan.next_skill is None
+        assert [message["role"] for message in plan.context.in_turn] == ["assistant", "tool"]
+        assert plan.context.in_turn[0]["tool_calls"][0]["function"]["arguments"] == '{"name":"csv-tidy"}'  # as sent
+        assert any("first 2 message(s) of that turn, taken as done" in warning for warning in plan.warnings)
+        made = imports.make_scenario(store, plan)
+        assert made.checked.ok and made.spec["evals"][0]["tuningfork"]["context"] == "context.json"
+        assert scenarios.read_context(store.home, "after-tidy") == {"before": [], "in_turn": plan.context.in_turn}
+        assert "stop_at_next_skill" not in made.spec["evals"][0]["tuningfork"]
+
+        first = imports.prepare_scenario(store, result.run_id, "tidy-only", skill="csv-tidy",
+                                         check={"reply_contains": "report"})
+        assert not first.context.messages and first.next_skill == {"skill": "tally-report", "step": 1}
+        assert first.spec()["evals"][0]["tuningfork"]["stop_at_next_skill"] is True
+        assert any("each run stops where the model loads a skill other than csv-tidy" in warning
+                   and "a check of the final reply finds none there" in warning for warning in first.warnings)
 
     def test_the_skills_own_folder_is_the_one_it_tunes(self, store, tmp_path):
         folder = tmp_path / "tally-report"
@@ -451,6 +506,54 @@ def test_a_scenarios_runs_continue_its_conversation_and_their_forks_too(stack):
     forked = settled(stack.store, fork.run_id, 3)
     assert forked[0].served and all(stack.store.rebuild_request(step)["messages"][1:3] == context for step in forked)
     assert stack.mock.requests[-1]["messages"][1:3] == context
+
+
+def test_a_run_takes_its_turns_earlier_steps_as_done_and_stops_at_the_next_skill(stack, monkeypatch):
+    """The model's earlier steps of the prompt's turn reach it after the prompt in every call of
+    the run; the run ends where the model loads a skill other than the one studied: the call
+    after that answer is never sent, the harness is ended, and the check judges the workspace
+    as it is then. The run still counts, and says where it stopped."""
+    import re
+
+    from tests.helpers import FakeAgent
+    from tests.mock_server import MockTurn
+    from tuningfork.harness import ADAPTERS
+
+    class Loading(FakeAgent):
+        def skill_load(self, call):
+            function = call.get("function") or {}
+            return json.loads(function.get("arguments") or "{}").get("name") if function.get("name") == "skill_view" else None
+
+    monkeypatch.setitem(ADAPTERS, "fake", Loading)
+    in_turn = [{"role": "assistant", "content": "", "tool_calls": [call("t0", "skill_view", {"name": "csv-tidy"})]},
+               {"role": "tool", "tool_call_id": "t0", "content": "the csv-tidy skill: sort the rows"}]
+    (stack.tmp / "context.json").write_text(json.dumps({"before": [], "in_turn": in_turn}), encoding="utf-8")
+    stack.item.tuningfork.context = "context.json"
+    stack.item.tuningfork.stop_at_next_skill = True
+
+    def model(payload):
+        messages = payload["messages"]
+        assert [m["role"] for m in messages[:2]] == ["system", "user"] and messages[2:4] == in_turn
+        called = [c["function"]["name"] for m in messages[4:] if m["role"] == "assistant" for c in m.get("tool_calls") or []]
+        workdir = re.search(r"Working directory: (\S+)", messages[0]["content"]).group(1)
+        if not called:
+            return MockTurn(tool_calls=[{"name": "write_file", "arguments": {
+                "path": f"{workdir}/report.json", "content": json.dumps({"row_count": 4, "amount_total": 61.5})}}])
+        if called == ["write_file"]:
+            return MockTurn(tool_calls=[{"name": "skill_view", "arguments": {"name": "another-skill"}}])
+        return MockTurn(content="went on past the next skill")
+
+    stack.mock.responder = model
+    outcome = stack.record()
+    assert outcome.stopped == {"skill": "another-skill", "after_step": 1} and outcome.usable, outcome.stderr
+    assert outcome.passed  # the check judged the report written before the stop
+    steps = stack.store.steps(outcome.run_id)
+    assert [step.idx for step in steps] == [0, 1] and all(step.context == {"messages": 0, "in_turn": 2} for step in steps)
+    assert all(len(stack.store.harness_request(step)["messages"]) + 2 == len(stack.store.rebuild_request(step)["messages"])
+               for step in steps)
+    assert len(stack.mock.requests) == 2  # the call after the skill's load never reached the model
+    run = stack.store.get_run(outcome.run_id)
+    assert run.result["stopped_at_skill"] == {"skill": "another-skill", "after_step": 1}
 
 
 def test_a_scenario_from_the_terminal(store, tmp_path):

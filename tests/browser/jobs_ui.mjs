@@ -1044,6 +1044,21 @@ try {
   await until(() => page.eval(`(document.querySelector('.start-panel textarea[name="variant_text"]')?.value || "").includes("name: csv-tidy")`), "the chosen skill's text to edit");
   check(true, "the A/B form edits the skill chosen, after asking which");
 
+  console.log("a scenario of the second skill takes the first one's steps as done; one of the first stops at the second");
+  const later = await post(`/imports/${two.run}/scenario`, { name: "after-tidy", skill: "tally-report" });
+  check(later.warnings.some((warning) => warning.includes("first 2 message(s) of that turn, taken as done")),
+    "a scenario of the second skill takes the first one's steps as done");
+  await page.eval(`location.hash = "#/scenarios/after-tidy"`);
+  await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "The conversation it continues")`), "the scenario's conversation");
+  check(await page.eval(`(() => { const text = document.querySelector("main").textContent;
+    return text.includes("In the prompt's turn, taken as done") && text.includes("Then 2 messages of that turn"); })()`),
+    "its page shows the turn's earlier steps, taken as done");
+  const tidy = await post(`/imports/${two.run}/scenario`, { name: "tidy-only", skill: "csv-tidy" });
+  check(tidy.scenario.spec.evals[0].tuningfork.stop_at_next_skill === true, "a scenario of the first skill stops each run at the next");
+  await page.eval(`location.hash = "#/scenarios/tidy-only"`);
+  await until(() => page.eval(`!!document.querySelector('input[name="stop-0"]')`), "the eval's stop");
+  check(await page.eval(`document.querySelector('input[name="stop-0"]').checked`), "its page says each run stops where another skill loads");
+
   check(page.problems.length === 0, `no page errors${page.problems.length ? `: ${page.problems.join(" | ")}` : ""}`);
   console.log("all passed");
 } catch (error) {

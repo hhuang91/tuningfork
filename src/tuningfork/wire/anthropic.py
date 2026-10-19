@@ -513,7 +513,9 @@ class AnthropicMessages:
     def auth_headers(self, key: str) -> dict[str, str]:
         return {"x-api-key": key, "anthropic-version": "2023-06-01"}
 
-    def with_context(self, request: dict[str, Any], context: list[dict[str, Any]]) -> dict[str, Any] | None:
+    def with_context(
+        self, request: dict[str, Any], before: list[dict[str, Any]], in_turn: list[dict[str, Any]] = ()
+    ) -> dict[str, Any] | None:
         """Not yet: a context is OpenAI-style messages, and these are content blocks."""
         return None
 

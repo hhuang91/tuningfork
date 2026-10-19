@@ -11,7 +11,7 @@ proxy and recorded today. An adapter is what lets tuningfork
 
 ## What an adapter must provide
 
-Four methods, defined in `tuningfork/harness/base.py`, and three optional:
+Four methods, defined in `tuningfork/harness/base.py`, and four optional:
 
 | Method | Purpose |
 |---|---|
@@ -22,6 +22,7 @@ Four methods, defined in `tuningfork/harness/base.py`, and three optional:
 | `isolation_warnings(workdir)` *(optional)* | What could still reach every run from outside it, printed before a batch starts |
 | `as_sent(messages)` *(optional)* | A kept history as the harness sends it — what it changes in its own copy before every call — for a request rebuilt from an imported chat |
 | `harness_note(message)` *(optional)* | A user message the harness wrote itself (a reminder, a nudge to go on), named in a few words, or `None` for a person's turn |
+| `skill_load(call)` *(optional)* | The skill a tool call loads, by name: where a scenario's run that stops at the next skill ends |
 
 And four optional attributes:
 

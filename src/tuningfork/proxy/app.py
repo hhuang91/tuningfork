@@ -41,7 +41,7 @@ from tuningfork.breakpoints import BreakpointEngine, EventBus
 from tuningfork.config import EXPERIMENT_HEADER, Settings
 from tuningfork.launches import split as split_launch
 from tuningfork.proxy.held import BreakpointPath
-from tuningfork.proxy.launches import LaunchRegistry, Refusal
+from tuningfork.proxy.launches import LaunchRegistry, Refusal, context_note
 from tuningfork.proxy.recorder import ANSWERED, Recorder, Timings, fetch_server_identity, read_server
 from tuningfork.proxy.sse import SSEParser, unreadable
 from tuningfork.snapshots import SnapshotError, Snapshots
@@ -485,9 +485,9 @@ def create_app(
         # A scenario's fork: what the model would have seen holds the conversation too.
         recorded, harness_request, context = payload, None, None
         if launch.in_context(assignment):
-            continued = wire.with_context(payload, launch.context)
+            continued = wire.with_context(payload, launch.context.before, launch.context.in_turn)
             if continued is not None:
-                recorded, harness_request, context = continued, payload, {"messages": len(launch.context)}
+                recorded, harness_request, context = continued, payload, context_note(launch.context)
         spawn_recording(
             recorder.record(
                 method=request.method,
@@ -598,12 +598,30 @@ def create_app(
                 if compared:
                     notes["replay"]["workspace"] = compared
 
+        # A scenario's run that stops at the next skill (`tuningfork.stop_at_next_skill`) ends
+        # here, when the answer the harness sends back loaded a skill other than the one it
+        # studies: the call is never sent, nor recorded, and the launch says where it stopped,
+        # for its runner to end the harness and judge the workspace as it is.
+        if assignment is not None and launch is not None and launch.studied:
+            loaded = launch.next_skill(payload, wire, assignment)
+            if loaded is not None or launch.stopped is not None:
+                if launch.stopped is None:
+                    launch.stopped = {"skill": loaded, "after_step": assignment.idx - 1}
+                    await asyncio.to_thread(recorder.store.note_launch, launch.launch.id, stopped_at_skill=launch.stopped)
+                give_back(assignment)
+                return JSONResponse(
+                    wire.error(400, f"this run ends where the model loads {launch.stopped['skill']}: its scenario "
+                                    f"studies {launch.studied} alone", "tuningfork_stopped"),
+                    status_code=400, headers={"x-should-retry": "false"},
+                )
+
         # A scenario's run continues a conversation it was not given (`tuningfork.context`):
         # put after the harness's instructions in what the model sees, each call of the main
-        # thread; the harness's own request is recorded beside it. Then a fork's variant, which
-        # replaces the skill's text wherever the model would read it, the context included.
+        # thread — and the model's earlier steps of the prompt's turn after the prompt; the
+        # harness's own request is recorded beside it. Then a fork's variant, which replaces the
+        # skill's text wherever the model would read it, the context included.
         if assignment is not None and launch is not None and launch.in_context(assignment):
-            continued = wire.with_context(payload, launch.context)
+            continued = wire.with_context(payload, launch.context.before, launch.context.in_turn)
             if continued is None:
                 give_back(assignment)
                 return JSONResponse(
@@ -612,7 +630,7 @@ def create_app(
                     status_code=400, headers={"x-should-retry": "false"},
                 )
             harness_payload, payload = payload, continued
-            notes["context"] = {"messages": len(launch.context)}
+            notes["context"] = context_note(launch.context)
         if assignment is not None and launch is not None and launch.replay is not None and launch.replay.variant is not None:
             sent, info = launch.replay.variant.apply(payload)
             if info:

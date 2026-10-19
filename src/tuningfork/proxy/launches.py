@@ -15,6 +15,7 @@ from typing import Any, Callable, Sequence
 
 from tuningfork.launches import Assignment, LaunchThreads, request_path
 from tuningfork.proxy.replay import ForkReplay
+from tuningfork.specs import Context
 from tuningfork.store.db import Launch, Store
 
 #: Launches kept in memory before finished ones are dropped.
@@ -46,6 +47,25 @@ def side_call_for(harness: str | None) -> Callable[[dict[str, Any]], str | None]
     return getattr(adapter(), "side_call", None) if adapter else None
 
 
+def skill_load_for(harness: str | None) -> Callable[[dict[str, Any]], str | None] | None:
+    """How the harness's calls name the skill they load, if it says (see `HarnessAdapter`)."""
+    from tuningfork.harness import ADAPTERS
+
+    adapter = ADAPTERS.get(harness or "")
+    return getattr(adapter(), "skill_load", None) if adapter else None
+
+
+def context_note(context: Context) -> dict[str, Any]:
+    """What a step records of the conversation put into its call: how many messages before
+    the prompt, and in the prompt's turn."""
+    return {"messages": len(context.before), **({"in_turn": len(context.in_turn)} if context.in_turn else {})}
+
+
+def _skill_key(name: str) -> str:
+    """A skill's name as two calls may give it: a category before it, or another case."""
+    return name.strip().rsplit("/", 1)[-1].lower()
+
+
 class LaunchState:
     def __init__(self, launch: Launch, patterns: Sequence[str], store: Store | None = None) -> None:
         self.launch = launch
@@ -62,11 +82,19 @@ class LaunchState:
         if launch.kind == "fork" and store is not None:
             self.replay = ForkReplay(store, launch, self.patterns, volatile_for(launch.harness))
         #: For a scenario's run: the conversation it continues (`tuningfork.context`), put
-        #: before the harness's own messages in each call of its main thread.
-        self.context: list[dict[str, Any]] | None = None
+        #: before the harness's own messages in each call of its main thread — and the model's
+        #: earlier steps of the prompt's turn, after the prompt.
+        self.context: Context | None = None
         kept = launch.settings.get("context")
         if isinstance(kept, dict) and kept.get("blob") and store is not None:
-            self.context = store.blobs.get_json(kept["blob"])
+            self.context = Context.read(store.blobs.get_json(kept["blob"]))
+        #: For a scenario's run that ends where the model loads another skill
+        #: (`tuningfork.stop_at_next_skill`): the skill it studies, how the harness's calls
+        #: name the skill they load, and — once it has ended there — where.
+        stop = launch.settings.get("stop_at_next_skill")
+        self.studied: str | None = stop.get("skill") if isinstance(stop, dict) else None
+        self.skill_load = skill_load_for(launch.harness) if self.studied else None
+        self.stopped: dict[str, Any] | None = launch.settings.get("stopped_at_skill")
         #: One snapshot at a time: a launch's threads can call at once, and each snapshot
         #: moves the launch's ref.
         self.snapshot_lock = threading.Lock()
@@ -76,6 +104,21 @@ class LaunchState:
         A subagent's has its own task, and the harness's side calls (Hermes's review) are its
         own, not the task's next step."""
         return self.context is not None and assignment.main
+
+    def next_skill(self, payload: dict[str, Any], wire: Any, assignment: Assignment) -> str | None:
+        """The skill other than the one studied that the model's latest answer loads, as the
+        harness sends it back in this call of the main thread: where a run that stops at the
+        next skill ends. None for any other call."""
+        if self.skill_load is None or not assignment.main:
+            return None
+        view = wire.view(payload)
+        latest = next((message for message in reversed(view)
+                       if isinstance(message, dict) and message.get("role") == "assistant"), None)
+        for call in (latest or {}).get("tool_calls") or []:
+            loaded = self.skill_load(call)
+            if loaded and _skill_key(loaded) != _skill_key(self.studied or ""):
+                return loaded
+        return None
 
     @property
     def workspace(self) -> str | None:

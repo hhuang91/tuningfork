@@ -120,12 +120,23 @@ class OpenAIChat:
         sent.pop("stream_options", None)
         return sent
 
-    def with_context(self, request: dict[str, Any], context: list[dict[str, Any]]) -> dict[str, Any] | None:
+    def with_context(
+        self, request: dict[str, Any], before: list[dict[str, Any]], in_turn: list[dict[str, Any]] = ()
+    ) -> dict[str, Any] | None:
         messages = list(request.get("messages") or [])
         # After the instructions: the leading system (or developer) messages.
         at = next((index for index, message in enumerate(messages)
                    if not (isinstance(message, dict) and message.get("role") in ("system", "developer"))), len(messages))
-        return {**request, "messages": [*messages[:at], *copy.deepcopy(context), *messages[at:]]}
+        rest = messages[at:]
+        if in_turn:
+            # The model's earlier steps of its turn go after the prompt: the harness's first
+            # user message. A call without one has no turn to put them in.
+            prompt = next((index for index, message in enumerate(rest)
+                           if isinstance(message, dict) and message.get("role") == "user"), None)
+            if prompt is None:
+                return None
+            rest = [*rest[:prompt + 1], *copy.deepcopy(list(in_turn)), *rest[prompt + 1:]]
+        return {**request, "messages": [*messages[:at], *copy.deepcopy(before), *rest]}
 
     def fresh_request(
         self, system: str, user: str, *, model: str | None, max_tokens: int, temperature: float | None = None

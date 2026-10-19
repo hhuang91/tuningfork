@@ -60,6 +60,10 @@ from tuningfork.store.db import Launch, Run, Step, Store
 
 logger = logging.getLogger("tuningfork.runner")
 
+#: How often a run that stops at the next skill asks whether it has: the harness's call after
+#: that answer is refused, so it ends within this, or on its own.
+STOP_POLL = 0.5
+
 
 @dataclass(slots=True)
 class RunOutcome:
@@ -100,6 +104,10 @@ class RunOutcome:
     #: What the harness was told after the check, when it was (`Launcher.tell`): the message,
     #: and how that turn's process ended.
     told: dict[str, Any] | None = None
+    #: Where a scenario's run ended beside its skill (`tuningfork.stop_at_next_skill`): the
+    #: skill the model loaded next, and the step whose answer loaded it. Counted: the scenario
+    #: ends there, and the check judged the workspace as it was.
+    stopped: dict[str, Any] | None = None
 
     @property
     def usable(self) -> bool:
@@ -168,6 +176,8 @@ class RunOutcome:
             )
         if self.told is not None:
             result["told"] = self.told
+        if self.stopped is not None:
+            result["stopped_at_skill"] = self.stopped
         return result
 
 
@@ -233,6 +243,9 @@ class Exit:
     timed_out: bool = False
     #: Killed because the work was cancelled: how it would have ended is unknown.
     cancelled: bool = False
+    #: Ended where the model loaded a skill other than the one its scenario studies, as the
+    #: proxy marked it (`tuningfork.stop_at_next_skill`): which skill, after which step.
+    stopped: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -469,7 +482,8 @@ class Launcher:
             )
             if self.sandbox is not None:
                 spec_ = self.sandbox.wrap(spec_, home=home, workspace=workspace)
-            exited = self._execute(spec_, workspace, item, timeout=self._limit(item, started))
+            exited = self._execute(spec_, workspace, item, timeout=self._limit(item, started),
+                                   stopped=self._stop_mark(launch))
         except Cancelled as stopped:
             self._stopped(launch, workspace, stopped.reason, time.monotonic() - started, annotate)
             raise
@@ -493,7 +507,7 @@ class Launcher:
         check = run_check(item.tuningfork.check, workspace, reply=reply, reply_file=reply_file, spec_dir=spec_dir)
         told = None
         if (
-            self.tell and item.tuningfork.check and not timed_out
+            self.tell and item.tuningfork.check and not timed_out and exited.stopped is None
             and getattr(self.adapter, "continue_launch", None) is not None
         ):
             told = self._tell(launch, item, check, home, workspace, annotate, started)
@@ -503,6 +517,7 @@ class Launcher:
             exit={
                 "returncode": returncode, "timed_out": timed_out, "duration_s": round(duration, 2),
                 **({"told": told} if told else {}),
+                **({"stopped_at_skill": exited.stopped} if exited.stopped else {}),
                 **({"cap_seconds": self.launch_seconds} if self.launch_seconds is not None else {}),
             },
         )
@@ -524,6 +539,7 @@ class Launcher:
             checked=bool(item.tuningfork.check),
             annotate={**annotate, "skill_hashes": before, "parity": parity},
             told=told,
+            stopped=exited.stopped,
         )
 
     def _tell(
@@ -629,6 +645,7 @@ class Launcher:
         checked: bool,
         annotate: dict[str, Any],
         told: dict[str, Any] | None = None,
+        stopped: dict[str, Any] | None = None,
     ) -> RunOutcome:
         """How a finished launch went, filed on its main run. `runs` are the launch's runs,
         every step recorded (`_settle`) and its threads classified."""
@@ -661,6 +678,7 @@ class Launcher:
             thread_trouble=trouble,
             launch_id=launch.id,
             told=told,
+            stopped=stopped,
         )
         if launch.kind == "fork" and launch.source_step is not None:
             k = launch.source_step
@@ -694,12 +712,29 @@ class Launcher:
             return None
         return max(1.0, min(item.tuningfork.timeout, self.launch_seconds - (time.monotonic() - started)))
 
-    def _execute(self, launch: LaunchSpec, workspace: Path, item: Eval, *, timeout: float | None = None) -> Exit:
+    def _stop_mark(self, launch: Launch) -> Callable[[], dict[str, Any] | None] | None:
+        """For a run that stops at the next skill: where the proxy said it stopped, once it
+        has (`Store.note_launch`). None for any other run."""
+        if not launch.settings.get("stop_at_next_skill"):
+            return None
+
+        def mark() -> dict[str, Any] | None:
+            found = self.store.get_launch(launch.id)
+            return found.settings.get("stopped_at_skill") if found is not None else None
+
+        return mark
+
+    def _execute(
+        self, launch: LaunchSpec, workspace: Path, item: Eval, *, timeout: float | None = None,
+        stopped: Callable[[], dict[str, Any] | None] | None = None,
+    ) -> Exit:
         """Run the harness once, and say how it ended.
 
         The harness gets a process group of its own, and a timeout or a cancel kills the
         whole group: a harness's children — a shell it started, a subagent's tool — would
-        otherwise outlive it, still writing into the workspace.
+        otherwise outlive it, still writing into the workspace. With `stopped`, it is asked
+        every half second whether the run has ended where its scenario stops (the model loaded
+        another skill, `tuningfork.stop_at_next_skill`); then the harness goes the same way.
         """
         limit = item.tuningfork.timeout if timeout is None else timeout
         group = {"start_new_session": True} if os.name == "posix" else {}
@@ -725,18 +760,33 @@ class Launcher:
                 self._killed.add(process)
                 _kill(process)
         try:
-            try:
-                stdout, stderr = process.communicate(timeout=limit)
-            except subprocess.TimeoutExpired:
-                _kill(process)
-                stdout, _ = process.communicate()
-                return Exit(
-                    -1, stdout or "", f"timed out after {limit:g}s",
-                    timed_out=True, cancelled=self._was_killed(process),
-                )
+            deadline = time.monotonic() + limit
+            while True:
+                remaining = max(0.0, deadline - time.monotonic())
+                try:
+                    stdout, stderr = process.communicate(
+                        timeout=remaining if stopped is None else min(STOP_POLL, remaining)
+                    )
+                    break
+                except subprocess.TimeoutExpired:
+                    mark = stopped() if stopped is not None else None
+                    if mark is not None:
+                        _kill(process)
+                        stdout, _ = process.communicate()
+                        return Exit(
+                            -1, stdout or "", f"stopped where the model loaded {mark.get('skill')}",
+                            cancelled=self._was_killed(process), stopped=mark,
+                        )
+                    if time.monotonic() >= deadline:
+                        _kill(process)
+                        stdout, _ = process.communicate()
+                        return Exit(
+                            -1, stdout or "", f"timed out after {limit:g}s",
+                            timed_out=True, cancelled=self._was_killed(process),
+                        )
             return Exit(
                 process.returncode, stdout or "", stderr or "",
-                cancelled=self._was_killed(process),
+                cancelled=self._was_killed(process), stopped=stopped() if stopped is not None else None,
             )
         except BaseException:
             # Interrupted while waiting on it: Ctrl-C reaches this process alone — the
@@ -894,9 +944,18 @@ class BatchRunner(Launcher):
         as it reads now."""
         if not item.tuningfork.context:
             return {}
-        messages = load_context(spec_dir, item.tuningfork.context)
-        return {"context": {"blob": self.store.blobs.put_json(messages), "messages": len(messages),
+        context = load_context(spec_dir, item.tuningfork.context)
+        return {"context": {"blob": self.store.blobs.put_json(context.to_json()), "messages": len(context.before),
+                            **({"in_turn": len(context.in_turn)} if context.in_turn else {}),
                             "file": item.tuningfork.context}}
+
+    @staticmethod
+    def _stop(spec: TaskSpec, item: Eval) -> dict[str, Any]:
+        """Where a scenario's run ends, when it stops at the next skill
+        (`tuningfork.stop_at_next_skill`): beside the skill its spec studies."""
+        if not item.tuningfork.stop_at_next_skill or not spec.skill_name:
+            return {}
+        return {"stop_at_next_skill": {"skill": spec.skill_name}}
 
     def _run_once(
         self,
@@ -923,7 +982,7 @@ class BatchRunner(Launcher):
             workspace=str(workspace.resolve()),
             home=str(home.resolve()),
             settings={"breakpoints": True, **layout_setting(self.adapter, self.sandbox), **settings,
-                      **self._context(item, spec.directory)},
+                      **self._context(item, spec.directory), **self._stop(spec, item)},
         )
         if self.on_launch:
             self.on_launch(launch, index)
@@ -955,6 +1014,8 @@ class ForkSource:
     skill_commit: str | None = None
     #: The conversation the source continued (its launch's `context` setting), when it did.
     context: dict[str, Any] | None = None
+    #: Where the source stopped beside its skill (its launch's `stop_at_next_skill`), when it did.
+    stop: dict[str, Any] | None = None
 
 
 class ForkRunner(Launcher):
@@ -994,7 +1055,8 @@ class ForkRunner(Launcher):
             workspace=str(workspace.resolve()),
             home=str(home.resolve()),
             settings={"breakpoints": source.breakpoints, **layout_setting(self.adapter, self.sandbox),
-                      **({"context": source.context} if source.context else {})},
+                      **({"context": source.context} if source.context else {}),
+                      **({"stop_at_next_skill": source.stop} if source.stop else {})},
             source_run=run.id,
             source_step=source.step,
             variant=source.variant,

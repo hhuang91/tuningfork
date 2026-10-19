@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable, Sequence
 
 
-_OPTION_KEYS = ("check", "normalizers", "held_out", "skills", "timeout", "max_turns", "context")
+_OPTION_KEYS = ("check", "normalizers", "held_out", "skills", "timeout", "max_turns", "context", "stop_at_next_skill")
 _EVAL_KEYS = ("id", "prompt", "expected_output", "files", "expectations", "tuningfork")
 
 #: The checks tuningfork judges itself, on the agent's final reply, besides a shell command:
@@ -69,8 +69,13 @@ class TuningforkOptions:
     max_turns: int = 12
     #: A conversation each run continues: a JSON file of OpenAI-style messages beside the spec
     #: (`load_context`), which the proxy puts after the harness's instructions and before its
-    #: first message, in every call of the run's own thread — a chat imported as a scenario.
+    #: first message, in every call of the run's own thread — a chat imported as a scenario —
+    #: and the model's earlier steps of the prompt's own turn, if any, after the prompt.
     context: str | None = None
+    #: A run ends where the model loads a skill other than the one studied: the check judges
+    #: the workspace then. For a scenario of a chat that went on to another skill, which no run
+    #: of this one has.
+    stop_at_next_skill: bool = False
     #: Keys this version does not know, kept so a spec rewritten by tuningfork loses none.
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -85,6 +90,7 @@ class TuningforkOptions:
             timeout=float(data.get("timeout", 900.0)),
             max_turns=int(data.get("max_turns", 12)),
             context=data.get("context") if isinstance(data.get("context"), str) else None,
+            stop_at_next_skill=data.get("stop_at_next_skill") is True,
             extra={k: v for k, v in data.items() if k not in _OPTION_KEYS},
         )
 
@@ -101,6 +107,8 @@ class TuningforkOptions:
         )
         if self.context is not None:
             data["context"] = self.context
+        if self.stop_at_next_skill:
+            data["stop_at_next_skill"] = True
         return {**data, **self.extra}
 
 
@@ -301,6 +309,11 @@ def validate_spec(data: Any) -> list[Problem]:
             context = options["context"]
             if not isinstance(context, str) or not context.endswith(".json") or _climbs(context):
                 add(f"{where}.context", "must be the path of a .json file beside the spec, inside its folder")
+        if "stop_at_next_skill" in options:
+            if not isinstance(options["stop_at_next_skill"], bool):
+                add(f"{where}.stop_at_next_skill", "must be true or false")
+            elif options["stop_at_next_skill"] and not data.get("skill_name"):
+                add(f"{where}.stop_at_next_skill", "names no skill to stop beside: the spec needs its skill_name")
     return problems
 
 
@@ -313,47 +326,96 @@ def _climbs(path: str) -> bool:
 CONTEXT_ROLES = ("user", "assistant", "tool")
 
 
-def load_context(spec_dir: Path | str, path: str) -> list[dict[str, Any]]:
+@dataclass(slots=True)
+class Context:
+    """The conversation a scenario's runs continue (`tuningfork.context`): what came before
+    its prompt, and what the model had already done in the prompt's own turn — its calls and
+    their results, an earlier skill among them — which its first live answer follows. Kept as
+    a list of messages, the part before the prompt, or as {"before": [...], "in_turn": [...]}."""
+
+    before: list[dict[str, Any]] = field(default_factory=list)
+    in_turn: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def messages(self) -> int:
+        return len(self.before) + len(self.in_turn)
+
+    def to_json(self) -> list[dict[str, Any]] | dict[str, Any]:
+        return list(self.before) if not self.in_turn else {"before": list(self.before), "in_turn": list(self.in_turn)}
+
+    @classmethod
+    def read(cls, data: Any) -> Context:
+        """A context as `to_json` keeps it, read back without checking it."""
+        if isinstance(data, dict):
+            return cls(list(data.get("before") or []), list(data.get("in_turn") or []))
+        return cls(list(data or []))
+
+
+def load_context(spec_dir: Path | str, path: str) -> Context:
     """The conversation a spec's `tuningfork.context` names, checked as one a harness can
-    continue: user, assistant and tool messages (the harness brings its own instructions),
-    every tool call answered before it ends, and never ending on a user turn — the run's own
-    prompt follows it."""
+    continue (`check_context`)."""
     if _climbs(path):
         raise SpecError(f"context {path!r} is not a path inside the spec's folder")
     file = Path(spec_dir) / path
     try:
-        messages = json.loads(file.read_text(encoding="utf-8"))
+        data = json.loads(file.read_text(encoding="utf-8"))
     except OSError as exc:
         raise SpecError(f"cannot read the context {file}: {exc.strerror or exc}") from None
     except ValueError as exc:
         raise SpecError(f"the context {file} is not JSON: {exc}") from None
-    return check_context(messages, f"the context {file}")
+    return check_context(data, f"the context {file}")
 
 
-def check_context(messages: Any, what: str = "the context") -> list[dict[str, Any]]:
-    """`messages` as a context a harness can continue (`load_context`), or a SpecError saying
-    what is wrong with it."""
-    if not isinstance(messages, list) or not messages:
-        raise SpecError(f"{what} must be a list of messages, not empty")
+def check_context(data: Any, what: str = "the context") -> Context:
+    """`data` as a context a harness can continue, or a SpecError saying what is wrong with it.
+
+    Before the prompt: user, assistant and tool messages (the harness brings its own
+    instructions), every tool call answered, and never ending on a user turn — the run's own
+    prompt follows it. In the prompt's turn: the model's answers and their results, from its
+    first answer on — a note the harness sent between them, too — every tool call answered, and
+    never ending on an answer that called nothing, which would have ended the turn."""
+    if isinstance(data, list):
+        if not data:
+            raise SpecError(f"{what} must be a list of messages, not empty")
+        return Context(_check_messages(data, "context message"))
+    if not isinstance(data, dict) or set(data) - {"before", "in_turn"}:
+        raise SpecError(f"{what} must be a list of messages, or {{\"before\": [...], \"in_turn\": [...]}}")
+    for part in ("before", "in_turn"):
+        if not isinstance(data.get(part, []), list):
+            raise SpecError(f"{what}'s {part} must be a list of messages")
+    before, in_turn = list(data.get("before") or []), list(data.get("in_turn") or [])
+    if not before and not in_turn:
+        raise SpecError(f"{what} holds no message")
+    if in_turn:
+        if not isinstance(in_turn[0], dict) or in_turn[0].get("role") != "assistant":
+            raise SpecError(f"{what}'s in_turn starts with the model's first answer: an assistant message")
+        _check_messages(in_turn, "in_turn message", in_turn=True)
+    return Context(_check_messages(before, "context message") if before else [], in_turn)
+
+
+def _check_messages(messages: list[Any], name: str, *, in_turn: bool = False) -> list[dict[str, Any]]:
     open_calls: set[str] = set()
     for index, message in enumerate(messages):
         if not isinstance(message, dict) or message.get("role") not in CONTEXT_ROLES:
-            raise SpecError(f"context message {index} must be a user, assistant or tool message")
+            raise SpecError(f"{name} {index} must be a user, assistant or tool message")
         if message["role"] == "assistant":
             for call in message.get("tool_calls") or []:
                 if not isinstance(call, dict) or not call.get("id") or not isinstance(call.get("function"), dict):
-                    raise SpecError(f"context message {index} holds a tool call without an id and a function")
+                    raise SpecError(f"{name} {index} holds a tool call without an id and a function")
                 open_calls.add(str(call["id"]))
         elif message["role"] == "tool":
             if str(message.get("tool_call_id")) not in open_calls:
-                raise SpecError(f"context message {index} answers a tool call no earlier message made")
+                raise SpecError(f"{name} {index} answers a tool call no earlier message made")
             open_calls.discard(str(message.get("tool_call_id")))
         if message["role"] == "user" and open_calls:
-            raise SpecError(f"context message {index} comes before the tool calls above it were answered")
+            raise SpecError(f"{name} {index} comes before the tool calls above it were answered")
     if open_calls:
-        raise SpecError("the context ends with a tool call not answered")
-    if messages[-1]["role"] == "user":
+        raise SpecError(f"the {'in_turn' if in_turn else 'context'} ends with a tool call not answered")
+    last = messages[-1]
+    if not in_turn and last["role"] == "user":
         raise SpecError("the context ends on a user turn: the run's own prompt follows it, two in a row")
+    if in_turn and last["role"] == "assistant":
+        raise SpecError("the in_turn ends on an answer that called nothing: the turn was over, and no answer follows")
     return messages
 
 

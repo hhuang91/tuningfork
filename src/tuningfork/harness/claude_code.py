@@ -211,6 +211,19 @@ class ClaudeCodeAdapter:
     def skill_roots(self, home: Path) -> tuple[Path, ...]:
         return (self.config_dir(home) / "skills",)
 
+    def skill_load(self, call: dict[str, Any]) -> str | None:
+        """The skill a tool call loads, by name, on the request's OpenAI-style view: the `Skill`
+        tool's `skill`."""
+        function = call.get("function") if isinstance(call, dict) else None
+        if not isinstance(function, dict) or function.get("name") != "Skill":
+            return None
+        try:
+            arguments = json.loads(function.get("arguments") or "{}")
+        except (TypeError, ValueError):
+            return None
+        name = arguments.get("skill") if isinstance(arguments, dict) else None
+        return name.strip() if isinstance(name, str) and name.strip() else None
+
     def harness_note(self, message: dict[str, Any]) -> str | None:
         """A user message Claude Code wrote itself, on the request's OpenAI-style view: the text
         of a skill the model loaded, or nothing but its `<system-reminder>`s. A person's words,

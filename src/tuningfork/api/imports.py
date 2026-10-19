@@ -104,11 +104,14 @@ def import_routes(*, store: Any) -> list[Route]:
                 studied = None
             skill = studied[0] if studied else None
             try:
-                at, context, _ = imports.scenario_start(chat, skill or "", run.harness or "generic")
+                start = imports.scenario_start(chat, skill or "", run.harness or "generic")
             except OperationError:
-                at, context = None, []
+                start = None
             return {"run": run.id, "skill": skill, "skills": list(kept_skills(run)), "turns": imports.turns(chat),
-                    "default": at, "context": len(context)}
+                    "default": start.cut if start else None,
+                    "context": len(start.context.before) if start else 0,
+                    "in_turn": len(start.context.in_turn) if start else 0,
+                    "next_skill": start.next_skill if start else None}
 
         try:
             return JSONResponse(await asyncio.to_thread(look))

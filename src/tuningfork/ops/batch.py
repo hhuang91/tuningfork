@@ -233,7 +233,7 @@ def prepare_batch(
             field="spec",
         )
     # A scenario's conversation, read now: one the runs could not carry is refused before any runs.
-    context: list[Any] = []
+    context = None
     if item.tuningfork.context:
         from tuningfork.specs import SpecError, load_context
         from tuningfork.wire import get_wire
@@ -243,7 +243,8 @@ def prepare_batch(
         except SpecError as exc:
             raise OperationError(str(exc), field="spec") from None
         speaks = getattr(adapter, "wire", "openai-chat")
-        if get_wire(speaks).with_context({"messages": []}, []) is None:
+        prompt = {"messages": [{"role": "user", "content": item.prompt}]}
+        if get_wire(speaks).with_context(prompt, context.before, context.in_turn) is None:
             raise OperationError(
                 f"eval {item.id} continues a conversation, which {adapter.name}'s calls ({speaks}) cannot carry yet",
                 field="harness",
@@ -285,11 +286,20 @@ def prepare_batch(
             f"eval {item.id} is held out, and its runs will be recorded here, where an agent "
             "reading these recordings can see them: it no longer tests what it was held out for",
         ))
-    if context:
+    if context is not None:
         notes.append(Note(
             "note",
-            f"each run continues a conversation of {len(context)} message(s) ({item.tuningfork.context}), put after "
-            f"{adapter.name}'s instructions in every call of the run: its prompt is that conversation's next turn",
+            f"each run continues a conversation of {len(context.before)} message(s) ({item.tuningfork.context}), put "
+            f"after {adapter.name}'s instructions in every call of the run: its prompt is that conversation's next turn"
+            + (f"; {len(context.in_turn)} more, the model's earlier steps of that turn, follow the prompt, so its first "
+               "live answer comes after them" if context.in_turn else ""),
+        ))
+    if item.tuningfork.stop_at_next_skill:
+        notes.append(Note(
+            "note",
+            f"each run ends where the model loads a skill other than {spec.skill_name}, and the check judges the "
+            "workspace as it is then" + ("; a check of the final reply finds none there"
+                                         if isinstance(item.tuningfork.check, dict) else ""),
         ))
     if skill_dir and skill_dir.exists():
         lookalikes = lookalike_skill_files(skill_dir)

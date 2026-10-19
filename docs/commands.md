@@ -172,9 +172,13 @@ Runs page has the same: **Import a chat…**.
 - `--scenario <name>` — makes a scenario of it too: runs of the skill through its harness, each
   continuing the conversation. The user turn before the skill first came in is the prompt, and
   everything before it is each run's context (`tuningfork.context`, its `context.json`), so the
-  skill enters each run live and a variant replaces it everywhere. `--cut <message>` starts it
-  from another user turn; `--check '<command>'` or `--reply-contains <text>` gives it its check,
-  which is yours to write. An imported run's page has the same: **Make a scenario…**.
+  skill enters each run live and a variant replaces it everywhere. Where the chat loaded another
+  skill first in that same turn, its steps up to the studied skill — that skill's load and
+  results among them — follow the prompt, taken as done; where it went on to another skill
+  after, each run stops where the model loads one (`tuningfork.stop_at_next_skill`), the check
+  judging the workspace then. `--cut <message>` starts it from another user turn;
+  `--check '<command>'` or `--reply-contains <text>` gives it its check, which is yours to
+  write. An imported run's page has the same: **Make a scenario…**.
 - `--dry-run` — shows what it would import, and records nothing.
 
 The answers in it are the model's that had the conversation: an experiment at a step samples

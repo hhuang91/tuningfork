@@ -272,6 +272,21 @@ export async function scenarioView(root, [name], scope) {
       h("div", { class: "form-grid" },
         field("Max turns", bind(input(`turns-${index}`, { type: "number", value: options.max_turns, min: 1 }), (v) => (options.max_turns = Number(v)))),
         field("Timeout (s)", bind(input(`timeout-${index}`, { type: "number", value: options.timeout, min: 1 }), (v) => (options.timeout = Number(v))))),
+      // A scenario of a chat that went on to another skill, which no run of this one has: each
+      // run ends where the model loads it, and the check judges the workspace then.
+      h("div", null,
+        h("label", { class: "check" },
+          h("input", {
+            type: "checkbox", name: `stop-${index}`, checked: options.stop_at_next_skill === true, disabled: !editable,
+            onchange: (event) => {
+              if (event.target.checked) options.stop_at_next_skill = true;
+              else delete options.stop_at_next_skill;
+              changed();
+            },
+          }),
+          " Stop where the model loads another skill"),
+        h("p", { class: "hint" }, "Each run ends there, and the check judges the workspace as it is then: for a chat that "
+          + "went on to a skill no run of this one has.")),
       field("Normalizers", normalizers, { help: "How behaviours are told apart when runs are compared; none ticked means the defaults.", wide: true }),
       editable && draft.evals.length > 1
         ? h("button", { class: "btn btn-quiet btn-small", type: "button", onclick: () => {
@@ -466,15 +481,35 @@ export async function scenarioView(root, [name], scope) {
 
 /** The conversation a scenario made from a chat continues (`tuningfork.context`): each message
  *  to read, and the whole of it as JSON, to edit and save. */
-function contextPanel(name, messages, editable) {
+/** The conversation a scenario continues: the messages before its prompt — a list, as it was
+ *  kept before — and, as {before, in_turn}, the model's earlier steps of the prompt's own turn. */
+function contextPanel(name, context, editable) {
   const status = h("div");
+  const parts = (found) => (Array.isArray(found) ? { before: found, inTurn: [] }
+    : { before: found?.before || [], inTurn: found?.in_turn || [] });
   const said = (message) => (message.tool_calls?.length
     ? `calls ${message.tool_calls.map((call) => call.function?.name || "?").join(", ")}`
     : firstLine(typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? ""), 140));
   const listOf = (found) => found.map((message) => h("li", null, h("strong", null, `${message.role}: `), said(message)));
-  const list = h("ol", { class: "small" }, listOf(messages));
+  const about = h("p", { class: "hint" });
+  const reading = h("div", { class: "stack" });
+  const show = (found) => {
+    const { before, inTurn } = parts(found);
+    replace(about, (before.length
+      ? `${plural(before.length, "message")} from an imported chat, put after the harness's instructions in every call of each `
+        + "run: the eval's prompt is its next turn."
+      : "Nothing comes before the eval's prompt: it is the chat's first turn.")
+      + (inTurn.length ? ` Then ${plural(inTurn.length, "message")} of that turn, the model's earlier steps — done already, `
+        + "an earlier skill among them — follow the prompt, so the skill comes in live." : ""));
+    replace(reading,
+      h("div", null, h("div", { class: "label" }, "Before the prompt"), before.length ? h("ol", { class: "small" }, listOf(before))
+        : h("p", { class: "muted small" }, "nothing: the prompt is the chat's first turn")),
+      inTurn.length ? h("div", null, h("div", { class: "label" }, "In the prompt's turn, taken as done"),
+        h("ol", { class: "small" }, listOf(inTurn))) : null);
+  };
+  show(context);
   const editor = h("textarea", { class: "field mono", rows: 16, spellcheck: "false", disabled: !editable,
-    value: JSON.stringify(messages, null, 1) });
+    value: JSON.stringify(context, null, 1) });
   const save = guard(async () => {
     replace(status);
     let parsed;
@@ -486,16 +521,15 @@ function contextPanel(name, messages, editable) {
     }
     try {
       const done = await api.put(`/scenarios/${enc(name)}/context`, JSON.stringify({ messages: parsed }), "application/json");
-      replace(list, listOf(parsed));
+      show(parsed);
       replace(status, h("p", { class: "hint" }, `Saved: ${plural(done.messages, "message")}.`));
     } catch (error) {
       replace(status, formError(error));
     }
   });
   return panel("The conversation it continues", h("div", { class: "stack" },
-    h("p", { class: "hint" }, `${plural(messages.length, "message")} from an imported chat, put after the harness's `
-      + "instructions in every call of each run: the eval's prompt is its next turn."),
-    h("details", { class: "fold" }, h("summary", null, "Read it"), list),
+    about,
+    h("details", { class: "fold" }, h("summary", null, "Read it"), reading),
     h("details", { class: "fold" }, h("summary", null, "Edit it as JSON"), editor,
       editable ? h("div", { class: "actions" },
         h("button", { class: "btn", type: "button", "data-control": true, onclick: save }, "Save the conversation")) : null,

@@ -1755,6 +1755,17 @@ class Store:
             )
             self._conn.commit()
 
+    def note_launch(self, launch_id: str, **notes: Any) -> None:
+        """Add to a launch's settings what happened to it as it ran — where a scenario's run
+        stopped (`stopped_at_skill`) — for the process running it to read."""
+        with self._lock:
+            row = self._conn.execute("SELECT settings FROM launches WHERE id = ?", (launch_id,)).fetchone()
+            if row is None:
+                return
+            settings = {**(_loads(row["settings"], {}) or {}), **notes}
+            self._conn.execute("UPDATE launches SET settings = ? WHERE id = ?", (json.dumps(settings), launch_id))
+            self._conn.commit()
+
     def task_checks(self) -> dict[str, list[Any]]:
         """Each task's checks, as its launches ran them, the latest first: a task's spec can
         change between batches, and a pass rate pooled over two checks measures neither."""

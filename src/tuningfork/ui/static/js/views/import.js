@@ -217,6 +217,15 @@ export async function scenarioFromRunView(root, [runId]) {
     (found.skills || []).map((each) => h("option", { value: each, selected: each === found.skill }, each)));
   const cut = h("select", { class: "field", name: "cut" });
   const about = h("p", { class: "hint" });
+  // What a start there takes as done, and where its runs stop: said for the turn before the skill.
+  const where = h("div", { class: "stack", style: { gap: "4px" } });
+  const told = () => replace(where,
+    found.in_turn && Number(cut.value) === found.default
+      ? h("p", { class: "hint" }, `Each run starts after the model's first ${plural(found.in_turn, "message")} of that turn, `
+        + `taken as done — an earlier skill among them — so ${found.skill} comes in live.`) : null,
+    found.next_skill
+      ? h("p", { class: "hint" }, `The chat loads ${found.next_skill.skill} after it, at step ${found.next_skill.step}: each `
+        + "run stops where the model loads another skill, and the check judges the workspace as it is then.") : null);
   const shown = () => {
     replace(cut, found.turns.map((turn) => h("option", { value: String(turn.message), selected: turn.message === found.default },
       `message ${turn.message}${turn.message === found.default ? " (before the skill)" : ""} — ${turn.text || "(no text)"}`)));
@@ -224,7 +233,9 @@ export async function scenarioFromRunView(root, [runId]) {
       ? `It studies ${found.skill}. Starting before the skill came in, the skill enters each run live, through the `
         + "harness, so a variant replaces it everywhere the model reads it."
       : (found.skills || []).length ? "Choose the skill it studies: a scenario studies one." : "The import kept no skill: a scenario studies one.");
+    told();
   };
+  cut.addEventListener("change", told);
   shown();
   studies.addEventListener("change", guard(async () => {
     try {
@@ -269,6 +280,7 @@ export async function scenarioFromRunView(root, [runId]) {
         field("Name", name, { help: "lowercase letters, digits, - and _" }),
         field("Start from", cut, { wide: true, help: "The user turn each run's prompt is; the conversation before it is "
           + "each run's context." }),
+        where,
         field("Check", kind, { help: "Yours to write: what passes. Without one, runs have no verdict until it has one." }),
         field("Its text", check, { wide: true })),
       problem,

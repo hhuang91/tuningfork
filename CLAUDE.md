@@ -121,7 +121,15 @@ the file as it reads now), and the proxy puts it after the harness's instruction
 of the main thread (`WireFormat.with_context`; OpenAI chat only, a batch refusing a harness whose
 wire cannot carry it, a call refused rather than sent without it), recording the harness's own
 request beside the model's and a step's `context` note — never an edit, so the run still counts.
-A subagent's calls and the harness's side calls are its own: they get no context.
+A subagent's calls and the harness's side calls are its own: they get no context. A scenario
+studies one skill. When the chat loaded it later in the prompt's own turn, the model's steps of
+that turn before it — an earlier skill's load and results among them — go to each run as done,
+right after the prompt (`Context.in_turn`, `{"before": …, "in_turn": …}` in `context.json`), so
+the skill itself still comes in live. When the chat went on to load another skill, each run
+stops there (`tuningfork.stop_at_next_skill`): the proxy refuses the call after the answer that
+loads a skill other than the spec's (`LaunchState.next_skill`, the adapter's `skill_load`) and
+notes the launch (`Store.note_launch`), the runner ends the harness and runs the check on the
+workspace as it is, and the run counts, its result saying where it stopped (`stopped_at_skill`).
 
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
