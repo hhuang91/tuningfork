@@ -41,7 +41,8 @@ squint at the results. That loop is broken in two ways:
 tuningfork treats an agent run as a program and the skill as its source code, and supplies the
 missing debugger:
 
-- **Record** every model call, with the exact context the model saw.
+- **Record** every model call, with the exact context the model saw, or import a conversation
+  your agent already had.
 - **Localize** the first step where successful and failed runs diverge.
 - **Resample** that step N times from a checkpoint, its history held fixed, and count what the
   model does.
@@ -150,6 +151,15 @@ bubblewrap`), so that every run sees the same folders: the model reads them
    tuningfork serve --upstream http://127.0.0.1:8081
    ```
 
+   `--upstream` is the model server it forwards each call to; a harness talks to tuningfork in
+   its place. The harnesses tuningfork launches are pointed there for you. Your own agent is
+   recorded as you use it once its base URL is `http://127.0.0.1:8787/v1` for an OpenAI-style
+   API, as Hermes Agent's, or `http://127.0.0.1:8787` for Anthropic's, as Claude Code's.
+   `--port` (or `TUNINGFORK_PORT`) moves it, and `TUNINGFORK_PROXY` then tells the other commands
+   where it is. Keep it on `127.0.0.1`, the default: anything that can reach the port can read
+   your recordings and send calls to your model ([what it guards](SECURITY.md)). From another
+   machine, forward the port over SSH instead: `ssh -L 8787:127.0.0.1:8787 <host>`.
+
 3. **Check the server**, in a second terminal with the venv activated: can it do what the
    harnesses need, and does it process every prompt whole?
 
@@ -163,6 +173,10 @@ bubblewrap`), so that every run sees the same folders: the model reads them
    ```bash
    tuningfork batch examples/tally-report.evals.json -n 8 --harness hermes    # or --harness claude-code
    ```
+
+   Or start from what your agent did: a conversation it already had imports as a run
+   (`tuningfork import`, from a Hermes session file or export), and any run, imported or
+   recorded as you used it, becomes a task of its own (`tuningfork scenario <run> <name>`).
 
 5. **Look at them** in the web UI, at the address `serve` printed, or in a terminal:
    [what you can do](#what-you-can-do).
@@ -214,6 +228,7 @@ measuring and refining itself, over MCP ([`docs/agents.md`](docs/agents.md)).
 | Command | What it tells you |
 |---|---|
 | `batch spec.json -n 8` | Runs a task N times through the harness, each run in a fresh workspace, judged by the task's check |
+| `scenario <run> <name>` | Any run as a task of its own: each run continues its conversation from the person's message the skill came in after, judged by a check |
 | `tasks` | The pass rates with their intervals: one row per harness, model and version of the skill |
 | `runs --failed` | The recorded runs, newest first: here the failed ones, to pick one to study |
 | `recheck <run>` | Judges a recorded run again, by its own check or one you are trying out (`--check`), recording nothing |
@@ -227,6 +242,7 @@ measuring and refining itself, over MCP ([`docs/agents.md`](docs/agents.md)).
 | `step <run> <step>` | One step: the exact context the model saw, and what it did |
 | `files <run> <step>` | The workspace as that step's call found it (`end`: as the run left it; `--diff`) |
 | `diff <runA> <runB>` | Two runs, step by step |
+| `import chat.json` | A conversation your agent had elsewhere (a Hermes session file or export, a list of messages) as a run, each turn a step the commands here work on |
 
 ### Where do the runs go wrong?
 
@@ -365,7 +381,7 @@ self-improvement loop, on the same local model.
 
 | | Today |
 |---|---|
-| **Harnesses** | Hermes Agent and Claude Code, which tuningfork launches, forks and validates. Any other harness that takes a custom base URL is recorded as it runs. |
+| **Harnesses** | Hermes Agent and Claude Code, which tuningfork launches, forks and validates. Any other harness that takes a custom base URL is recorded as it runs. Hermes Agent's session files and exports import as runs. |
 | **Inference servers** | llama.cpp's `llama-server`, for everything. LM Studio, and other servers that speak OpenAI chat completions or Anthropic Messages, for recording and experiments at a step; `tuningfork connections check` measures what yours supports. |
 | **Token-level work** | llama.cpp, with a model whose raw output tuningfork reads: Gemma 4 today. |
 | **Systems** | Linux, natively or under WSL 2 on Windows, with Python 3.12, 3.13 or 3.14. macOS is untested, and the sandbox needs Linux. |

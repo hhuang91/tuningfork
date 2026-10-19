@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.3.0 — chats your agent already had, and any run as a scenario
+
+A conversation your agent had elsewhere comes in as a run, and any run becomes a scenario: a task
+whose runs continue its conversation, so a skill is measured where it was really used.
+
+- **A chat, imported** (`tuningfork import`, the Runs page's **Import a chat…**): Hermes Agent's
+  session file or its export, or a list of OpenAI-style messages, becomes a run whose every
+  assistant turn is a step, so resample, A/B, the token tools and a refinement work at it. Each
+  step's request is rebuilt as the harness sends one: the system prompt, everything before it,
+  each message as Hermes cleans its own copy before a call. A file that kept no tools (Hermes's
+  export keeps none) takes them from a run recorded through the same harness (`--tools-from`,
+  **Tools from**). Every skill the chat shows is kept with the run, and an A/B, a refinement or
+  a scenario names the one it studies (`--skill`, a **Skill** picker).
+- **Any run as a scenario** (`tuningfork scenario <run> <name>`, a run page's **Make a
+  scenario…**, the Scenarios page's **From a run…**): an imported run, one tuningfork launched,
+  or one recorded live.
+  - **Its prompt** is the person's message the skill came in after, in their words or yours
+    (`--prompt`), and the conversation before it is each run's context. The proxy puts it after
+    the harness's own instructions in every call (`tuningfork.context`; harnesses that speak
+    OpenAI chat), so the skill still comes in live and an edited version reaches it.
+  - **Several skills in one chat:** the steps of that turn before the studied skill came in,
+    another skill's among them, go to each run as done. Where the chat went on to another skill,
+    each run stops there and the check judges the workspace as it is then
+    (`tuningfork.stop_at_next_skill`).
+  - **A launched run's scenario** takes the run's workspace there as its input files, from the
+    snapshots, and its task's check, with the files that check reads. Any other run lists the
+    files its calls named, for you to add.
+  - **Its eval is named by the scenario:** its runs are a task of their own, never counted with
+    the task of the run it came from.
+  - **The form** asks for the skill first, then sets each run beside the chat: what each run is
+    given (its harness's own system prompt and tools, the conversation before, the prompt),
+    then each step, given as done, made by its model, or past where it stops.
+- **A run's page:** the tools the run was offered, above its system prompt; each tool's result
+  under the step that called it in the rail; a person's turn told apart from the notes a harness
+  writes itself (Hermes's nudge after a cut reply, Claude Code's reminders).
+- **A run recorded live says so**, where a label would name it: the Runs list, its page,
+  `tuningfork runs` and `show`. When its first call continued a conversation already going on, a
+  long session, its rail lists that conversation first, and each of the person's turns there
+  folds to its line.
+- **The README says where your harness points**, what `--upstream` is, and how to change the
+  port.
+
+Changed:
+
+- **A new run is marked a branch of another only where the two share more than their first
+  message**, at the message where they part. Two sessions of one harness can share a system
+  prompt and nothing else: one was marked a fork of the other, at its own length. Marks recorded
+  before stay as they were.
+- **The recordings' database gains a column**, each step's context: it is added when an older
+  folder is opened.
+
+Claude Code's calls cannot yet carry a conversation before the prompt, so a scenario of a Claude
+Code run starts at its first turn.
+
 ## 0.2.3 — on Windows, and a code review's fixes
 
 Three rules changed in review, and what was recorded before reads by them now:
