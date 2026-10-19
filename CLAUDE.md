@@ -103,6 +103,19 @@ where its harness shows skills (`skill_spans`) and kept beside the run, `<home>/
 Its steps are recorded under an assignment of the run's own, never a pending label a live call
 could take; nothing launched it, so it forks nowhere, and deleting it for good takes its folder.
 
+An imported run becomes a scenario (`imports.prepare_scenario`; `import --scenario`, its page's
+Make a scenario…, `POST /imports/{run}/scenario`): the user turn before the skill first came in
+(`--cut` another) is the eval's prompt, the conversation before it — as its harness sends history —
+the scenario's `context.json` (`tuningfork.context`, checked by `specs.check_context`), the skill
+the folder the import named (an approval writes there), else its extracted copy, and the check
+the person's. Each run continues that conversation: the runner keeps it as a blob named in the
+launch's `settings.context` (kept live by `Store.live_blobs`; a fork carries its source's, never
+the file as it reads now), and the proxy puts it after the harness's instructions in every call
+of the main thread (`WireFormat.with_context`; OpenAI chat only, a batch refusing a harness whose
+wire cannot carry it, a call refused rather than sent without it), recording the harness's own
+request beside the model's and a step's `context` note — never an edit, so the run still counts.
+A subagent's calls and the harness's side calls are its own: they get no context.
+
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
 agent's sight). A check that prints what it found wrong, one finding a line, gets a tally

@@ -129,10 +129,27 @@ def scenario_routes(*, store: Any, writable: bool) -> list[Route]:
             status=201,
         )
 
+    async def context(request: Request) -> Response:
+        """The conversation a scenario continues, edited and saved whole: `{"messages": [...]}`."""
+        try:
+            raw = await _capped(request, scenarios.MAX_FILE)
+            try:
+                body = json.loads(raw) if raw else {}
+            except ValueError:
+                raise OperationError("the body is not JSON", code="bad_params") from None
+            if not isinstance(body, dict) or set(body) != {"messages"}:
+                raise OperationError('the body is {"messages": [...]}', code="bad_params")
+        except OperationError as error:
+            return _refusal(error)
+        return await answer(
+            lambda: {"messages": scenarios.put_context(home, request.path_params["name"], body["messages"])}
+        )
+
     return [
         Route(f"{PREFIX}/validate", validate, methods=["POST"]),
         Route(f"{PREFIX}/import", import_, methods=["POST"]),
         *routes,
+        Route(f"{PREFIX}/{{name}}/context", context, methods=["PUT"]),
         Route(f"{PREFIX}/{{name}}", save, methods=["PUT"]),
         Route(f"{PREFIX}/{{name}}", delete, methods=["DELETE"]),
         Route(f"{PREFIX}/{{name}}/inputs/{{path:path}}", upload, methods=["PUT"]),

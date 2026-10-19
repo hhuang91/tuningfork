@@ -9,7 +9,7 @@
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
 import { checkTester } from "../checktry.js";
-import { ago, chip, crumbs, h, loading, panel, plural, rateBar, replace, when } from "../dom.js";
+import { ago, chip, crumbs, firstLine, h, loading, panel, plural, rateBar, replace, when } from "../dom.js";
 import { field, formError, input, textArea } from "../forms.js";
 import { live } from "../live.js";
 import { leaving } from "../nav.js";
@@ -173,6 +173,7 @@ export async function scenarioView(root, [name], scope) {
               wide: true,
             }))),
         evalsEl,
+        loaded?.context ? contextPanel(name, loaded.context, editable) : null,
         editable ? h("button", { class: "btn", type: "button", "data-control": true, onclick: () => {
           const ids = new Set(draft.evals.map((item) => String(item.id)));
           let next = draft.evals.length + 1;
@@ -461,6 +462,44 @@ export async function scenarioView(root, [name], scope) {
 
   drawEvals();
   changed();
+}
+
+/** The conversation a scenario made from a chat continues (`tuningfork.context`): each message
+ *  to read, and the whole of it as JSON, to edit and save. */
+function contextPanel(name, messages, editable) {
+  const status = h("div");
+  const said = (message) => (message.tool_calls?.length
+    ? `calls ${message.tool_calls.map((call) => call.function?.name || "?").join(", ")}`
+    : firstLine(typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? ""), 140));
+  const listOf = (found) => found.map((message) => h("li", null, h("strong", null, `${message.role}: `), said(message)));
+  const list = h("ol", { class: "small" }, listOf(messages));
+  const editor = h("textarea", { class: "field mono", rows: 16, spellcheck: "false", disabled: !editable,
+    value: JSON.stringify(messages, null, 1) });
+  const save = guard(async () => {
+    replace(status);
+    let parsed;
+    try {
+      parsed = JSON.parse(editor.value);
+    } catch (error) {
+      replace(status, formError(new Error(`It is not JSON: ${error.message}`)));
+      return;
+    }
+    try {
+      const done = await api.put(`/scenarios/${enc(name)}/context`, JSON.stringify({ messages: parsed }), "application/json");
+      replace(list, listOf(parsed));
+      replace(status, h("p", { class: "hint" }, `Saved: ${plural(done.messages, "message")}.`));
+    } catch (error) {
+      replace(status, formError(error));
+    }
+  });
+  return panel("The conversation it continues", h("div", { class: "stack" },
+    h("p", { class: "hint" }, `${plural(messages.length, "message")} from an imported chat, put after the harness's `
+      + "instructions in every call of each run: the eval's prompt is its next turn."),
+    h("details", { class: "fold" }, h("summary", null, "Read it"), list),
+    h("details", { class: "fold" }, h("summary", null, "Edit it as JSON"), editor,
+      editable ? h("div", { class: "actions" },
+        h("button", { class: "btn", type: "button", "data-control": true, onclick: save }, "Save the conversation")) : null,
+      status)));
 }
 
 function deleteButton(name) {

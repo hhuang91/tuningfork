@@ -333,6 +333,10 @@ class Step:
     workspace_commit: str | None = None
     #: The server that answered, by the id of its identity (see `Store.server`).
     server_id: str | None = None
+    #: In a scenario's run: the conversation it continues (`tuningfork.context`), which the
+    #: proxy put before the harness's own messages in what the model saw. Not an edit — the run
+    #: is still a sample — so kept apart from `edits`, as a variant is.
+    context: dict[str, Any] = field(default_factory=dict)
 
     @property
     def edited(self) -> bool:
@@ -684,6 +688,8 @@ class Store:
         # The process running a launch, as for a job or an experiment: a batch killed hard
         # never says how its launches ended.
         ("launches", "owner", "TEXT"),
+        # The conversation a scenario's run continues, spliced into what the model saw.
+        ("steps", "context", "TEXT"),
     )
 
     #: Indexes on migrated columns. They live here, not in SCHEMA: SCHEMA runs first, and on
@@ -840,7 +846,7 @@ class Store:
     def harness_extras(self, step: Step) -> dict[str, Any]:
         """The request's keys besides its messages, as the harness sent them: the model's,
         unless a breakpoint edit or a fork's variant changed them for the model."""
-        changed = step.edits.get("request") or step.substitution or {}
+        changed = step.edits.get("request") or step.substitution or step.context or {}
         if step.harness_request_node_id and changed.get("original_extras") is not None:
             return {k: v for k, v in changed["original_extras"].items() if k != "messages"}
         extras = self.blobs.get_json(step.extras_blob)
@@ -886,6 +892,7 @@ class Store:
         substitution: dict[str, Any] | None = None,
         workspace_commit: str | None = None,
         server_id: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> Step:
         """Record one model call.
 
@@ -925,16 +932,22 @@ class Store:
                 )
                 attach_path = self._insert_path(harness_messages)
                 harness_overrides = _overrides(harness_exact, harness_messages)
-                if substitution is not None and not edits:
-                    # A fork's variant, not a person's edit: kept with the substitution, so
-                    # the step does not read as edited (which would void the run). The step's
-                    # own extras stay the model's, as with an edit: what a resample resends.
-                    substitution = copy.deepcopy(substitution)
+                kept = substitution if substitution is not None else context
+                if kept is not None and not edits:
+                    # A fork's variant, or a scenario's context — not a person's edit: kept
+                    # with it, so the step does not read as edited (which would void the run).
+                    # The step's own extras stay the model's, as with an edit: what a
+                    # resample resends.
+                    kept = copy.deepcopy(kept)
                     if harness_overrides:
-                        substitution["harness_overrides"] = harness_overrides
+                        kept["harness_overrides"] = harness_overrides
                     harness_extras = {k: v for k, v in harness_request.items() if k != "messages"}
                     if harness_extras != {k: v for k, v in request.items() if k != "messages"}:
-                        substitution["original_extras"] = harness_extras
+                        kept["original_extras"] = harness_extras
+                    if substitution is not None:
+                        substitution = kept
+                    else:
+                        context = kept
                 elif harness_overrides:
                     edits = copy.deepcopy(edits or {})
                     edits.setdefault("request", {})["harness_overrides"] = harness_overrides
@@ -1006,14 +1019,15 @@ class Store:
                 substitution=substitution or {},
                 workspace_commit=workspace_commit,
                 server_id=server_id,
+                context=context or {},
             )
             self._conn.execute(
                 "INSERT INTO steps (id, run_id, idx, request_node_id, extras_blob,"
                 " response_blob, raw_response_blob, params, server_defaults, model,"
                 " status, finish_reason, timings, usage, reasoning_chars, error,"
                 " recorded_at, edits, harness_request_node_id, delivered_response_blob,"
-                " wire, message_overrides, replay, substitution, workspace_commit, server_id)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " wire, message_overrides, replay, substitution, workspace_commit, server_id, context)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     step.id, step.run_id, step.idx, step.request_node_id,
                     step.extras_blob, step.response_blob, step.raw_response_blob,
@@ -1028,6 +1042,7 @@ class Store:
                     json.dumps(step.substitution) if step.substitution else None,
                     step.workspace_commit,
                     step.server_id,
+                    json.dumps(step.context) if step.context else None,
                 ),
             )
             # The head follows the harness's view: its next request extends what *it*
@@ -1531,6 +1546,13 @@ class Store:
                 live.update(
                     row[0] for row in self._conn.execute(f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL")
                 )
+            # A scenario's context, kept once for every launch of it and every fork after.
+            live.update(
+                row[0] for row in self._conn.execute(
+                    "SELECT json_extract(settings, '$.context.blob') FROM launches"
+                    " WHERE json_extract(settings, '$.context.blob') IS NOT NULL"
+                )
+            )
         return live
 
     # --- servers ------------------------------------------------------------------
@@ -1911,6 +1933,7 @@ class Store:
             message_overrides=_loads(row["message_overrides"], {}),
             replay=_loads(row["replay"], {}),
             substitution=_loads(row["substitution"], {}),
+            context=_loads(row["context"], {}),
             workspace_commit=row["workspace_commit"],
             server_id=row["server_id"],
         )
@@ -1947,7 +1970,7 @@ class Store:
         cap = step.params.get("output_cap")
         if not step.harness_request_node_id:
             return uncapped(request, cap)
-        changed = step.edits.get("request") or step.substitution or {}
+        changed = step.edits.get("request") or step.substitution or step.context or {}
         original_extras = changed.get("original_extras")
         extras = original_extras if original_extras is not None else {
             key: value for key, value in request.items() if key != "messages"

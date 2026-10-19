@@ -505,6 +505,8 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
         "format": chat.format, "session_id": chat.session_id, "title": chat.title, "model": chat.model,
         "at": time.time(), "tools_from": plan.tools_from, "skill": kept.name if kept else None,
         "skill_source": ("folder" if plan.skill_dir is not None else "extracted") if kept else None,
+        # The folder it was copied from: the skill a scenario made from it tunes, while it is there.
+        "skill_dir": str(plan.skill_dir) if plan.skill_dir is not None else None,
         "warnings": plan.warnings,
     }
     store.annotate_run(
@@ -514,3 +516,155 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
     )
     return ImportResult(run_id=run_id, steps=len(chat.steps), skill=kept.name if kept else None, folder=folder,
                         warnings=plan.warnings)
+
+
+# --- a scenario from an import ---------------------------------------------------------------------
+
+
+def chat_of(store: Store, run: Any) -> Chat:
+    """The conversation an imported run was recorded from, as the import kept it beside the run."""
+    path = root(store.home) / run.id / "chat.json"
+    if not (run.parity or {}).get("imported") or not path.is_file():
+        raise OperationError(f"run {run.id[:8]} was not imported from a conversation", field="run",
+                             hint="`tuningfork import <file>` imports one")
+    kept = json.loads(path.read_text(encoding="utf-8"))
+    return Chat(format=kept["format"], messages=kept["messages"], session_id=kept.get("session_id"),
+                title=kept.get("title"), model=kept.get("model"), tools=kept.get("tools"), harness=kept.get("harness"),
+                started_at=kept.get("started_at"), finish={int(index): reason for index, reason in (kept.get("finish") or {}).items()})
+
+
+def turns(chat: Chat) -> list[dict[str, Any]]:
+    """Each user turn a scenario can start from: its message's index, its first line, and the
+    step that answers it."""
+    steps = chat.steps
+    return [
+        {"message": index, "text": _text(message.get("content")).strip().splitlines()[0][:160] if _text(message.get("content")).strip() else "",
+         "step": next((number for number, at in enumerate(steps) if at > index), None)}
+        for index, message in enumerate(chat.messages) if message["role"] == "user"
+    ]
+
+
+def _text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(part.get("text", "") for part in content if isinstance(part, dict) and isinstance(part.get("text"), str))
+    return ""
+
+
+@dataclass(slots=True)
+class ScenarioPlan:
+    """A scenario made from an imported run, shown before it is written: the conversation it
+    continues, its prompt, the skill folder and the check."""
+
+    run_id: str
+    name: str
+    #: The user turn it starts from, by its message's index: the scenario's prompt.
+    cut: int
+    prompt: str
+    context: list[dict[str, Any]]
+    skill: str
+    skill_dir: Path
+    check: Any
+    warnings: list[str] = field(default_factory=list)
+
+    def spec(self) -> dict[str, Any]:
+        """The scenario's evals.json, every field written as the Scenarios page writes them."""
+        options: dict[str, Any] = {"normalizers": [], "held_out": False, "skills": [], "timeout": 900, "max_turns": 30,
+                                   "context": "context.json"}
+        if self.check is not None:
+            options = {"check": self.check, **options}
+        return {"skill_name": self.skill, "tuningfork": {"skill_dir": str(self.skill_dir)},
+                "evals": [{"id": "1", "prompt": self.prompt, "expected_output": "", "files": [], "expectations": [],
+                           "tuningfork": options}]}
+
+    def to_json(self) -> dict[str, Any]:
+        return {"run": self.run_id, "name": self.name, "cut": self.cut, "prompt": self.prompt,
+                "context": len(self.context), "skill": self.skill, "skill_dir": str(self.skill_dir),
+                "check": self.check, "spec": self.spec(), "warnings": self.warnings}
+
+
+def scenario_start(chat: Chat, skill: str, harness: str, cut: int | None = None) -> tuple[int, list[dict[str, Any]], str]:
+    """Where a scenario from this conversation starts: the user turn `cut` (by default the one
+    before the skill first came in), the conversation before it as each run's context — as
+    its harness sends history, without the instructions it brings itself — and that turn's
+    text as the prompt."""
+    from tuningfork.specs import SpecError, check_context
+
+    users = [entry["message"] for entry in turns(chat)]
+    if cut is None:
+        found = next((each for each in find_skills(chat, harness) if each.name == skill), None)
+        if found is None:
+            raise OperationError(f"{skill} does not show in the conversation: name the user turn to start from",
+                                 field="cut", hint=f"the user turns, by message: {', '.join(map(str, users))}")
+        before = [index for index in users if index < found.message]
+        cut = before[-1] if before else (users[0] if users else None)
+    if cut is None or cut not in users:
+        raise OperationError(f"message {cut} is not a user turn of the conversation", field="cut",
+                             hint=f"the user turns, by message: {', '.join(map(str, users)) or 'none'}")
+    context = [sent(message) for message in chat.messages[:cut] if message["role"] != "system"]
+    prompt = _text(chat.messages[cut].get("content"))
+    if not prompt.strip():
+        raise OperationError(f"the user turn at message {cut} holds no text to start from", field="cut")
+    if context:
+        try:
+            check_context(context)
+        except SpecError as error:
+            raise OperationError(f"the conversation before message {cut}: {error}", field="cut") from None
+    return cut, context, prompt
+
+
+def prepare_scenario(store: Store, reference: str, name: str, *, cut: int | None = None, check: Any = None) -> ScenarioPlan:
+    """A scenario from an imported run, checked: the conversation before the user turn `cut`
+    is the context each run continues — by default before the turn that led to the skill,
+    which then comes in live, through the harness, as a variant would — that turn is the
+    prompt, and the skill is the folder the import named, else the SKILL.md it kept."""
+    from tuningfork.ops import scenarios
+    from tuningfork.specs import check_problems
+
+    run = store.get_run(reference)
+    if run is None:
+        raise OperationError(f"no run matching {reference!r}", code="not_found", field="run")
+    chat = chat_of(store, run)
+    scenarios.check_name(name)
+    if (scenarios.folder(store.home, name) / scenarios.SPEC).exists():
+        raise OperationError(f"a scenario called {name!r} exists already", code="conflict", field="name")
+    imported = run.parity["imported"]
+    kept = run.parity.get("skill_snapshot_dir")
+    if not imported.get("skill") or not kept:
+        raise OperationError(f"run {run.id[:8]} kept no skill: a scenario studies one", field="run",
+                             hint="import it again naming the skill (--skill) or its folder (--skill-dir)")
+    problems = check_problems(check, "check")
+    if problems:
+        raise OperationError(f"the check {problems[0].message}", field="check")
+    warnings: list[str] = []
+    cut, context, prompt = scenario_start(chat, imported["skill"], run.harness or "generic", cut)
+    source = imported.get("skill_dir")
+    folder = Path(source) if source and (Path(source) / "SKILL.md").is_file() else Path(kept)
+    if folder == Path(kept) and imported.get("skill_source") == "extracted":
+        warnings.append(f"its skill folder is the SKILL.md the import extracted, {folder}: an approved edit is written "
+                        "there; point tuningfork.skill_dir at the skill's own folder to tune that one")
+    if check is None:
+        warnings.append("no check: its runs have no verdict until it has one (the scenario's page, tuningfork.check)")
+    if any(message.get("tool_calls") for message in context):
+        warnings.append("the conversation's tool calls read and wrote files the runs will not have: add them as the "
+                        "scenario's inputs where the model needs them")
+    return ScenarioPlan(run_id=run.id, name=name, cut=cut, prompt=prompt, context=context, skill=imported["skill"],
+                        skill_dir=folder, check=check, warnings=warnings)
+
+
+def make_scenario(store: Store, plan: ScenarioPlan) -> Any:
+    """Write the scenario: its conversation, then its spec, which names it."""
+    from tuningfork.ops import scenarios
+
+    if plan.context:
+        scenarios.put_context(store.home, plan.name, plan.context, new=True)
+    spec = plan.spec()
+    if not plan.context:
+        del spec["evals"][0]["tuningfork"]["context"]  # the chat's first turn: nothing before it
+    try:
+        return scenarios.save_scenario(store.home, plan.name, spec, etag=None)
+    except OperationError:
+        if plan.context and not (scenarios.folder(store.home, plan.name) / scenarios.SPEC).exists():
+            shutil.rmtree(scenarios.folder(store.home, plan.name), ignore_errors=True)
+        raise

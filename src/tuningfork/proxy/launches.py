@@ -61,9 +61,21 @@ class LaunchState:
         self.replay: ForkReplay | None = None
         if launch.kind == "fork" and store is not None:
             self.replay = ForkReplay(store, launch, self.patterns, volatile_for(launch.harness))
+        #: For a scenario's run: the conversation it continues (`tuningfork.context`), put
+        #: before the harness's own messages in each call of its main thread.
+        self.context: list[dict[str, Any]] | None = None
+        kept = launch.settings.get("context")
+        if isinstance(kept, dict) and kept.get("blob") and store is not None:
+            self.context = store.blobs.get_json(kept["blob"])
         #: One snapshot at a time: a launch's threads can call at once, and each snapshot
         #: moves the launch's ref.
         self.snapshot_lock = threading.Lock()
+
+    def in_context(self, assignment: Assignment) -> bool:
+        """Whether this call continues the scenario's conversation: one of the main thread's.
+        A subagent's has its own task, and the harness's side calls (Hermes's review) are its
+        own, not the task's next step."""
+        return self.context is not None and assignment.main
 
     @property
     def workspace(self) -> str | None:

@@ -165,11 +165,17 @@ Runs page has the same: **Import a chat…**.
   references too.
 - `--tools-from <run>` — where the file names no tools, a run recorded through the same harness
   whose tools each step offers.
+- `--scenario <name>` — makes a scenario of it too: runs of the skill through its harness, each
+  continuing the conversation. The user turn before the skill first came in is the prompt, and
+  everything before it is each run's context (`tuningfork.context`, its `context.json`), so the
+  skill enters each run live and a variant replaces it everywhere. `--cut <message>` starts it
+  from another user turn; `--check '<command>'` or `--reply-contains <text>` gives it its check,
+  which is yours to write. An imported run's page has the same: **Make a scenario…**.
 - `--dry-run` — shows what it would import, and records nothing.
 
 The answers in it are the model's that had the conversation: an experiment at a step samples
 your server's model, given that conversation. Nothing launched an imported run, so it cannot be
-forked to the end.
+forked to the end; its scenario's runs, which tuningfork launches, can.
 
 ## Where do the runs go wrong?
 

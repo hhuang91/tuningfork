@@ -165,3 +165,73 @@ export async function importView(root) {
       problem,
       h("div", { class: "actions" }, start))));
 }
+
+// A scenario of an imported run: the user turn it starts from — by default the one before the
+// skill came in — its name and its check. Each of its runs continues the conversation.
+export async function scenarioFromRunView(root, [runId]) {
+  const head = (title) => [
+    crumbs([["Runs", "#/runs"], [`run ${runId.slice(0, 8)}`, `#/runs/${runId}`], ["Make a scenario"]]),
+    h("div", { class: "page-head" }, h("div", null, h("h1", null, title),
+      h("p", { class: "sub" }, "Runs of the skill through its harness, each continuing this conversation from one of its "
+        + "user turns: the turn is the prompt, everything before it each run's context."))),
+  ];
+  if (live.mode !== "live") {
+    replace(root, ...head("Make a scenario"), h("div", { class: "banner banner-warn" },
+      "Making a scenario needs a running proxy (tuningfork serve). From a terminal:"),
+      command("tuningfork import <file> --scenario <name>"));
+    return;
+  }
+  replace(root, ...head("Make a scenario"), loading());
+  let found;
+  try {
+    found = await api.get(`/imports/${runId}/scenario`);
+  } catch (error) {
+    replace(root, ...head("Make a scenario"), formError(error));
+    return;
+  }
+  const name = input("scenario_name", { placeholder: "a-name" });
+  const cut = h("select", { class: "field", name: "cut" },
+    found.turns.map((turn) => h("option", { value: String(turn.message), selected: turn.message === found.default },
+      `message ${turn.message}${turn.message === found.default ? " (before the skill)" : ""} — ${turn.text || "(no text)"}`)));
+  const kind = h("select", { class: "field", name: "check_kind" },
+    h("option", { value: "" }, "none yet"),
+    h("option", { value: "shell" }, "a shell command, run in each run's workspace"),
+    h("option", { value: "reply_contains" }, "the final reply holds this text"));
+  const check = input("check", { placeholder: "the command, or the text" });
+  const problem = h("div");
+  const done = h("div");
+  const make = h("button", { class: "btn btn-primary", type: "button", "data-control": true }, "Make the scenario");
+  make.addEventListener("click", guard(async () => {
+    replace(problem);
+    const text = check.value.trim();
+    const body = { name: name.value.trim(), cut: Number(cut.value) };
+    if (kind.value === "shell" && text) body.check = text;
+    if (kind.value === "reply_contains" && text) body.check = { reply_contains: text };
+    make.disabled = true;
+    try {
+      const made = await api.post(`/imports/${runId}/scenario`, body);
+      replace(done, panel("Made", h("div", { class: "stack" },
+        (made.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
+        h("div", { class: "actions" },
+          h("a", { class: "btn btn-primary", href: `#/scenarios/${made.scenario.name}` }, "Open the scenario")))));
+    } catch (error) {
+      replace(problem, formError(error));
+      make.disabled = false;
+    }
+  }));
+  replace(root, ...head("Make a scenario"),
+    panel("The scenario", h("div", { class: "stack" },
+      h("p", { class: "hint" }, found.skill
+        ? `It studies ${found.skill}. Starting before the skill came in, the skill enters each run live, through the `
+          + "harness, so a variant replaces it everywhere the model reads it."
+        : "The import kept no skill: a scenario studies one."),
+      h("div", { class: "form-grid" },
+        field("Name", name, { help: "lowercase letters, digits, - and _" }),
+        field("Start from", cut, { wide: true, help: "The user turn each run's prompt is; the conversation before it is "
+          + "each run's context." }),
+        field("Check", kind, { help: "Yours to write: what passes. Without one, runs have no verdict until it has one." }),
+        field("Its text", check, { wide: true })),
+      problem,
+      h("div", { class: "actions" }, make))),
+    done);
+}

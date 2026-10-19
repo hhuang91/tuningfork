@@ -111,6 +111,12 @@ class WireFormat(Protocol):
         answer is answered as not run (`NOT_RUN`), so the conversation stays one the model's
         chat template accepts."""
 
+    def with_context(self, request: dict[str, Any], context: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """The request continuing a conversation it was not given — a scenario's context
+        (`tuningfork.context`), OpenAI-style messages — after the harness's instructions and
+        before its own first message: what the model is sent. None where this format cannot
+        carry one yet: the call is refused rather than sent without it."""
+
     def fresh_request(
         self, system: str, user: str, *, model: str | None, max_tokens: int, temperature: float | None = None
     ) -> dict[str, Any]:

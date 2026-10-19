@@ -15,11 +15,11 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable, Sequence
 
 
-_OPTION_KEYS = ("check", "normalizers", "held_out", "skills", "timeout", "max_turns")
+_OPTION_KEYS = ("check", "normalizers", "held_out", "skills", "timeout", "max_turns", "context")
 _EVAL_KEYS = ("id", "prompt", "expected_output", "files", "expectations", "tuningfork")
 
 #: The checks tuningfork judges itself, on the agent's final reply, besides a shell command:
@@ -67,6 +67,10 @@ class TuningforkOptions:
     skills: list[str] = field(default_factory=list)
     timeout: float = 900.0
     max_turns: int = 12
+    #: A conversation each run continues: a JSON file of OpenAI-style messages beside the spec
+    #: (`load_context`), which the proxy puts after the harness's instructions and before its
+    #: first message, in every call of the run's own thread — a chat imported as a scenario.
+    context: str | None = None
     #: Keys this version does not know, kept so a spec rewritten by tuningfork loses none.
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -80,6 +84,7 @@ class TuningforkOptions:
             skills=list(data.get("skills") or []),
             timeout=float(data.get("timeout", 900.0)),
             max_turns=int(data.get("max_turns", 12)),
+            context=data.get("context") if isinstance(data.get("context"), str) else None,
             extra={k: v for k, v in data.items() if k not in _OPTION_KEYS},
         )
 
@@ -94,6 +99,8 @@ class TuningforkOptions:
             timeout=self.timeout,
             max_turns=self.max_turns,
         )
+        if self.context is not None:
+            data["context"] = self.context
         return {**data, **self.extra}
 
 
@@ -290,7 +297,64 @@ def validate_spec(data: Any) -> list[Problem]:
         turns = options.get("max_turns", 12)
         if isinstance(turns, bool) or not isinstance(turns, int) or turns < 1:
             add(f"{where}.max_turns", "must be a whole number of at least 1")
+        if "context" in options:
+            context = options["context"]
+            if not isinstance(context, str) or not context.endswith(".json") or _climbs(context):
+                add(f"{where}.context", "must be the path of a .json file beside the spec, inside its folder")
     return problems
+
+
+def _climbs(path: str) -> bool:
+    parts = PurePosixPath(path.replace("\\", "/")).parts
+    return not parts or path.startswith(("/", "\\")) or ":" in parts[0] or any(part in ("", ".", "..") for part in parts)
+
+
+#: The roles a context may hold: a conversation, not the harness's instructions.
+CONTEXT_ROLES = ("user", "assistant", "tool")
+
+
+def load_context(spec_dir: Path | str, path: str) -> list[dict[str, Any]]:
+    """The conversation a spec's `tuningfork.context` names, checked as one a harness can
+    continue: user, assistant and tool messages (the harness brings its own instructions),
+    every tool call answered before it ends, and never ending on a user turn — the run's own
+    prompt follows it."""
+    if _climbs(path):
+        raise SpecError(f"context {path!r} is not a path inside the spec's folder")
+    file = Path(spec_dir) / path
+    try:
+        messages = json.loads(file.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SpecError(f"cannot read the context {file}: {exc.strerror or exc}") from None
+    except ValueError as exc:
+        raise SpecError(f"the context {file} is not JSON: {exc}") from None
+    return check_context(messages, f"the context {file}")
+
+
+def check_context(messages: Any, what: str = "the context") -> list[dict[str, Any]]:
+    """`messages` as a context a harness can continue (`load_context`), or a SpecError saying
+    what is wrong with it."""
+    if not isinstance(messages, list) or not messages:
+        raise SpecError(f"{what} must be a list of messages, not empty")
+    open_calls: set[str] = set()
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict) or message.get("role") not in CONTEXT_ROLES:
+            raise SpecError(f"context message {index} must be a user, assistant or tool message")
+        if message["role"] == "assistant":
+            for call in message.get("tool_calls") or []:
+                if not isinstance(call, dict) or not call.get("id") or not isinstance(call.get("function"), dict):
+                    raise SpecError(f"context message {index} holds a tool call without an id and a function")
+                open_calls.add(str(call["id"]))
+        elif message["role"] == "tool":
+            if str(message.get("tool_call_id")) not in open_calls:
+                raise SpecError(f"context message {index} answers a tool call no earlier message made")
+            open_calls.discard(str(message.get("tool_call_id")))
+        if message["role"] == "user" and open_calls:
+            raise SpecError(f"context message {index} comes before the tool calls above it were answered")
+    if open_calls:
+        raise SpecError("the context ends with a tool call not answered")
+    if messages[-1]["role"] == "user":
+        raise SpecError("the context ends on a user turn: the run's own prompt follows it, two in a row")
+    return messages
 
 
 def check_problems(check: Any, where: str = "check") -> list[Problem]:

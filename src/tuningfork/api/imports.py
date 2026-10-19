@@ -80,7 +80,51 @@ def import_routes(*, store: Any) -> list[Route]:
             return _refusal(error)
         return JSONResponse(result.to_json(), status_code=201)
 
+    async def starts(request: Request) -> Response:
+        """Where a scenario of an imported run can start: its user turns, and the one before
+        the skill came in, which it starts from unless told otherwise."""
+        def look() -> dict[str, Any]:
+            run = store.get_run(request.path_params["run"])
+            if run is None:
+                raise OperationError(f"no run matching {request.path_params['run']!r}", code="not_found")
+            chat = imports.chat_of(store, run)
+            skill = (run.parity.get("imported") or {}).get("skill")
+            try:
+                at, context, _ = imports.scenario_start(chat, skill or "", run.harness or "generic")
+            except OperationError:
+                at, context = None, []
+            return {"run": run.id, "skill": skill, "turns": imports.turns(chat), "default": at, "context": len(context)}
+
+        try:
+            return JSONResponse(await asyncio.to_thread(look))
+        except OperationError as error:
+            return _refusal(error)
+
+    async def scenario(request: Request) -> Response:
+        def make(body: dict[str, Any]) -> dict[str, Any]:
+            cut = body.get("cut")
+            if cut is not None and (isinstance(cut, bool) or not isinstance(cut, int)):
+                raise OperationError("cut is a message's index", code="bad_params", field="cut")
+            plan = imports.prepare_scenario(store, request.path_params["run"], str(body.get("name") or ""),
+                                            cut=cut, check=body.get("check"))
+            made = imports.make_scenario(store, plan)
+            return {"scenario": made.to_json(), "warnings": plan.warnings}
+
+        try:
+            raw = await _capped(request, 1024 * 1024)
+            body = json.loads(raw) if raw else {}
+            if not isinstance(body, dict) or set(body) - {"name", "cut", "check"}:
+                raise OperationError("the body is {name, cut, check}", code="bad_params")
+            found = await asyncio.to_thread(make, body)
+        except ValueError:
+            return _refusal(OperationError("the body is not JSON", code="bad_params"))
+        except OperationError as error:
+            return _refusal(error)
+        return JSONResponse(found, status_code=201)
+
     return [
         Route(f"{PREFIX}/preview", preview, methods=["POST"]),
         Route(PREFIX, create, methods=["POST"]),
+        Route(f"{PREFIX}/{{run}}/scenario", starts, methods=["GET"]),
+        Route(f"{PREFIX}/{{run}}/scenario", scenario, methods=["POST"]),
     ]

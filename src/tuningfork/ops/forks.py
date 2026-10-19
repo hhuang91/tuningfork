@@ -246,6 +246,7 @@ def prepare_fork(
             breakpoints=breakpoints,
             initial_commit=initial_commit,
             skill_commit=skill_commit,
+            context=(launch.settings.get("context") if launch is not None else None) or None,
         ),
         checkpoint=checkpoint,
         harness=harness,

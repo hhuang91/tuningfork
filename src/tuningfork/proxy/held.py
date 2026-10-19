@@ -344,6 +344,7 @@ class BreakpointPath:
                     assignment=assignment,
                     replay=notes.get("replay"),
                     substitution=notes.get("substitution"),
+                    context=notes.get("context"),
                     output_cap=notes.get("output_cap"),
                     workspace_commit=notes.get("workspace_commit"),
                     holds=list(held),

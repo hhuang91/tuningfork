@@ -229,3 +229,170 @@ async def test_the_web_ui_previews_then_imports(proxy_client, recorder):
     assert run is not None and run.parity["imported"]["skill"] == "tally-report"
     shown = (await proxy_client.get(f"/_tuningfork/api/runs/{run.id}/timeline")).json()
     assert shown["run"]["imported"]["format"] == "hermes-export"
+
+
+# --- phase 2: a scenario of an import, whose runs continue the conversation ------------------------
+
+EARLIER = [{"id": 2, "role": "user", "content": "Our data lives in data.csv; keep reports small.", "timestamp": 0.5},
+           {"id": 3, "role": "assistant", "content": "Understood: small reports.", "reasoning_content": "Note it.",
+            "finish_reason": "stop", "timestamp": 0.6}]
+
+
+def chat_with_earlier_turns() -> str:
+    return export(EARLIER + conversation(("tally-report", SKILL)))
+
+
+class TestTheContext:
+    def test_it_goes_after_the_harness_instructions_in_what_the_model_sees(self):
+        from tuningfork.wire import get_wire
+
+        context = [{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "noted"}]
+        request = {"model": "m", "messages": [{"role": "system", "content": "be good"}, {"role": "user", "content": "now"}]}
+        sent = get_wire("openai-chat").with_context(request, context)
+        assert [m["content"] for m in sent["messages"]] == ["be good", "earlier", "noted", "now"]
+        assert request["messages"][1]["content"] == "now"  # the harness's own request untouched
+        assert get_wire("anthropic-messages").with_context(request, context) is None
+
+    def test_it_is_checked_as_a_conversation_a_harness_can_continue(self):
+        from tuningfork.specs import SpecError, check_context, validate_spec
+
+        assert check_context([{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}])
+        for bad, said in (
+            ([], "not empty"),
+            ([{"role": "system", "content": "x"}], "user, assistant or tool"),
+            ([{"role": "tool", "tool_call_id": "c1", "content": "x"}], "no earlier message made"),
+            ([{"role": "assistant", "content": "", "tool_calls": [call("c1", "f", {})]}], "not answered"),
+            ([{"role": "user", "content": "a"}], "ends on a user turn"),
+        ):
+            with pytest.raises(SpecError, match=said):
+                check_context(bad)
+        problems = validate_spec({"skill_name": "s", "evals": [{"id": "1", "prompt": "p", "tuningfork": {"context": "../x.json"}}]})
+        assert any(problem.where.endswith("tuningfork.context") for problem in problems)
+
+
+class TestAScenarioOfAnImport:
+    def test_it_starts_at_the_turn_before_the_skill_came_in(self, store):
+        result = imports.execute_import(store, imports.prepare_import(store, chat_with_earlier_turns()))
+        plan = imports.prepare_scenario(store, result.run_id, "tally-chat", check={"reply_contains": "report.json"})
+        # system 0, the earlier turn 1-2, the task's turn 3, then the skill_view.
+        assert plan.cut == 3 and plan.prompt == "Summarize data.csv into report.json."
+        assert plan.context == [{"role": "user", "content": "Our data lives in data.csv; keep reports small."},
+                                {"role": "assistant", "content": "Understood: small reports."}]  # no reasoning sent back
+        assert any("SKILL.md the import extracted" in warning for warning in plan.warnings)
+        made = imports.make_scenario(store, plan)
+        assert made.checked.ok and made.context == plan.context
+        (item,) = made.spec["evals"]
+        assert item["prompt"] == plan.prompt and item["tuningfork"]["context"] == "context.json"
+        assert item["tuningfork"]["check"] == {"reply_contains": "report.json"}
+        assert made.spec["tuningfork"]["skill_dir"] == str(result.folder / "skills" / "tally-report")
+
+        with pytest.raises(OperationError, match="exists already"):
+            imports.prepare_scenario(store, result.run_id, "tally-chat")
+        with pytest.raises(OperationError, match="not a user turn"):
+            imports.prepare_scenario(store, result.run_id, "other", cut=2)
+        first = imports.prepare_scenario(store, result.run_id, "from-the-start", cut=1)
+        assert first.context == [] and "context" not in imports.make_scenario(store, first).spec["evals"][0]["tuningfork"]
+        assert any("no check" in warning for warning in first.warnings)
+
+    def test_the_skills_own_folder_is_the_one_it_tunes(self, store, tmp_path):
+        folder = tmp_path / "tally-report"
+        folder.mkdir()
+        (folder / "SKILL.md").write_text(SKILL, encoding="utf-8")
+        result = imports.execute_import(store, imports.prepare_import(store, chat_with_earlier_turns(), skill_dir=str(folder)))
+        plan = imports.prepare_scenario(store, result.run_id, "own-folder")
+        assert plan.skill_dir == folder.resolve() and not any("extracted" in warning for warning in plan.warnings)
+
+    def test_a_run_not_imported_has_no_conversation_to_make_one_of(self, store):
+        from tests.helpers import record_run, text_message
+
+        run = record_run(store, "plain", [text_message("done")])
+        with pytest.raises(OperationError, match="not imported"):
+            imports.prepare_scenario(store, run, "x")
+
+    def test_its_conversation_is_edited_whole_and_checked(self, store):
+        from tuningfork.ops import scenarios
+
+        result = imports.execute_import(store, imports.prepare_import(store, chat_with_earlier_turns()))
+        imports.make_scenario(store, imports.prepare_scenario(store, result.run_id, "edited"))
+        shorter = [{"role": "user", "content": "keep it short"}, {"role": "assistant", "content": "ok"}]
+        assert scenarios.put_context(store.home, "edited", shorter) == 2
+        assert scenarios.read_scenario(store.home, "edited").context == shorter
+        with pytest.raises(OperationError, match="ends on a user turn"):
+            scenarios.put_context(store.home, "edited", shorter[:1])
+        (scenarios.folder(store.home, "edited") / "context.json").unlink()
+        problems = scenarios.read_scenario(store.home, "edited").checked.problems
+        assert any(problem["where"].endswith("tuningfork.context") for problem in problems)
+
+
+@pytest.fixture
+def stack(tmp_path, mock_server, monkeypatch):
+    from tests.helpers import task_stack
+
+    with task_stack(tmp_path, mock_server, monkeypatch) as built:
+        yield built
+
+
+def test_a_scenarios_runs_continue_its_conversation_and_their_forks_too(stack):
+    """Each call of the run's main thread reaches the model with the conversation after the
+    harness's instructions; the harness's own request is kept beside it, the run still counts,
+    and a fork of it carries the same conversation, its replay matched on the harness's view."""
+    from tests.test_forks import settled
+
+    context = [{"role": "user", "content": "Earlier: the data is in data.csv."},
+               {"role": "assistant", "content": "Noted, I will read data.csv."}]
+    (stack.tmp / "context.json").write_text(json.dumps(context), encoding="utf-8")
+    stack.item.tuningfork.context = "context.json"
+    source = stack.record()
+    assert source.usable and not source.edited_steps
+    steps = settled(stack.store, source.run_id, 3)
+    for step in steps:
+        sent = stack.store.rebuild_request(step)["messages"]
+        assert sent[0]["role"] == "system" and sent[1:3] == context and step.context["messages"] == 2
+        assert stack.store.harness_request(step)["messages"][1]["content"] == "Summarize data.csv into report.json."
+        assert not step.edited and not step.substitution
+    assert all(request["messages"][1:3] == context for request in stack.mock.requests[-3:])
+    launch = stack.store.get_launch(stack.store.get_run(source.run_id).launch_id)
+    assert launch.settings["context"]["messages"] == 2 and launch.settings["context"]["blob"] in stack.store.live_blobs()
+
+    _, (fork,) = stack.fork(source.run_id, "1")
+    assert fork.usable and fork.departed is None and fork.reached
+    forked = settled(stack.store, fork.run_id, 3)
+    assert forked[0].served and all(stack.store.rebuild_request(step)["messages"][1:3] == context for step in forked)
+    assert stack.mock.requests[-1]["messages"][1:3] == context
+
+
+def test_a_scenario_from_the_terminal(store, tmp_path):
+    from tuningfork.cli import app
+    from tuningfork.ops import scenarios
+
+    path = tmp_path / "session.jsonl"
+    path.write_text(chat_with_earlier_turns(), encoding="utf-8")
+    runner = CliRunner()
+    looked = runner.invoke(app, ["import", str(path), "--scenario", "from-cli", "--reply-contains", "report.json",
+                                 "--dry-run", "--home", str(store.home)], env={"COLUMNS": "200"})
+    assert looked.exit_code == 0, looked.output
+    assert "scenario   from-cli: starts at message 3" in looked.output and "continuing 2 message(s)" in looked.output
+    done = runner.invoke(app, ["import", str(path), "--scenario", "from-cli", "--reply-contains", "report.json",
+                               "--home", str(store.home)], env={"COLUMNS": "200"})
+    assert done.exit_code == 0, done.output
+    assert "scenario from-cli made" in done.output
+    spec = scenarios.read_scenario(store.home, "from-cli").spec
+    assert spec["evals"][0]["tuningfork"]["check"] == {"reply_contains": "report.json"}
+    again = runner.invoke(app, ["import", str(path), "--scenario", "from-cli", "--home", str(store.home)])
+    assert again.exit_code == 1 and "exists already" in again.output
+    assert len(store.runs(limit=10)) == 1  # the clash left no second run behind
+
+
+async def test_the_web_ui_makes_a_scenario_and_edits_its_conversation(proxy_client, recorder):
+    made = await proxy_client.post("/_tuningfork/api/imports", json={"content": chat_with_earlier_turns()})
+    run = made.json()["run"]
+    starts = (await proxy_client.get(f"/_tuningfork/api/imports/{run}/scenario")).json()
+    assert starts["default"] == 3 and [turn["message"] for turn in starts["turns"]] == [1, 3] and starts["context"] == 2
+    created = await proxy_client.post(f"/_tuningfork/api/imports/{run}/scenario", json={"name": "from-ui", "cut": 3})
+    assert created.status_code == 201 and created.json()["scenario"]["context"][0]["role"] == "user"
+    assert any("no check" in warning for warning in created.json()["warnings"])
+    two = [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}]
+    edited = await proxy_client.put("/_tuningfork/api/scenarios/from-ui/context", json={"messages": two})
+    assert edited.status_code == 200 and edited.json() == {"messages": 2}
+    refused = await proxy_client.put("/_tuningfork/api/scenarios/from-ui/context", json={"messages": two[:1]})
+    assert refused.status_code == 400 and "ends on a user turn" in refused.json()["error"]["message"]

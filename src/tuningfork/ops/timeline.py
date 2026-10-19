@@ -80,6 +80,8 @@ def launch_json(launch: Launch | None) -> dict[str, Any] | None:
         "job_id": launch.job_id,
         # A fork an experiment drew is one of its samples, and goes to the trash with it.
         "experiment_id": launch.experiment_id,
+        # A scenario's run continues a conversation (`tuningfork.context`): how long, from which file.
+        "context": {key: value for key, value in (settings.get("context") or {}).items() if key != "blob"} or None,
         "workspace": launch.workspace,
         "check": describe_check(check),
         "check_kind": check_kind(check),

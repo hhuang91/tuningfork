@@ -269,6 +269,7 @@ class Recorder:
         substitution: dict[str, Any] | None = None,
         workspace_commit: str | None = None,
         served_by: str | None = None,
+        context: dict[str, Any] | None = None,
         holds: list[str] | None = None,
         output_cap: dict[str, Any] | None = None,
     ) -> Step | None:
@@ -325,6 +326,7 @@ class Recorder:
                 assignment=assignment,
                 replay=replay,
                 substitution=substitution,
+                context=context,
                 workspace_commit=workspace_commit,
                 # A fork's replayed answer came from the server its source was recorded on.
                 server_id=served_by or self.server_id,

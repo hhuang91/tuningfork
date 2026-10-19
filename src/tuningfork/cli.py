@@ -1387,14 +1387,37 @@ def import_chat(
     ),
     label: Optional[str] = typer.Option(None, "--label", help="The run's label."),
     task: Optional[str] = typer.Option(None, "--task", help="A task id to file the run under."),
+    scenario: Optional[str] = typer.Option(
+        None, "--scenario", help="Also make a scenario of it, by this name: runs of the skill through the harness, "
+        "each continuing the conversation from the user turn before the skill came in.",
+    ),
+    cut: Optional[int] = typer.Option(
+        None, "--cut", help="With --scenario: the user turn it starts from, by its message's index, in place of the "
+        "one before the skill came in.",
+    ),
+    check: Optional[str] = typer.Option(None, "--check", help="With --scenario: its check, a shell command run in each run's workspace."),
+    reply_contains: Optional[str] = typer.Option(None, "--reply-contains", help="With --scenario: its check, the final reply holds this text."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be imported, and record nothing."),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """Import a conversation an agent had outside tuningfork as a run: each assistant turn a step,
     rebuilt with everything before it as its context, so resample, ab, forking-tokens and refine
-    work at its steps. The skill under study is kept beside it."""
-    from tuningfork.ops.imports import execute_import, prepare_import
+    work at its steps. The skill under study is kept beside it. --scenario makes a scenario of it
+    too, whose runs continue the conversation."""
+    from tuningfork.ops import scenarios as scenario_files
+    from tuningfork.ops.imports import execute_import, make_scenario, prepare_import, prepare_scenario, scenario_start
     from tuningfork.paths import resolve_path
+
+    if scenario:
+        try:
+            scenario_files.check_name(scenario)
+        except OperationError as error:
+            _refuse(error)
+    if check is not None and reply_contains is not None:
+        _refuse(OperationError("name one check: --check or --reply-contains", field="check"))
+    checked = {"reply_contains": reply_contains} if reply_contains is not None else check
+    if (cut is not None or checked is not None) and not scenario:
+        _refuse(OperationError("--cut and a check are a scenario's: name it with --scenario", field="scenario"))
 
     try:
         data = resolve_path(str(file)).path.read_bytes()  # a Windows path, under WSL, read as it is meant
@@ -1430,14 +1453,41 @@ def import_chat(
         console.print(f"  kept       {escape(shown['skill_dir'])}")
     for warning in shown["warnings"]:
         console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    if scenario:
+        studied = plan.skill.name if plan.skill else (plan.skill_dir.name if plan.skill_dir else "")
+        try:
+            at, context, prompt = scenario_start(plan.chat, studied, plan.harness, cut)
+        except OperationError as error:
+            _refuse(error)
+        first = prompt.strip().splitlines()[0] if prompt.strip() else ""
+        console.print(f"  scenario   {escape(scenario)}: starts at message {at} ({_clip(first, False, limit=70)}), "
+                      f"continuing {len(context)} message(s)")
     if dry_run:
         console.print("\n[dim]nothing recorded (--dry-run)[/dim]")
         return
-    result = execute_import(store, plan)
+    # A scenario's name is checked before anything is recorded: a clash leaves no run behind.
+    if scenario and (scenario_files.folder(store.home, scenario) / scenario_files.SPEC).exists():
+        _refuse(OperationError(f"a scenario called {scenario!r} exists already", field="scenario"))
+    try:
+        result = execute_import(store, plan)
+    except OperationError as error:
+        _refuse(error)
     run = result.run_id[:8]
     console.print(f"\nimported as run [bold]{run}[/bold]: {result.steps} step(s)")
     console.print(f"[dim]`tuningfork timeline {run}` reads it; `tuningfork resample {run} <step> -n 20` and "
                   f"`tuningfork refine start {run} <step> …` work at its steps.[/dim]")
+    if not scenario:
+        return
+    try:
+        planned = prepare_scenario(store, result.run_id, scenario, cut=cut, check=checked)
+        made = make_scenario(store, planned)
+    except OperationError as error:
+        _refuse(error)
+    for warning in [*planned.warnings, *made.checked.warnings]:
+        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    spec_file = scenario_files.spec_path(store.home, scenario)
+    console.print(f"scenario [bold]{escape(scenario)}[/bold] made: {escape(str(spec_file))}")
+    console.print(f"[dim]`tuningfork batch {spec_file} -n 10` runs it, each run continuing the conversation.[/dim]")
 
 
 @app.command()
