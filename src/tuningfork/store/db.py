@@ -238,6 +238,9 @@ CREATE INDEX IF NOT EXISTS token_streams_sample ON token_streams(sample_id);
 #: threads, and `thread` one not yet told apart (see `Store.finalize_threads`). A run
 #: recorded outside any launch has no role.
 MAIN, FORK, SUBAGENT, SIDE, THREAD = "main", "fork", "subagent", "side", "thread"
+#: How many of the latest unlaunched runs sharing a new run's first message are read for the
+#: one its history branches from (`Store._branch_of`): each costs a walk of its own history.
+BRANCH_CANDIDATES = 100
 
 
 @dataclass(slots=True)
@@ -249,6 +252,8 @@ class Run:
     task_id: str | None
     harness: str | None
     model: str | None
+    #: A new run whose history branched from another's, as no call of that one: that run, and
+    #: the depth where the two part — they share messages 0 to depth − 1 (`Store._branch_of`).
     forked_from_run: str | None
     forked_at_depth: int | None
     skill_hashes: dict[str, str]
@@ -1118,21 +1123,44 @@ class Store:
     ) -> str:
         """Decide which run this request belongs to.
 
-        Extends a run whose head lies on this path; branches off a known root as a fork;
-        otherwise starts a new run.
+        Extends a run whose head lies on this path; otherwise starts a new run, marked as a
+        branch of the run whose history it shares the most of (`_branch_of`) where it has one.
+        The mark is the record's only: it decides no grouping, which is settled first.
         """
         existing = self._existing_run_for(path)
         if existing is not None:
             return existing
-        if path and not self._peek_pending_force():
-            forked = self._conn.execute(
-                "SELECT id FROM runs WHERE root_node_id = ? AND launch_id IS NULL"
-                " AND trashed_at IS NULL ORDER BY started_at LIMIT 1",
-                (path[0],),
-            ).fetchone()
-            if forked:
-                return self._new_run(path, model, harness, forked_from=forked["id"])
-        return self._new_run(path, model, harness)
+        branch = self._branch_of(path) if path and not self._peek_pending_force() else None
+        return self._new_run(path, model, harness, branch)
+
+    def _branch_of(self, path: Sequence[str]) -> tuple[str, int] | None:
+        """The run a new run's history branches from, and the depth where the two part: of
+        the unlaunched runs it shares a first message with, the one whose own history holds
+        the most of this path — more than its first message, which two conversations share
+        by their system prompt alone. Read-only; callers hold the lock.
+
+        Nodes are named by their parents, so a node two paths hold is everything above it
+        too: the deepest node of this path that a run's history holds is where they part."""
+        rows = self._conn.execute(
+            "SELECT id, head_node_id, started_at FROM runs WHERE root_node_id = ? AND launch_id IS NULL"
+            " AND trashed_at IS NULL ORDER BY updated_at DESC LIMIT ?",
+            (path[0], BRANCH_CANDIDATES),
+        ).fetchall()
+        index = {node: depth for depth, node in enumerate(path)}
+        best: tuple[int, float, str] | None = None
+        for row in rows:
+            above = self._conn.execute(
+                "WITH RECURSIVE up(id, parent_id) AS ("
+                " SELECT id, parent_id FROM nodes WHERE id = ?"
+                " UNION ALL SELECT n.id, n.parent_id FROM nodes n JOIN up ON n.id = up.parent_id)"
+                " SELECT id FROM up",
+                (row["head_node_id"],),
+            ).fetchall()
+            shared = max((index[found["id"]] + 1 for found in above if found["id"] in index), default=0)
+            # The deepest share wins; between equals, the older run, whose history the other's repeats.
+            if shared >= 2 and (best is None or (shared, -row["started_at"]) > (best[0], -best[1])):
+                best = (shared, row["started_at"], row["id"])
+        return (best[2], best[0]) if best is not None else None
 
     def _existing_run_for(self, path: Sequence[str]) -> str | None:
         """The run this path continues, if any. Read-only; callers hold the lock.
@@ -1177,11 +1205,12 @@ class Store:
         path: Sequence[str],
         model: str | None,
         harness: str | None,
-        forked_from: str | None = None,
+        branch: tuple[str, int] | None = None,
     ) -> str:
         now = time.time()
         run_id = uuid.uuid4().hex
         label, task_id = self._take_pending_label()
+        forked_from, forked_at = branch if branch is not None else (None, None)
         self._conn.execute(
             "INSERT INTO runs (id, root_node_id, head_node_id, label, task_id, harness,"
             " model, forked_from_run, forked_at_depth, skill_hashes, parity,"
@@ -1195,7 +1224,7 @@ class Store:
                 harness,
                 model,
                 forked_from,
-                len(path) - 1 if forked_from else None,
+                forked_at,
                 None,
                 None,
                 now,

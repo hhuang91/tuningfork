@@ -722,7 +722,7 @@ def show(
     console.print(f"  started {_when(target.started_at)}")
     if target.forked_from_run:
         console.print(
-            f"  forked from {target.forked_from_run[:8]} at depth {target.forked_at_depth}"
+            f"  forked from {target.forked_from_run[:8]}: the two share their first {target.forked_at_depth} message(s)"
         )
     if target.is_thread and target.parent_run_id:
         spawned = f", from its step {target.spawned_at}" if target.spawned_at is not None else ""

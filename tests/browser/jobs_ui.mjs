@@ -1158,6 +1158,10 @@ try {
   await until(() => page.eval(`[...document.querySelectorAll(".run-row")].some((row) => row.textContent.includes("${caught.id.slice(0, 8)}"))`), "it in the Runs list");
   check(await page.eval(`[...document.querySelectorAll(".run-row")].find((row) => row.textContent.includes("${caught.id.slice(0, 8)}"))
     .querySelector(".chip").textContent === "recorded live"`), "the Runs list marks it recorded live, where a label would name it");
+  // Its system prompt is the imported chats' too, but nothing else of them is: no branch of theirs.
+  check(caught.forked_from_run === null && !(await page.eval(`[...document.querySelectorAll(".run-row")]
+    .find((row) => row.textContent.includes("${caught.id.slice(0, 8)}")).textContent.includes("fork @")`)),
+    "and sharing only a system prompt with other runs, it is no fork of theirs");
   await page.eval(`location.hash = "#/runs/${caught.id}"`);
   await until(() => page.eval(`!!document.querySelector(".tl-rail-head")`), "its page");
   check(await page.eval(`(() => { const head = document.querySelector(".page-head");

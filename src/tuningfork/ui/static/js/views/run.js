@@ -187,7 +187,8 @@ function aboutRun({ run, launch, threads }) {
           : null],
         ["server", run.server_id ? h("span", { class: "mono" }, run.server_id.slice(0, 8)) : null],
         ["forked from", run.forked_from_run
-          ? [h("a", { class: "mono", href: `#/runs/${run.forked_from_run}` }, short(run.forked_from_run)), ` at message depth ${run.forked_at_depth}`]
+          ? [h("a", { class: "mono", href: `#/runs/${run.forked_from_run}` }, short(run.forked_from_run)),
+             `: the two share their first ${plural(run.forked_at_depth, "message")}`]
           : null],
         // The check, what it said and why: at the end of the run, below.
         ["how it ended", result?.returncode !== undefined || result?.duration_s !== undefined

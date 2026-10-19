@@ -186,7 +186,8 @@ export async function runsView(root, _params, scope) {
         // Nothing launched it, and it was not imported: a harness's calls through the proxy.
         run.recorded === "live" ? recordedLive() : null,
         run.forked_from_run
-          ? chip(`fork @ ${run.forked_at_depth}`, "skill", `Forked from run ${short(run.forked_from_run)} at message depth ${run.forked_at_depth}`)
+          ? chip(`fork @ ${run.forked_at_depth}`, "skill",
+            `Branched from run ${short(run.forked_from_run)}: the two share their first ${plural(run.forked_at_depth, "message")}, and part there`)
           : null),
       h("span", { class: "muted" }, plural(run.step_count, "step")),
       h("span", { class: "muted mono small run-model", title: run.model || "" }, run.model || ""),

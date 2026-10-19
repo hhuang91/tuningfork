@@ -187,6 +187,24 @@ class TestRunGrouping:
         assert runs[1].forked_from_run == runs[0].id
         assert runs[1].forked_at_depth == 2
 
+    def test_a_branch_is_marked_from_the_run_it_shares_most_with_where_the_two_part(self, store):
+        """A new run is marked a branch of the run whose history holds the most of its own — at
+        the message where the two part, not at its own length — and two conversations sharing
+        only their system prompt, as every session of one harness may, are no branch at all."""
+        def say(text: str, role: str = "user") -> dict:
+            return {"role": role, "content": text}
+
+        opening = [SYSTEM, say("go"), say("a1", "assistant")]
+        a = store.record_step(request=request_with([*opening, say("u1")])).run_id
+        b = store.record_step(request=request_with([*opening, say("u2")])).run_id
+        assert store.record_step(request=request_with([*opening, say("u2"), say("b1", "assistant"), say("u3")])).run_id == b
+        c = store.record_step(request=request_with([*opening, say("u2"), say("b1", "assistant"), say("u4"),
+                                                    say("c1", "assistant"), say("u5")])).run_id
+        other = store.record_step(request=request_with([SYSTEM, say("something else")])).run_id
+
+        marked = {run: (store.get_run(run).forked_from_run, store.get_run(run).forked_at_depth) for run in (a, b, c, other)}
+        assert marked == {a: (None, None), b: (a, 3), c: (b, 5), other: (None, None)}
+
     def test_identical_requests_collapse_without_a_boundary(self, store):
         """Documents the limitation `begin_run` exists to solve."""
         request = request_with([{"role": "user", "content": "same"}])
