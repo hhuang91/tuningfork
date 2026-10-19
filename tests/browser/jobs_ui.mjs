@@ -1177,6 +1177,33 @@ try {
   check(await page.eval(`(() => { const top = document.querySelector("#tm${earlierLine}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`),
     "an earlier answer's line leads to it in the conversation, opened");
 
+  console.log("a long session in the rail: each of the person's turns folds to its line");
+  const three = await post("/imports", { content: JSON.stringify({ id: "20261019_100000_ee44ff", source: "cli", model: "m",
+    title: "three turns", system_prompt: "You are Hermes.", started_at: 1760200000, messages: [
+      { role: "user", content: "File receipt A." }, { role: "assistant", content: "Filed A." },
+      { role: "user", content: "File receipt B." }, { role: "assistant", content: "Filed B." },
+      { role: "user", content: "File receipt C." }, { role: "assistant", content: "Filed C." },
+    ] }) });
+  // Each turn's line: open or folded, and what it says; each step's line: folded away or not.
+  const turnsNow = () => page.eval(`[...document.querySelectorAll(".tl-rail-turn")]
+    .map((turn) => turn.querySelector(".tl-rail-fold").getAttribute("aria-expanded") + ":" + turn.textContent).join(" | ")`);
+  const stepsNow = () => page.eval(`[...document.querySelectorAll(".tl-rail-step")].map((line) => line.classList.contains("tl-folded") ? "folded" : "shown").join(",")`);
+  await page.eval(`location.hash = "#/runs/${three.run}"`);
+  await until(() => page.eval(`document.querySelectorAll(".tl-rail-turn").length === 3`), "its three turns in the rail");
+  check(await turnsNow() === "false:userFile receipt A.step 0 | false:userFile receipt B.step 1 | true:userFile receipt C."
+    && await stepsNow() === "folded,folded,shown", "all but the last turn start folded to their line, saying what each holds");
+  await page.eval(`document.querySelector(".tl-rail-turn .tl-rail-fold").click()`);
+  check((await turnsNow()).startsWith("true:userFile receipt A. | false:") && await stepsNow() === "shown,folded,shown",
+    "a turn unfolds from its line");
+  await page.eval(`document.querySelector(".tl-rail-foldall").click()`);
+  check(await stepsNow() === "folded,folded,folded" && await page.eval(`document.querySelector(".tl-rail-foldall").textContent`) === "unfold all",
+    "and all fold at once, from the rail's head");
+  await page.eval(`document.querySelector(".tl-rail-foldall").click()`);
+  check(await stepsNow() === "shown,shown,shown", "and unfold");
+  await page.eval(`location.hash = "#/runs/${three.run}/1"`);
+  await until(() => page.eval(`!!document.querySelector("#s1.tl-open")`), "its step 1, opened from its address");
+  check(await stepsNow() === "folded,shown,shown", "the turn holding the step the address opens starts open");
+
   check(page.problems.length === 0, `no page errors${page.problems.length ? `: ${page.problems.join(" | ")}` : ""}`);
   console.log("all passed");
 } catch (error) {

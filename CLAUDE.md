@@ -307,7 +307,10 @@ nothing launched nor imported was recorded live (`Run.recorded`: `launched`, `im
 and says so where a label would name it — the Runs list, its page, `tuningfork runs` and `show`.
 Its first call may continue a conversation already going on, a session of many turns: its rail
 lists that conversation first, as its own exchanges — each person's turn, the model's answers
-unnumbered, no call of the run's, and what came after each — then the steps it recorded. A call
+unnumbered, no call of the run's, and what came after each — then the steps it recorded. Each
+person's turn folds there to its own line, saying what it holds; with three or more, all but the
+last start folded, but the one holding the step the address opens, and a step revealed opens its
+turn. A call
 joins the run whose latest message its history holds (`Store._existing_run_for`); one that joins
 none starts a run, marked a branch of the run whose history holds the most of its own — more than
 its first message, which every session of one harness may share as its system prompt — at the
