@@ -1478,11 +1478,7 @@ def import_chat(
             start = scenario_start(plan.chat, plan.study, plan.harness, cut)
         except OperationError as error:
             _refuse(error)
-        first = start.prompt.strip().splitlines()[0] if start.prompt.strip() else ""
-        in_turn = len(start.context.in_turn)
-        console.print(f"  scenario   {escape(scenario)}: starts at message {start.cut} ({_clip(first, False, limit=70)}), "
-                      f"continuing {len(start.context.before)} message(s)"
-                      + (f", and {in_turn} of its turn taken as done" if in_turn else "")
+        console.print(f"  scenario   {escape(scenario)}: starts {_starts(start.cut, start.prompt, len(start.context.before), start.steps)}"
                       + (escape(f"; each run stops where the model loads a skill other than {plan.study}")
                          if start.next_skill else ""))
     if dry_run:
@@ -1521,13 +1517,28 @@ def _run_it(spec_file: Path, harness: Optional[str]) -> None:
                   "conversation.[/dim]")
 
 
+def _starts(cut: int, prompt: str, before: int, steps: list[dict[str, Any]], *, yours: bool = False) -> str:
+    """Where a scenario of a conversation starts: the person's turn, its prompt's first line, how
+    much of the conversation each run continues, and the steps of the turn it takes as done."""
+    from tuningfork.ops.imports import named_steps
+
+    line = prompt.strip().splitlines()[0] if prompt.strip() else ""
+    done = [entry["step"] for entry in steps if entry["part"] == "done" and entry["step"] is not None]
+    return (f"at message {cut} ({'yours: ' if yours else ''}{_clip(line, False, limit=70)}), continuing {before} "
+            "message(s)" + (f", with its turn's {named_steps(done)} taken as done" if done else ""))
+
+
 @app.command("scenario")
 def scenario_of_run(
     run: str = typer.Argument(..., help="The run: imported, launched by tuningfork, or recorded as it happened."),
     name: str = typer.Argument(..., help="The scenario's name: lowercase letters, digits, - and _."),
     cut: Optional[int] = typer.Option(
         None, "--cut", help="The user turn it starts from, by its message's index (`tuningfork timeline` shows the "
-        "turns), in place of the one before the skill came in.",
+        "turns): only where the skill never came in, or came preloaded, is there another than the one before it came in.",
+    ),
+    prompt: Optional[str] = typer.Option(
+        None, "--prompt", help="The starting prompt, in place of that turn's words: a file the chat named elsewhere "
+        "put where the scenario's inputs put it, say.",
     ),
     skill: Optional[str] = typer.Option(None, "--skill", help="Where the run kept or showed several skills, the one it studies."),
     skill_dir: Optional[Path] = typer.Option(
@@ -1560,14 +1571,15 @@ def scenario_of_run(
     store = _store(home)
     try:
         plan = prepare_scenario(store, run, name, cut=cut, check=checked, skill=skill,
-                                skill_dir=str(skill_dir) if skill_dir else None, harness=harness, task_check=not no_check)
+                                skill_dir=str(skill_dir) if skill_dir else None, harness=harness, task_check=not no_check,
+                                prompt=prompt)
     except OperationError as error:
         _refuse(error)
-    first = plan.prompt.strip().splitlines()[0] if plan.prompt.strip() else ""
-    in_turn = len(plan.context.in_turn)
     console.print(f"[bold]{escape(name)}[/bold] · a scenario of run {plan.run_id[:8]} · {escape(plan.harness or '-')}")
-    console.print(f"  starts     at message {plan.cut} ({_clip(first, False, limit=70)}), continuing "
-                  f"{len(plan.context.before)} message(s)" + (f", and {in_turn} of its turn taken as done" if in_turn else ""))
+    console.print(f"  starts     {_starts(plan.cut, plan.prompt, len(plan.context.before), plan.steps, yours=prompt is not None)}")
+    first = next((entry for entry in plan.steps if entry["part"] == "first"), None)
+    if first is not None and first["step"] is not None:
+        console.print(f"  first      step {first['step']}'s call, which the chat answered: {_clip(first['label'], False, limit=90)}")
     console.print(f"  skill      {escape(plan.skill)}: {escape(str(plan.skill_dir))}"
                   + (" [dim](a copy of its own)[/dim]" if plan.own_skill else ""))
     shown_check = json.dumps(plan.check) if isinstance(plan.check, dict) else (plan.check or "none")
@@ -1576,7 +1588,8 @@ def scenario_of_run(
     console.print(f"  inputs     {len(listed)} file(s)" + (": " + escape(", ".join(listed[:6])) + (", …" if len(listed) > 6 else "")
                                                        if listed else ""))
     if plan.next_skill is not None:
-        console.print(f"  stops      where the model loads a skill other than {escape(plan.skill)}")
+        did = f" (the chat did at step {plan.next_skill['step']})" if plan.next_skill["step"] is not None else ""
+        console.print(f"  stops      where the model loads a skill other than {escape(plan.skill)}{escape(did)}")
     for warning in plan.warnings:
         console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
     if dry_run:

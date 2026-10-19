@@ -32,7 +32,7 @@ RUNS = "/_tuningfork/api/runs"
 #: What a body may hold besides the file's text: `prepare_import`'s options.
 OPTIONS = ("session", "skill", "skill_dir", "harness", "label", "task_id", "tools_from")
 #: What a scenario's body may hold: `prepare_scenario`'s options.
-SCENARIO_FIELDS = ("name", "cut", "check", "skill", "skill_dir", "harness", "task_check")
+SCENARIO_FIELDS = ("name", "cut", "check", "skill", "skill_dir", "harness", "task_check", "prompt")
 
 
 async def _body(request: Request) -> tuple[str, dict[str, Any]]:
@@ -96,12 +96,17 @@ def import_routes(*, store: Any) -> list[Route]:
     async def starts(request: Request) -> Response:
         """Where a scenario of a run can start (`imports.scenario_choices`): its person's turns,
         the skills it kept or showed — `?skill=` the one studied, where there are several — and
-        the turn it starts from unless told otherwise. `?harness=`: the harness that had it,
-        where the run does not say."""
+        the turn it starts from, `?cut=` or the one before the skill came in, with its words and
+        the conversation's steps from there. `?harness=`: the harness that had it, where the run
+        does not say."""
         try:
+            cut = request.query_params.get("cut") or None
+            if cut is not None and not cut.isdigit():
+                raise OperationError("cut is a message's index", code="bad_params", field="cut")
             found = await asyncio.to_thread(
                 imports.scenario_choices, store, request.path_params["run"],
                 skill=request.query_params.get("skill") or None, harness=request.query_params.get("harness") or None,
+                cut=int(cut) if cut is not None else None,
             )
         except OperationError as error:
             return _refusal(error)
@@ -112,7 +117,7 @@ def import_routes(*, store: Any) -> list[Route]:
             cut = body.get("cut")
             if cut is not None and (isinstance(cut, bool) or not isinstance(cut, int)):
                 raise OperationError("cut is a message's index", code="bad_params", field="cut")
-            for name in ("skill", "skill_dir", "harness"):
+            for name in ("skill", "skill_dir", "harness", "prompt"):
                 if body.get(name) is not None and not isinstance(body[name], str):
                     raise OperationError(f"{name} is text", code="bad_params", field=name)
             if not isinstance(body.get("task_check", True), bool):
@@ -120,7 +125,7 @@ def import_routes(*, store: Any) -> list[Route]:
             plan = imports.prepare_scenario(store, request.path_params["run"], str(body.get("name") or ""), cut=cut,
                                             check=body.get("check"), skill=body.get("skill") or None,
                                             skill_dir=body.get("skill_dir") or None, harness=body.get("harness") or None,
-                                            task_check=body.get("task_check", True))
+                                            task_check=body.get("task_check", True), prompt=body.get("prompt"))
             made = imports.make_scenario(store, plan)
             return {"scenario": made.to_json(), "warnings": [*plan.warnings, *made.checked.warnings],
                     "harness": plan.harness}

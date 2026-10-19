@@ -69,11 +69,22 @@ class Chat:
     started_at: float | None = None
     #: How each assistant turn ended, by its index in `messages`, where the file says.
     finish: dict[int, str] = field(default_factory=dict)
+    #: A recording's step at each message its answer is, where the run's calls may have carried
+    #: more than its own steps — a scenario's conversation, spliced in. None: each assistant turn
+    #: is a step, in order, as an import records them.
+    numbers: dict[int, int] | None = None
 
     @property
     def steps(self) -> list[int]:
         """Each assistant turn's index in `messages`: the steps an import records."""
         return [index for index, message in enumerate(self.messages) if message["role"] == "assistant"]
+
+    def step_of(self, index: int) -> int | None:
+        """The run's step whose answer is the message at `index`; None for one that is not."""
+        if self.numbers is not None:
+            return self.numbers.get(index)
+        steps = self.steps
+        return steps.index(index) if index in steps else None
 
     @property
     def system_prompt(self) -> bool:
@@ -591,6 +602,11 @@ OWN_OPTIONS = ("check", "context", "stop_at_next_skill", "held_out")
 PATH_ARGUMENTS = ("path", "file_path", "filepath", "filename", "file", "notebook_path")
 #: What a check reads from its task's folder: `$TUNINGFORK_SPEC_DIR/<path>`.
 SPEC_DIR_PATH = re.compile(r"\$\{?TUNINGFORK_SPEC_DIR\}?/([^\s\"'`;|&()<>]+)")
+#: What a scenario's runs do with each step of the conversation from its prompt on: take it as
+#: done (in their context, as the chat had it), make it first or as they go on — each its own
+#: answer, the chat's path only one — or never reach it: past where each run stops, or after the
+#: person's next turn, which no run is sent.
+STEP_PARTS = ("done", "first", "live", "past", "later")
 
 
 def chat_of(store: Store, run: Any, harness: str | None = None) -> Chat:
@@ -624,6 +640,11 @@ def chat_of(store: Store, run: Any, harness: str | None = None) -> Chat:
                                                       if key in ("content", "tool_calls")}}))
     chat = Chat(format="recorded", messages=messages, model=run.model, started_at=run.started_at)
     chat.harness = harness or run.harness or _guessed_harness(chat, wire.name)
+    # Each step's answer comes after the messages its call held. A scenario's run had its
+    # conversation spliced into every call (OpenAI chat only), whose turns are none of its steps.
+    if all(get_wire(step.wire).name == "openai-chat" for step in steps):
+        depths = store.node_depths([step.request_node_id for step in steps])
+        chat.numbers = {depths[step.request_node_id] + 1: step.idx for step in steps if step.request_node_id in depths}
     return chat
 
 
@@ -637,9 +658,9 @@ def _guessed_harness(chat: Chat, wire: str) -> str:
 
 
 def turns(chat: Chat) -> list[dict[str, Any]]:
-    """Each person's turn a scenario can start from — a user message the harness wrote itself
-    is not one (`harness_note`) — its message's index, its first line, and the step that
-    answers it."""
+    """Each person's turn of the conversation — a user message the harness wrote itself is not
+    one (`harness_note`) — its message's index, its first line, and the step that answers it:
+    where a scenario could start, the skill it studies allowing (`Start.starts`)."""
     note = _adapter_method(chat.harness, "harness_note")
     steps = chat.steps
     found = []
@@ -648,7 +669,8 @@ def turns(chat: Chat) -> list[dict[str, Any]]:
             continue
         words = _words(message, note).strip()
         found.append({"message": index, "text": words.splitlines()[0][:160] if words else "",
-                      "step": next((number for number, at in enumerate(steps) if at > index), None)})
+                      "step": next((number for at in steps if at > index for number in [chat.step_of(at)]
+                                    if number is not None), None)})
     return found
 
 
@@ -725,6 +747,9 @@ class ScenarioPlan:
     #: What its check reads from its task's folder (`$TUNINGFORK_SPEC_DIR`), by its place beside
     #: the scenario's spec: copied there, where no run sees it.
     check_files: dict[str, Path] = field(default_factory=dict)
+    #: The conversation's steps from its prompt on, as the chat went, each with what a run does
+    #: with it (`Start.steps`).
+    steps: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def own_skill(self) -> bool:
@@ -757,7 +782,7 @@ class ScenarioPlan:
                 "context": len(self.context.before), "in_turn": len(self.context.in_turn), "next_skill": self.next_skill,
                 "skill": self.skill, "skill_dir": str(self.skill_dir), "own_skill": self.own_skill,
                 "check": self.check, "check_files": sorted(self.check_files), "harness": self.harness,
-                "files": sorted(self.files), "spec": self.spec(), "warnings": self.warnings}
+                "files": sorted(self.files), "steps": self.steps, "spec": self.spec(), "warnings": self.warnings}
 
 
 @dataclass(slots=True)
@@ -780,28 +805,47 @@ class Start:
     #: The conversation's answer that each run's first stands for, by its message's index: the
     #: first after the prompt and the steps taken as done. None where the conversation has none.
     live: int | None = None
+    #: The person's turns a scenario can start from, by their messages' indexes: the one the
+    #: skill came in after — every one, where it never came in or came with the harness's own
+    #: instructions — so that it comes in live wherever a run starts.
+    starts: list[int] = field(default_factory=list)
+    #: The conversation's steps from the prompt on, as the chat went: each by the run's step
+    #: (`step`; None for a message its calls carried that was none of its steps), what the model
+    #: did there as a run's page names it (`label`), what each run does with it (`part`, one of
+    #: `STEP_PARTS`), and `stop` on the answer that loaded the skill each run stops at.
+    steps: list[dict[str, Any]] = field(default_factory=list)
 
 
-def scenario_start(chat: Chat, skill: str, harness: str, cut: int | None = None) -> Start:
+def scenario_start(chat: Chat, skill: str | None, harness: str, cut: int | None = None) -> Start:
     """Where a scenario from this conversation starts: a person's turn `cut` (by default the last
     one before the skill first came in, or the first where it never did) as the prompt, the
     conversation before it as each run's context — as its harness sends history, without the
     instructions it brings itself — and, when the skill came in later in that same turn, the
     model's steps of the turn before it (`Context.in_turn`): done already in each run, an earlier
     skill's text and results among them, so the skill itself comes in live. Where the
-    conversation went on to load another skill, each run stops there (`Start.next_skill`)."""
+    conversation went on to load another skill, each run stops there (`Start.next_skill`). A turn
+    where the skill could not come in live is refused: one before the turn it came in, whose
+    words no run is sent, or one after, where it is in each run's context as the chat had it.
+    `skill` None: one the conversation never shows, its folder not named yet."""
     from tuningfork.specs import SpecError, check_context
 
     people = [entry["message"] for entry in turns(chat)]
-    found = next((each for each in find_skills(chat, harness) if _key(each.name) == _key(skill)), None)
+    found = None if skill is None else next(
+        (each for each in find_skills(chat, harness) if _key(each.name) == _key(skill)), None)
     load = _load_of(chat, found, harness) if found is not None else None
     came = load if load is not None else (found.message if found is not None else None)
+    # In the harness's instructions, however it was found there: each run's harness brings it.
+    preloaded = found is not None and (found.source == "preloaded" or chat.messages[found.message]["role"] == "system")
+    before = [index for index in people if came is not None and index < came]
+    starts = people if found is None or preloaded else (before[-1:] or people[:1])
     if cut is None:
-        before = [index for index in people if came is not None and index < came]
-        cut = before[-1] if before else (people[0] if people else None)
+        cut = starts[0] if starts else None
     if cut is None or cut not in people:
         raise OperationError(f"message {cut} is not a user turn of the conversation", field="cut",
                              hint=f"the user turns, by message: {', '.join(map(str, people)) or 'none'}")
+    if cut not in starts:
+        raise OperationError(_not_live(skill, cut, starts[0]), field="cut",
+                             hint=f"start from message {starts[0]}, where {skill} comes in live")
     after = next((index for index in people if index > cut), len(chat.messages))
     in_turn = chat.messages[cut + 1:load] if load is not None and cut < load < after else []
     # The proxy puts it in after the harness has made its own copy ready: it goes as the harness
@@ -817,13 +861,48 @@ def scenario_start(chat: Chat, skill: str, harness: str, cut: int | None = None)
             check_context(context.to_json() if context.in_turn else context.before)
         except SpecError as error:
             raise OperationError(f"the conversation before message {cut}: {error}", field="cut") from None
-    # In the harness's instructions, however it was found there: each run's harness brings it.
-    preloaded = found is not None and (found.source == "preloaded" or chat.messages[found.message]["role"] == "system")
+    live = load if in_turn else next((index for index in chat.steps if index > cut), None)
+    loads = _next_load(chat, harness, skill or "", came if came is not None else cut)
     return Start(cut=cut, context=context, prompt=prompt,
-                 next_skill=_next_skill(chat, harness, skill, came if came is not None else cut),
+                 next_skill={"skill": loads[0], "step": chat.step_of(loads[1])} if loads else None,
                  skill_before=came is not None and came < cut and not preloaded, preloaded=preloaded,
-                 came_in=found is not None,
-                 live=load if in_turn else next((index for index in chat.steps if index > cut), None))
+                 came_in=found is not None, live=live, starts=starts,
+                 steps=_parts(chat, cut, after, live, loads[1] if loads else None))
+
+
+def _not_live(skill: str, cut: int, start: int) -> str:
+    """Why a run starting from the person's turn at message `cut` would never vary the skill,
+    which came in after their turn at `start`."""
+    if cut < start:
+        return (f"{skill} came in after message {start}, which a run starting from message {cut} is never sent: the "
+                "skill would come in only if the model loaded it unasked")
+    return (f"{skill} came in before message {cut}: a run starting there has it in its context as the chat had it, "
+            "where a variant never reaches it")
+
+
+def _parts(chat: Chat, cut: int, after: int, live: int | None, stop: int | None) -> list[dict[str, Any]]:
+    """The conversation's steps from the prompt at message `cut` on, as the chat went, each with
+    what a run does with it (`Start.steps`): the person's next turn is at `after`, each run's
+    first call stands for the answer at `live`, and each stops after one loading another skill,
+    as the answer at `stop` did."""
+    from tuningfork.analysis.normalize import outcome_for
+
+    shown = []
+    for index in chat.steps:
+        if index <= cut:
+            continue
+        if index > after:
+            part = "later"
+        elif stop is not None and index > stop:
+            part = "past"
+        elif live is not None and index < live:
+            part = "done"
+        else:
+            part = "first" if index == live else "live"
+        shown.append({"step": chat.step_of(index), "message": index, "part": part,
+                      "label": outcome_for(chat.response(index)).label,
+                      "stop": index == stop and part in ("first", "live")})
+    return shown
 
 
 def _load_of(chat: Chat, found: FoundSkill, harness: str) -> int | None:
@@ -844,20 +923,19 @@ def _load_of(chat: Chat, found: FoundSkill, harness: str) -> int | None:
     return None
 
 
-def _next_skill(chat: Chat, harness: str, skill: str, after: int) -> dict[str, Any] | None:
+def _next_load(chat: Chat, harness: str, skill: str, after: int) -> tuple[str, int] | None:
     """The first skill other than `skill` the conversation's answers load after message
-    `after`, and the step whose answer loads it."""
+    `after`, and the answer that loads it, by its message's index."""
     named = _adapter_method(harness, "skill_load")
     if named is None:
         return None
-    steps = chat.steps
-    for index in steps:
+    for index in chat.steps:
         if index <= after:
             continue
         for call in chat.messages[index].get("tool_calls") or []:
             loaded = named(call)
             if loaded and _key(loaded) != _key(skill):
-                return {"skill": loaded, "step": steps.index(index)}
+                return loaded, index
     return None
 
 
@@ -943,33 +1021,42 @@ def _scenario_run(store: Store, reference: str) -> Any:
     return run
 
 
-def scenario_choices(store: Store, reference: str, *, skill: str | None = None,
-                     harness: str | None = None) -> dict[str, Any]:
-    """What a page offers before a scenario of a run is made: the person's turns it can start
-    from, the skills it kept or showed and the one studied unless another is chosen, the turn
-    before that one came in — where it starts unless told otherwise — with what a start there
-    takes as done and where its runs stop, and the check its task had, for a run tuningfork
-    launched."""
+def scenario_choices(store: Store, reference: str, *, skill: str | None = None, harness: str | None = None,
+                     cut: int | None = None) -> dict[str, Any]:
+    """What a page offers before a scenario of a run is made: the skills it kept or showed and the
+    one studied unless another is chosen; the person's turns, each `offered` where the skill would
+    come in live in a run starting there; the one it starts from — `cut`, else the turn before
+    the skill came in — its words, the starting prompt unless the person writes another, and the
+    conversation's steps from there on, each with what a run does with it; where its runs stop;
+    and the check its task had, for a run tuningfork launched."""
     run = _scenario_run(store, reference)
     chat = chat_of(store, run, harness)
     harness = chat.harness or "generic"
+    unseen = False
     try:
         studied: Studied | None = _studied(run, chat, harness, skill)
     except OperationError as error:
         if error.code != "choose_skill" and error.field != "skill_dir":
             raise
         studied = None
+        unseen = error.field == "skill_dir"  # none shows: the one a folder will name never came in
     try:
-        start = scenario_start(chat, studied.shown_as, harness) if studied is not None else None
+        start = (scenario_start(chat, studied.shown_as, harness, cut) if studied is not None
+                 else scenario_start(chat, None, harness, cut) if unseen else None)
     except OperationError:
+        if cut is not None:
+            raise  # a turn asked for: why it cannot start there
         start = None
     launch = store.get_launch(run.launch_id) if run.launch_id else None
     task = launch.eval if launch is not None and isinstance(launch.eval, dict) else {}
+    offered = set(start.starts) if start else set()
     return {
         "run": run.id, "harness": harness, "recorded_harness": run.harness,
         "imported": bool((run.parity or {}).get("imported")), "launched": launch is not None,
         "skill": studied.name if studied is not None else None, "skills": skill_names(run, chat, harness),
-        "turns": turns(chat), "default": start.cut if start else None,
+        "turns": [{**turn, "offered": turn["message"] in offered} for turn in turns(chat)],
+        "cut": start.cut if start else None, "prompt": start.prompt if start else None,
+        "steps": start.steps if start else [],
         "context": len(start.context.before) if start else 0, "in_turn": len(start.context.in_turn) if start else 0,
         "next_skill": start.next_skill if start else None, "came_in": start.came_in if start else None,
         "check": (task.get("tuningfork") or {}).get("check"),
@@ -979,12 +1066,14 @@ def scenario_choices(store: Store, reference: str, *, skill: str | None = None,
 def prepare_scenario(
     store: Store, reference: str, name: str, *, cut: int | None = None, check: Any = None, skill: str | None = None,
     skill_dir: str | Path | None = None, harness: str | None = None, task_check: bool = True,
+    prompt: str | None = None,
 ) -> ScenarioPlan:
     """A scenario of a run — imported, launched by tuningfork, or recorded as it happened —
     checked and shown before anything is written. The conversation before the person's turn
     `cut` is the context each run continues — by default before the turn that led to the skill,
     which then comes in live, through the harness, as a variant would — and that turn is the
-    prompt. The skill, `skill` where the run kept or showed several: in `skill_dir`, else the
+    prompt, in the person's words, or `prompt` (a file the chat named where the scenario's inputs
+    put it, say). The skill, `skill` where the run kept or showed several: in `skill_dir`, else the
     folder an import named, else its task's own (a launched run's spec), else a copy in the
     scenario's own folder — the one the run kept, or the text its model read. Its inputs: a
     launched run's workspace where the scenario starts, from its snapshots, else its task's input
@@ -1022,10 +1111,14 @@ def prepare_scenario(
     if problems:
         raise OperationError(f"the check {problems[0].message}", field="check")
     start = scenario_start(chat, studied.shown_as, harness, cut)
+    if prompt is not None:
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise OperationError("the starting prompt is empty: each run is sent it as the person's turn", field="prompt")
+        start.prompt = prompt
     if start.context.messages:
         speaks = getattr(ADAPTERS[harness](), "wire", "openai-chat")
-        prompt = {"messages": [{"role": "user", "content": start.prompt}]}
-        if get_wire(speaks).with_context(prompt, start.context.before, start.context.in_turn) is None:
+        probe = {"messages": [{"role": "user", "content": start.prompt}]}
+        if get_wire(speaks).with_context(probe, start.context.before, start.context.in_turn) is None:
             what = (f"the conversation before message {start.cut}" if start.context.before
                     else f"the model's steps of that turn before {studied.name} came in")
             raise OperationError(f"{harness}'s calls ({speaks}) cannot carry {what} yet: a scenario of its run starts "
@@ -1104,7 +1197,7 @@ def prepare_scenario(
     return ScenarioPlan(run_id=run.id, name=name, cut=start.cut, prompt=start.prompt, context=start.context,
                         skill=studied.name, skill_dir=skill_folder, check=check, warnings=warnings,
                         next_skill=start.next_skill, preload=start.preloaded, files=files, copy_from=copy_from,
-                        extract=extract, harness=harness, task=task, check_files=check_files)
+                        extract=extract, harness=harness, task=task, check_files=check_files, steps=start.steps)
 
 
 def start_notes(start: Start, skill: str, check: Any) -> list[str]:
@@ -1114,20 +1207,34 @@ def start_notes(start: Start, skill: str, check: Any) -> list[str]:
     if check is None:
         notes.append("no check: its runs have no verdict until it has one (the scenario's page, tuningfork.check)")
     if not start.came_in:
-        notes.append(f"{skill} never came into the conversation: each run starts at its first turn, and may not load "
-                     "it either")
+        notes.append(f"{skill} never came into the conversation: each run starts from the turn chosen, and may not "
+                     "load it either")
     if start.context.in_turn:
-        notes.append(f"each run starts after the model's first {len(start.context.in_turn)} message(s) of that turn, "
-                     f"taken as done — so {skill} comes in live")
+        done = [entry["step"] for entry in start.steps if entry["part"] == "done" and entry["step"] is not None]
+        first = next((entry["step"] for entry in start.steps if entry["part"] == "first"), None)
+        notes.append((f"each run starts at step {first}, where the chat loaded {skill}, " if first is not None
+                      else f"each run starts where the chat loaded {skill}, ")
+                     + (f"with the turn's {named_steps(done)} taken as done" if done
+                        else f"with the model's first {len(start.context.in_turn)} message(s) of the turn taken as done")
+                     + f" — so {skill} comes in live")
     if start.skill_before:
-        notes.append(f"{skill} came in before this turn: it is in each run's context as the chat had it, so a "
-                     "variant never reaches it — start from an earlier turn to vary it")
+        notes.append(f"{skill} came in before the person's first turn: it is in each run's context as the chat had it, "
+                     "where a variant never reaches it")
     if start.next_skill is not None:
-        notes.append(f"the chat loads {start.next_skill['skill']} after {skill}, at step {start.next_skill['step']}: "
-                     f"each run stops where the model loads a skill other than {skill}, and the check judges the "
-                     "workspace as it is then" + (" — a check of the final reply finds none there"
-                                                  if isinstance(check, dict) else ""))
+        at = f", at step {start.next_skill['step']}" if start.next_skill["step"] is not None else ""
+        notes.append(f"the chat loads {start.next_skill['skill']} after {skill}{at}: each run stops where the model "
+                     f"loads a skill other than {skill}, and the check judges the workspace as it is then"
+                     + (" — a check of the final reply finds none there" if isinstance(check, dict) else ""))
     return notes
+
+
+def named_steps(numbers: list[int]) -> str:
+    """Steps by their numbers, as a sentence names them: step 2, steps 0–1, steps 0, 2 and 5."""
+    if len(numbers) == 1:
+        return f"step {numbers[0]}"
+    if numbers == list(range(numbers[0], numbers[-1] + 1)):
+        return f"steps {numbers[0]}–{numbers[-1]}"
+    return f"steps {', '.join(map(str, numbers[:-1]))} and {numbers[-1]}"
 
 
 def imported_source(run: Any, skill: str) -> Path | None:

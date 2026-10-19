@@ -9,7 +9,7 @@
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
 import { checkTester } from "../checktry.js";
-import { ago, chip, crumbs, firstLine, h, loading, panel, plural, rateBar, replace, when } from "../dom.js";
+import { ago, chip, crumbs, firstLine, h, loading, panel, plural, rateBar, replace, short, verdict, when } from "../dom.js";
 import { field, formError, input, textArea } from "../forms.js";
 import { live } from "../live.js";
 import { leaving } from "../nav.js";
@@ -19,6 +19,7 @@ const NORMALIZERS = ["tool_call_json", "python_ast", "json_content", "tool_name"
 const NAME = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 
 export async function scenariosView(root, _, scope) {
+  if (scope.query.get("from") === "run") return runPickView(root, scope);
   replace(root, loading());
   const found = await api.get("/scenarios");
   const importer = live.mode === "live" ? importForm() : null;
@@ -27,7 +28,9 @@ export async function scenariosView(root, _, scope) {
       h("div", null, h("h1", null, "Scenarios"),
         h("p", { class: "sub" }, "Tasks kept in the recordings folder: an evals.json and its input files, each run as a batch.")),
       live.mode === "live"
-        ? h("div", { class: "actions" }, h("a", { class: "btn btn-primary", href: "#/scenarios/new", "data-control": true }, "New scenario"))
+        ? h("div", { class: "actions" },
+            h("a", { class: "btn", href: "#/scenarios?from=run", "data-control": true }, "From a run…"),
+            h("a", { class: "btn btn-primary", href: "#/scenarios/new", "data-control": true }, "New scenario"))
         : null),
     h("div", { class: "stack" },
       found.length
@@ -49,9 +52,69 @@ export async function scenariosView(root, _, scope) {
                 h("td", { class: "faint", title: when(scenario.modified) }, ago(scenario.modified))))))))
         : h("div", { class: "panel empty" }, h("h2", null, "No scenarios yet"),
             h("p", null, live.mode === "live"
-              ? "Make one here, or import a spec you already have — its input files are copied in, its skill folder kept where it is."
+              ? "Make one here, make one from a run — a chat imported, a run launched or recorded — or import a spec you "
+                + "already have: its input files are copied in, its skill folder kept where it is."
               : "Scenarios are made with a running proxy (tuningfork serve).")),
       importer));
+}
+
+// Which run a scenario is made of: any run but a thread — imported, launched, or recorded as it
+// happened — newest first, filtered as the Runs page filters; each opens the run's scenario form.
+// A chat had elsewhere is imported first, and its scenario's form follows.
+async function runPickView(root, scope) {
+  const head = [
+    crumbs([["Scenarios", "#/scenarios"], ["From a run"]]),
+    h("div", { class: "page-head" },
+      h("div", null, h("h1", null, "A scenario from a run"),
+        h("p", { class: "sub" }, "Any run — a chat imported, a run tuningfork launched, one recorded as it happened — "
+          + "continued from the person's message before its skill came in, each run of the scenario sent it again.")),
+      live.mode === "live"
+        ? h("div", { class: "actions" },
+            h("a", { class: "btn", href: "#/import?then=scenario", "data-control": true }, "Import a chat…"))
+        : null),
+  ];
+  if (live.mode !== "live") {
+    replace(root, ...head, h("div", { class: "banner banner-warn" },
+      "Making a scenario needs a running proxy (tuningfork serve). From a terminal: tuningfork scenario <run> <name>"));
+    return;
+  }
+  replace(root, ...head, loading());
+  // Threads are left out by the list itself; a run with no step has no conversation to continue.
+  const runs = (await api.get("/runs?limit=1000")).filter((run) => run.step_count > 0);
+  if (!scope.active) return;
+  let filter = "";
+  const list = h("div", { class: "stack" });
+  const search = h("input", {
+    class: "field search", type: "search", placeholder: "Filter by run, label, task or model", "aria-label": "Filter runs",
+    oninput: (event) => {
+      filter = event.target.value.trim().toLowerCase();
+      draw();
+    },
+  });
+  const draw = () => {
+    const shown = runs.filter((run) => !filter
+      || [run.id, run.label, run.task_id, run.model].some((value) => value && String(value).toLowerCase().includes(filter)));
+    replace(list, !runs.length
+      ? h("div", { class: "panel empty" }, h("h2", null, "No runs yet"),
+          h("p", null, "Import a chat an agent had elsewhere, or record one: point a harness at this proxy, or run a task."))
+      : !shown.length ? h("p", { class: "muted" }, "No runs match the filter.")
+        : h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
+            h("thead", null, h("tr", null, h("th", null, "run"), h("th", null, "label"), h("th", null, "task"),
+              h("th", null, "harness"), h("th", { class: "num" }, "steps"), h("th", null, "verdict"), h("th", null, "recorded"))),
+            h("tbody", null, shown.map((run) => {
+              const href = `#/runs/${run.id}/scenario`;
+              return h("tr", { class: "clickable", onclick: () => (location.hash = href) },
+                h("td", null, h("a", { class: "mono", href }, short(run.id))),
+                h("td", null, run.label || "", run.imported ? [" ", chip("imported", "muted")] : null),
+                h("td", { class: "mono" }, run.task_id || "—"),
+                h("td", null, run.harness || "—"),
+                h("td", { class: "num" }, String(run.step_count)),
+                h("td", null, verdict(run.result)),
+                h("td", { class: "faint", title: when(run.started_at) }, ago(run.started_at)));
+            }))))));
+  };
+  replace(root, ...head, h("div", { class: "stack" }, h("div", { class: "actions" }, search), list));
+  draw();
 }
 
 function importForm() {

@@ -409,9 +409,40 @@ class TestAScenarioOfAnImport:
             imports.prepare_scenario(store, result.run_id, "tally-chat")
         with pytest.raises(OperationError, match="not a user turn"):
             imports.prepare_scenario(store, result.run_id, "other", cut=2)
-        first = imports.prepare_scenario(store, result.run_id, "from-the-start", cut=1)
-        assert not first.context.messages and "context" not in imports.make_scenario(store, first).spec["evals"][0]["tuningfork"]
-        assert any("no check" in warning for warning in first.warnings)
+        # The skill came in after the person's second message: a run sent their first would never vary it.
+        with pytest.raises(OperationError, match="came in after message 3, which a run starting from message 1 is never sent") as refused:
+            imports.prepare_scenario(store, result.run_id, "from-the-start", cut=1)
+        assert refused.value.field == "cut" and "start from message 3" in refused.value.hint
+        unchecked = imports.prepare_scenario(store, result.run_id, "unchecked")
+        assert any("no check" in warning for warning in unchecked.warnings)
+
+        # The starting prompt in the person's own words: the conversation before it as the chat had it.
+        mine = imports.prepare_scenario(store, result.run_id, "in-my-words", prompt="Summarize inputs/data.csv.")
+        assert mine.prompt == "Summarize inputs/data.csv." and mine.spec()["evals"][0]["prompt"] == mine.prompt
+        assert mine.context.before == plan.context.before and mine.cut == 3
+        with pytest.raises(OperationError, match="the starting prompt is empty") as empty:
+            imports.prepare_scenario(store, result.run_id, "no-words", prompt=" \n")
+        assert empty.value.field == "prompt"
+
+    def test_a_skill_the_chat_never_shows_starts_from_any_turn(self, store, tmp_path):
+        """A skill the conversation never showed, named by its folder: a run can start from any of
+        the person's turns, with what came before it as its context."""
+        rows = [{"role": "user", "content": "Look at data.csv."}, {"role": "assistant", "content": "It has 4 rows."},
+                {"role": "user", "content": "Now summarize it into report.json."}, {"role": "assistant", "content": "Done."}]
+        result = imports.execute_import(store, imports.prepare_import(store, export(rows)))
+        choices = imports.scenario_choices(store, result.run_id)
+        assert choices["skill"] is None and choices["cut"] == 1 and choices["prompt"] == "Look at data.csv."
+        assert [turn["offered"] for turn in choices["turns"]] == [True, True]
+        later = imports.scenario_choices(store, result.run_id, cut=3)
+        assert later["prompt"] == "Now summarize it into report.json." and later["context"] == 2
+        assert [(entry["step"], entry["part"]) for entry in later["steps"]] == [(1, "first")]
+        folder = tmp_path / "tally-report"
+        folder.mkdir()
+        (folder / "SKILL.md").write_text(SKILL, encoding="utf-8")
+        plan = imports.prepare_scenario(store, result.run_id, "unseen", skill_dir=str(folder), cut=3)
+        assert plan.cut == 3 and len(plan.context.before) == 2 and plan.skill == "tally-report"
+        assert any("never came into the conversation: each run starts from the turn chosen" in warning
+                   for warning in plan.warnings)
 
     def test_its_conversation_goes_as_its_harness_would_have_sent_it(self, store):
         """The proxy puts the conversation in after the harness has made its own copy ready, so it
@@ -436,7 +467,12 @@ class TestAScenarioOfAnImport:
         assert plan.cut == 1 and plan.context.before == [] and plan.next_skill is None
         assert [message["role"] for message in plan.context.in_turn] == ["assistant", "tool"]
         assert plan.context.in_turn[0]["tool_calls"][0]["function"]["arguments"] == '{"name":"csv-tidy"}'  # as sent
-        assert any("first 2 message(s) of that turn, taken as done" in warning for warning in plan.warnings)
+        assert any("each run starts at step 1, where the chat loaded tally-report, with the turn's step 0 taken as done"
+                   in warning for warning in plan.warnings)
+        # The chat from the prompt on, each step with what a run does with it.
+        assert [(entry["step"], entry["part"], entry["stop"]) for entry in plan.steps] == [
+            (0, "done", False), (1, "first", False), (2, "live", False), (3, "live", False)]
+        assert plan.steps[0]["label"] == "skill_view(name='csv-tidy')" and plan.to_json()["steps"] == plan.steps
         made = imports.make_scenario(store, plan)
         assert made.checked.ok and made.spec["evals"][0]["tuningfork"]["context"] == "context.json"
         assert scenarios.read_context(store.home, "after-tidy") == {"before": [], "in_turn": plan.context.in_turn}
@@ -445,6 +481,8 @@ class TestAScenarioOfAnImport:
         first = imports.prepare_scenario(store, result.run_id, "tidy-only", skill="csv-tidy",
                                          check={"reply_contains": "report"})
         assert not first.context.messages and first.next_skill == {"skill": "tally-report", "step": 1}
+        assert [(entry["step"], entry["part"], entry["stop"]) for entry in first.steps] == [
+            (0, "first", False), (1, "live", True), (2, "past", False), (3, "past", False)]
         assert first.spec()["evals"][0]["tuningfork"]["stop_at_next_skill"] is True
         assert any("each run stops where the model loads a skill other than csv-tidy" in warning
                    and "a check of the final reply finds none there" in warning for warning in first.warnings)
@@ -470,7 +508,11 @@ class TestAScenarioOfAnImport:
         run = store.get_run("as it happened")
         assert not run.parity.get("imported") and not run.launch_id
         choices = imports.scenario_choices(store, run.id)
-        assert (choices["skill"], choices["default"], choices["launched"]) == ("tally-report", 3, False)
+        assert (choices["skill"], choices["cut"], choices["launched"]) == ("tally-report", 3, False)
+        # Only the turn the skill came in after: a run sent the earlier one would never vary it.
+        assert [(turn["message"], turn["offered"]) for turn in choices["turns"]] == [(1, False), (3, True)]
+        assert choices["prompt"] == "Summarize data.csv into report.json."
+        assert [(entry["step"], entry["part"]) for entry in choices["steps"]] == [(1, "first"), (2, "live"), (3, "live")]
         plan = imports.prepare_scenario(store, run.id, "as-it-happened")
         assert plan.cut == 3 and len(plan.context.before) == 2 and plan.extract == SKILL and not plan.files
         assert any("the scenario keeps the SKILL.md the model read" in warning for warning in plan.warnings)
@@ -550,6 +592,9 @@ def test_a_scenarios_runs_continue_its_conversation_and_their_forks_too(stack):
     source = stack.record()
     assert source.usable and not source.edited_steps
     steps = settled(stack.store, source.run_id, 3)
+    # Its calls carried the conversation it continued, whose turns are none of its steps.
+    chat = imports.chat_of(stack.store, stack.store.get_run(source.run_id))
+    assert [chat.step_of(index) for index in chat.steps] == [None, 0, 1, 2]
     for step in steps:
         sent = stack.store.rebuild_request(step)["messages"]
         assert sent[0]["role"] == "system" and sent[1:3] == context and step.context["messages"] == 2
@@ -635,7 +680,8 @@ def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_chec
     assert source.passed, source.stderr
 
     choices = imports.scenario_choices(stack.store, source.run_id)
-    assert choices["launched"] and choices["check"] == stack.item.tuningfork.check and choices["default"] == 1
+    assert choices["launched"] and choices["check"] == stack.item.tuningfork.check and choices["cut"] == 1
+    assert choices["prompt"] == stack.item.prompt
     plan = imports.prepare_scenario(stack.store, source.run_id, "tally-again")
     assert (plan.cut, plan.prompt, plan.context.messages) == (1, stack.item.prompt, 0)
     assert plan.skill == "tally-report" and not plan.own_skill
@@ -724,7 +770,13 @@ def test_a_scenario_of_a_run_from_the_terminal(store, tmp_path):
                                  "--home", str(store.home)], env={"COLUMNS": "200"})
     assert looked.exit_code == 0, looked.output
     assert "starts     at message 3" in looked.output and "nothing written" in looked.output
+    assert "first      step 1's call, which the chat answered: skill_view(name='tally-report')" in looked.output
     assert not scenarios.folder(store.home, "from-a-run").exists()
+    worded = runner.invoke(app, ["scenario", run[:8], "in-my-words", "--prompt", "Summarize inputs/data.csv.",
+                                 "--home", str(store.home)], env={"COLUMNS": "200"})
+    assert worded.exit_code == 0, worded.output
+    assert "starts     at message 3 (yours: Summarize inputs/data.csv.)" in worded.output
+    assert scenarios.read_scenario(store.home, "in-my-words").spec["evals"][0]["prompt"] == "Summarize inputs/data.csv."
     done = runner.invoke(app, ["scenario", run[:8], "from-a-run", "--reply-contains", "report.json",
                                "--home", str(store.home)], env={"COLUMNS": "200"})
     assert done.exit_code == 0, done.output
@@ -762,10 +814,21 @@ async def test_the_web_ui_makes_a_scenario_and_edits_its_conversation(proxy_clie
     made = await proxy_client.post("/_tuningfork/api/imports", json={"content": chat_with_earlier_turns()})
     run = made.json()["run"]
     starts = (await proxy_client.get(f"/_tuningfork/api/imports/{run}/scenario")).json()
-    assert starts["default"] == 3 and [turn["message"] for turn in starts["turns"]] == [1, 3] and starts["context"] == 2
-    created = await proxy_client.post(f"/_tuningfork/api/imports/{run}/scenario", json={"name": "from-ui", "cut": 3})
+    assert starts["cut"] == 3 and [turn["message"] for turn in starts["turns"]] == [1, 3] and starts["context"] == 2
+    assert [turn["offered"] for turn in starts["turns"]] == [False, True]
+    assert starts["prompt"] == "Summarize data.csv into report.json." and starts["steps"][0]["part"] == "first"
+    elsewhere = await proxy_client.get(f"/_tuningfork/api/runs/{run}/scenario?cut=1")
+    assert elsewhere.status_code == 400 and elsewhere.json()["error"]["field"] == "cut"
+    assert "came in after message 3" in elsewhere.json()["error"]["message"]
+    assert (await proxy_client.get(f"/_tuningfork/api/runs/{run}/scenario?cut=x")).status_code == 400
+    created = await proxy_client.post(f"/_tuningfork/api/imports/{run}/scenario",
+                                      json={"name": "from-ui", "cut": 3, "prompt": "Summarize inputs/data.csv."})
     assert created.status_code == 201 and created.json()["scenario"]["context"][0]["role"] == "user"
+    assert created.json()["scenario"]["spec"]["evals"][0]["prompt"] == "Summarize inputs/data.csv."
     assert any("no check" in warning for warning in created.json()["warnings"])
+    for prompt in ("  ", 3):
+        refused = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "no-words", "prompt": prompt})
+        assert refused.status_code == 400 and refused.json()["error"]["field"] == "prompt"
     two = [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}]
     edited = await proxy_client.put("/_tuningfork/api/scenarios/from-ui/context", json={"messages": two})
     assert edited.status_code == 200 and edited.json() == {"messages": 2}
@@ -774,7 +837,7 @@ async def test_the_web_ui_makes_a_scenario_and_edits_its_conversation(proxy_clie
 
     # Any run's address: the same choices, and a body that says what it may hold.
     choices = (await proxy_client.get(f"/_tuningfork/api/runs/{run}/scenario")).json()
-    assert choices["default"] == 3 and choices["skill"] == "tally-report" and choices["imported"]
+    assert choices["cut"] == 3 and choices["skill"] == "tally-report" and choices["imported"]
     odd = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "x", "task_check": "no"})
     assert odd.status_code == 400 and odd.json()["error"]["field"] == "task_check"
     other = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "by-run", "harness": "hermes"})

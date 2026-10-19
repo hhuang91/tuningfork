@@ -176,9 +176,10 @@ Runs page has the same: **Import a chat…**.
   skill first in that same turn, its steps up to the studied skill — that skill's load and
   results among them — follow the prompt, taken as done; where it went on to another skill
   after, each run stops where the model loads one (`tuningfork.stop_at_next_skill`), the check
-  judging the workspace then. `--cut <message>` starts it from another user turn;
-  `--check '<command>'` or `--reply-contains <text>` gives it its check, which is yours to
-  write. Any run's page has the same: **Make a scenario…** (see [`scenario`](#scenario)).
+  judging the workspace then. `--cut <message>` starts it from another user turn, where the skill
+  never came in or came preloaded (see [`scenario`](#scenario)); `--check '<command>'` or
+  `--reply-contains <text>` gives it its check, which is yours to write. Any run's page has the
+  same: **Make a scenario…**.
 - `--dry-run` — shows what it would import, and records nothing.
 
 The answers in it are the model's that had the conversation: an experiment at a step samples
@@ -190,10 +191,16 @@ forked to the end; its scenario's runs, which tuningfork launches, can.
 Any run as a scenario: `tuningfork scenario <run> <name>` makes a task of its conversation —
 runs of its skill through the harness, each continuing the conversation from one of its user
 turns — whether tuningfork launched the run, recorded it as it happened through the proxy, or
-imported it. As with `import --scenario`, the user turn before the skill first came in is the
-prompt and everything before it each run's context; `--cut <message>` starts it from another
-(`tuningfork timeline` shows the turns).
+imported it. As with `import --scenario`, the user turn the skill first came in after is the
+prompt and everything before it each run's context.
 
+- **The starting prompt.** That turn's words as the chat had them, or yours: `--prompt <text>`
+  — a file the chat named on another machine, say, where the scenario's inputs put it.
+  `--cut <message>` starts it from another user turn (`tuningfork timeline` shows the turns),
+  only where the skill never came in or came preloaded: a run starting before the turn it came
+  in is never sent that turn, and one starting after has it in its context as the chat had it,
+  where a variant never reaches it. What it prints says the step each run's first call stands
+  for, and the turn's steps it takes as done.
 - **The skill.** `--skill-dir <folder>` names the skill's own folder, which the scenario tunes.
   By default it is the folder the run's skill came from — the one an import named, or a launched
   run's task's — else a copy kept in the scenario's own folder (`skill/<name>/`): the copy the run
@@ -211,9 +218,12 @@ prompt and everything before it each run's context; `--cut <message>` starts it 
 - `--harness <name>` — the harness the conversation was had with, where the run does not say.
 - `--dry-run` — shows what it would make, and writes nothing.
 
-A run's page in the web UI has the same: **Make a scenario…**. Claude Code's calls cannot yet
-carry a conversation before the prompt, so a scenario of a Claude Code run starts at its first
-turn.
+The web UI has the same, from a run's page (**Make a scenario…**) or from the Scenarios page
+(**From a run…**, which lists the runs to choose from, and imports a chat first where it is not
+a run yet). Its form lays out the conversation's steps from the starting prompt on — given as
+done, where each run starts, where it stops — for the skill chosen, and its starting prompt can
+be rewritten there. Claude Code's calls cannot yet carry a conversation before the prompt, so a
+scenario of a Claude Code run starts at its first turn.
 
 ## Where do the runs go wrong?
 

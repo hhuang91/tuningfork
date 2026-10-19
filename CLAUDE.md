@@ -114,11 +114,18 @@ could take; nothing launched it, so it forks nowhere, and deleting it for good t
 
 Any run becomes a scenario — imported, launched, or recorded as it happened, never a thread
 (`imports.prepare_scenario`; `tuningfork scenario <run> <name>`, `import --scenario`, a run's page's
-Make a scenario…, `POST /runs/{run}/scenario`): its conversation is an import's kept chat, else the
-last step's request as the model was sent it and the answer (`imports.chat_of`); the user turn
-before the skill first came in (`--cut` another) is the eval's prompt, in the person's own words
-(a harness's reminders beside them left out), and the conversation before it — as its harness sends
-history — the scenario's `context.json` (`tuningfork.context`, checked by `specs.check_context`).
+Make a scenario…, the Scenarios page's From a run…, `POST /runs/{run}/scenario`): its conversation
+is an import's kept chat, else the last step's request as the model was sent it and the answer
+(`imports.chat_of`; a recording's steps numbered by its calls' depths, `Chat.numbers`, since a
+scenario's run carried turns that are none of its steps); the user turn the skill first came in
+after is the eval's prompt, in the person's own words (a harness's reminders beside them left out)
+or theirs (`--prompt`), and the conversation before it — as its harness sends history — the
+scenario's `context.json` (`tuningfork.context`, checked by `specs.check_context`). Another turn
+(`--cut`) only where the skill could still come in live (`Start.starts`): it never came in, or came
+preloaded — a run starting before its turn is never sent that turn, one after has it in its
+context, where a variant never reaches it. The form lays out the conversation's steps from the
+prompt on, each by what a run does with it (`Start.steps`, `STEP_PARTS`: given as done, where each
+run starts, made by its model, past where it stops, after the person's next turn).
 The skill is the folder the person names, the import named or a launched run's task's (an approval
 writes there), else a copy in the scenario's own folder (`skill/<name>/`: the copy the run kept, or
 the SKILL.md the model read, given frontmatter where its harness showed none) — never the run's own

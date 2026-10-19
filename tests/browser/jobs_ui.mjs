@@ -970,16 +970,27 @@ try {
       && turn.previousElementSibling?.dataset.idx === "0" && turn.nextElementSibling?.dataset.idx === "1";
   })()`), "a person's next turn starts a new exchange in the rail, unindented, in their words");
 
-  console.log("a scenario of it: from the turn before the skill, its conversation on the scenario's page");
+  console.log("a scenario of it: from the person's message the skill came in after, in words they may change");
   await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "Make a scenario…")`), "Make a scenario… on the imported run");
   await page.eval(`[...document.querySelectorAll(".page-head a")].find((a) => a.textContent === "Make a scenario…").click()`);
-  await until(() => page.eval(`!!document.querySelector('select[name="cut"]')`), "the scenario form");
-  check(await page.eval(`document.querySelector('select[name="cut"]').selectedOptions[0].textContent.startsWith("message 3 (before the skill)")`),
-    "it starts, unless told otherwise, at the turn before the skill came in");
+  await until(() => page.eval(`!!document.querySelector('textarea[name="prompt"]')?.value`), "the scenario form");
+  check(await page.eval(`document.querySelector('textarea[name="prompt"]').value === "Summarize data.csv into report.json."`),
+    "its starting prompt is the person's message the skill came in after, in their words");
+  check(await page.eval(`(() => { const text = document.querySelector("main").textContent;
+    return text.includes("From message 3 of the chat") && text.includes("The person's other message is not offered")
+      && document.querySelector('select[name="cut"]').closest("label").hidden; })()`),
+    "their earlier message is not offered, and the page says why: there is no choice to make");
+  check(await page.eval(`(() => { const row = document.querySelector(".start-steps tbody tr");
+    return !!row && row.classList.contains("part-first") && row.textContent.includes("skill_view") && row.textContent.includes("each run starts here"); })()`),
+    "the chat's steps from there, each run starting where the model loaded the skill");
+  await page.type(`document.querySelector('textarea[name="prompt"]')`, "Summarize inputs/data.csv into report.json.");
+  check(await page.eval(`document.querySelector('textarea[name="prompt"]').classList.contains("field-changed")`), "a prompt rewritten shows as changed");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-the-chat");
   await page.click("Make the scenario");
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "Open the scenario")`), "the scenario made");
   check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("no check"))`), "and says it has no check yet");
+  check((await api("/scenarios/from-the-chat")).spec.evals[0].prompt === "Summarize inputs/data.csv into report.json.",
+    "its prompt is the one written in the form");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Open the scenario").click()`);
   await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "The conversation it continues")`), "the scenario's conversation");
   check(await page.eval(`document.querySelector("main").textContent.includes("2 messages from an imported chat")`), "the two turns before it, as each run's context");
@@ -1046,7 +1057,7 @@ try {
 
   console.log("a scenario of the second skill takes the first one's steps as done; one of the first stops at the second");
   const later = await post(`/imports/${two.run}/scenario`, { name: "after-tidy", skill: "tally-report" });
-  check(later.warnings.some((warning) => warning.includes("first 2 message(s) of that turn, taken as done")),
+  check(later.warnings.some((warning) => warning.includes("each run starts at step 1, where the chat loaded tally-report, with the turn's step 0 taken as done")),
     "a scenario of the second skill takes the first one's steps as done");
   await page.eval(`location.hash = "#/scenarios/after-tidy"`);
   await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "The conversation it continues")`), "the scenario's conversation");
@@ -1058,6 +1069,33 @@ try {
   await page.eval(`location.hash = "#/scenarios/tidy-only"`);
   await until(() => page.eval(`!!document.querySelector('input[name="stop-0"]')`), "the eval's stop");
   check(await page.eval(`document.querySelector('input[name="stop-0"]').checked`), "its page says each run stops where another skill loads");
+
+  console.log("from the Scenarios page: a run chosen, its steps laid out by the skill studied");
+  await page.eval(`location.hash = "#/scenarios"`);
+  await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "From a run…")`), "From a run… on the Scenarios page");
+  await page.eval(`[...document.querySelectorAll(".page-head a")].find((a) => a.textContent === "From a run…").click()`);
+  await until(() => page.eval(`location.hash === "#/scenarios?from=run" && !!document.querySelector("main table tbody tr")`), "the runs to choose from");
+  check(await page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.getAttribute("href") === "#/import?then=scenario")`),
+    "a chat had elsewhere is imported from there too");
+  await page.type(`document.querySelector('input[type="search"]')`, two.run.slice(0, 8));
+  await until(() => page.eval(`document.querySelectorAll("main table tbody tr").length === 1`), "the filter to leave the one run");
+  await page.eval(`document.querySelector("main table tbody tr a").click()`);
+  await until(() => page.eval(`location.hash === "#/runs/${two.run}/scenario" && !!document.querySelector('select[name="skill"]')`), "the run's scenario form");
+  // Each row's part, and what it says a run does there.
+  const laidOut = () => page.eval(`[...document.querySelectorAll(".start-steps tbody tr")].map((row) => row.className + ":" + row.lastElementChild.textContent).join(" | ")`);
+  const study = async (skill) => {
+    const before = await laidOut();
+    await page.eval(`(() => { const pick = document.querySelector('select[name="skill"]'); pick.value = ${JSON.stringify(skill)}; pick.dispatchEvent(new Event("change")); return true; })()`);
+    return until(async () => { const now = await laidOut(); return now && now !== before ? now : null; }, `the steps for ${skill}`);
+  };
+  const ofSecond = await study("tally-report");
+  check(await page.eval(`document.querySelector('textarea[name="prompt"]').value === "Tidy data.csv, then summarize it into report.json."`),
+    "the skill chosen, its starting prompt is the person's message");
+  check(ofSecond.startsWith("part-done:given as done | part-first:each run starts here"),
+    `studying the second skill, the first one's load is given as done and each run starts at the second's (${ofSecond})`);
+  const ofFirst = await study("csv-tidy");
+  check(ofFirst.startsWith("part-first:each run starts here | part-live:made by its modelstops after a load like this"),
+    `studying the first skill, each run starts at its load and stops at the second's (${ofFirst})`);
 
   console.log("a run tuningfork launched, as a scenario: its task's check, its workspace's files");
   const ofTask = (await api("/runs?task=tally-scenario/1&limit=5"))[0];
