@@ -28,6 +28,24 @@ from tuningfork.ops.common import OperationError
 #: recording, where the review was cut off when Hermes exited after its answer.
 REVIEW_PROMPT = "Review the conversation above and "
 
+#: The user messages Hermes 0.18.2 writes itself, by how each one opens, and what each is: its
+#: loop's nudges to go on (`agent/conversation_loop.py`), the summary it asks for at the turn
+#: limit (`agent/chat_completion_helpers.py`), its check for edited code
+#: (`agent/verification_stop.py`), the marker after a compression
+#: (`agent/conversation_compression.py`) and its background review. Any other is a person's turn.
+NOTES = (
+    ("[System: Your previous response was truncated by the output length limit.", "continue after a cut reply"),
+    ("[System: The previous response was cut off by a network error", "continue after a broken stream"),
+    ("[System: Your previous tool call (", "a tool call too large to send"),
+    ("You just executed tool calls but returned an empty response.", "nudge after an empty answer"),
+    ("[System: Continue now. Execute the required tool calls", "nudge to act, not announce"),
+    ("[System: You edited code in this turn, but the workspace does not have fresh passing verification",
+     "nudge to verify edited code"),
+    ("You've reached the maximum number of tool-calling iterations allowed.", "summary at the turn limit"),
+    ("Continue from the compressed conversation context above.", "continue after a compression"),
+    (REVIEW_PROMPT, "background review"),
+)
+
 #: How Hermes 0.18.2 inlines a skill preloaded with `-s`: its own marker, a blank line, the
 #: complete SKILL.md, then a line naming the skill directory. Verified from a recording.
 PRELOADED_SKILL = re.compile(
@@ -482,6 +500,15 @@ class HermesAdapter:
         if len(users) > 1 and content_text(users[-1].get("content")).startswith(REVIEW_PROMPT):
             return "background review"
         return None
+
+    def harness_note(self, message: dict[str, Any]) -> str | None:
+        """A user message Hermes wrote itself — a nudge to go on after a cut reply, the summary it
+        asks for at the turn limit (`NOTES`) — named in a few words; None for a person's turn,
+        which is also what a note of another version's wording reads as."""
+        from tuningfork.analysis.normalize import content_text
+
+        text = content_text(message.get("content")).strip()
+        return next((name for opening, name in NOTES if text.startswith(opening)), None)
 
     def as_sent(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """A kept history as Hermes 0.18.2 sends it: what its conversation loop does to its own

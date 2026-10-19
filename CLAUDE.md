@@ -266,7 +266,11 @@ died — a batch killed hard says nothing of its launches — reads as interrupt
 (`ops.inspect.launch_status`), holds nothing back from the trash, and the next proxy marks it
 so (`JobRunner.sweep`). A call the harness adapter names a side call (`side_call`: Hermes's
 background review, which replays the whole conversation after the answer) starts a side
-thread, never the task's next step, and is never the run's final reply. A fork is a launch
+thread, never the task's next step, and is never the run's final reply. A user message a
+harness writes itself — Hermes's nudge to go on after a cut reply, Claude Code's reminders — its
+adapter names (`harness_note`; for a run recorded as it happened, whichever adapter knows it):
+a run's page puts it under the step it followed, and a person's turn on a line of its own, a
+new exchange. A fork is a launch
 whose calls before step k are answered from the recording (`tuningfork.replay`); the proxy's
 `--max-inflight` must be at least the `--concurrency` of forks run through it. A launch is
 laid out as the harness installs itself (an adapter's layout "install": Hermes in

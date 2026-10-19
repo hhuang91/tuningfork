@@ -114,6 +114,14 @@ def _adapters(adapters: Sequence[Any] | None) -> list[Any]:
     return [adapter() for adapter in ADAPTERS.values()]
 
 
+def _namers(run: Run, adapters: Sequence[Any] | None) -> list[Any]:
+    """What names the user messages a harness writes itself (`harness_note`): the run's own
+    adapter, or — for a run whose harness is not known, recorded as it happened — each one."""
+    found = _adapters(adapters)
+    own = [adapter for adapter in found if getattr(adapter, "name", None) == run.harness]
+    return [adapter.harness_note for adapter in own or found if hasattr(adapter, "harness_note")]
+
+
 def mapped_skills(
     view: Sequence[dict[str, Any]], run: Run, adapters: Sequence[Any] | None = None
 ) -> list[dict[str, Any]]:
@@ -250,8 +258,10 @@ class RunTimeline:
 
     `entries` is the last step's context as the harness sent it, in view form. Each entry's
     `origin` says how it got there: `start`, the context the run began with; `harness`, added
-    by the harness after step `after` (tool results, reminders, a skill's body); `copy`, the
-    harness's copy of step `after`'s output — shown in its place from the recording instead.
+    by the harness after step `after` (tool results, reminders, a skill's body; a user message
+    there carries a `note` when the harness wrote it itself, and is a person's turn without
+    one); `copy`, the harness's copy of step `after`'s output — shown in its place from the
+    recording instead.
     Each of `steps` sits before `entries[position]`: its context was the entries above it.
     """
 
@@ -482,6 +492,15 @@ def run_timeline(store: Store, run_ref: str, *, adapters: Sequence[Any] | None =
                     marks.append({"by": found["by"], "steps": [step.idx]})
                 else:
                     mark["steps"].append(step.idx)
+
+    # A user message the harness added after a step is a person's turn, or the harness's own —
+    # a nudge to go on, a reminder — which its adapter names (`note`).
+    namers = _namers(run, adapters)
+    for entry in entries:
+        if entry["origin"] == "harness" and entry["message"].get("role") == "user":
+            note = next((said for name in namers if (said := name(entry["message"]))), None)
+            if note:
+                entry["note"] = note
 
     extras_changed = _extras_changes(store, steps)
     experiments = _experiments(store, run, arm_status)

@@ -9,9 +9,9 @@
 // verdict: what its task's check said, coloured by it — the only green or red on the page.
 
 import { api, enc } from "./api.js";
-import { chip, count, failure, h, kv, loading, longText, millis, outcome, plural, replace, short, toggle } from "./dom.js";
+import { chip, count, failure, firstLine, h, kv, loading, longText, millis, outcome, plural, replace, short, toggle } from "./dom.js";
 import { settle } from "./nav.js";
-import { messageSize, messageView, noReasoning, outputView, toolNames } from "./payload.js";
+import { messageSize, messageText, messageView, noReasoning, outputView, toolNames } from "./payload.js";
 import { startForm, startPanel } from "./start.js";
 import { banners, detailsPanel, skillsSummary, summaryStrip, toolsOffered, workspacePanel } from "./stepinfo.js";
 import { tokensPanel } from "./tokens.js";
@@ -182,6 +182,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const tag = entry.origin === "harness" && entry.after !== null
       ? h("span", { class: "tl-tag", title: `Added to the conversation by the harness after step ${entry.after}` }, `after step ${entry.after}`)
       : null;
+    // A user message the harness wrote itself says so: no person said it.
+    const note = entry.note ? chip(entry.note, "muted", "Written by the harness itself, not by a person") : null;
     const marks = (entry.changed_for_model || []).map((mark) =>
       h("a", {
         class: "tl-changed",
@@ -195,7 +197,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const added = entry.origin === "harness" && entry.after !== null;
     const node = h("div", { class: ["tl-entry", `tl-${entry.origin}`], dataset: added ? { entry: entry.index } : null },
       messageView(entry.message, entry.index, {
-        spans: state.skills, names, open, recorded, extra: [tag, ...marks], idPrefix: "t",
+        spans: state.skills, names, open, recorded, extra: [note, tag, ...marks], idPrefix: "t",
       }));
     if (added) seen.observe(node);
     return node;
@@ -332,8 +334,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   function drawRail() {
     const verdict = verdictOf(state.run, state.launch, state.ended);
     const names = toolNames([...state.entries.map((entry) => entry.message), ...state.steps.map((step) => step.output || {})]);
-    // What the harness added after each step — its tools' results, a turn of its own — drawn
-    // in the conversation, so each one's line leads there.
+    // What came after each step — its tools' results, the harness's own notes, a person's next
+    // turn — drawn in the conversation, so each one's line leads there.
     const added = group(state.entries.filter((entry) => entry.origin === "harness" && entry.after !== null), (entry) => entry.after);
     replace(rail,
       h("div", { class: "tl-rail-head" }, plural(state.steps.length, "step")),
@@ -365,27 +367,36 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return finalReply(step) ? "reply" : "text";
   }
 
-  /** A message the harness added after `step`, on its line under it: a tool's result by the
-   *  tool's name. It leads to the message in the conversation, opened. */
+  /** A message the harness added after `step`, on a line of its own. A tool's result goes under
+   *  the step, by the tool's name, and so does a user message the harness wrote itself, by what
+   *  it is; a person's turn starts a new exchange, unindented, in their words. Each leads to the
+   *  message in the conversation, opened. */
   function railEntry(entry, step, names) {
     const message = entry.message;
-    const what = message.role === "tool" ? `${names.get(message.tool_call_id) || "tool"} result` : `${message.role} message`;
+    const show = (event) => {
+      event.preventDefault();
+      const shown = element.querySelector(`#tm${entry.index}`);
+      if (!shown) return;
+      shown.open = true;
+      shown.scrollIntoView({ block: "start" });
+    };
+    if (message.role === "user" && !entry.note) {
+      return h("a", {
+        class: "tl-rail-turn", href: `${base}/${step.idx}`, dataset: { entry: entry.index },
+        title: `A person's turn, after step ${step.idx}`, onclick: show,
+      }, h("span", { class: "tl-rail-who" }, "user"), h("span", { class: "tl-rail-what" }, firstLine(messageText(message), 80) || "(no text)"));
+    }
+    const what = message.role === "tool" ? `${names.get(message.tool_call_id) || "tool"} result` : entry.note || `${message.role} message`;
     return h("a", {
       class: "tl-rail-result", href: `${base}/${step.idx}`, dataset: { entry: entry.index },
-      title: `${what}, added by the harness after step ${step.idx}`,
-      onclick: (event) => {
-        event.preventDefault();
-        const shown = element.querySelector(`#tm${entry.index}`);
-        if (!shown) return;
-        shown.open = true;
-        shown.scrollIntoView({ block: "start" });
-      },
+      title: entry.note ? `Written by the harness itself after step ${step.idx}, not by a person` : `${what}, added by the harness after step ${step.idx}`,
+      onclick: show,
     }, h("span", { class: "tl-rail-arrow", "aria-hidden": "true" }, "↳"), h("span", { class: "tl-rail-what" }, what));
   }
 
   function markCurrent({ idx = null, entry = null }) {
     for (const link of rail.querySelectorAll(".tl-rail-step")) link.classList.toggle("current", Number(link.dataset.idx) === idx);
-    for (const link of rail.querySelectorAll(".tl-rail-result")) link.classList.toggle("current", Number(link.dataset.entry) === entry);
+    for (const link of rail.querySelectorAll(".tl-rail-result, .tl-rail-turn")) link.classList.toggle("current", Number(link.dataset.entry) === entry);
   }
 
   // --- a step, opened -------------------------------------------------------------------------

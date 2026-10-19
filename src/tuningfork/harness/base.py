@@ -108,6 +108,10 @@ class HarnessAdapter(Protocol):
       does to its own copy before every one (Hermes strips each message and writes tool-call
       arguments compactly) — for a request rebuilt from a kept history (`ops.imports`).
       Without one, a history is sent as kept.
+    - `harness_note(message)`: a user message the harness wrote itself, named in a few words —
+      Hermes's nudge to go on after a cut reply, Claude Code's reminders — or None for a
+      person's turn, which a run's page shows as a new exchange (`ops.timeline`). Without
+      one, every user message is a person's.
     """
 
     name: str

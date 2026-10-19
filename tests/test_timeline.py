@@ -237,6 +237,35 @@ def test_tools_offered_that_change_between_steps_are_noted(store):
                                        "parameters": read["function"]["parameters"]}]
 
 
+def test_a_note_the_harness_wrote_itself_is_told_from_a_persons_turn(store):
+    """After a step, a user message is a person's next turn, or the harness's own: Hermes's
+    nudge to go on after a cut reply is named, by the run's adapter — or, for a run recorded as
+    it happened, by whichever adapter knows it — and a person's turn is not."""
+    task = user("Summarize data.csv into report.json.")
+    nudge = user("[System: Your previous response was truncated by the output length limit. Continue exactly "
+                 "where you left off. Do not restart or repeat prior text. Finish the answer directly.]")
+    thanks = user("Thanks. Now the same for march.csv.")
+    first = store.record_step(request=chat(task), response=as_response(text_message("Writing the rep"), "length"))
+    store.record_step(request=chat(task, text_message("Writing the rep"), nudge),
+                      response=as_response(text_message("Done: report.json.")))
+    store.record_step(request=chat(task, text_message("Writing the rep"), nudge, text_message("Done: report.json."), thanks),
+                      response=as_response(text_message("On it.")))
+
+    def notes() -> list[tuple[str, int, str | None]]:
+        found = run_timeline(store, first.run_id).to_json()
+        return [(entry["message"]["content"][:9], entry["after"], entry.get("note")) for entry in found["entries"]
+                if entry["origin"] == "harness" and entry["message"]["role"] == "user"]
+
+    assert store.get_run(first.run_id).harness is None
+    assert notes() == [("[System: ", 0, "continue after a cut reply"), ("Thanks. N", 1, None)]
+    store.annotate_run(first.run_id, harness="hermes")
+    assert notes() == [("[System: ", 0, "continue after a cut reply"), ("Thanks. N", 1, None)]
+    # A harness's own adapter alone names its notes; one tuningfork does not know names none.
+    for harness in ("claude-code", "generic"):
+        store.annotate_run(first.run_id, harness=harness)
+        assert notes() == [("[System: ", 0, None), ("Thanks. N", 1, None)]
+
+
 def test_an_ab_is_one_experiment_at_its_step(store):
     run_id = record_pilot(store)
     step = store.step(run_id, 1)

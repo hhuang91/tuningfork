@@ -964,6 +964,11 @@ try {
   check(imported.label === "imported: chat 1" && imported.harness === "hermes", "labelled by its session's title, its harness Hermes");
   check(await page.eval(`(document.querySelector(".tl-tools summary")?.textContent || "").startsWith("${offered.length} tools offered")`),
     "its steps offer the recorded run's tools, shown above its system prompt");
+  check(await page.eval(`(() => {
+    const turn = document.querySelector(".tl-rail-turn");
+    return !!turn && turn.textContent === "userSummarize data.csv into report.json."
+      && turn.previousElementSibling?.dataset.idx === "0" && turn.nextElementSibling?.dataset.idx === "1";
+  })()`), "a person's next turn starts a new exchange in the rail, unindented, in their words");
 
   console.log("a scenario of it: from the turn before the skill, its conversation on the scenario's page");
   await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "Make a scenario…")`), "Make a scenario… on the imported run");
@@ -985,9 +990,16 @@ try {
   await until(() => page.eval(`!!document.querySelector(".tl-tools")`), "the bare import's page");
   check(await page.eval(`document.querySelector(".tl-tools").textContent.startsWith("No tools recorded: Hermes's export keeps none")`),
     "no tools recorded, and why, where they would be");
+  // A reply cut at the output limit, and the nudge Hermes sends itself to go on.
+  const nudged = [
+    { role: "user", content: "Summarize data.csv into report.json." },
+    { role: "assistant", content: "Writing the rep", finish_reason: "length" },
+    { role: "user", content: "[System: Your previous response was truncated by the output length limit. Continue exactly where you left off. Do not restart or repeat prior text. Finish the answer directly.]" },
+    { role: "assistant", content: "Done.", finish_reason: "stop" },
+  ];
   const sessionFile = JSON.stringify({
     session_id: "20261018_130000_cc22dd", model: "m", base_url: "http://x/v1", platform: "cli", session_start: "2026-10-18T13:00:00",
-    system_prompt: "You are Hermes.", message_count: rows.length, messages: rows,
+    system_prompt: "You are Hermes.", message_count: nudged.length, messages: nudged,
     tools: [{ type: "function", function: { name: "write_file", description: "Write a file.\nIt replaces what is there.", parameters: {
       type: "object", properties: { path: { type: "string", description: "Where to write" }, content: { type: "string" } }, required: ["path"] } } }],
   });
@@ -1002,6 +1014,12 @@ try {
       && tool.querySelector(".tool-body pre.text").textContent === "Write a file.\\nIt replaces what is there."
       && params.join(" / ") === "path string required — Where to write / content string";
   })()`), "each tool opens to what it says it does and the parameters it takes");
+  check(await page.eval(`(() => {
+    const line = [...document.querySelectorAll(".tl-rail-result")].find((a) => a.textContent === "↳continue after a cut reply");
+    const said = line && document.querySelector("#tm" + line.dataset.entry);
+    return !!said && line.previousElementSibling?.dataset.idx === "0" && !document.querySelector(".tl-rail-turn")
+      && [...said.querySelectorAll(".chip")].some((chip) => chip.textContent === "continue after a cut reply");
+  })()`), "Hermes's own nudge after a cut reply stays under its step, named, and says so in the conversation");
 
   check(page.problems.length === 0, `no page errors${page.problems.length ? `: ${page.problems.join(" | ")}` : ""}`);
   console.log("all passed");

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -30,6 +31,9 @@ from tuningfork.harness.base import LaunchSpec, Requirement, SkillSpan
 
 SKILL_PREFIX = "Base directory for this skill: "
 ARGUMENTS_MARKER = "\n\nARGUMENTS: "
+#: What Claude Code adds to a user message for the model, not from a person: a reminder of its
+#: own (the date, a file changed, its to-do list), wrapped so.
+REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 
 #: Settings that keep a headless run to the task and off every network but the proxy's.
 QUIET = {
@@ -206,6 +210,23 @@ class ClaudeCodeAdapter:
 
     def skill_roots(self, home: Path) -> tuple[Path, ...]:
         return (self.config_dir(home) / "skills",)
+
+    def harness_note(self, message: dict[str, Any]) -> str | None:
+        """A user message Claude Code wrote itself, on the request's OpenAI-style view: the text
+        of a skill the model loaded, or nothing but its `<system-reminder>`s. A person's words,
+        reminders beside them or not, are their turn: None."""
+        content = message.get("content")
+        if isinstance(content, str):
+            texts = [content]
+        elif isinstance(content, list):
+            texts = [part["text"] for part in content if isinstance(part, dict) and isinstance(part.get("text"), str)]
+        else:
+            texts = []
+        if any(text.startswith(SKILL_PREFIX) for text in texts):
+            return "skill text"
+        if texts and not REMINDER.sub("", "\n".join(texts)).strip():
+            return "reminder"
+        return None
 
     def skill_spans(self, request: dict[str, Any]) -> list[SkillSpan]:
         """Skills loaded through the `Skill` tool, found on the request's OpenAI-style view.
