@@ -38,6 +38,7 @@ export async function importView(root) {
     h("option", { value: "" }, "as the file says"),
     ["hermes", "claude-code", "generic"].map((name) => h("option", { value: name }, name)));
   const skillDir = input("skill_dir", { placeholder: "optional: the skill's folder on this machine" });
+  const toolsFrom = input("tools_from", { placeholder: "optional: a run id, or its first characters" });
   const label = input("label", { placeholder: "optional" });
   const task = input("task_id", { placeholder: "optional: a task id to file the run under" });
   const preview = h("div", { class: "stack" });
@@ -49,6 +50,7 @@ export async function importView(root) {
     session: session || undefined,
     skill: skill || undefined,
     harness: harness.value || undefined,
+    tools_from: toolsFrom.value.trim() || undefined,
     skill_dir: skillDir.value.trim() || undefined,
     label: label.value.trim() || undefined,
     task_id: task.value.trim() || undefined,
@@ -136,6 +138,7 @@ export async function importView(root) {
     look();
   });
   harness.addEventListener("change", () => { skill = null; look(); });
+  toolsFrom.addEventListener("change", look);
   skillDir.addEventListener("change", look);
 
   start.addEventListener("click", guard(async () => {
@@ -154,7 +157,9 @@ export async function importView(root) {
     panel("The conversation", h("div", { class: "form-grid" },
       field("File", file, { wide: true, help: "Hermes's session file (~/.hermes/sessions/session_<id>.json), its export "
         + "(hermes sessions export), or an OpenAI-style list of messages." }),
-      field("Harness", harness, { help: "The agent the conversation was had with, where the file does not say." }))),
+      field("Harness", harness, { help: "The agent the conversation was had with, where the file does not say." }),
+      field("Tools from", toolsFrom, { help: "Where the file names no tools (Hermes's export keeps none): a run recorded "
+        + "through the same harness, whose tools each step then offers." }))),
     preview,
     panel("The run", h("div", { class: "stack" },
       h("div", { class: "form-grid" },

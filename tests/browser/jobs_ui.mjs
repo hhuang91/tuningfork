@@ -920,6 +920,12 @@ try {
     "the skill it shows, and from which step it is in context");
   check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("names no tools"))`),
     "what the file lacked, said before anything is recorded");
+  await page.type(`document.querySelector('input[name="tools_from"]')`, run.id.slice(0, 8));
+  await page.eval(`document.querySelector('input[name="tools_from"]').dispatchEvent(new Event("change", { bubbles: true }))`);
+  await until(() => page.eval(`document.querySelector("main").textContent.includes("from run ${run.id.slice(0, 8)}")`),
+    "the tools a recorded run offered, taken for each step");
+  check(await page.eval(`![...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("names no tools"))`),
+    "a run's tools named on the page, as --tools-from names them: the warning gone");
   await page.eval(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Import" && !b.disabled).click()`);
   await until(() => page.eval(`/^#\\/runs\\/[0-9a-f]{32}$/.test(location.hash)`), "the imported run's page");
   await until(() => page.eval(`(document.querySelector(".page-head .sub")?.textContent || "").includes("imported from a Hermes export (session 20261018_120001_aa11bb)")`),

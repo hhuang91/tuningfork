@@ -385,7 +385,7 @@ def prepare_import(
     if not chat.tools:
         warnings.append("the file names no tools" + (" (Hermes's export keeps none)" if chat.format == "hermes-export" else "")
                         + ": each step is rebuilt without them; name a run recorded through the same harness to "
-                        "take its tools (tools_from)")
+                        "take its tools from (--tools-from; the import page's Tools from)")
     if chat.model:
         warnings.append(f"its answers are {chat.model}'s: an experiment here samples your server's model, given "
                         "this conversation")
