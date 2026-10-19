@@ -33,6 +33,7 @@ const ROUTES = [
   // A step's address opens the run's timeline at that step; its exact context has its own.
   [/^\/runs\/([^/]+)\/(\d+)$/, runView, "runs"],
   [/^\/runs\/([^/]+)\/(\d+)\/context$/, stepView, "runs"],
+  [/^\/runs\/([0-9a-f]{32})\/scenario$/, scenarioFromRunView, "runs"],
   [/^\/diff\/([^/]+)\/([^/]+)$/, diffView, "runs"],
   [/^\/divergence\/(.+?)(?:@([0-9a-f]{8}))?$/, divergenceView, "runs"],
   [/^\/experiments$/, experimentsView, "experiments"],
@@ -43,6 +44,7 @@ const ROUTES = [
   [/^\/skills\/([^/]+)$/, skillView, "skills"],
   [/^\/batch$/, batchView, "runs"],
   [/^\/import$/, importView, "runs"],
+  // The address an imported run's scenario had first.
   [/^\/import\/([0-9a-f]{32})\/scenario$/, scenarioFromRunView, "runs"],
   [/^\/chains$/, chainsView, "runs"],
   [/^\/chains\/([0-9a-f]+)$/, chainView, "runs"],

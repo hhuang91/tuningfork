@@ -2,7 +2,9 @@
 
 A scenario is `<home>/scenarios/<name>/evals.json` — the same evals.json convention as any
 spec — with its input files in `inputs/` beside it. Its skill folder is a reference to a
-folder elsewhere, never copied in. Everything a scenario can be told to write stays inside
+folder elsewhere, never copied in — but for one made from a run whose skill has no folder of
+its own to be found (`ops.imports.prepare_scenario`), which keeps a copy in `skill/`.
+Everything a scenario can be told to write stays inside
 its own folder: names are checked, input paths may not climb out, and uploads have limits.
 A later phase lets a model drive this same API, which is why it is a jail.
 

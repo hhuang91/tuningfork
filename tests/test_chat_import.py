@@ -383,19 +383,27 @@ class TestTheContext:
 
 class TestAScenarioOfAnImport:
     def test_it_starts_at_the_turn_before_the_skill_came_in(self, store):
+        from tuningfork.ops import scenarios
+
         result = imports.execute_import(store, imports.prepare_import(store, chat_with_earlier_turns()))
         plan = imports.prepare_scenario(store, result.run_id, "tally-chat", check={"reply_contains": "report.json"})
         # system 0, the earlier turn 1-2, the task's turn 3, then the skill_view.
         assert plan.cut == 3 and plan.prompt == "Summarize data.csv into report.json."
         assert plan.context.in_turn == [] and plan.context.before == [{"role": "user", "content": "Our data lives in data.csv; keep reports small."},
                                 {"role": "assistant", "content": "Understood: small reports."}]  # no reasoning sent back
-        assert any("SKILL.md the import extracted" in warning for warning in plan.warnings)
+        assert any(f"the scenario keeps the copy run {result.run_id[:8]} kept, in its own folder" in warning
+                   for warning in plan.warnings)
         made = imports.make_scenario(store, plan)
         assert made.checked.ok and made.context == plan.context.before
         (item,) = made.spec["evals"]
-        assert item["prompt"] == plan.prompt and item["tuningfork"]["context"] == "context.json"
+        # Its own task: never counted with another spec's runs of the skill's first eval.
+        assert item["id"] == "tally-chat" and item["prompt"] == plan.prompt and item["tuningfork"]["context"] == "context.json"
         assert item["tuningfork"]["check"] == {"reply_contains": "report.json"}
-        assert made.spec["tuningfork"]["skill_dir"] == str(result.folder / "skills" / "tally-report")
+        # A copy of its own: an approved edit never rewrites what the imported run read.
+        assert made.spec["tuningfork"]["skill_dir"] == "skill/tally-report"
+        assert (scenarios.folder(store.home, "tally-chat") / "skill" / "tally-report" / "SKILL.md").read_text(encoding="utf-8") == SKILL
+        assert (result.folder / "skills" / "tally-report" / "SKILL.md").read_text(encoding="utf-8") == SKILL
+        assert any("its conversation's calls name report.json" in warning for warning in plan.warnings)
 
         with pytest.raises(OperationError, match="exists already"):
             imports.prepare_scenario(store, result.run_id, "tally-chat")
@@ -449,12 +457,62 @@ class TestAScenarioOfAnImport:
         plan = imports.prepare_scenario(store, result.run_id, "own-folder")
         assert plan.skill_dir == folder.resolve() and not any("extracted" in warning for warning in plan.warnings)
 
-    def test_a_run_not_imported_has_no_conversation_to_make_one_of(self, store):
-        from tests.helpers import record_run, text_message
+    def test_a_run_recorded_as_it_happened_keeps_the_skill_its_model_read(self, store):
+        """A run that came through the proxy outside any launch: its conversation is its last
+        request and the answer to it, its skill the text the model read, kept in the scenario's
+        own folder, and the files its calls name are listed for a person to add."""
+        from tuningfork.ops import scenarios
 
-        run = record_run(store, "plain", [text_message("done")])
-        with pytest.raises(OperationError, match="not imported"):
-            imports.prepare_scenario(store, run, "x")
+        chat = imports.read_chat(chat_with_earlier_turns())
+        store.begin_run("as it happened", None)
+        for index in chat.steps:
+            store.record_step(request=chat.request(index), response=chat.response(index), harness="hermes")
+        run = store.get_run("as it happened")
+        assert not run.parity.get("imported") and not run.launch_id
+        choices = imports.scenario_choices(store, run.id)
+        assert (choices["skill"], choices["default"], choices["launched"]) == ("tally-report", 3, False)
+        plan = imports.prepare_scenario(store, run.id, "as-it-happened")
+        assert plan.cut == 3 and len(plan.context.before) == 2 and plan.extract == SKILL and not plan.files
+        assert any("the scenario keeps the SKILL.md the model read" in warning for warning in plan.warnings)
+        assert any("its conversation's calls name report.json" in warning for warning in plan.warnings)
+        made = imports.make_scenario(store, plan)
+        assert made.checked.ok and made.spec["tuningfork"]["skill_dir"] == "skill/tally-report"
+        kept = scenarios.folder(store.home, "as-it-happened") / "skill" / "tally-report" / "SKILL.md"
+        assert kept.read_text(encoding="utf-8") == SKILL
+
+    def test_a_claude_code_run_starts_in_the_persons_own_words(self, store):
+        """Claude Code's reminders beside the person's words are its own, written again in every
+        run; the skill it showed without frontmatter is given one, so the harness lists it. A
+        conversation before the prompt it cannot carry: refused, not made without it."""
+        from tests.helpers import as_response, tool_call_message
+        from tests.test_wire import claude_code_request
+
+        step = store.record_step(request=claude_code_request(), wire="anthropic-messages", harness="claude-code",
+                                 response=as_response(tool_call_message("Write", {"file_path": "report.json", "content": "{}"})))
+        plan = imports.prepare_scenario(store, step.run_id, "from-claude-code")
+        assert plan.harness == "claude-code" and plan.cut == 1 and not plan.context.messages
+        assert plan.prompt == "Use the tally-report skill on data.csv."
+        assert plan.extract.startswith('---\nname: tally-report\ndescription: "Tally report"\n---\n\n# Tally report')
+        assert any("without its frontmatter" in warning for warning in plan.warnings)
+        assert imports.make_scenario(store, plan).checked.ok
+
+        request = claude_code_request()
+        request["messages"][:0] = [{"role": "user", "content": "An earlier turn."}, {"role": "assistant", "content": "Noted."}]
+        later = store.record_step(request=request, wire="anthropic-messages", harness="claude-code",
+                                  response=as_response(tool_call_message("Write", {"file_path": "report.json", "content": "{}"})))
+        with pytest.raises(OperationError, match=r"claude-code's calls \(anthropic-messages\) cannot carry the conversation"):
+            imports.prepare_scenario(store, later.run_id, "carried", cut=3)
+
+    def test_a_subagents_thread_is_not_a_task(self, store, monkeypatch):
+        import dataclasses
+
+        from tests.helpers import record_run, text_message
+        from tuningfork.store.db import SUBAGENT
+
+        run = store.get_run(record_run(store, "a subagent", [text_message("done")]))
+        monkeypatch.setattr(store, "get_run", lambda reference: dataclasses.replace(run, role=SUBAGENT, parent_run_id="f" * 32))
+        with pytest.raises(OperationError, match="make the scenario of the run it belongs to"):
+            imports.prepare_scenario(store, run.id, "x")
 
     def test_its_conversation_is_edited_whole_and_checked(self, store):
         from tuningfork.ops import scenarios
@@ -556,6 +614,128 @@ def test_a_run_takes_its_turns_earlier_steps_as_done_and_stops_at_the_next_skill
     assert run.result["stopped_at_skill"] == {"skill": "another-skill", "after_step": 1}
 
 
+def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_check_reads(stack):
+    """A run tuningfork launched: the scenario's inputs are its workspace where the scenario
+    starts, from the snapshots; its check the task's own, what the check reads from the task's
+    folder copied beside the scenario's spec; its skill the task's folder; its eval named by the
+    scenario, a task of its own. Its runs pass as the task's did."""
+    from tests.helpers import FakeAgent
+    from tuningfork.ops import scenarios
+    from tuningfork.runner import BatchRunner
+    from tuningfork.specs import load_spec
+
+    checks = stack.tmp / "checks"
+    checks.mkdir()
+    # The original wording names no keys, so the task's own check fails it: this one asks for the file.
+    (checks / "report.py").write_text("import os, sys\nsys.exit(0 if os.path.isfile('report.json') else 1)\n",
+                                      encoding="utf-8")
+    stack.item.tuningfork.check = 'python3 "$TUNINGFORK_SPEC_DIR/checks/report.py"'
+    stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+    source = stack.record()
+    assert source.passed, source.stderr
+
+    choices = imports.scenario_choices(stack.store, source.run_id)
+    assert choices["launched"] and choices["check"] == stack.item.tuningfork.check and choices["default"] == 1
+    plan = imports.prepare_scenario(stack.store, source.run_id, "tally-again")
+    assert (plan.cut, plan.prompt, plan.context.messages) == (1, stack.item.prompt, 0)
+    assert plan.skill == "tally-report" and not plan.own_skill
+    assert plan.skill_dir.resolve() == (stack.tmp / "skills-src" / "tally-report").resolve()
+    assert plan.files == {"data.csv": b"id,amount\n1,10\n2,20\n3,30\n4,1.5\n"}
+    assert plan.check == stack.item.tuningfork.check and set(plan.check_files) == {"checks"}
+    assert any("its check is task tally-report/1's own" in warning for warning in plan.warnings)
+    made = imports.make_scenario(stack.store, plan)
+    assert made.checked.ok, made.checked.problems
+    (item,) = made.spec["evals"]
+    assert item["id"] == "tally-again" and item["files"] == [{"path": "data.csv", "source": "inputs/data.csv"}]
+    assert item["tuningfork"]["max_turns"] == 6 and item["tuningfork"]["skills"] == ["tally-report"]
+    folder = scenarios.folder(stack.store.home, "tally-again")
+    assert (folder / "checks" / "report.py").is_file()
+
+    spec = load_spec(folder / "evals.json")
+    runner = BatchRunner(stack.store, FakeAgent(), base_url=f"{stack.url}/v1", model="m", workdir=stack.tmp / "again",
+                         settle=0.1)
+    (again,) = runner.run(spec, spec.evals[0], 1).outcomes
+    assert again.passed, again.stderr  # its check found its script beside the scenario's spec
+    assert stack.store.get_run(again.run_id).task_id == "tally-report/tally-again"
+
+
+def test_a_launched_runs_scenario_from_later_in_its_turn_has_its_workspace_there(stack, monkeypatch):
+    """Where the skill came in after earlier steps of the turn, the scenario starts after them,
+    taken as done, and its inputs are the workspace as the run had it then: what those steps
+    wrote among them."""
+    import re
+
+    from tests.helpers import SKILL as LOADED, FakeAgent
+    from tests.mock_server import MockTurn
+    from tuningfork.harness import ADAPTERS
+    from tuningfork.harness.base import SkillSpan
+
+    class Loading(FakeAgent):
+        def skill_load(self, call):
+            function = call.get("function") or {}
+            return json.loads(function.get("arguments") or "{}").get("name") if function.get("name") == "skill_view" else None
+
+        def skill_spans(self, request):
+            # The mock gives every call one id: a load's result is the tool message after it.
+            spans, loading = [], None
+            for index, message in enumerate(request.get("messages") or []):
+                if message.get("role") == "assistant":
+                    loading = next(filter(None, map(self.skill_load, message.get("tool_calls") or [])), None)
+                elif message.get("role") == "tool" and loading:
+                    spans.append(SkillSpan(name=loading, message_index=index, source="tool", text=LOADED))
+                    loading = None
+            return spans
+
+    def model(payload):
+        messages = payload["messages"]
+        workdir = re.search(r"Working directory: (\S+)", messages[0]["content"]).group(1)
+        called = [each["function"]["name"] for m in messages if m["role"] == "assistant" for each in m.get("tool_calls") or []]
+        if not called:
+            return MockTurn(tool_calls=[{"name": "write_file", "arguments": {"path": f"{workdir}/notes.txt", "content": "rows: 4"}}])
+        if called == ["write_file"]:
+            return MockTurn(tool_calls=[{"name": "skill_view", "arguments": {"name": "tally-report"}}])
+        if called == ["write_file", "skill_view"]:
+            return MockTurn(tool_calls=[{"name": "write_file", "arguments": {
+                "path": f"{workdir}/report.json", "content": json.dumps({"row_count": 4, "amount_total": 61.5})}}])
+        return MockTurn(content="done")
+
+    monkeypatch.setitem(ADAPTERS, "fake", Loading)
+    stack.mock.responder = model
+    source = stack.record()
+    plan = imports.prepare_scenario(stack.store, source.run_id, "after-notes")
+    assert plan.cut == 1 and [message["role"] for message in plan.context.in_turn] == ["assistant", "tool"]
+    assert plan.files == {"data.csv": b"id,amount\n1,10\n2,20\n3,30\n4,1.5\n", "notes.txt": b"rows: 4"}
+    assert any("workspace as its step 1 found it" in warning for warning in plan.warnings)
+    # Not in the sandbox: the steps taken as done name this run's own folder, which no other run has.
+    assert any("own workspace" in warning for warning in plan.warnings)
+
+
+def test_a_scenario_of_a_run_from_the_terminal(store, tmp_path):
+    from tuningfork.cli import app
+    from tuningfork.ops import scenarios
+
+    chat = imports.read_chat(chat_with_earlier_turns())
+    store.begin_run("as it happened", None)
+    for index in chat.steps:
+        store.record_step(request=chat.request(index), response=chat.response(index), harness="hermes")
+    run = store.get_run("as it happened").id
+    runner = CliRunner()
+    looked = runner.invoke(app, ["scenario", run[:8], "from-a-run", "--reply-contains", "report.json", "--dry-run",
+                                 "--home", str(store.home)], env={"COLUMNS": "200"})
+    assert looked.exit_code == 0, looked.output
+    assert "starts     at message 3" in looked.output and "nothing written" in looked.output
+    assert not scenarios.folder(store.home, "from-a-run").exists()
+    done = runner.invoke(app, ["scenario", run[:8], "from-a-run", "--reply-contains", "report.json",
+                               "--home", str(store.home)], env={"COLUMNS": "200"})
+    assert done.exit_code == 0, done.output
+    assert "scenario from-a-run made" in done.output
+    assert scenarios.read_scenario(store.home, "from-a-run").spec["evals"][0]["tuningfork"]["check"] == {"reply_contains": "report.json"}
+    clash = runner.invoke(app, ["scenario", run[:8], "from-a-run", "--home", str(store.home)])
+    assert clash.exit_code == 1 and "exists already" in clash.output
+    both = runner.invoke(app, ["scenario", run[:8], "other", "--check", "true", "--no-check", "--home", str(store.home)])
+    assert both.exit_code == 1 and "name one check" in both.output
+
+
 def test_a_scenario_from_the_terminal(store, tmp_path):
     from tuningfork.cli import app
     from tuningfork.ops import scenarios
@@ -591,3 +771,11 @@ async def test_the_web_ui_makes_a_scenario_and_edits_its_conversation(proxy_clie
     assert edited.status_code == 200 and edited.json() == {"messages": 2}
     refused = await proxy_client.put("/_tuningfork/api/scenarios/from-ui/context", json={"messages": two[:1]})
     assert refused.status_code == 400 and "ends on a user turn" in refused.json()["error"]["message"]
+
+    # Any run's address: the same choices, and a body that says what it may hold.
+    choices = (await proxy_client.get(f"/_tuningfork/api/runs/{run}/scenario")).json()
+    assert choices["default"] == 3 and choices["skill"] == "tally-report" and choices["imported"]
+    odd = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "x", "task_check": "no"})
+    assert odd.status_code == 400 and odd.json()["error"]["field"] == "task_check"
+    other = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "by-run", "harness": "hermes"})
+    assert other.status_code == 201 and other.json()["harness"] == "hermes"

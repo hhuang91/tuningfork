@@ -1059,6 +1059,26 @@ try {
   await until(() => page.eval(`!!document.querySelector('input[name="stop-0"]')`), "the eval's stop");
   check(await page.eval(`document.querySelector('input[name="stop-0"]').checked`), "its page says each run stops where another skill loads");
 
+  console.log("a run tuningfork launched, as a scenario: its task's check, its workspace's files");
+  const ofTask = (await api("/runs?task=tally-scenario/1&limit=5"))[0];
+  await page.eval(`location.hash = "#/runs/${ofTask.id}"`);
+  await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "Make a scenario…")`), "Make a scenario… on a launched run");
+  await page.eval(`[...document.querySelectorAll(".page-head a")].find((a) => a.textContent === "Make a scenario…").click()`);
+  await until(() => page.eval(`location.hash === "#/runs/${ofTask.id}/scenario" && !!document.querySelector('select[name="check_kind"]')`), "the scenario form");
+  check(await page.eval(`document.querySelector('select[name="check_kind"]').selectedOptions[0].textContent.startsWith("the task's own: python3")`),
+    "its check is the task's own unless told otherwise");
+  check(await page.eval(`document.querySelector("main").textContent.includes("Its inputs: the run's workspace where the scenario starts")`),
+    "it says its inputs come from the run's workspace");
+  await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
+  await page.click("Make the scenario");
+  await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "Open the scenario")`), "the scenario made");
+  check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("workspace as its step 0 found it: 1 file(s)"))`),
+    "its inputs are the run's workspace as it started");
+  const fromLaunch = await api("/scenarios/from-a-launch");
+  check(fromLaunch.spec.evals[0].id === "from-a-launch" && fromLaunch.spec.evals[0].files[0].path === "data.csv"
+    && fromLaunch.inputs.length === 1 && fromLaunch.spec.evals[0].tuningfork.check.startsWith("python3"),
+    "its eval is a task of its own, with the run's data.csv as its input and the task's check");
+
   check(page.problems.length === 0, `no page errors${page.problems.length ? `: ${page.problems.join(" | ")}` : ""}`);
   console.log("all passed");
 } catch (error) {

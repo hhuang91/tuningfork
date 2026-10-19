@@ -6,6 +6,10 @@ shows, what the file lacked — and records nothing; `POST /imports` records it.
 file's text with the import's options, read with a cap. Both take the access token, as every
 change does: a preview reads a person's file, and the running proxy's store is the only one an
 import may write to.
+
+`GET /runs/{run}/scenario` says where a scenario of any run can start, and `POST` makes it
+(`ops.imports.prepare_scenario`); `/imports/{run}/scenario`, the address an imported run's had
+first, answers the same.
 """
 
 from __future__ import annotations
@@ -23,8 +27,12 @@ from tuningfork.ops import imports
 from tuningfork.ops.common import OperationError
 
 PREFIX = "/_tuningfork/api/imports"
+#: A scenario of any run is made at `/runs/{run}/scenario`.
+RUNS = "/_tuningfork/api/runs"
 #: What a body may hold besides the file's text: `prepare_import`'s options.
 OPTIONS = ("session", "skill", "skill_dir", "harness", "label", "task_id", "tools_from")
+#: What a scenario's body may hold: `prepare_scenario`'s options.
+SCENARIO_FIELDS = ("name", "cut", "check", "skill", "skill_dir", "harness", "task_check")
 
 
 async def _body(request: Request) -> tuple[str, dict[str, Any]]:
@@ -86,56 +94,42 @@ def import_routes(*, store: Any) -> list[Route]:
         return JSONResponse(result.to_json(), status_code=201)
 
     async def starts(request: Request) -> Response:
-        """Where a scenario of an imported run can start: its user turns, and the one before
-        the skill came in — `?skill=`, where it kept several — which it starts from unless told
-        otherwise."""
-        from tuningfork.ops.experiments import kept_skills, study_skill
-
-        def look() -> dict[str, Any]:
-            run = store.get_run(request.path_params["run"])
-            if run is None:
-                raise OperationError(f"no run matching {request.path_params['run']!r}", code="not_found")
-            chat = imports.chat_of(store, run)
-            try:
-                studied = study_skill(run, request.query_params.get("skill") or None)
-            except OperationError as error:
-                if error.code != "choose_skill":
-                    raise
-                studied = None
-            skill = studied[0] if studied else None
-            try:
-                start = imports.scenario_start(chat, skill or "", run.harness or "generic")
-            except OperationError:
-                start = None
-            return {"run": run.id, "skill": skill, "skills": list(kept_skills(run)), "turns": imports.turns(chat),
-                    "default": start.cut if start else None,
-                    "context": len(start.context.before) if start else 0,
-                    "in_turn": len(start.context.in_turn) if start else 0,
-                    "next_skill": start.next_skill if start else None}
-
+        """Where a scenario of a run can start (`imports.scenario_choices`): its person's turns,
+        the skills it kept or showed — `?skill=` the one studied, where there are several — and
+        the turn it starts from unless told otherwise. `?harness=`: the harness that had it,
+        where the run does not say."""
         try:
-            return JSONResponse(await asyncio.to_thread(look))
+            found = await asyncio.to_thread(
+                imports.scenario_choices, store, request.path_params["run"],
+                skill=request.query_params.get("skill") or None, harness=request.query_params.get("harness") or None,
+            )
         except OperationError as error:
             return _refusal(error)
+        return JSONResponse(found)
 
     async def scenario(request: Request) -> Response:
         def make(body: dict[str, Any]) -> dict[str, Any]:
             cut = body.get("cut")
             if cut is not None and (isinstance(cut, bool) or not isinstance(cut, int)):
                 raise OperationError("cut is a message's index", code="bad_params", field="cut")
-            skill = body.get("skill")
-            if skill is not None and not isinstance(skill, str):
-                raise OperationError("skill is a skill's name", code="bad_params", field="skill")
-            plan = imports.prepare_scenario(store, request.path_params["run"], str(body.get("name") or ""),
-                                            cut=cut, check=body.get("check"), skill=skill or None)
+            for name in ("skill", "skill_dir", "harness"):
+                if body.get(name) is not None and not isinstance(body[name], str):
+                    raise OperationError(f"{name} is text", code="bad_params", field=name)
+            if not isinstance(body.get("task_check", True), bool):
+                raise OperationError("task_check is true or false", code="bad_params", field="task_check")
+            plan = imports.prepare_scenario(store, request.path_params["run"], str(body.get("name") or ""), cut=cut,
+                                            check=body.get("check"), skill=body.get("skill") or None,
+                                            skill_dir=body.get("skill_dir") or None, harness=body.get("harness") or None,
+                                            task_check=body.get("task_check", True))
             made = imports.make_scenario(store, plan)
-            return {"scenario": made.to_json(), "warnings": plan.warnings}
+            return {"scenario": made.to_json(), "warnings": [*plan.warnings, *made.checked.warnings],
+                    "harness": plan.harness}
 
         try:
             raw = await _capped(request, 1024 * 1024)
             body = json.loads(raw) if raw else {}
-            if not isinstance(body, dict) or set(body) - {"name", "cut", "check", "skill"}:
-                raise OperationError("the body is {name, cut, check, skill}", code="bad_params")
+            if not isinstance(body, dict) or set(body) - set(SCENARIO_FIELDS):
+                raise OperationError(f"the body is {{{', '.join(SCENARIO_FIELDS)}}}", code="bad_params")
             found = await asyncio.to_thread(make, body)
         except ValueError:
             return _refusal(OperationError("the body is not JSON", code="bad_params"))
@@ -146,6 +140,7 @@ def import_routes(*, store: Any) -> list[Route]:
     return [
         Route(f"{PREFIX}/preview", preview, methods=["POST"]),
         Route(PREFIX, create, methods=["POST"]),
-        Route(f"{PREFIX}/{{run}}/scenario", starts, methods=["GET"]),
-        Route(f"{PREFIX}/{{run}}/scenario", scenario, methods=["POST"]),
+        # A scenario of any run; the imported runs' first address kept.
+        *(Route(f"{prefix}/{{run}}/scenario", starts, methods=["GET"]) for prefix in (RUNS, PREFIX)),
+        *(Route(f"{prefix}/{{run}}/scenario", scenario, methods=["POST"]) for prefix in (RUNS, PREFIX)),
     ]

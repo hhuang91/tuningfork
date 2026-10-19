@@ -69,6 +69,8 @@ Inspecting and experimenting (all take `--home <recordings dir>`):
     tuningfork recheck <run> [--check …]  # try a check on a run's end state; records nothing
     tuningfork import <chat.json>         # a conversation had elsewhere, as a run (a Hermes session
                                           #   file or export, a message list): the step tools work on it
+    tuningfork scenario <run> <name>      # any run as a scenario: its conversation continued from a
+                                          #   user turn, its workspace there the inputs
     tuningfork experiments / experiment   # list, or re-report without new samples
     tuningfork servers                    # which servers answered, and what each was
     tuningfork skills / skill <name>      # each version of a skill: text, pass rates (--text, --diff A B)
@@ -110,13 +112,23 @@ run's does. The conversation is kept there too.
 Its steps are recorded under an assignment of the run's own, never a pending label a live call
 could take; nothing launched it, so it forks nowhere, and deleting it for good takes its folder.
 
-An imported run becomes a scenario (`imports.prepare_scenario`; `import --scenario`, its page's
-Make a scenario…, `POST /imports/{run}/scenario`): the user turn before the skill first came in
-(`--cut` another) is the eval's prompt, the conversation before it — as its harness sends history —
-the scenario's `context.json` (`tuningfork.context`, checked by `specs.check_context`), the skill
-the folder the import named (an approval writes there), else its extracted copy, and the check
-the person's. Each run continues that conversation: the runner keeps it as a blob named in the
-launch's `settings.context` (kept live by `Store.live_blobs`; a fork carries its source's, never
+Any run becomes a scenario — imported, launched, or recorded as it happened, never a thread
+(`imports.prepare_scenario`; `tuningfork scenario <run> <name>`, `import --scenario`, a run's page's
+Make a scenario…, `POST /runs/{run}/scenario`): its conversation is an import's kept chat, else the
+last step's request as the model was sent it and the answer (`imports.chat_of`); the user turn
+before the skill first came in (`--cut` another) is the eval's prompt, in the person's own words
+(a harness's reminders beside them left out), and the conversation before it — as its harness sends
+history — the scenario's `context.json` (`tuningfork.context`, checked by `specs.check_context`).
+The skill is the folder the person names, the import named or a launched run's task's (an approval
+writes there), else a copy in the scenario's own folder (`skill/<name>/`: the copy the run kept, or
+the SKILL.md the model read, given frontmatter where its harness showed none) — never the run's own
+copy, which its A/Bs read. The check is the person's, else a launched run's task's own, what it reads
+from the task's folder (`$TUNINGFORK_SPEC_DIR/…`) copied beside the spec; the inputs are a launched
+run's workspace as the scenario's first call stands in it, from the snapshots, else the files the
+conversation's calls name are listed for the person to add; the eval is named by the scenario, a
+task of its own, never counted with the run's. Each run continues that conversation: the runner
+keeps it as a blob named in the launch's `settings.context` (kept live by `Store.live_blobs`; a
+fork carries its source's, never
 the file as it reads now), and the proxy puts it after the harness's instructions in every call
 of the main thread (`WireFormat.with_context`; OpenAI chat only, a batch refusing a harness whose
 wire cannot carry it, a call refused rather than sent without it), recording the harness's own
@@ -456,7 +468,7 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                typed, the skill's file written back, history and changelog
                                beside it), skills (each skill's versions, texts and rates; its
                                folder now), glossary (the words, once), imports (a conversation
-                               had elsewhere, as a run); the job catalog;
+                               had elsewhere, as a run; any run as a scenario); the job catalog;
                                `common`: events, cancellation, strict parameters
     src/tuningfork/jobs.py     the job runner inside `serve`: lanes, progress, cancel, sweep
     src/tuningfork/access.py   the access token and the MCP token; endpoints.py: protected endpoints

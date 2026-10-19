@@ -1511,7 +1511,86 @@ def import_chat(
         console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
     spec_file = scenario_files.spec_path(store.home, scenario)
     console.print(f"scenario [bold]{escape(scenario)}[/bold] made: {escape(str(spec_file))}")
-    console.print(f"[dim]`tuningfork batch {spec_file} -n 10` runs it, each run continuing the conversation.[/dim]")
+    _run_it(spec_file, planned.harness)
+
+
+def _run_it(spec_file: Path, harness: Optional[str]) -> None:
+    """How to run a scenario just made, with the harness its conversation was had with."""
+    named = f" --harness {harness}" if harness and harness != "hermes" else ""
+    console.print(f"[dim]`tuningfork batch {escape(str(spec_file))} -n 10{named}` runs it, each run continuing the "
+                  "conversation.[/dim]")
+
+
+@app.command("scenario")
+def scenario_of_run(
+    run: str = typer.Argument(..., help="The run: imported, launched by tuningfork, or recorded as it happened."),
+    name: str = typer.Argument(..., help="The scenario's name: lowercase letters, digits, - and _."),
+    cut: Optional[int] = typer.Option(
+        None, "--cut", help="The user turn it starts from, by its message's index (`tuningfork timeline` shows the "
+        "turns), in place of the one before the skill came in.",
+    ),
+    skill: Optional[str] = typer.Option(None, "--skill", help="Where the run kept or showed several skills, the one it studies."),
+    skill_dir: Optional[Path] = typer.Option(
+        None, "--skill-dir", help="The skill's folder on this machine, which the scenario tunes: by default the folder "
+        "the run's skill came from, else a copy kept in the scenario's own folder.",
+    ),
+    harness: Optional[str] = typer.Option(
+        None, "--harness", help="The harness the conversation was had with, where the run does not say (hermes, "
+        "claude-code, generic).",
+    ),
+    check: Optional[str] = typer.Option(
+        None, "--check", help="Its check, a shell command run in each run's workspace: by default a launched run's "
+        "task's own.",
+    ),
+    reply_contains: Optional[str] = typer.Option(None, "--reply-contains", help="Its check, the final reply holds this text."),
+    no_check: bool = typer.Option(False, "--no-check", help="No check, not the task's own either: runs have no verdict until it has one."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what it would make, and write nothing."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """Make a scenario of a run: runs of its skill through the harness, each continuing the run's
+    conversation from one of its user turns. A launched run's workspace there is the scenario's
+    input files, from its snapshots; for any other run, the files its conversation's calls name are
+    listed, for you to add."""
+    from tuningfork.ops import scenarios as scenario_files
+    from tuningfork.ops.imports import make_scenario, prepare_scenario
+
+    if (check is not None) + (reply_contains is not None) + no_check > 1:
+        _refuse(OperationError("name one check: --check, --reply-contains or --no-check", field="check"))
+    checked = {"reply_contains": reply_contains} if reply_contains is not None else check
+    store = _store(home)
+    try:
+        plan = prepare_scenario(store, run, name, cut=cut, check=checked, skill=skill,
+                                skill_dir=str(skill_dir) if skill_dir else None, harness=harness, task_check=not no_check)
+    except OperationError as error:
+        _refuse(error)
+    first = plan.prompt.strip().splitlines()[0] if plan.prompt.strip() else ""
+    in_turn = len(plan.context.in_turn)
+    console.print(f"[bold]{escape(name)}[/bold] · a scenario of run {plan.run_id[:8]} · {escape(plan.harness or '-')}")
+    console.print(f"  starts     at message {plan.cut} ({_clip(first, False, limit=70)}), continuing "
+                  f"{len(plan.context.before)} message(s)" + (f", and {in_turn} of its turn taken as done" if in_turn else ""))
+    console.print(f"  skill      {escape(plan.skill)}: {escape(str(plan.skill_dir))}"
+                  + (" [dim](a copy of its own)[/dim]" if plan.own_skill else ""))
+    shown_check = json.dumps(plan.check) if isinstance(plan.check, dict) else (plan.check or "none")
+    console.print(f"  check      {_clip(shown_check, False, limit=100)}")
+    listed = sorted(plan.files)
+    console.print(f"  inputs     {len(listed)} file(s)" + (": " + escape(", ".join(listed[:6])) + (", …" if len(listed) > 6 else "")
+                                                       if listed else ""))
+    if plan.next_skill is not None:
+        console.print(f"  stops      where the model loads a skill other than {escape(plan.skill)}")
+    for warning in plan.warnings:
+        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    if dry_run:
+        console.print("\n[dim]nothing written (--dry-run)[/dim]")
+        return
+    try:
+        made = make_scenario(store, plan)
+    except OperationError as error:
+        _refuse(error)
+    for warning in made.checked.warnings:
+        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    spec_file = scenario_files.spec_path(store.home, name)
+    console.print(f"\nscenario [bold]{escape(name)}[/bold] made: {escape(str(spec_file))}")
+    _run_it(spec_file, plan.harness)
 
 
 @app.command()

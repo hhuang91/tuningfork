@@ -7,7 +7,7 @@ which gives them all. For a walk through them on a real task, see
 - [How commands name things](#how-commands-name-things)
 - [Does my skill work?](#does-my-skill-work) — `batch`, `tasks`, `runs`, `recheck`, `label-next`, `chain`
 - [What happened in a run?](#what-happened-in-a-run) — `show`, `timeline`, `step`, `files`, `diff`, `spend`,
-  `import`
+  `import`, `scenario`
 - [Where do the runs go wrong?](#where-do-the-runs-go-wrong) — `divergence`, `tally`, `check-along`, `where`
 - [Bad luck, or the wording?](#bad-luck-or-the-wording) — `resample`, `ab`, `fork`, `experiments`
 - [Which token decided it?](#which-token-decided-it) — `tokens`, `forking-tokens`
@@ -178,12 +178,42 @@ Runs page has the same: **Import a chat…**.
   after, each run stops where the model loads one (`tuningfork.stop_at_next_skill`), the check
   judging the workspace then. `--cut <message>` starts it from another user turn;
   `--check '<command>'` or `--reply-contains <text>` gives it its check, which is yours to
-  write. An imported run's page has the same: **Make a scenario…**.
+  write. Any run's page has the same: **Make a scenario…** (see [`scenario`](#scenario)).
 - `--dry-run` — shows what it would import, and records nothing.
 
 The answers in it are the model's that had the conversation: an experiment at a step samples
 your server's model, given that conversation. Nothing launched an imported run, so it cannot be
 forked to the end; its scenario's runs, which tuningfork launches, can.
+
+### `scenario`
+
+Any run as a scenario: `tuningfork scenario <run> <name>` makes a task of its conversation —
+runs of its skill through the harness, each continuing the conversation from one of its user
+turns — whether tuningfork launched the run, recorded it as it happened through the proxy, or
+imported it. As with `import --scenario`, the user turn before the skill first came in is the
+prompt and everything before it each run's context; `--cut <message>` starts it from another
+(`tuningfork timeline` shows the turns).
+
+- **The skill.** `--skill-dir <folder>` names the skill's own folder, which the scenario tunes.
+  By default it is the folder the run's skill came from — the one an import named, or a launched
+  run's task's — else a copy kept in the scenario's own folder (`skill/<name>/`): the copy the run
+  kept, or the SKILL.md the model read. `--skill <name>` chooses where the run shows several.
+- **The check.** `--check '<command>'` or `--reply-contains <text>`. A launched run's is its
+  task's own by default, and what that check reads from the task's folder
+  (`$TUNINGFORK_SPEC_DIR/…`) is copied beside the scenario's spec, where no run sees it;
+  `--no-check` leaves it without one.
+- **The input files.** A launched run's workspace as the scenario's first call finds it — at the
+  start, or after the steps it takes as done — from the snapshots tuningfork took as the run went.
+  A run tuningfork did not launch kept no files: what is made names those its conversation's calls
+  name, for you to add on the scenario's page.
+- Its eval is named by the scenario, so its runs are a task of their own (`<skill>/<scenario>`),
+  never counted with the task of the run it came from.
+- `--harness <name>` — the harness the conversation was had with, where the run does not say.
+- `--dry-run` — shows what it would make, and writes nothing.
+
+A run's page in the web UI has the same: **Make a scenario…**. Claude Code's calls cannot yet
+carry a conversation before the prompt, so a scenario of a Claude Code run starts at its first
+turn.
 
 ## Where do the runs go wrong?
 
