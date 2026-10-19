@@ -266,6 +266,31 @@ def test_a_note_the_harness_wrote_itself_is_told_from_a_persons_turn(store):
         assert notes() == [("[System: ", 0, None), ("Thanks. N", 1, None)]
 
 
+def test_the_conversation_a_first_call_continued_is_read_as_the_runs_own_turns_are(store):
+    """A run recorded live may continue a conversation already going on, a session of many
+    turns: they are told apart as the run's own are — a person's turn carries their own words,
+    a note the harness wrote itself is named — so the page lists them before the run's first
+    step, as the conversation it continued."""
+    nudge = user("[System: Your previous response was truncated by the output length limit. Continue exactly "
+                 "where you left off. Do not restart or repeat prior text. Finish the answer directly.]")
+    earlier = [user("Process receipt A."), text_message("Filing r"), nudge, text_message("Filed A."), user("Now receipt B.")]
+    first = store.record_step(request=chat(*earlier), response=as_response(text_message("Filed B.")))
+    store.annotate_run(first.run_id, harness="hermes")
+    found = run_timeline(store, first.run_id).to_json()
+    assert [(entry["origin"], entry["message"]["role"], entry.get("note"), entry.get("words")) for entry in found["entries"]] == [
+        ("start", "user", None, "Process receipt A."), ("start", "assistant", None, None),
+        ("start", "user", "continue after a cut reply", None), ("start", "assistant", None, None),
+        ("start", "user", None, "Now receipt B.")]
+    assert found["run"]["recorded"] == "live" and [step["position"] for step in found["steps"]] == [5]
+
+    # Claude Code's reminders beside a person's words are its own: the words are theirs alone.
+    claude = store.record_step(request=claude_code_request(), wire="anthropic-messages", harness="claude-code",
+                               response=as_response(tool_call_message("Write", {"file_path": "report.json", "content": "{}"})))
+    said = [(entry.get("note"), entry.get("words")) for entry in run_timeline(store, claude.run_id).to_json()["entries"]
+            if entry["message"]["role"] == "user"]
+    assert said[0] == (None, "Use the tally-report skill on data.csv.") and said[-1] == ("skill text", None)
+
+
 def test_an_ab_is_one_experiment_at_its_step(store):
     run_id = record_pilot(store)
     step = store.step(run_id, 1)

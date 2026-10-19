@@ -2,7 +2,7 @@
 
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
-import { ago, chip, h, loading, plural, rateBar, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, h, loading, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
 import { live } from "../live.js";
 
 export async function runsView(root, _params, scope) {
@@ -183,6 +183,8 @@ export async function runsView(root, _params, scope) {
         depth ? h("span", { class: "fork-glyph", "aria-hidden": "true" }, "↳") : null,
         h("a", { class: "mono run-id", href: `#/runs/${run.id}` }, short(run.id)),
         h("span", { class: "run-label", title: run.label || "" }, run.label || ""),
+        // Nothing launched it, and it was not imported: a harness's calls through the proxy.
+        run.recorded === "live" ? recordedLive() : null,
         run.forked_from_run
           ? chip(`fork @ ${run.forked_at_depth}`, "skill", `Forked from run ${short(run.forked_from_run)} at message depth ${run.forked_at_depth}`)
           : null),

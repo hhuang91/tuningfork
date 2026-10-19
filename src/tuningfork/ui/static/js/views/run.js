@@ -3,7 +3,7 @@
 // the run's own facts — how it was launched, what it left — folded above it.
 
 import { api, enc } from "../api.js";
-import { ago, chip, copyButton, crumbs, h, kv, loading, plural, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, copyButton, crumbs, h, kv, loading, plural, recordedLive, replace, short, verdict, when } from "../dom.js";
 import { costOf } from "../cost.js";
 import { live } from "../live.js";
 import { timeline } from "../timeline.js";
@@ -32,7 +32,8 @@ export async function runView(root, [reference, focus], scope) {
     crumbs([["Runs", "#/runs"], run.task_id ? [run.task_id, `#/divergence/${enc(run.task_id)}`] : null, [`run ${short(run.id)}`]]),
     h("div", { class: "page-head" },
       h("div", null,
-        h("h1", null, h("span", { class: "mono" }, `run ${short(run.id)}`), run.label ? h("span", { class: "h-sub" }, run.label) : null),
+        h("h1", null, h("span", { class: "mono" }, `run ${short(run.id)}`), run.label ? h("span", { class: "h-sub" }, run.label) : null,
+          run.recorded === "live" ? h("span", { class: "h-sub" }, recordedLive()) : null),
         h("p", { class: "sub" }, subLine(data))),
       h("div", { class: "actions" }, verdict(run.result), run.trashed_at ? null : again, toEnd, copyButton(run.id, "Copy id"),
         // Any run's conversation can become a scenario: runs of its skill continuing it. A
@@ -111,8 +112,15 @@ export async function runView(root, [reference, focus], scope) {
   scope.onLeave(() => clearTimeout(poller));
 }
 
-function subLine({ run, steps, launch }) {
+function subLine({ run, steps, launch, entries }) {
   const parts = [plural(steps.length, "step"), run.harness, run.model, `started ${when(run.started_at)}`];
+  if (run.recorded === "live") parts.push("recorded live through the proxy");
+  // A first call that continued a conversation: what came before it, as the rail lists it.
+  const before = (entries || []).filter((entry) => entry.origin === "start" && entry.message.role !== "system");
+  if (before.some((entry) => entry.message.role === "assistant")) {
+    const turns = before.filter((entry) => entry.message.role === "user" && !entry.note).length;
+    parts.push(`its first call continuing a conversation of ${plural(before.length, "message")}, ${plural(turns, "turn")} of the person's`);
+  }
   if (run.fork_of) parts.push(`a fork of run ${short(run.fork_of)}, live from step ${run.fork_step}`);
   if (launch?.context) {
     parts.push(`continuing a conversation of ${plural(launch.context.messages, "message")}`
@@ -159,7 +167,9 @@ function aboutRun({ run, launch, threads }) {
   const result = run.result;
   return h("details", { class: "panel about-run" },
     h("summary", { class: "panel-head" }, h("h2", null, "About this run"),
-      h("span", { class: "muted small" }, [launch ? `launched by tuningfork, ${launch.kind}` : "recorded", threads.length ? plural(threads.length, "other conversation") : null].filter(Boolean).join(" · "))),
+      h("span", { class: "muted small" }, [launch ? `launched by tuningfork, ${launch.kind}`
+        : run.recorded === "imported" ? "imported" : "recorded live through the proxy",
+      threads.length ? plural(threads.length, "other conversation") : null].filter(Boolean).join(" · "))),
     h("div", { class: "panel-body stack" },
       kv([
         ["task", run.task_id ? h("a", { class: "mono", href: `#/divergence/${enc(run.task_id)}` }, run.task_id) : null],

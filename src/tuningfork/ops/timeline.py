@@ -42,6 +42,8 @@ def run_json(run: Run) -> dict[str, Any]:
         # Why every rate leaves its verdict out, where one does.
         "exclusion": exclusion_from(run.result) if (run.result or {}).get("usable") is False else None,
         "launch_id": run.launch_id,
+        # Launched by tuningfork, imported, or recorded live through the proxy (`Run.recorded`).
+        "recorded": run.recorded,
         "role": run.role,
         "parent_run_id": run.parent_run_id,
         "spawned_at": run.spawned_at,
@@ -340,6 +342,19 @@ def _said(message: dict[str, Any] | None) -> tuple[str, tuple[tuple[Any, str], .
     return (content_text(message.get("content")).strip(), tuple(calls))
 
 
+def _words(message: dict[str, Any], named: Any) -> str:
+    """A person's turn in their own words, its first line: without a part the harness put
+    beside them, which `named` names (Claude Code's reminders)."""
+    from tuningfork.analysis.normalize import content_text
+
+    content = message.get("content")
+    if isinstance(content, list):
+        content = [part for part in content if not (isinstance(part, dict) and isinstance(part.get("text"), str)
+                                                    and named({"role": "user", "content": part["text"]}))]
+    text = content_text(content).strip()
+    return text.splitlines()[0][:200] if text else ""
+
+
 def _tool_names(extras: dict[str, Any]) -> list[str]:
     names = []
     for tool in extras.get("tools") or []:
@@ -493,14 +508,23 @@ def run_timeline(store: Store, run_ref: str, *, adapters: Sequence[Any] | None =
                 else:
                     mark["steps"].append(step.idx)
 
-    # A user message the harness added after a step is a person's turn, or the harness's own —
-    # a nudge to go on, a reminder — which its adapter names (`note`).
+    # A user message is a person's turn, or the harness's own — a nudge to go on, a reminder —
+    # which its adapter names (`note`): after a step, and as much in the conversation the run's
+    # first call continued. A person's turn carries the first line of their own words (`words`),
+    # without what the harness put beside them.
     namers = _namers(run, adapters)
+
+    def named(message: dict[str, Any]) -> str | None:
+        return next((said for name in namers if (said := name(message))), None)
+
     for entry in entries:
-        if entry["origin"] == "harness" and entry["message"].get("role") == "user":
-            note = next((said for name in namers if (said := name(entry["message"]))), None)
-            if note:
-                entry["note"] = note
+        if entry["origin"] == "copy" or entry["message"].get("role") != "user":
+            continue
+        note = named(entry["message"])
+        if note:
+            entry["note"] = note
+        else:
+            entry["words"] = _words(entry["message"], named)
 
     extras_changed = _extras_changes(store, steps)
     experiments = _experiments(store, run, arm_status)

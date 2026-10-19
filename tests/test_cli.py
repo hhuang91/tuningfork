@@ -393,6 +393,23 @@ class TestInspection:
         assert "behaved identically" in lens.output
         assert unknown.exit_code == 1 and "unknown normalizer" in unknown.output
 
+    def test_a_run_recorded_live_says_so_where_a_label_would_name_it(self, cli, tmp_path):
+        """A harness's calls through the proxy, nothing launching it: no label of its own, and
+        the listing and its page say how it was recorded instead."""
+        from tests.helpers import as_response
+
+        path = tmp_path / "live"
+        store = Store(path)
+        step = store.record_step(request={"model": "m", "messages": [{"role": "user", "content": "hi"}]},
+                                 response=as_response(text_message("hello")))
+        assert store.get_run(step.run_id).recorded == "live" and store.get_run(step.run_id).label is None
+        store.close()
+
+        listed = cli("runs", "--home", str(path))
+        shown = cli("show", step.run_id[:8], "--home", str(path))
+        assert listed.exit_code == 0 and "(recorded live)" in listed.output
+        assert shown.exit_code == 0 and "(recorded live)" in shown.output.splitlines()[0]
+
     def test_runs_show_the_check_verdict(self, cli, tmp_path):
         path = tmp_path / "listed"
         store = Store(path)

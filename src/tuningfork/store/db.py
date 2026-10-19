@@ -282,6 +282,15 @@ class Run:
         return self.role == FORK
 
     @property
+    def recorded(self) -> str:
+        """How it came to be recorded: `launched`, a harness tuningfork started (a batch, a
+        fork, a scenario's run); `imported`, a conversation had elsewhere (`ops.imports`); or
+        `live`, a harness's calls through the proxy as they happened, nothing launching it."""
+        if self.launch_id:
+            return "launched"
+        return "imported" if self.parity.get("imported") else "live"
+
+    @property
     def skill_version(self) -> str | None:
         """A short fingerprint of the skill files the run was given; None if unrecorded.
 

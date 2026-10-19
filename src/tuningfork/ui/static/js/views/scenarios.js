@@ -9,7 +9,7 @@
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
 import { checkTester } from "../checktry.js";
-import { ago, chip, crumbs, firstLine, h, loading, panel, plural, rateBar, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, crumbs, firstLine, h, loading, panel, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
 import { field, formError, input, textArea } from "../forms.js";
 import { live } from "../live.js";
 import { leaving } from "../nav.js";
@@ -105,7 +105,8 @@ async function runPickView(root, scope) {
               const href = `#/runs/${run.id}/scenario`;
               return h("tr", { class: "clickable", onclick: () => (location.hash = href) },
                 h("td", null, h("a", { class: "mono", href }, short(run.id))),
-                h("td", null, run.label || "", run.imported ? [" ", chip("imported", "muted")] : null),
+                h("td", null, run.label || "", run.imported ? [" ", chip("imported", "muted")] : null,
+                  run.recorded === "live" ? [" ", recordedLive()] : null),
                 h("td", { class: "mono" }, run.task_id || "—"),
                 h("td", null, run.harness || "—"),
                 h("td", { class: "num" }, String(run.step_count)),

@@ -386,6 +386,7 @@ class TestAScenarioOfAnImport:
         from tuningfork.ops import scenarios
 
         result = imports.execute_import(store, imports.prepare_import(store, chat_with_earlier_turns()))
+        assert store.get_run(result.run_id).recorded == "imported"
         plan = imports.prepare_scenario(store, result.run_id, "tally-chat", check={"reply_contains": "report.json"})
         # system 0, the earlier turn 1-2, the task's turn 3, then the skill_view.
         assert plan.cut == 3 and plan.prompt == "Summarize data.csv into report.json."
@@ -692,6 +693,7 @@ def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_chec
     stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
     source = stack.record()
     assert source.passed, source.stderr
+    assert stack.store.get_run(source.run_id).recorded == "launched"
 
     choices = imports.scenario_choices(stack.store, source.run_id)
     assert choices["launched"] and choices["check"] == stack.item.tuningfork.check and choices["cut"] == 1

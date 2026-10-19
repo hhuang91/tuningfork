@@ -236,6 +236,10 @@ export function outcome(o) {
   );
 }
 
+/** A run recorded live, marked as what it is where a label would name it. */
+export const recordedLive = () =>
+  chip("recorded live", "muted", "Recorded through the proxy as it happened: no batch launched it, and it was not imported");
+
 export function verdict(result) {
   if (!result) return null;
   let base;

@@ -450,7 +450,8 @@ def runs(
     for run in recorded:
         table.add_row(
             run.id[:8],
-            escape(run.label or "-"),
+            # Nothing launched it, nor imported it: a harness's calls through the proxy.
+            escape(run.label) if run.label else ("[dim](recorded live)[/dim]" if run.recorded == "live" else "-"),
             *([escape(run.task_id or "-")] if show_task else []),
             str(run.step_count),
             escape(run.model or "-"),
@@ -714,7 +715,8 @@ def show(
     store = _store(home)
     target = _resolve_run(store, run)
 
-    console.print(f"[bold]run {target.id[:8]}[/bold]  {target.label or ''}")
+    console.print(f"[bold]run {target.id[:8]}[/bold]  {escape(target.label or '')}"
+                  + ("  [dim](recorded live)[/dim]" if target.recorded == "live" else ""))
     console.print(f"  task    {target.task_id or '-'}")
     console.print(f"  model   {target.model or '-'}")
     console.print(f"  started {_when(target.started_at)}")

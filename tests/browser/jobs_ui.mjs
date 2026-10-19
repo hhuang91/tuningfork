@@ -965,10 +965,14 @@ try {
   check(await page.eval(`(document.querySelector(".tl-tools summary")?.textContent || "").startsWith("${offered.length} tools offered")`),
     "its steps offer the recorded run's tools, shown above its system prompt");
   check(await page.eval(`(() => {
-    const turn = document.querySelector(".tl-rail-turn");
-    return !!turn && turn.textContent === "userSummarize data.csv into report.json."
-      && turn.previousElementSibling?.dataset.idx === "0" && turn.nextElementSibling?.dataset.idx === "1";
+    const turn = [...document.querySelectorAll(".tl-rail-turn")].find((a) => a.textContent === "userSummarize data.csv into report.json.");
+    return !!turn && turn.previousElementSibling?.dataset.idx === "0" && turn.nextElementSibling?.dataset.idx === "1";
   })()`), "a person's next turn starts a new exchange in the rail, unindented, in their words");
+  check(await page.eval(`(() => {
+    const first = document.querySelector(".tl-rail-head").nextElementSibling;
+    return first?.classList.contains("tl-rail-turn") && first.textContent === "userEarlier: keep the reports small."
+      && first.nextElementSibling?.dataset.idx === "0";
+  })()`), "and the turn the run began with heads the rail, above its first step");
 
   console.log("a scenario of it: from the person's message the skill came in after, in words they may change");
   await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "Make a scenario…")`), "Make a scenario… on the imported run");
@@ -1036,7 +1040,10 @@ try {
   check(await page.eval(`(() => {
     const line = [...document.querySelectorAll(".tl-rail-result")].find((a) => a.textContent === "↳continue after a cut reply");
     const said = line && document.querySelector("#tm" + line.dataset.entry);
-    return !!said && line.previousElementSibling?.dataset.idx === "0" && !document.querySelector(".tl-rail-turn")
+    // The person's one turn is the one the run began with, above its first step: the nudge is none.
+    const turns = [...document.querySelectorAll(".tl-rail-turn")];
+    return !!said && line.previousElementSibling?.dataset.idx === "0"
+      && turns.length === 1 && turns[0].nextElementSibling?.dataset.idx === "0"
       && [...said.querySelectorAll(".chip")].some((chip) => chip.textContent === "continue after a cut reply");
   })()`), "Hermes's own nudge after a cut reply stays under its step, named, and says so in the conversation");
 
@@ -1129,6 +1136,42 @@ try {
   check(fromLaunch.spec.evals[0].id === "from-a-launch" && fromLaunch.spec.evals[0].files[0].path === "data.csv"
     && fromLaunch.inputs.length === 1 && fromLaunch.spec.evals[0].tuningfork.check.startsWith("python3"),
     "its eval is a task of its own, with the run's data.csv as its input and the task's check");
+
+  console.log("a run recorded live that continued a conversation: said so, and its rail lists what came before");
+  const sentAt = Date.now() / 1000 - 1;
+  const continued = [
+    { role: "system", content: "You are Hermes." },
+    { role: "user", content: "File receipt A." },
+    { role: "assistant", content: "", tool_calls: [{ id: "r1", type: "function", function: { name: "read_file", arguments: "{\"path\": \"a.pdf\"}" } }] },
+    { role: "tool", tool_call_id: "r1", content: "Total: $12.00" },
+    { role: "assistant", content: "Filed A: $12.00." },
+    { role: "user", content: "Now file receipt B." },
+  ];
+  const sent = await fetch(`${BASE}/v1/chat/completions`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "gemma-4-31b", messages: continued }),
+  });
+  check(sent.ok, "a call through the proxy, as a harness going on with a session makes one");
+  const caught = await until(async () => (await api("/runs?limit=100")).find((found) => found.recorded === "live" && found.started_at >= sentAt),
+    "the run it was recorded as");
+  check(!caught.label && !caught.launch_id && !caught.imported, "nothing launched it, nor imported it, and it has no label");
+  await page.eval(`location.hash = "#/runs"`);
+  await until(() => page.eval(`[...document.querySelectorAll(".run-row")].some((row) => row.textContent.includes("${caught.id.slice(0, 8)}"))`), "it in the Runs list");
+  check(await page.eval(`[...document.querySelectorAll(".run-row")].find((row) => row.textContent.includes("${caught.id.slice(0, 8)}"))
+    .querySelector(".chip").textContent === "recorded live"`), "the Runs list marks it recorded live, where a label would name it");
+  await page.eval(`location.hash = "#/runs/${caught.id}"`);
+  await until(() => page.eval(`!!document.querySelector(".tl-rail-head")`), "its page");
+  check(await page.eval(`(() => { const head = document.querySelector(".page-head");
+    return head.querySelector("h1 .chip")?.textContent === "recorded live"
+      && head.querySelector(".sub").textContent.includes("recorded live through the proxy")
+      && head.querySelector(".sub").textContent.includes("its first call continuing a conversation of 5 messages, 2 turns of the person's"); })()`),
+    "its page says it was recorded live, continuing a conversation");
+  const lines = await page.eval(`[...document.querySelector(".tl-rail").children].map((line) => line.textContent).join(" | ")`);
+  check(lines.startsWith("1 step · after 2 earlier answers | userFile receipt A. | ·read_file | ↳read_file result | ·reply | userNow file receipt B. | 0"),
+    `its rail lists the conversation the first call continued, its answers unnumbered, then the run's step (${lines})`);
+  const earlierLine = await page.eval(`(() => { const line = document.querySelector(".tl-rail-earlier"); line.click(); return line.dataset.entry; })()`);
+  await until(() => page.eval(`document.querySelector("#tm${earlierLine}")?.open === true`), "the earlier answer opened from the rail");
+  check(await page.eval(`(() => { const top = document.querySelector("#tm${earlierLine}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`),
+    "an earlier answer's line leads to it in the conversation, opened");
 
   check(page.problems.length === 0, `no page errors${page.problems.length ? `: ${page.problems.join(" | ")}` : ""}`);
   console.log("all passed");
