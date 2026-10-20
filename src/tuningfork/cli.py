@@ -646,6 +646,77 @@ def skill_command(
                   "Intervals are Wilson 95%.[/dim]")
 
 
+@app.command("add-skill")
+def add_skill_command(
+    folder: Optional[Path] = typer.Argument(None, help="The skill's folder, holding its SKILL.md."),
+    copy: bool = typer.Option(
+        False, "--copy", help="Keep a copy of the folder in the recordings folder, as an upload does: approvals write to the copy."
+    ),
+    run: Optional[str] = typer.Option(
+        None, "--run", help="Keep the skill a run had, as a copy: the one it kept, else the SKILL.md its model read."
+    ),
+    skill: Optional[str] = typer.Option(None, "--skill", help="Which of the run's skills, where it had several."),
+    name: Optional[str] = typer.Option(None, "--name", help="The name a copy is kept under; by default the skill's."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Say what would be added, and add nothing."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """Add a skill: a folder on this machine, remembered where it is — approvals write to it —
+    or, with --copy or --run, a copy kept in the recordings folder, which approvals write to
+    instead. The Skills page then lists it, and a scenario can name its folder."""
+    from tuningfork.ops import addskill
+
+    if (folder is None) == (run is None):
+        _refuse(OperationError("name the skill's folder, or a run with --run", field="folder"))
+    store = _store(home)
+    try:
+        if run is not None:
+            plan = addskill.prepare_from_run(store, run, skill=skill, name=name)
+        elif copy:
+            plan = addskill.prepare_copy(store, str(folder), name=name)
+        else:
+            if name is not None:
+                raise OperationError("a folder named where it is takes its folder's name: --name is for a copy",
+                                     field="name")
+            plan = addskill.prepare_folder(store, str(folder))
+    except OperationError as error:
+        _refuse(error)
+    shown = plan.to_json()
+    how = "a folder on this machine, remembered where it is" if plan.kind == "folder" else "a copy kept in the recordings folder"
+    console.print(f"[bold]{escape(plan.name)}[/bold] — {how}")
+    console.print(f"  folder     {escape(shown['path'])}", soft_wrap=True)
+    if plan.kind == "copy":
+        console.print(f"  files      {len(shown['files'])}, {shown['bytes']:,} bytes")
+    _print_said(shown["warnings"], shown["notes"])
+    if dry_run:
+        console.print("\n[dim]nothing added (--dry-run)[/dim]")
+        return
+    try:
+        addskill.execute_add(store, plan)
+    except OperationError as error:
+        _refuse(error)
+    console.print(f"\nadded: `tuningfork skill {escape(plan.name)}` shows it; a scenario names its folder to run it")
+
+
+@app.command("forget-skill")
+def forget_skill_command(
+    name: str = typer.Argument(..., help="A skill added with add-skill."),
+    home: Optional[Path] = typer.Option(None),
+) -> None:
+    """Forget a skill added with add-skill: a folder named stays where it is; a copy is moved
+    aside whole, to the recordings folder's skills/.forgotten/ — never deleted."""
+    from tuningfork.ops import addskill
+
+    store = _store(home)
+    try:
+        found = addskill.forget(store, name)
+    except OperationError as error:
+        _refuse(error)
+    if found["moved_to"]:
+        console.print(f"forgot {escape(name)}: its copy is moved aside to {escape(found['moved_to'])}", soft_wrap=True)
+    else:
+        console.print(f"forgot {escape(name)}: its folder stays where it is, {escape(found['path'])}", soft_wrap=True)
+
+
 @app.command("glossary")
 def glossary_command(
     word: Optional[str] = typer.Argument(None, help="A word to look up; every term without one."),

@@ -1020,6 +1020,68 @@ try {
   await until(() => page.eval(`!!document.querySelector(".skill-controls + div .lines")`), "the text as written, numbered");
   check(true, "the text rendered, or as written with its line numbers");
 
+  // --- 15b. Add a skill: a folder on this machine, an upload, a run's; and forget each -----------
+  console.log("add a skill: a folder named, a folder uploaded, a run's kept; each forgotten");
+  await page.eval(`location.hash = "#/skills"`);
+  await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "Add a skill…")`), "Add a skill… on the Skills page");
+  await page.eval(`[...document.querySelectorAll(".page-head a")].find((a) => a.textContent === "Add a skill…").click()`);
+  await until(() => page.eval(`location.hash === "#/add-skill" && !!document.querySelector('input[name="path"]')`), "the Add a skill page, at a folder on this machine");
+  // A folder its spec names already: added where it is, nothing copied.
+  await page.type(`document.querySelector('input[name="path"]')`, skill.folders[0].path);
+  await until(() => page.eval(`(document.querySelector(".plan-preview")?.textContent || "").includes("where it is: nothing copied")`), "the folder's plan");
+  check(await page.eval(`document.querySelector(".plan-preview").textContent.includes("lists this folder already")
+    && document.querySelector(".plan-box .label").textContent === "What will be added"`), "the plan says it is a folder the skill lists already, and what will be added");
+  await page.click("Add it");
+  await until(() => page.eval(`location.hash === "#/skills/tally-report" && !!document.querySelector(".added-line")`), "the skill's page, its folder marked added");
+  check(await page.eval(`document.querySelector(".added-line").textContent.includes("added: a folder on this machine")`), "its folder, marked added where it is");
+  // A folder uploaded from the browser: kept as tuningfork's copy.
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const uploaded = join(mkdtempSync(join(tmpdir(), "tf-skill-")), "hello-skill");
+  mkdirSync(join(uploaded, "scripts"), { recursive: true });
+  writeFileSync(join(uploaded, "SKILL.md"), "---\nname: hello-skill\ndescription: says hello\n---\n\n# Hello\n\nSay hello.\n");
+  writeFileSync(join(uploaded, "scripts", "hello.py"), "print('hello')\n");
+  await page.eval(`location.hash = "#/add-skill"`);
+  await until(() => page.eval(`!!document.querySelector('input[name="way"][value="upload"]')`), "the Add a skill page again");
+  await page.eval(`document.querySelector('input[name="way"][value="upload"]').click()`);
+  await until(() => page.eval(`!!document.querySelector('input[type="file"][name="folder"]')`), "the upload's picker");
+  const { root: doc } = await page.send("DOM.getDocument", { depth: -1, pierce: true });
+  const { nodeId: picker } = await page.send("DOM.querySelector", { nodeId: doc.nodeId, selector: 'input[type="file"][name="folder"]' });
+  await page.send("DOM.setFileInputFiles", { nodeId: picker, files: [uploaded] });
+  await until(() => page.eval(`(document.querySelector(".plan-preview")?.textContent || "").includes("2 files")`), "the upload's plan", 15000);
+  await page.click("Upload it");
+  await until(() => page.eval(`location.hash === "#/skills/hello-skill" && !!document.querySelector(".added-line")`), "the uploaded skill's page");
+  const helloSkill = await api("/skills/hello-skill");
+  check(helloSkill.folders[0].added.kind === "copy" && helloSkill.folders[0].text.includes("Say hello.")
+    && await page.eval(`document.querySelector(".added-line").textContent.includes("never back to where it came from")`),
+    "an uploaded folder is kept as tuningfork's copy, and its page says approvals write to the copy");
+  // The skill a run had, kept under a name of its own: from the run's own page.
+  await page.eval(`location.hash = "#/runs/${run.id}"`);
+  await until(() => page.eval(`!!document.querySelector(".about-run")`), "the run's About");
+  await page.eval(`document.querySelector(".about-run").open = true`);
+  await until(() => page.eval(`[...document.querySelectorAll(".about-run a")].some((a) => a.textContent === "Keep its skill…")`), "Keep its skill… in About this run");
+  await page.eval(`[...document.querySelectorAll(".about-run a")].find((a) => a.textContent === "Keep its skill…").click()`);
+  await until(() => page.eval(`location.hash === "#/add-skill?run=${run.id}" && !!document.querySelector('select[name="skill"]') && !document.querySelector('select[name="skill"]').disabled`), "the run's skills");
+  await page.type(`document.querySelector('input[name="name"]')`, "tally-kept");
+  await until(() => page.eval(`(document.querySelector(".plan-preview")?.textContent || "").includes("tally-kept")`), "the run's skill's plan");
+  await page.click("Keep it");
+  await until(() => page.eval(`location.hash === "#/skills/tally-kept" && !!document.querySelector(".added-line")`), "the kept skill's page");
+  check((await api("/skills/tally-kept")).folders[0].added.origin.run === run.id, "a run's skill, kept as a copy that says which run it came from");
+  // Forgotten: a copy on the second click, moved aside; a folder named on the first.
+  await page.click("Forget it…");
+  await until(() => page.eval(`[...document.querySelectorAll("button")].some((b) => b.textContent === "Click again: move the copy aside")`), "the forget, armed");
+  await page.click("Click again: move the copy aside");
+  await until(() => page.eval(`location.hash === "#/skills"`), "back on the Skills list");
+  await page.eval(`location.hash = "#/skills/tally-report"`);
+  await until(() => page.eval(`!!document.querySelector(".added-line")`), "the folder's added line");
+  await page.click("Forget it…");
+  await until(() => page.eval(`location.hash === "#/skills"`), "back on the Skills list again");
+  const listed = await api("/skills");
+  check(!listed.some((each) => each.name === "tally-kept") && listed.find((each) => each.name === "tally-report")?.added === null
+    && listed.find((each) => each.name === "hello-skill")?.added === "copy",
+    "each forgotten: the copy gone from the list, the folder no longer marked added, the upload still there");
+
   // --- 16. A chat had elsewhere, imported as a run ------------------------------------------------
   console.log("a Hermes export imported from the Runs page: its session chosen, its skill found, a run made");
   const skillText = "---\nname: tally-report\n---\n\n# Tally report\n\nWrite the totals to report.json.\n";

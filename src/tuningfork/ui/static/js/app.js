@@ -21,7 +21,7 @@ import { liveView } from "./views/live.js";
 import { refinementsView, refinementView } from "./views/refine.js";
 import { runView } from "./views/run.js";
 import { runsView } from "./views/runs.js";
-import { skillsView, skillView } from "./views/skills.js";
+import { addSkillView, skillsView, skillView } from "./views/skills.js";
 import { stepView } from "./views/step.js";
 import { trashView } from "./views/trash.js";
 
@@ -44,6 +44,7 @@ const ROUTES = [
   [/^\/refine\/([0-9a-f]+)$/, refinementView, "refine"],
   [/^\/skills$/, skillsView, "skills"],
   [/^\/skills\/([^/]+)$/, skillView, "skills"],
+  [/^\/add-skill$/, addSkillView, "skills"],
   [/^\/batch$/, batchView, "batch"],
   [/^\/import$/, importView, "import"],
   // The address an imported run's scenario had first.

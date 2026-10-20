@@ -228,6 +228,14 @@ function aboutRun({ run, launch, threads }) {
         ? h("div", null, h("div", { class: "label" }, "Skill files when the run started"),
             kv(skills.map(([path, digest]) => [h("span", { class: "mono" }, path), h("span", { class: "mono faint" }, digest.slice(0, 16))])))
         : null,
+      // The skill it had, kept as one of tuningfork's own: the Skills page's Add a skill, at this run.
+      // Offered where there is one to give — a copy it kept, one its import found — or may be: a
+      // run recorded live, whose conversation may show one.
+      live.mode === "live" && !["subagent", "side", "thread"].includes(run.role)
+        && (skills.length || run.imported?.skills?.length || run.recorded === "live")
+        ? h("p", { class: "hint" }, h("a", { href: `#/add-skill?run=${run.id}`, "data-control": true }, "Keep its skill…"),
+            " — the copy it kept, or the SKILL.md its model read, added to Skills as a copy of tuningfork's own.")
+        : null,
       threads.length
         ? h("div", null, h("div", { class: "label" }, "Other conversations in this launch"),
             h("div", { class: "stack", style: { gap: "4px" } }, threads.map((thread) =>

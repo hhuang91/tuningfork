@@ -7,9 +7,9 @@ two runs with one fingerprint read the same skill, byte for byte. Each version c
 runs read it (the launch's snapshot of the skill folder, or the batch's frozen copy), its
 pass rate under each condition it ran under, and what is known of where its text came from:
 the skill's own file as it is now, a saved variant, a refinement's proposal, a version an
-approval replaced. Beside the versions: the skill's own folder as specs name it, with the
-changelog and the old versions an approval keeps beside it (`ops.approve`); its saved
-variants; its refinements.
+approval replaced. Beside the versions: the skill's own folder as specs name it — or as a person
+added it (`ops.addskill`) — with the changelog and the old versions an approval keeps beside it
+(`ops.approve`); its saved variants; its refinements.
 
 Read-only: nothing here writes the skill's folder, or anything else.
 """
@@ -113,6 +113,8 @@ class Folder:
     changelog: str | None = None
     #: `<skill>.history/`, beside the folder: the files approvals replaced, oldest first.
     history: list[dict[str, Any]] = field(default_factory=list)
+    #: How a person added it, where one did (`ops.addskill.Added`): a folder named, or a copy.
+    added: dict[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
         from tuningfork.paths import windows_form
@@ -120,7 +122,7 @@ class Folder:
         return {
             "path": str(self.path), "windows": windows_form(self.path), "exists": self.text is not None,
             "specs": self.specs, "text": self.text, "sha256": self.sha256, "version": self.version,
-            "changelog": self.changelog, "history": self.history,
+            "changelog": self.changelog, "history": self.history, "added": self.added,
         }
 
 
@@ -193,7 +195,18 @@ def _folders(store: Store, name: str, runs: Iterable[Run]) -> list[Folder]:
         found = _spec_folder(spec)
         if found is not None:
             folders.setdefault(found, []).append(spec)
-    return [_folder(path, named) for path, named in folders.items()]
+    own = [_folder(path, named) for path, named in folders.items()]
+    # The one a person added, marked so: one more of its folders, or one a spec names already.
+    from tuningfork.ops.addskill import added_skill
+
+    mine = added_skill(store.home, name)
+    if mine is not None:
+        same = next((folder for folder in own if folder.path.resolve() == mine.path.resolve()), None)
+        if same is None:
+            same = _folder(mine.path, [])
+            own.append(same)
+        same.added = mine.to_json()
+    return own
 
 
 # --- versions ---------------------------------------------------------------------------------------
@@ -388,12 +401,14 @@ class SkillSummary:
     variants: int
     #: Refinements not closed: open, or approved.
     refinements: dict[str, int]
+    #: How a person added it, where one did: "folder" (named where it is) or "copy".
+    added: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
             "name": self.name, "tasks": self.tasks, "runs": self.runs, "versions": self.versions,
             "latest": self.latest, "folders": self.folders, "scenarios": self.scenarios,
-            "variants": self.variants, "refinements": self.refinements,
+            "variants": self.variants, "refinements": self.refinements, "added": self.added,
         }
 
 
@@ -424,7 +439,13 @@ def skills(store: Store) -> list[SkillSummary]:
     for each in list_refinements(store, include_closed=True):
         counts = refinements.setdefault(each.skill, {"open": 0, "approved": 0, "closed": 0})
         counts[each.status] = counts.get(each.status, 0) + 1
-    names = set(runs) | set(scenarios) | set(variants) | set(refinements)
+    # Those a person added: a folder named, or a copy kept.
+    from tuningfork.ops.addskill import added
+
+    mine = {each.name: each for each in added(store.home)}
+    for name, each in mine.items():
+        folders.setdefault(name, {})[str(each.path)] = None
+    names = set(runs) | set(scenarios) | set(variants) | set(refinements) | set(mine)
     found = [
         SkillSummary(
             name=name,
@@ -436,6 +457,7 @@ def skills(store: Store) -> list[SkillSummary]:
             scenarios=sorted(scenarios.get(name, [])),
             variants=variants.get(name, 0),
             refinements=refinements.get(name, {"open": 0, "approved": 0, "closed": 0}),
+            added=mine[name].kind if name in mine else None,
         )
         for name in names
     ]

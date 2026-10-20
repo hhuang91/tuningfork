@@ -12,7 +12,8 @@ which gives them all. For a walk through them on a real task, see
 - [Bad luck, or the wording?](#bad-luck-or-the-wording) — `resample`, `ab`, `fork`, `experiments`
 - [Which token decided it?](#which-token-decided-it) — `tokens`, `forking-tokens`
 - [What is the model doing right now?](#what-is-the-model-doing-right-now) — `break`, `hold`, `pause`, `resume`
-- [How do I fix the skill?](#how-do-i-fix-the-skill) — `refine`, `skills`, `skill`, `connections proposer`
+- [How do I fix the skill?](#how-do-i-fix-the-skill) — `refine`, `skills`, `skill`, `add-skill`, `forget-skill`,
+  `connections proposer`
 - [Setting up, and keeping things tidy](#setting-up-and-keeping-things-tidy) — `serve`, `ui`, `token`,
   `connections`, `probe`, `servers`, `jobs`, `trash`, `glossary`, `mcp`, `version`
 
@@ -499,10 +500,23 @@ closes one, keeping everything it holds.
 ### `skills`, `skill`
 
 `skills` lists the skills the recordings know — from runs, scenarios, saved variants and
-refinements — each with its tasks, runs and versions. `skill <name>` gives each version with its
-pass rate under every condition it ran under, and what its text is known as; `--text <ref>`
-prints one text (a version's fingerprint, `file`, `variant:<name>` or `history:<file>`), and
-`--diff A B` compares two line by line.
+refinements, and those added with `add-skill` — each with its tasks, runs and versions. `skill
+<name>` gives each version with its pass rate under every condition it ran under, and what its
+text is known as, and the scenarios that run it; `--text <ref>` prints one text (a version's
+fingerprint, `file`, `variant:<name>` or `history:<file>`), and `--diff A B` compares two line by
+line.
+
+### `add-skill`, `forget-skill`
+
+`add-skill <folder>` adds a skill by its folder on this machine, remembered where it is: nothing is
+copied, so an approved edit is written to that folder. `--copy` keeps a copy in the recordings
+folder instead (`skills/<name>/`, `--name` naming it), as the Skills page's upload does: an approved
+edit is then written to the copy, never back to where it came from. `--run <run>` keeps the skill a
+run had as such a copy — the copy the run kept of it, else the SKILL.md its model read — `--skill
+<name>` choosing where the run had several. `--dry-run` says what would be added. The Skills page
+then lists it, and a scenario names its folder to run it. `forget-skill <name>` forgets one: a
+folder named stays where it is; a copy is moved aside whole, to `skills/.forgotten/`, never deleted,
+and not while a scenario runs from it.
 
 ### `connections proposer show`, `connections proposer set`
 

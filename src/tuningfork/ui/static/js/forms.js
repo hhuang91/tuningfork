@@ -87,8 +87,9 @@ const newId = () =>
  * send      (params, { dry_run, request_id }) => the server's answer, for a form whose work is
  *           not a job: by default `POST /jobs` with `kind`. A dry run asks `quiet`: its refusal
  *           is an answer (`answered`), never an error a browser logs.
+ * planLabel what the plan box is called: what the form will run, by default
  */
-export function planForm({ kind, fields, read, render, startLabel = "Start", onStarted, send = null }) {
+export function planForm({ kind, fields, read, render, startLabel = "Start", onStarted, send = null, planLabel = "What will run" }) {
   const kindOf = typeof kind === "function" ? kind : () => kind;
   const post = send || (async (params, extra) =>
     answered(await api.post("/jobs", { kind: kindOf(form), params, ...extra, ...(extra.dry_run ? { quiet: true } : {}) })));
@@ -121,7 +122,7 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     onchange: (event) => (ours(event) ? changed(event) : undefined),
   },
     fields,
-    h("div", { class: "plan-box" }, h("div", { class: "label" }, "What will run"), status, preview),
+    h("div", { class: "plan-box" }, h("div", { class: "label" }, planLabel), status, preview),
     h("div", { class: "form-actions" }, start, note));
 
   function current() {
