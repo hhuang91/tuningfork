@@ -28,24 +28,34 @@ function way(href, go, props, label) {
   }, label);
 }
 
-/** A step's way in: buttons with a running proxy, commands without one. */
+/** A step's way in, under the same title in either mode: buttons with a running proxy,
+ *  commands without one. */
 export function startPanel(step, { go = null } = {}) {
   const run = step.run;
   const here = `#/runs/${run.id}/${step.idx}`;
   if (live.mode !== "live") {
-    return panel("From this step", h("div", { class: "stack", style: { gap: "8px" } },
+    return panel("Work from here", h("div", { class: "stack", style: { gap: "8px" } },
       h("p", { class: "hint" }, "Starting work needs a running proxy (tuningfork serve). From a terminal:"),
       command(`tuningfork resample ${short(run.id)} ${step.idx} -n 20`),
       command(`tuningfork ab ${short(run.id)} ${step.idx} --variant SKILL.v2.md --target-match '<regex>'`),
-      command(`tuningfork refine start ${short(run.id)} ${step.idx} --target-match '<regex>'`)));
+      command(`tuningfork refine start ${short(run.id)} ${step.idx} --target-match '<regex>'`)), { className: "work-panel" });
   }
-  return panel("From this step", h("div", { class: "start-actions" },
-    way(`${here}?start=resample`, go, { class: "btn", "data-control": true }, "Resample…"),
-    way(`${here}?start=ab`, go, { class: "btn", "data-control": true }, "A/B a wording…"),
-    way(`${here}?start=forking-tokens`, go, { class: "btn", "data-control": true }, "Find forking tokens…"),
-    run.launch_id ? way(`${here}?start=fork`, go, { class: "btn", "data-control": true }, "Fork from here…") : null,
-    way(`${here}?start=refine`, go, { class: "btn", "data-control": true }, "Refine the skill here…"),
-    h("span", { class: "muted small" }, "Measure what the model does here, with everything before it held fixed.")));
+  // A fork replays the launch that made the run, up to the step: a run nothing launched has
+  // none to replay. Its button stays, greyed, and says why.
+  const unforkable = run.launch_id ? null
+    : `needs a run tuningfork launched: this one was ${run.recorded === "imported" ? "imported" : "recorded live"}`;
+  return panel("Work from here", [
+    h("div", { class: "start-actions" },
+      way(`${here}?start=resample`, go, { class: "btn", "data-control": true }, "Resample…"),
+      way(`${here}?start=ab`, go, { class: "btn", "data-control": true }, "A/B a wording…"),
+      way(`${here}?start=forking-tokens`, go, { class: "btn", "data-control": true }, "Find forking tokens…"),
+      unforkable
+        ? h("span", { class: "btn", "aria-disabled": "true", title: `Fork from here ${unforkable}` }, "Fork from here…")
+        : way(`${here}?start=fork`, go, { class: "btn", "data-control": true }, "Fork from here…"),
+      way(`${here}?start=refine`, go, { class: "btn", "data-control": true }, "Refine the skill here…")),
+    h("p", { class: "muted small start-note" }, "Measure what the model does here, with everything before it held fixed.",
+      unforkable ? ` Forking ${unforkable}.` : null),
+  ], { className: "work-panel" });
 }
 
 /** The form a `?start=` names, in a panel that closes back to the step. `reach=end` runs

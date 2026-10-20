@@ -1,9 +1,10 @@
-// One run, as one conversation: its last context top to bottom, each step's answer where it
-// happened (`js/timeline.js`), a step's details opening in place, its verdict at the end, and
-// the run's own facts — how it was launched, what it left — folded above it.
+// One run, as one conversation: its verdict in a line under its title, its last context top to
+// bottom, each step's answer where it happened (`js/timeline.js`), a step's details opening in
+// place, its verdict at the end, and the run's own facts — how it was launched, what it left —
+// folded above it.
 
 import { api, enc } from "../api.js";
-import { ago, chip, copyButton, crumbs, h, kv, loading, plural, recordedLive, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, copyButton, crumbs, foldPanel, h, importedRun, kv, loading, plural, recordedLive, replace, short, when } from "../dom.js";
 import { costOf } from "../cost.js";
 import { live } from "../live.js";
 import { timeline } from "../timeline.js";
@@ -32,10 +33,12 @@ export async function runView(root, [reference, focus], scope) {
     crumbs([["Runs", "#/runs"], run.task_id ? [run.task_id, `#/divergence/${enc(run.task_id)}`] : null, [`run ${short(run.id)}`]]),
     h("div", { class: "page-head" },
       h("div", null,
+        // How it came to be recorded, said once: a chip where nothing launched it.
         h("h1", null, h("span", { class: "mono" }, `run ${short(run.id)}`), run.label ? h("span", { class: "h-sub" }, run.label) : null,
-          run.recorded === "live" ? h("span", { class: "h-sub" }, recordedLive()) : null),
-        h("p", { class: "sub" }, subLine(data))),
-      h("div", { class: "actions" }, verdict(run.result), run.trashed_at ? null : again, toEnd, copyButton(run.id, "Copy id"),
+          run.recorded === "live" ? h("span", { class: "h-sub" }, recordedLive())
+            : run.recorded === "imported" ? h("span", { class: "h-sub" }, importedRun()) : null),
+        h("p", { class: "sub facts" }, facts(data))),
+      h("div", { class: "actions" }, run.trashed_at ? null : again, toEnd, copyButton(run.id, "Copy id"),
         // Any run's conversation can become a scenario: runs of its skill continuing it. A
         // thread's calls are its own, never a task's.
         !run.trashed_at && live.mode === "live" && !["subagent", "side", "thread"].includes(run.role) && data.steps.length
@@ -48,6 +51,8 @@ export async function runView(root, [reference, focus], scope) {
                 title: "A fork an experiment drew is one of its samples: it goes to the trash with the experiment" },
               "Its experiment")
             : trashButton({ kind: "run", id: run.id, onDone: () => runView(root, [reference, focus], scope) }))),
+    // What the run's end says, in a line: the take-away before the conversation.
+    view.strip,
     run.trashed_at && run.trashed_with === run.id
       ? trashedBanner({
           kind: "run", id: run.id, trashedAt: run.trashed_at,
@@ -112,30 +117,35 @@ export async function runView(root, [reference, focus], scope) {
   scope.onLeave(() => clearTimeout(poller));
 }
 
-function subLine({ run, steps, launch, entries }) {
-  const parts = [plural(steps.length, "step"), run.harness, run.model, `started ${when(run.started_at)}`];
-  if (run.recorded === "live") parts.push("recorded live through the proxy");
+/** The run's facts under its title, each a short item that wraps whole: its size, harness,
+ *  model and start, then where it came from — the chip beside the title says how. */
+function facts({ run, steps, launch, entries }) {
+  const items = [plural(steps.length, "step"), run.harness, run.model, `started ${when(run.started_at)}`];
   // A first call that continued a conversation: what came before it, as the rail lists it.
   const before = (entries || []).filter((entry) => entry.origin === "start" && entry.message.role !== "system");
   if (before.some((entry) => entry.message.role === "assistant")) {
     const turns = before.filter((entry) => entry.message.role === "user" && !entry.note).length;
-    parts.push(`its first call continuing a conversation of ${plural(before.length, "message")}, ${plural(turns, "turn")} of the person's`);
+    items.push(`continues an earlier chat: ${plural(before.length, "message")}, ${plural(turns, "turn")}`);
   }
-  if (run.fork_of) parts.push(`a fork of run ${short(run.fork_of)}, live from step ${run.fork_step}`);
+  if (run.fork_of) {
+    items.push(["fork of ", h("a", { class: "mono", href: `#/runs/${run.fork_of}` }, `run ${short(run.fork_of)}`), `, live from step ${run.fork_step}`]);
+  }
   if (launch?.context) {
-    parts.push(`continuing a conversation of ${plural(launch.context.messages, "message")}`
-      + (launch.context.in_turn ? `, and ${plural(launch.context.in_turn, "earlier step")} of its turn` : "")
-      + ` (${launch.context.file})`);
-  }
-  if (run.imported) {
-    const from = run.imported.format === "hermes-export" ? "a Hermes export" : run.imported.format === "hermes-snapshot"
-      ? "a Hermes session file" : "a list of messages";
-    parts.push(`imported from ${from}${run.imported.session_id ? ` (session ${run.imported.session_id})` : ""}`);
+    items.push(`continues its scenario's chat: ${plural(launch.context.messages, "message")}`
+      + (launch.context.in_turn ? `, ${plural(launch.context.in_turn, "step")} of its turn done` : ""));
   }
   if (run.parent_run_id && run.role !== "main" && run.role !== "fork") {
-    parts.push(`${run.role} of run ${short(run.parent_run_id)}${run.spawned_at != null ? `, from its step ${run.spawned_at}` : ""}`);
+    items.push([`${run.role} of `, h("a", { class: "mono", href: `#/runs/${run.parent_run_id}` }, `run ${short(run.parent_run_id)}`),
+      run.spawned_at != null ? `, from its step ${run.spawned_at}` : ""]);
   }
-  return parts.filter(Boolean).join(" · ");
+  return items.filter(Boolean).map((item, i) => [i ? " · " : null, h("span", { class: "fact" }, item)]);
+}
+
+/** What an imported run's conversation came from. */
+function importedFrom(imported) {
+  const from = imported.format === "hermes-export" ? "a Hermes export" : imported.format === "hermes-snapshot"
+    ? "a Hermes session file" : "a list of messages";
+  return `${from}${imported.session_id ? ` (session ${imported.session_id})` : ""}`;
 }
 
 /** Where tuningfork itself changed what happened: the model saw a variant, or a person edited
@@ -165,12 +175,11 @@ function sandboxWords(sandbox) {
 function aboutRun({ run, launch, threads }) {
   const skills = Object.entries(run.skill_hashes || {});
   const result = run.result;
-  return h("details", { class: "panel about-run" },
-    h("summary", { class: "panel-head" }, h("h2", null, "About this run"),
-      h("span", { class: "muted small" }, [launch ? `launched by tuningfork, ${launch.kind}`
-        : run.recorded === "imported" ? "imported" : "recorded live through the proxy",
-      threads.length ? plural(threads.length, "other conversation") : null].filter(Boolean).join(" · "))),
-    h("div", { class: "panel-body stack" },
+  // A run nothing launched has a chip beside its title saying how it came: this says only what
+  // the chip cannot.
+  const meta = [launch ? `launched by tuningfork, ${launch.kind}` : run.imported ? `from ${importedFrom(run.imported)}` : null,
+    threads.length ? plural(threads.length, "other conversation") : null].filter(Boolean).join(" · ");
+  return foldPanel("About this run", () => h("div", { class: "stack" },
       kv([
         ["task", run.task_id ? h("a", { class: "mono", href: `#/divergence/${enc(run.task_id)}` }, run.task_id) : null],
         ["label", run.label],
@@ -178,6 +187,12 @@ function aboutRun({ run, launch, threads }) {
         ["harness", run.harness],
         ["started", when(run.started_at)],
         ["last step", ago(run.updated_at)],
+        ["imported from", run.imported ? importedFrom(run.imported) : null],
+        ["its conversation", launch?.context
+          ? [`${plural(launch.context.messages, "message")} of its scenario's chat`
+              + (launch.context.in_turn ? `, then ${plural(launch.context.in_turn, "step")} of its turn given as done` : ""),
+            h("span", { class: "muted" }, ` — ${launch.context.file}`)]
+          : null],
         ["fork of", run.fork_of
           ? [h("a", { class: "mono", href: `#/runs/${run.fork_of}` }, short(run.fork_of)), `, replayed up to step ${run.fork_step} and live from there`]
           : null],
@@ -219,5 +234,5 @@ function aboutRun({ run, launch, threads }) {
               h("a", { href: `#/runs/${thread.run_id}` }, chip(thread.role, "muted"),
                 ` ${short(thread.run_id)} · ${plural(thread.steps, "step")}`,
                 thread.after !== null ? h("span", { class: "muted small" }, ` · after step ${thread.after}${thread.placed === "time" ? ", by when it began" : ""}`) : null))))
-        : null));
+        : null), { className: "about-run", meta: meta ? h("span", { class: "muted small" }, meta) : null });
 }

@@ -133,6 +133,25 @@ export function panel(title, body, { meta, actions, className } = {}) {
   );
 }
 
+/** A panel folded to its title line: what is kept for the record rather than read every
+ *  visit. `body` is a node, or a function building it the first time the panel opens — a
+ *  record that costs a request to show asks only when someone looks. */
+export function foldPanel(title, body, { meta, className, open = false } = {}) {
+  const inside = h("div", { class: "panel-body" });
+  const fold = h("details", { class: ["panel", "fold-panel", className], open },
+    h("summary", { class: "panel-head" }, h("h2", null, title), meta ? h("div", { class: "panel-meta" }, meta) : null),
+    inside);
+  let built = false;
+  const build = () => {
+    if (built || !fold.open) return;
+    built = true;
+    append(inside, typeof body === "function" ? body() : body);
+  };
+  fold.addEventListener("toggle", build);
+  build();
+  return fold;
+}
+
 export function kv(pairs) {
   const rows = [];
   for (const [key, value] of pairs) {
