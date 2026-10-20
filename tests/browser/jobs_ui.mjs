@@ -1035,10 +1035,11 @@ try {
   await until(() => page.eval(`location.hash === "#/skills/tally-report" && !!document.querySelector(".added-line")`), "the skill's page, its folder marked added");
   check(await page.eval(`document.querySelector(".added-line").textContent.includes("added: a folder on this machine")`), "its folder, marked added where it is");
   // A folder uploaded from the browser: kept as tuningfork's copy.
-  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const uploaded = join(mkdtempSync(join(tmpdir(), "tf-skill-")), "hello-skill");
+  const uploadRoot = mkdtempSync(join(tmpdir(), "tf-skill-"));
+  const uploaded = join(uploadRoot, "hello-skill");
   mkdirSync(join(uploaded, "scripts"), { recursive: true });
   writeFileSync(join(uploaded, "SKILL.md"), "---\nname: hello-skill\ndescription: says hello\n---\n\n# Hello\n\nSay hello.\n");
   writeFileSync(join(uploaded, "scripts", "hello.py"), "print('hello')\n");
@@ -1052,6 +1053,7 @@ try {
   await until(() => page.eval(`(document.querySelector(".plan-preview")?.textContent || "").includes("2 files")`), "the upload's plan", 15000);
   await page.click("Upload it");
   await until(() => page.eval(`location.hash === "#/skills/hello-skill" && !!document.querySelector(".added-line")`), "the uploaded skill's page");
+  rmSync(uploadRoot, { recursive: true, force: true });
   const helloSkill = await api("/skills/hello-skill");
   check(helloSkill.folders[0].added.kind === "copy" && helloSkill.folders[0].text.includes("Say hello.")
     && await page.eval(`document.querySelector(".added-line").textContent.includes("never back to where it came from")`),
