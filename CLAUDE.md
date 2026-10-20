@@ -74,6 +74,9 @@ Inspecting and experimenting (all take `--home <recordings dir>`):
     tuningfork experiments / experiment   # list, or re-report without new samples
     tuningfork servers                    # which servers answered, and what each was
     tuningfork skills / skill <name>      # each version of a skill: text, pass rates (--text, --diff A B)
+    tuningfork add-skill <folder> [--copy] | --run <run> [--skill S]   # a skill added: its folder
+                                          #   remembered where it is, or a copy of tuningfork's own
+    tuningfork forget-skill <name>        # its record dropped; a copy moved aside, never deleted
     tuningfork glossary [word]            # tuningfork's words, each defined once
     tuningfork trash run|experiment|job|scenario|refinement <id>   # set aside: out of every list and rate
     tuningfork trash list | restore <id> | purge <id> | empty   # deletion is from the trash, for good
@@ -439,7 +442,15 @@ from `GET /connections`. Its front page is `#/guide` — setup, where you left o
 loop and the ways in — and its words have a page of their own, `#/words`, each living once in
 `ops/glossary.py`. The Skills page (`ops/skills.py`) names a skill by its folder, as variants
 and refinements do, and runs it again from the scenarios that name it; it is the person's view,
-never offered over MCP: the changelog an approval writes carries held-out verdicts.
+never offered over MCP: the changelog an approval writes carries held-out verdicts. A person adds
+a skill there too (`ops/addskill.py`; `tuningfork add-skill`, Add a skill…, `POST
+/skills/add`), planned before anything is written, as a record in `<home>/skills/<name>.json`:
+a folder on this machine, remembered where it is, so an approval writes to it; or a copy of
+tuningfork's own, `<home>/skills/<name>/` — a folder uploaded or copied in, or the skill a run
+had (the copy it kept, else the SKILL.md its model read, given frontmatter) — which an approval
+writes to, never back to where it came from. Forgetting one drops its record; a copy is moved
+aside whole, with what an approval kept beside it, to `<home>/skills/.forgotten/` — never
+deleted, and not while a scenario runs from it.
 
 Every state change under `/_tuningfork/` needs the proxy's access token
 (`x-tuningfork-token`, or `Authorization: Bearer`): minted each `serve`, written to
@@ -498,9 +509,10 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                only, through a private proxy), approve (the gate met, the code
                                typed, the skill's file written back, history and changelog
                                beside it), skills (each skill's versions, texts and rates; its
-                               folder now), glossary (the words, once), imports (a conversation
-                               had elsewhere, as a run; any run as a scenario); the job catalog;
-                               `common`: events, cancellation, strict parameters
+                               folder now), addskill (a skill a person adds: its folder, or a
+                               copy of tuningfork's own), glossary (the words, once), imports
+                               (a conversation had elsewhere, as a run; any run as a scenario);
+                               the job catalog; `common`: events, cancellation, strict parameters
     src/tuningfork/jobs.py     the job runner inside `serve`: lanes, progress, cancel, sweep
     src/tuningfork/access.py   the access token and the MCP token; endpoints.py: protected endpoints
     src/tuningfork/paths.py    paths as a person types them (a Windows path under WSL, relative

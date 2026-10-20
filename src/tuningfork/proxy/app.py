@@ -31,6 +31,7 @@ from tuningfork.api.imports import import_routes
 from tuningfork.api.jobs import job_routes
 from tuningfork.api.refinements import refinement_routes
 from tuningfork.api.scenarios import scenario_routes
+from tuningfork.api.skills import skill_routes
 from tuningfork.api.trash import trash_routes
 from tuningfork.access import HEADER as TOKEN_HEADER
 from tuningfork.access import Access
@@ -862,6 +863,7 @@ def create_app(
         *job_routes(store=recorder.store, runner=jobs),
         *connection_routes(),
         *scenario_routes(store=recorder.store, writable=True),
+        *skill_routes(store=recorder.store, writable=True),
         *import_routes(store=recorder.store),
         *refinement_routes(store=recorder.store, writable=True),
         *trash_routes(store=recorder.store, writable=True),
@@ -968,6 +970,7 @@ def create_browse_app(store: Any, *, host: str | None = None) -> Starlette:
             Route("/_tuningfork/api/status", status, methods=["GET"]),
             *job_routes(store=store),
             *scenario_routes(store=store, writable=False),
+            *skill_routes(store=store, writable=False),
             *refinement_routes(store=store, writable=False),
             *trash_routes(store=store, writable=False),
             *data_routes(store=store, adapters=[a() for a in ADAPTERS.values()]),
