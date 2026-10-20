@@ -45,7 +45,14 @@ try {
   // --- 1. Resample from the step page -----------------------------------------------------
   console.log("resample a step from its page");
   await openStep(page);
-  check(await page.eval(`[...document.querySelectorAll(".start-actions a")].map((a) => a.textContent).join("|") === "Resample…|A/B a wording…|Find forking tokens…|Refine the skill here…"`), "the step offers a resample, an A/B, the forking-token probe and a refinement");
+  check(await page.eval(`[...document.querySelectorAll(".start-actions a")].map((a) => a.textContent).join("|") === "Resample…|A/B a wording…|Find forking tokens…|Fork from here…|Refine the skill here…"`), "the step offers a resample, an A/B, the forking-token probe, a fork and a refinement");
+  // The lab's runs were launched by a batch, as their check's verdicts say (found in review: since
+  // runs nothing launched read "recorded live", every seeded run did).
+  check(await page.eval(`!document.querySelector(".page-head h1 .chip") && document.querySelector(".about-run summary").textContent.includes("launched by tuningfork, batch")`),
+    "a seeded run reads as a batch's, not as one recorded live");
+  // A run with no workspace snapshot shows its timings alone, across the width (found in review: half a grid).
+  check(await page.eval(`(() => { const details = document.querySelector("#s1 .tl-details"); return !!details && !details.classList.contains("grid-2"); })()`),
+    "a step with one panel of details lays it across the width, not in half a grid");
   await openStep(page, "resample");
   await planShows(page, "20 samples");
   check(await page.eval(`(document.querySelector(".plan-preview").textContent).includes(${JSON.stringify(BASE)})`), "the plan says its calls go through this proxy");
@@ -103,6 +110,8 @@ try {
   await until(() => page.eval(`!!document.querySelector('.plan-form [name="variant_text"]')`), "the A/B form");
   check(await page.eval(`document.querySelector('[name="variant_text"]').value.includes("Write the totals to report.json.")`), "the editor starts from the skill as the run was given it");
   await until(() => page.eval(`(document.querySelector(".plan-status")?.textContent || "").includes("Choose what the A/B is about")`), "the form to ask for a target first");
+  check(await page.eval(`!!document.querySelector(".plan-status .form-note-box") && !document.querySelector(".plan-status .form-error-box")`),
+    "and asks it as a note: a form nobody has touched has done nothing wrong (found in review: it opened in red)");
   check(await page.eval(`![...document.querySelectorAll('[name="target_kind"]')].some((radio) => radio.checked)`), "no target is chosen for you");
   await page.type(`document.querySelector('[name="variant_text"]')`,
     (await page.eval(`document.querySelector('[name="variant_text"]').value`)).replace("Write the totals to report.json.", "Write the totals to report.json, using the keys row_count and amount_total."));
@@ -144,6 +153,10 @@ try {
   const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
     [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
   check(marked === "target:6/6", `the behaviours table marks the one the target counts: the original's every sample (${marked})`);
+  // Declared as the resample's A, it is the table's A: the two arms tie, and lettered afresh the
+  // other behaviour came first, the target row B (found in use).
+  const targetLetter = await page.eval(`document.querySelector(".table tr.is-target .chip.tone-accent")?.textContent`);
+  check(targetLetter === "A", `the target is row A, as the resample it was named from lettered it (${targetLetter})`);
   const others = await page.eval(`[...document.querySelectorAll(".table tbody tr")].filter((row) => !row.classList.contains("is-target")).map((row) =>
     [row.querySelector(".chip.tone-not-target")?.textContent, row.children[3].textContent.split(" ")[0]].join(":")).join(",")`);
   check(others === "not target:6/6", `and badges the other "not target", its 6/6 the variant's, not the target's (${others})`);
@@ -552,6 +565,9 @@ try {
   await page.click("Find forking tokens at these", `document.querySelector(".tk-bar")`);
   await until(() => page.eval(`!!document.querySelector('.start-panel .plan-form [name="positions"]')`), "the forking form, in the step");
   check(await page.eval(`document.querySelector('.plan-form [name="positions"]').value === "${forkSpot.position}"`), "the form holds the selected position");
+  check(await page.eval(`(() => { const tools = document.querySelector('.plan-form [name="target_kind"][value="tools"]');
+    return !!tools?.checked && tools.closest("label").textContent.startsWith("Calls read_file"); })()`),
+    "the answer calls a tool, so the target first offered is calling it, with any arguments");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "6");
   await planShows(page, "2 forced tokens × 6 = 12 continuations");
   await startButtonReady(page, "Find the forking tokens");
@@ -560,6 +576,8 @@ try {
   const forkJob = await finished(forkJobId, 120000);
   check(forkJob.status === "done" && forkJob.result.forking.flips === 1, "the probe found the token that decides the answer");
   await until(() => page.eval(`[...document.querySelectorAll(".chip")].some((c) => c.textContent === "flips away")`), "the result, marked where it forks");
+  check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => c.textContent.startsWith("flips")).every((c) => c.classList.contains("tone-accent"))`),
+    "a flip is the accent's colour, its direction in words: a result, not a check's red");
 
   console.log("from a probe's result to the token it forced, and back");
   const probeId = forkJob.result.experiment.id;
@@ -567,6 +585,13 @@ try {
   await page.eval(`location.hash = "#/experiments/${probeId}"`);
   await until(() => page.eval(`!!document.querySelector('.fork-answer .tk-t.tk-flipped[data-i="${at}"]')`), "the answer it forked from");
   check(true, "the result shows the answer it forked from, the forking token ringed");
+  check(await page.eval(`(() => {
+    const rows = [...document.querySelectorAll(".probe-behaviours tbody tr")];
+    return rows.length >= 2 && rows.some((row) => row.querySelector(".chip.tone-target")) && rows.some((row) => row.querySelector(".chip.tone-not-target"))
+      && rows.every((row) => row.querySelectorAll(".led-by button.chip").length >= 1);
+  })()`), "each behaviour says whether the target counts it, and which tokens' continuations reached it");
+  check(await page.eval(`[...document.querySelectorAll("#fork-pos-${at} thead th")].pop().textContent === "led to"`),
+    "and each token's row says where its continuations went");
   await page.click("In the answer", `document.querySelector("#fork-pos-${at}")`);
   await until(() => page.eval(`(document.querySelector(".fork-answer .tk-detail")?.textContent || "").includes("Probed here")`), "the token, opened in the answer");
   check(true, "a position opens its token in the answer, with what the probe found there");
@@ -973,6 +998,12 @@ try {
     return first?.classList.contains("tl-rail-turn") && first.textContent === "userEarlier: keep the reports small."
       && first.nextElementSibling?.dataset.idx === "0";
   })()`), "and the turn the run began with heads the rail, above its first step");
+  await page.eval(`location.hash = "#/runs"`);
+  const importedRow = `[...document.querySelectorAll(".run-row")].find((row) => row.querySelector("a.run-id")?.getAttribute("href") === "#/runs/${imported.id}")`;
+  await until(() => page.eval(`!!${importedRow}`), "the imported run on the Runs page");
+  check(await page.eval(`${importedRow}.querySelector(".chip")?.textContent === "imported"`),
+    "the Runs list marks it imported, as it marks a run recorded live");
+  await page.eval(`location.hash = "#/runs/${imported.id}"`);
 
   console.log("a scenario of it: from the person's message the skill came in after, in words they may change");
   await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "Make a scenario…")`), "Make a scenario… on the imported run");
@@ -997,7 +1028,14 @@ try {
   check(await page.eval(`(() => { const row = document.querySelector(".start-steps tr.part-prompt").textContent;
     return row.includes("yours, in place of the chat's") && row.includes("Summarize inputs/data.csv into report.json."); })()`),
     "and the table says each run is sent it in place of the chat's words");
+  // The check takes no text until it is a shell command or a reply's words (found in review).
+  check(await page.eval(`document.querySelector('input[name="check"]').closest("label").hidden`), "with no check yet, there is no text to give it");
+  await until(() => page.eval(`(document.querySelector(".plan-status .form-note-box")?.textContent || "").includes("Name the scenario")`),
+    "what it still needs, as a note");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-the-chat");
+  // What will be made, shown before it is, as `tuningfork scenario --dry-run` shows it.
+  await planShows(page, "from-the-chat");
+  await startButtonReady(page, "Make the scenario");
   await page.click("Make the scenario");
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "Open the scenario")`), "the scenario made");
   check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("no check"))`), "and says it has no check yet");
@@ -1005,7 +1043,7 @@ try {
     "its prompt is the one written in the form");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Open the scenario").click()`);
   await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "The conversation it continues")`), "the scenario's conversation");
-  check(await page.eval(`document.querySelector("main").textContent.includes("2 messages from an imported chat")`), "the two turns before it, as each run's context");
+  check(await page.eval(`document.querySelector("main").textContent.includes("2 messages of the conversation it was made of")`), "the two turns before it, as each run's context");
 
   console.log("an import whose file kept no tools says so where they would be; a session file's tools, each opened");
   const bare = await post("/imports", { content: exported, session: "20261018_120000_aa11bb" });
@@ -1128,6 +1166,8 @@ try {
   check(await page.eval(`document.querySelector("main").textContent.includes("Its inputs: the run's workspace where the scenario starts")`),
     "it says its inputs come from the run's workspace");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
+  await planShows(page, "data.csv");
+  await startButtonReady(page, "Make the scenario");
   await page.click("Make the scenario");
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "Open the scenario")`), "the scenario made");
   check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("workspace as its step 0 found it: 1 file(s)"))`),

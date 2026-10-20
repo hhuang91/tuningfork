@@ -240,6 +240,10 @@ export function outcome(o) {
 export const recordedLive = () =>
   chip("recorded live", "muted", "Recorded through the proxy as it happened: no batch launched it, and it was not imported");
 
+/** A run imported from a conversation had elsewhere, marked as a live one is. */
+export const importedRun = () =>
+  chip("imported", "muted", "Imported from a conversation an agent had elsewhere: each step rebuilt from the chat, nothing launched");
+
 export function verdict(result) {
   if (!result) return null;
   let base;

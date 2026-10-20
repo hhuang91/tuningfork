@@ -58,6 +58,13 @@ export const api = {
   put: (path, bytes, contentType) => call("PUT", path, bytes, { raw: true, contentType }),
 };
 
+/** A dry run's answer asked for `quiet`: a refusal comes back as `{refused}` rather than an
+ *  HTTP error the browser would log, and is thrown here as the same error. */
+export function answered(data) {
+  if (data?.refused) throw new ApiError(data.refused.message || "refused", 200, data.refused);
+  return data;
+}
+
 export const enc = encodeURIComponent;
 
 export function query(params) {

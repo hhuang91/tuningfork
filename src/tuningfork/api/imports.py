@@ -8,8 +8,10 @@ change does: a preview reads a person's file, and the running proxy's store is t
 import may write to.
 
 `GET /runs/{run}/scenario` says where a scenario of any run can start, and `POST` makes it
-(`ops.imports.prepare_scenario`); `/imports/{run}/scenario`, the address an imported run's had
-first, answers the same.
+(`ops.imports.prepare_scenario`), or with `dry_run` shows what it would make and writes nothing,
+as `tuningfork scenario --dry-run` does — with `quiet`, a refusal as the answer rather than an
+error, for a form asking as it is filled in; `/imports/{run}/scenario`, the address an imported
+run's had first, answers the same.
 """
 
 from __future__ import annotations
@@ -31,8 +33,8 @@ PREFIX = "/_tuningfork/api/imports"
 RUNS = "/_tuningfork/api/runs"
 #: What a body may hold besides the file's text: `prepare_import`'s options.
 OPTIONS = ("session", "skill", "skill_dir", "harness", "label", "task_id", "tools_from")
-#: What a scenario's body may hold: `prepare_scenario`'s options.
-SCENARIO_FIELDS = ("name", "cut", "check", "skill", "skill_dir", "harness", "task_check", "prompt")
+#: What a scenario's body may hold: `prepare_scenario`'s options, and whether only to show it.
+SCENARIO_FIELDS = ("name", "cut", "check", "skill", "skill_dir", "harness", "task_check", "prompt", "dry_run", "quiet")
 
 
 async def _body(request: Request) -> tuple[str, dict[str, Any]]:
@@ -120,16 +122,20 @@ def import_routes(*, store: Any) -> list[Route]:
             for name in ("skill", "skill_dir", "harness", "prompt"):
                 if body.get(name) is not None and not isinstance(body[name], str):
                     raise OperationError(f"{name} is text", code="bad_params", field=name)
-            if not isinstance(body.get("task_check", True), bool):
-                raise OperationError("task_check is true or false", code="bad_params", field="task_check")
+            for name in ("task_check", "dry_run", "quiet"):
+                if not isinstance(body.get(name, False), bool):
+                    raise OperationError(f"{name} is true or false", code="bad_params", field=name)
             plan = imports.prepare_scenario(store, request.path_params["run"], str(body.get("name") or ""), cut=cut,
                                             check=body.get("check"), skill=body.get("skill") or None,
                                             skill_dir=body.get("skill_dir") or None, harness=body.get("harness") or None,
                                             task_check=body.get("task_check", True), prompt=body.get("prompt"))
+            if body.get("dry_run"):
+                return {"plan": plan.to_json(), "warnings": plan.warnings, "harness": plan.harness}
             made = imports.make_scenario(store, plan)
             return {"scenario": made.to_json(), "warnings": [*plan.warnings, *made.checked.warnings],
                     "harness": plan.harness}
 
+        body: Any = {}
         try:
             raw = await _capped(request, 1024 * 1024)
             body = json.loads(raw) if raw else {}
@@ -139,8 +145,10 @@ def import_routes(*, store: Any) -> list[Route]:
         except ValueError:
             return _refusal(OperationError("the body is not JSON", code="bad_params"))
         except OperationError as error:
+            if isinstance(body, dict) and body.get("dry_run") is True and body.get("quiet") is True:
+                return JSONResponse({"refused": error.to_json()})
             return _refusal(error)
-        return JSONResponse(found, status_code=201)
+        return JSONResponse(found, status_code=200 if body.get("dry_run") else 201)
 
     return [
         Route(f"{PREFIX}/preview", preview, methods=["POST"]),

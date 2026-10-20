@@ -30,8 +30,10 @@ function evidence(hold, scope) {
   const { element } = planForm({
     kind: "hold-sample",
     fields: [h("div", { class: "form-grid" },
-      field("Samples", input("n", { type: "number", value: 10, min: 1, max: 200 })),
-      field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 })))],
+      field("Samples", input("n", { type: "number", value: 10, min: 1, max: 200 }))),
+      h("details", { class: "fold more-settings" },
+        h("summary", null, "More settings"),
+        h("div", { class: "form-grid" }, field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }))))],
     read: (form) => ({ hold: hold.id, n: numberOf(form, "n") ?? 10, concurrency: numberOf(form, "concurrency") ?? 1 }),
     render: (plan) => h("div", { class: "stack", style: { gap: "6px" } },
       h("p", { class: "hint" }, `Sends the request held here ${plan.sampling.n} times through the proxy, ${plan.sampling.concurrency} at a time: what the model does at this call. Filed under the step it becomes; never recorded as a run.`),

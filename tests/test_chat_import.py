@@ -858,3 +858,16 @@ async def test_the_web_ui_makes_a_scenario_and_edits_its_conversation(proxy_clie
     assert odd.status_code == 400 and odd.json()["error"]["field"] == "task_check"
     other = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "by-run", "harness": "hermes"})
     assert other.status_code == 201 and other.json()["harness"] == "hermes"
+
+    # What it would make, shown and not written, as `tuningfork scenario --dry-run` shows it; and,
+    # asked quietly as a form is filled in, a refusal as the answer.
+    shown = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "only-shown", "dry_run": True})
+    assert shown.status_code == 200 and shown.json()["plan"]["name"] == "only-shown"
+    assert shown.json()["plan"]["spec"]["evals"][0]["id"] == "only-shown" and shown.json()["plan"]["context"] == 2
+    assert (await proxy_client.get("/_tuningfork/api/scenarios/only-shown")).status_code == 404
+    loud = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "by-run", "dry_run": True})
+    quiet = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "by-run", "dry_run": True, "quiet": True})
+    assert loud.status_code == 409 and quiet.status_code == 200  # the name is taken: a conflict
+    assert quiet.json()["refused"]["message"] == loud.json()["error"]["message"] and quiet.json()["refused"]["field"] == "name"
+    odd = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "x", "dry_run": "yes"})
+    assert odd.status_code == 400 and odd.json()["error"]["field"] == "dry_run"

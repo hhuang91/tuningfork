@@ -121,7 +121,7 @@ export function forkingView(report, context = {}) {
     } else if (view) {
       map = heatmap(view, { marks: probeMarks([{ experiment, positions: report.positions }]), compact: true });
       answer = h("div", { class: "fork-answer" },
-        h("div", { class: "label" }, "The answer it forked from — the probed tokens ringed: solid where a forced token changed what the model did"),
+        h("div", { class: "label" }, "The answer it forked from — the probed tokens ringed: doubled where a forced token changed what the model did"),
         map);
     }
   }
@@ -162,6 +162,16 @@ export function forkingView(report, context = {}) {
       "Even with the run's own tokens forced, the model reached it less than half the time: the target may be too fine to reproduce, or the step not yet decided at these positions."));
   }
   if (answer) parts.push(answer);
+  // Where each token's continuations went, by behaviour: the behaviours' table, inverted.
+  const ledTo = new Map();
+  for (const cluster of report.behaviours.clusters) {
+    for (const arm of cluster.by_arm || []) {
+      const key = armKey(arm.position, arm.text);
+      if (!ledTo.has(key)) ledTo.set(key, []);
+      ledTo.get(key).push([cluster.letter, arm.count]);
+    }
+  }
+  const said = report.behaviours.clusters.some((cluster) => cluster.by_arm);
   for (const position of report.positions) {
     parts.push(h("div", { class: "fork-position", id: `fork-pos-${position.position}` },
       h("div", { class: "fork-head" },
@@ -172,17 +182,50 @@ export function forkingView(report, context = {}) {
           map ? h("button", { class: "btn btn-quiet btn-small", type: "button", onclick: () => map.reveal(position.position), title: "This token in the answer above" }, "In the answer") : null,
           onStep(position.position))),
       h("div", { class: "table-wrap" }, h("table", { class: "table" },
-        h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "token"), h("th", null, "reached the target"), h("th", { class: "num" }, "p"), h("th", { class: "num" }, "Holm p"), h("th", null, ""))),
+        h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "token"), h("th", null, "reached the target"), h("th", { class: "num" }, "p"), h("th", { class: "num" }, "Holm p"), h("th", null, ""),
+          said ? h("th", null, "led to") : null)),
         h("tbody", null,
-          forkRow("as run", position.baseline, null),
-          position.alternatives.map((alt) => forkRow("forced", alt, alt))))),
+          forkRow("as run", position.baseline, null, said && ledTo),
+          position.alternatives.map((alt) => forkRow("forced", alt, alt, said && ledTo))))),
       position.weighted !== null && position.weighted !== undefined
         ? h("p", { class: "hint" }, `The chance of the target from here, each token weighted by how likely the model thought it: ${pct(position.weighted)}.`)
         : null));
   }
   return h("div", { class: "stack" },
     panel("Which forced tokens changed what the model did", parts),
-    distributionView(report.behaviours, "Behaviours, across the probe"));
+    said ? probeBehavioursView(report.behaviours) : distributionView(report.behaviours, "Behaviours, across the probe"));
+}
+
+const armKey = (position, text) => `${position}\u0000${text}`;
+
+/** A probe's behaviours, each badged as its target counts it, with the tokens whose
+ *  continuations reached it — the run's own in grey, a forced one in the accent — each leading
+ *  to its position's table above. A forced token can change what the model does and still
+ *  miss a target too fine to count it: this is where that shows. */
+function probeBehavioursView(behaviours) {
+  const jump = (position) => (event) => {
+    event.preventDefault();
+    document.getElementById(`fork-pos-${position}`)?.scrollIntoView({ block: "start" });
+  };
+  return panel("Behaviours, across the probe", [
+    h("div", { class: "table-wrap" }, h("table", { class: "table probe-behaviours" },
+      h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "behaviour"), h("th", null, "of every continuation"), h("th", null, "reached from"))),
+      h("tbody", null, behaviours.clusters.map((cluster) => {
+        const mark = targetMark(cluster.target_counted, cluster.rate.successes);
+        return h("tr", { class: cluster.target_counted ? "is-target" : null },
+          h("td", { class: "nowrap" }, h("span", { class: "chip tone-accent" }, cluster.letter), mark ? [" ", mark] : null),
+          h("td", null, outcome(cluster.outcome)),
+          h("td", null, rateBar(cluster.rate)),
+          h("td", null, h("span", { class: "led-by" }, (cluster.by_arm || []).map((arm) =>
+            h("button", {
+              class: ["chip", arm.original ? "tone-muted" : "tone-accent"], type: "button", onclick: jump(arm.position),
+              title: `${arm.original ? "The run's own token" : "A token forced"} at [${arm.position}]: ${plural(arm.count, "continuation")} did this. Its table above.`,
+            }, `[${arm.position}] ${JSON.stringify(arm.text)} ×${arm.count}`)))));
+      })))),
+    behaviours.errors
+      ? h("p", { class: "hint" }, `${plural(behaviours.errors, "continuation")} failed at the transport level and are not counted.`)
+      : null,
+  ], { meta: h("span", { class: "muted" }, `${plural(behaviours.total, "continuation")} · Wilson 95% intervals`) });
 }
 
 function positionList(positions) {
@@ -190,15 +233,20 @@ function positionList(positions) {
   return names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-function forkRow(label, arm, tested) {
+/** One token's row at a position. A flip is the accent's colour, its direction in words: the
+ *  target is what tuningfork was told to count, never a check that passed. `ledTo`, where the
+ *  report says it: the behaviours each token's continuations reached, by letter. */
+function forkRow(label, arm, tested, ledTo = null) {
   const drawn = arm.drawn < arm.planned ? chip(`${arm.drawn} of ${arm.planned} drawn`, "warn") : null;
+  const went = ledTo ? ledTo.get(armKey(arm.arm.position, arm.arm.text)) || [] : null;
   return h("tr", null,
     h("td", { class: "muted" }, label),
     h("td", { class: "mono" }, `${JSON.stringify(arm.arm.text)} ${pct(arm.arm.p)}`),
     h("td", null, arm.target.total ? rateBar(arm.target, tested ? "response" : "accent") : h("span", { class: "muted" }, "none drawn"), drawn),
     h("td", { class: "num mono" }, tested ? formatP(tested.p_value) : ""),
     h("td", { class: "num mono" }, tested ? formatP(tested.adjusted_p) : ""),
-    h("td", null, tested?.flips ? chip(tested.direction === "away" ? "flips away" : "flips toward", "bad") : null));
+    h("td", null, tested?.flips ? chip(tested.direction === "away" ? "flips away" : "flips toward", "accent") : null),
+    went ? h("td", { class: "nowrap small" }, went.map(([letter, count]) => `${letter} ×${count}`).join(" · ")) : null);
 }
 
 /** The chip tones for a screen's survivor and for a proposal it found worse: green and red

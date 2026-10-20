@@ -9,7 +9,7 @@
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
 import { checkTester } from "../checktry.js";
-import { ago, chip, crumbs, firstLine, h, loading, panel, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, crumbs, firstLine, h, importedRun, loading, panel, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
 import { field, formError, input, textArea } from "../forms.js";
 import { live } from "../live.js";
 import { leaving } from "../nav.js";
@@ -105,7 +105,7 @@ async function runPickView(root, scope) {
               const href = `#/runs/${run.id}/scenario`;
               return h("tr", { class: "clickable", onclick: () => (location.hash = href) },
                 h("td", null, h("a", { class: "mono", href }, short(run.id))),
-                h("td", null, run.label || "", run.imported ? [" ", chip("imported", "muted")] : null,
+                h("td", null, run.label || "", run.imported ? [" ", importedRun()] : null,
                   run.recorded === "live" ? [" ", recordedLive()] : null),
                 h("td", { class: "mono" }, run.task_id || "—"),
                 h("td", null, run.harness || "—"),
@@ -260,7 +260,11 @@ export async function scenarioView(root, [name], scope) {
   }
 
   let timer = null;
-  function changed() {
+  // A new scenario's problems are what is left to fill in until it is first edited, and say so
+  // as notes (found in review: the empty form opened on a red "evals[0].prompt: is required").
+  let touched = !isNew;
+  function changed({ quiet = false } = {}) {
+    if (!quiet) touched = true;
     replace(previewEl, JSON.stringify(cleaned(draft), null, 2));
     clearTimeout(timer);
     timer = setTimeout(check, 400);
@@ -298,7 +302,8 @@ export async function scenarioView(root, [name], scope) {
       found.translated_from ? null : underWsl);
   }
 
-  const problem = (found) => h("div", { class: "banner banner-bad" }, found.where ? h("span", { class: "mono" }, `${found.where}: `) : null, found.message);
+  const problem = (found) => h("div", { class: ["banner", touched && "banner-bad"] },
+    found.where ? h("span", { class: "mono" }, `${found.where}: `) : null, found.message);
   const warning = (text) => h("div", { class: "banner banner-warn" }, text);
 
   function drawEvals() {
@@ -540,13 +545,12 @@ export async function scenarioView(root, [name], scope) {
   }
 
   drawEvals();
-  changed();
+  changed({ quiet: true });
 }
 
-/** The conversation a scenario made from a chat continues (`tuningfork.context`): each message
- *  to read, and the whole of it as JSON, to edit and save. */
-/** The conversation a scenario continues: the messages before its prompt — a list, as it was
- *  kept before — and, as {before, in_turn}, the model's earlier steps of the prompt's own turn. */
+/** The conversation a scenario continues (`tuningfork.context`): the messages before its prompt
+ *  — a list, as it was kept before — and, as {before, in_turn}, the model's earlier steps of the
+ *  prompt's own turn; each message to read, and the whole as JSON, to edit and save. */
 function contextPanel(name, context, editable) {
   const status = h("div");
   const parts = (found) => (Array.isArray(found) ? { before: found, inTurn: [] }
@@ -559,9 +563,11 @@ function contextPanel(name, context, editable) {
   const reading = h("div", { class: "stack" });
   const show = (found) => {
     const { before, inTurn } = parts(found);
+    // Made of a chat imported, a run tuningfork launched or one recorded live (found in review:
+    // it said "an imported chat" of all three).
     replace(about, (before.length
-      ? `${plural(before.length, "message")} from an imported chat, put after the harness's instructions in every call of each `
-        + "run: the eval's prompt is its next turn."
+      ? `${plural(before.length, "message")} of the conversation it was made of, put after the harness's instructions in every `
+        + "call of each run: the eval's prompt is its next turn."
       : "Nothing comes before the eval's prompt: it is the chat's first turn.")
       + (inTurn.length ? ` Then ${plural(inTurn.length, "message")} of that turn, the model's earlier steps — done already, `
         + "an earlier skill among them — follow the prompt, so the skill comes in live." : ""));

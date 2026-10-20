@@ -2,7 +2,7 @@
 
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
-import { ago, chip, h, loading, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, h, importedRun, loading, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
 import { live } from "../live.js";
 
 export async function runsView(root, _params, scope) {
@@ -24,11 +24,15 @@ export async function runsView(root, _params, scope) {
     },
   });
 
+  // Chains have no tab: the way to them is here, once there is one (found in review: only a
+  // chain job's page led there).
+  const chainsLink = h("a", { class: "btn btn-quiet", href: "#/chains", hidden: true }, "Chains");
+
   replace(
     root,
     h("div", { class: "page-head" },
       h("div", null, h("h1", null, "Runs"), h("p", { class: "sub" }, "Recorded runs by task. Forks sit under the run they branched from; tick two runs to diff them.")),
-      h("div", { class: "actions" }, search,
+      h("div", { class: "actions" }, search, chainsLink,
         live.mode === "live" ? h("a", { class: "btn", href: "#/import", "data-control": true }, "Import a chat…") : null,
         live.mode === "live" ? h("a", { class: "btn btn-primary", href: "#/batch", "data-control": true }, "Run a task…") : null)),
     body,
@@ -36,7 +40,10 @@ export async function runsView(root, _params, scope) {
   );
 
   async function load() {
-    [tasks, runs] = await Promise.all([api.get("/tasks"), api.get("/runs?limit=1000")]);
+    let chains;
+    [tasks, runs, chains] = await Promise.all([api.get("/tasks"), api.get("/runs?limit=1000"), api.get("/chains").catch(() => [])]);
+    chainsLink.hidden = !chains.length;
+    replace(chainsLink, chains.length ? `Chains · ${chains.length}` : "Chains");
     draw();
   }
 
@@ -184,7 +191,7 @@ export async function runsView(root, _params, scope) {
         h("a", { class: "mono run-id", href: `#/runs/${run.id}` }, short(run.id)),
         h("span", { class: "run-label", title: run.label || "" }, run.label || ""),
         // Nothing launched it, and it was not imported: a harness's calls through the proxy.
-        run.recorded === "live" ? recordedLive() : null,
+        run.recorded === "live" ? recordedLive() : run.recorded === "imported" ? importedRun() : null,
         run.forked_from_run
           ? chip(`fork @ ${run.forked_at_depth}`, "skill",
             `Branched from run ${short(run.forked_from_run)}: the two share their first ${plural(run.forked_at_depth, "message")}, and part there`)

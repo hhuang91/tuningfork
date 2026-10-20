@@ -29,7 +29,9 @@ export async function skillsView(root) {
               h("td", { class: "num" }, String(each.versions)),
               h("td", null, refinementCounts(each.refinements)),
               h("td", { class: "faint", title: when(each.latest) }, each.latest ? ago(each.latest) : "—"),
-              h("td", { class: "mono small" }, each.folders[0] || h("span", { class: "faint" }, "—"),
+              h("td", { class: "mono small" }, each.folders[0] || h("span", {
+                class: "faint", title: "No scenario or task names its folder: a run recorded live or imported keeps only the SKILL.md the model read",
+              }, "not known"),
                 each.folders.length > 1 ? h("span", { class: "faint" }, ` +${each.folders.length - 1}`) : null)))))))
       : h("div", { class: "panel empty" }, h("h2", null, "No skills yet"),
           h("p", null, "A skill appears here once a run is given it — ",

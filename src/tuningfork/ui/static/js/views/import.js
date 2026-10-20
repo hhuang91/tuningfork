@@ -3,10 +3,10 @@
 // it has one, and import. Every skill it shows is kept; the one an A/B, a refinement or a
 // scenario studies is named when it starts. The run then works at its steps as any recorded one.
 
-import { api } from "../api.js";
+import { answered, api } from "../api.js";
 import { guard } from "../auth.js";
 import { chip, command, crumbs, firstLine, h, kv, loading, longText, panel, plural, replace } from "../dom.js";
-import { field, formError, input } from "../forms.js";
+import { field, formError, input, planForm } from "../forms.js";
 import { live } from "../live.js";
 import { toolsOffered } from "../stepinfo.js";
 
@@ -311,6 +311,8 @@ export async function scenarioFromRunView(root, [runId]) {
     if ([...kind.options].some((option) => option.value === chosen)) kind.value = chosen;
   };
   shown(found.cut);
+  // The plan on screen is asked again once a new choice of skill, harness or start is drawn.
+  let refreshPlan = null;
   // The answer asked for last is the one shown: a slower one for an earlier choice is dropped.
   let asking = 0;
   const again = (keepStart) => guard(async () => {
@@ -322,6 +324,8 @@ export async function scenarioFromRunView(root, [runId]) {
       if (mine !== asking) return;
       found = answer;
       shown(before);
+      showText();
+      refreshPlan?.();
     } catch (error) {
       if (mine === asking) replace(problem, formError(error));
     }
@@ -331,37 +335,34 @@ export async function scenarioFromRunView(root, [runId]) {
   from.addEventListener("change", again(true));
 
   const done = h("div");
-  const make = h("button", { class: "btn btn-primary", type: "button", "data-control": true }, "Make the scenario");
-  make.addEventListener("click", guard(async () => {
-    replace(problem);
+  // The text a check of its kind takes: none for the task's own check, or none yet (found in
+  // review: the field stood empty under either).
+  const textField = field("Its text", check, { wide: true });
+  function showText() {
+    textField.hidden = !["shell", "reply_contains"].includes(kind.value);
+  }
+  kind.addEventListener("change", showText);
+  showText();
+  // What the form says, as the body `POST /runs/{run}/scenario` takes.
+  function body() {
     const text = check.value.trim();
-    const body = { name: name.value.trim(), harness: harness.value };
-    if (found.cut !== null && found.cut !== undefined) body.cut = found.cut;
+    const said = { name: name.value.trim(), harness: harness.value };
+    if (found.cut !== null && found.cut !== undefined) said.cut = found.cut;
     // Sent only where the person changed it: else the scenario keeps the chat's words as they were.
-    if (edited) body.prompt = prompt.value;
-    if (studies.value || found.skill) body.skill = studies.value || found.skill;
-    if (folder.value.trim()) body.skill_dir = folder.value.trim();
+    if (edited) said.prompt = prompt.value;
+    if (studies.value || found.skill) said.skill = studies.value || found.skill;
+    if (folder.value.trim()) said.skill_dir = folder.value.trim();
     // Sent as nothing, the check is the task's own where the run's task had one.
-    if (kind.value === "none" && hasCheck()) body.task_check = false;
-    if (kind.value === "shell" && text) body.check = text;
-    if (kind.value === "reply_contains" && text) body.check = { reply_contains: text };
-    make.disabled = true;
-    try {
-      const made = await api.post(`/runs/${runId}/scenario`, body);
-      replace(done, panel("Made", h("div", { class: "stack" },
-        (made.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-        made.harness && made.harness !== "hermes"
-          ? h("p", { class: "hint" }, `Its runs go through ${made.harness}: choose it when you run the scenario.`) : null,
-        h("div", { class: "actions" },
-          h("a", { class: "btn btn-primary", href: `#/scenarios/${made.scenario.name}` }, "Open the scenario")))));
-    } catch (error) {
-      replace(problem, formError(error));
-      make.disabled = false;
-    }
-  }));
-  replace(root, ...head("Make a scenario"),
-    panel("The scenario", h("div", { class: "stack" },
-      several ? null : h("p", { class: "hint" }, about),
+    if (kind.value === "none" && hasCheck()) said.task_check = false;
+    if (kind.value === "shell" && text) said.check = text;
+    if (kind.value === "reply_contains" && text) said.check = { reply_contains: text };
+    return said;
+  }
+  // What will be made, shown as the form is filled in, as `tuningfork scenario --dry-run` shows it
+  // — and made only as shown (found in review: every other form that makes something showed its
+  // plan first, and this one said what was wrong only after it was asked to make it).
+  const plan = planForm({
+    fields: [
       h("div", { class: "form-grid" },
         found.recorded_harness ? null
           : field("Harness", harness, { help: "The agent the conversation was had with: the run does not say, so this is "
@@ -379,14 +380,57 @@ export async function scenarioFromRunView(root, [runId]) {
         fromNote,
         steps,
         field("Check", kind, { help: "What passes. Without one, runs have no verdict until it has one." }),
-        field("Its text", check, { wide: true })),
+        textField),
       h("p", { class: "hint" }, found.launched
         ? "Its inputs: the run's workspace where the scenario starts, from the snapshots tuningfork took as it ran."
         : "Its inputs: the run kept none. What is made says which files its conversation names, to add on the "
           + "scenario's page."),
+    ],
+    read: () => {
+      const said = body();
+      if (!said.name) throw Object.assign(new Error("Name the scenario: lowercase letters, digits, - and _."), { field: "scenario_name" });
+      return said;
+    },
+    render: scenarioPlan,
+    startLabel: "Make the scenario",
+    send: async (params, extra) =>
+      answered(await api.post(`/runs/${runId}/scenario`, extra.dry_run ? { ...params, dry_run: true, quiet: true } : params)),
+    onStarted: (made) => replace(done, panel("Made", h("div", { class: "stack" },
+      (made.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
+      made.harness && made.harness !== "hermes"
+        ? h("p", { class: "hint" }, `Its runs go through ${made.harness}: choose it when you run the scenario.`) : null,
+      h("div", { class: "actions" },
+        h("a", { class: "btn btn-primary", href: `#/scenarios/${made.scenario.name}` }, "Open the scenario"))))),
+  });
+  refreshPlan = plan.refresh;
+  replace(root, ...head("Make a scenario"),
+    panel("The scenario", h("div", { class: "stack" },
+      several ? null : h("p", { class: "hint" }, about),
       problem,
-      h("div", { class: "actions" }, make))),
+      plan.element)),
     done);
+}
+
+/** What a scenario of a run would be, as `prepare_scenario` plans it: written nowhere yet. */
+function scenarioPlan(plan) {
+  const check = plan.check === null || plan.check === undefined
+    ? h("span", { class: "muted" }, "none yet: its runs have no verdict until it has one")
+    : typeof plan.check === "string" ? h("span", { class: "mono" }, plan.check)
+      : plan.check.reply_contains !== undefined ? ["the final reply holds ", h("span", { class: "mono" }, JSON.stringify(plan.check.reply_contains))]
+        : h("span", { class: "mono" }, JSON.stringify(plan.check));
+  return h("div", { class: "stack", style: { gap: "6px" } },
+    kv([
+      ["scenario", [h("span", { class: "mono" }, plan.name), h("span", { class: "muted" }, ", a task of its own on the Scenarios page")]],
+      ["its skill", [h("span", { class: "mono" }, plan.skill), h("span", { class: "muted" }, plan.own_skill
+        ? " — a copy kept in the scenario's own folder" : " — tuned in its folder, "), plan.own_skill ? null : h("span", { class: "mono" }, plan.skill_dir)]],
+      ["each run", `continues ${plural(plan.context, "message")} of the conversation`
+        + (plan.in_turn ? `, then ${plural(plan.in_turn, "message")} of the prompt's own turn, given as done` : "")
+        + (plan.next_skill ? `; it stops where its model loads ${plan.next_skill.skill}` : "")],
+      ["its check", check],
+      ["its inputs", plan.files.length ? h("span", { class: "mono" }, plan.files.join(", "))
+        : h("span", { class: "muted" }, "none kept: add the files its conversation names on its page")],
+    ]),
+    (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)));
 }
 
 // Which of the person's messages the starting prompt is, and why their others are not offered.

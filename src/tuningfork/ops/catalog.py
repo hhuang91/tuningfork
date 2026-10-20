@@ -833,7 +833,8 @@ CATALOG: dict[str, Kind] = {
             params=ProposeParams,
             prepare=prepare_propose_job,
             execute=execute_propose_job,
-            total=lambda prepared: 1,
+            # No total: one question to a model, no sample, fork or run to count — a total of one
+            # was never counted, and a finished proposer read "0 of 1" (found in review).
         ),
         Kind(
             name="screen",
