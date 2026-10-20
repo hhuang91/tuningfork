@@ -8,8 +8,8 @@
 
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
-import { checkTester } from "../checktry.js";
-import { ago, chip, crumbs, firstLine, h, loading, panel, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
+import { checkPicker } from "../checktry.js";
+import { ago, chip, crumbs, firstLine, h, importedRun, loading, panel, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
 import { field, formError, input, textArea } from "../forms.js";
 import { live } from "../live.js";
 import { leaving } from "../nav.js";
@@ -105,7 +105,7 @@ async function runPickView(root, scope) {
               const href = `#/runs/${run.id}/scenario`;
               return h("tr", { class: "clickable", onclick: () => (location.hash = href) },
                 h("td", null, h("a", { class: "mono", href }, short(run.id))),
-                h("td", null, run.label || "", run.imported ? [" ", chip("imported", "muted")] : null,
+                h("td", null, run.label || "", run.imported ? [" ", importedRun()] : null,
                   run.recorded === "live" ? [" ", recordedLive()] : null),
                 h("td", { class: "mono" }, run.task_id || "—"),
                 h("td", null, run.harness || "—"),
@@ -260,7 +260,11 @@ export async function scenarioView(root, [name], scope) {
   }
 
   let timer = null;
-  function changed() {
+  // A new scenario's problems are what is left to fill in until it is first edited, and say so
+  // as notes (found in review: the empty form opened on a red "evals[0].prompt: is required").
+  let touched = !isNew;
+  function changed({ quiet = false } = {}) {
+    if (!quiet) touched = true;
     replace(previewEl, JSON.stringify(cleaned(draft), null, 2));
     clearTimeout(timer);
     timer = setTimeout(check, 400);
@@ -298,7 +302,8 @@ export async function scenarioView(root, [name], scope) {
       found.translated_from ? null : underWsl);
   }
 
-  const problem = (found) => h("div", { class: "banner banner-bad" }, found.where ? h("span", { class: "mono" }, `${found.where}: `) : null, found.message);
+  const problem = (found) => h("div", { class: ["banner", touched && "banner-bad"] },
+    found.where ? h("span", { class: "mono" }, `${found.where}: `) : null, found.message);
   const warning = (text) => h("div", { class: "banner banner-warn" }, text);
 
   function drawEvals() {
@@ -361,86 +366,26 @@ export async function scenarioView(root, [name], scope) {
         : null));
   }
 
-  /** How a run passes: no check, the agent's final reply holding or matching something,
-   *  or a shell command run in the workspace. The kind chosen is kept here, so choosing one
-   *  before typing it does not fall back to "no check". */
+  /** How a run passes (`checkPicker`, shared with a scenario made from a run), written into
+   *  the eval as the spec holds a check: "" for none, a command, or a reply check. */
   function checkEditor(item, index) {
     const options = item.tuningfork;
-    const check = options.check;
-    let kind = check && typeof check === "object" ? Object.keys(check)[0]
-      : typeof check === "string" && check.trim() ? "shell" : "none";
-    const body = h("div", { class: "stack", style: { gap: "6px" } });
-    // Trying the check as written, before trusting it: opened below it on demand.
-    let tester = null;
-    const testerSlot = h("div");
-    const tryIt = live.mode === "live" && editable
-      ? h("button", {
-          class: "btn btn-small", type: "button", "data-control": true,
-          onclick: guard(() => {
-            if (tester) {
-              tester = null;
-              replace(testerSlot);
-              return;
-            }
-            tester = checkTester({
-              check: () => options.check,
-              task: () => `${draft.skill_name.trim()}/${String(item.id).trim()}`,
-              files: () => item.files
-                .filter((entry) => entry && typeof entry === "object" && typeof entry.content === "string")
-                .map((entry) => ({ path: entry.path, content: entry.content })),
-              scope,
-            });
-            replace(testerSlot, tester.element);
-          }),
-        }, "Test this check…")
-      : null;
-    const edited = (set) => (value) => {
-      set(value);
-      tester?.refresh();
-    };
-    const choices = [
-      ["none", "No check"],
-      ["reply_contains", "The reply contains…"],
-      ["reply_matches", "The reply matches…"],
-      ["shell", "A shell command"],
-    ];
-    const replyText = () => (options.check && typeof options.check === "object" ? Object.values(options.check)[0] ?? "" : "");
-    const picker = h("div", { class: "controls" }, choices.map(([value, label]) =>
-      h("label", { class: "check" },
-        h("input", {
-          type: "radio", name: `check-kind-${index}`, value, checked: kind === value, disabled: !editable,
-          onchange: () => {
-            const text = replyText();
-            kind = value;
-            options.check = value === "shell" ? "" : value === "none" ? "" : { [value]: text };
-            draw();
-            changed();
-            tester?.refresh();
-          },
-        }), label)));
-
-    function draw() {
-      if (kind === "shell") {
-        return replace(body,
-          h("p", { class: "form-help" }, "Runs as you, in the run's workspace — a fresh folder holding this eval's input files, where the harness worked. It passes when it exits 0. $TUNINGFORK_REPLY names a file holding the agent's final reply, and $TUNINGFORK_SPEC_DIR this scenario's folder: a longer check can be a script there, where the agent cannot read it."),
-          bind(textArea(`check-${index}`, typeof options.check === "string" ? options.check : "", {
-            rows: 3, placeholder: 'e.g. python3 -c "import json; json.load(open(\'report.json\'))", or grep -q 61.5 "$TUNINGFORK_REPLY"',
-          }), edited((v) => (options.check = v))));
-      }
-      if (kind === "reply_contains" || kind === "reply_matches") {
-        return replace(body,
-          h("p", { class: "form-help" }, kind === "reply_contains"
-            ? "Passes when the agent's final reply holds this text exactly (case counts). tuningfork judges it; nothing runs."
-            : "Passes when this regular expression (Python's) finds a match in the agent's final reply; start it with (?i) to ignore case, and . matches line breaks too. tuningfork judges it; nothing runs."),
-          bind(input(`check-text-${index}`, { value: replyText(), placeholder: kind === "reply_contains" ? "e.g. 61.5" : "e.g. (?i)total\\D+61\\.5" }),
-            edited((v) => (options.check = { [kind]: v }))));
-      }
-      return replace(body, h("p", { class: "form-help" }, "Runs have no verdict: none is counted as passed or failed."));
-    }
-    draw();
-    return h("div", { class: "check-command" }, h("div", { class: "label" }, "How a run passes"), picker, body,
-      tryIt ? h("div", { class: "controls" }, tryIt, h("span", { class: "muted small" }, "on a recorded run of this task, or on a reply you write — before trusting it")) : null,
-      testerSlot);
+    return checkPicker({
+      check: options.check, editable, scope, name: String(index),
+      onChange: ({ kind, text }) => {
+        options.check = kind === "shell" ? text : kind === "none" ? "" : { [kind]: text };
+        changed();
+      },
+      // Trying the check as written, before trusting it: opened below it on demand.
+      tester: live.mode === "live" && editable
+        ? {
+            task: () => `${draft.skill_name.trim()}/${String(item.id).trim()}`,
+            files: () => item.files
+              .filter((entry) => entry && typeof entry === "object" && typeof entry.content === "string")
+              .map((entry) => ({ path: entry.path, content: entry.content })),
+          }
+        : null,
+    }).element;
   }
 
   function fileRow(item, entry, position, redraw) {
@@ -540,13 +485,12 @@ export async function scenarioView(root, [name], scope) {
   }
 
   drawEvals();
-  changed();
+  changed({ quiet: true });
 }
 
-/** The conversation a scenario made from a chat continues (`tuningfork.context`): each message
- *  to read, and the whole of it as JSON, to edit and save. */
-/** The conversation a scenario continues: the messages before its prompt — a list, as it was
- *  kept before — and, as {before, in_turn}, the model's earlier steps of the prompt's own turn. */
+/** The conversation a scenario continues (`tuningfork.context`): the messages before its prompt
+ *  — a list, as it was kept before — and, as {before, in_turn}, the model's earlier steps of the
+ *  prompt's own turn; each message to read, and the whole as JSON, to edit and save. */
 function contextPanel(name, context, editable) {
   const status = h("div");
   const parts = (found) => (Array.isArray(found) ? { before: found, inTurn: [] }
@@ -559,9 +503,11 @@ function contextPanel(name, context, editable) {
   const reading = h("div", { class: "stack" });
   const show = (found) => {
     const { before, inTurn } = parts(found);
+    // Made of a chat imported, a run tuningfork launched or one recorded live (found in review:
+    // it said "an imported chat" of all three).
     replace(about, (before.length
-      ? `${plural(before.length, "message")} from an imported chat, put after the harness's instructions in every call of each `
-        + "run: the eval's prompt is its next turn."
+      ? `${plural(before.length, "message")} of the conversation it was made of, put after the harness's instructions in every `
+        + "call of each run: the eval's prompt is its next turn."
       : "Nothing comes before the eval's prompt: it is the chat's first turn.")
       + (inTurn.length ? ` Then ${plural(inTurn.length, "message")} of that turn, the model's earlier steps — done already, `
         + "an earlier skill among them — follow the prompt, so the skill comes in live." : ""));

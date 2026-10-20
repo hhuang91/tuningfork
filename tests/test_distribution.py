@@ -13,6 +13,7 @@ from math import comb
 import pytest
 
 from tuningfork.analysis.distribution import (
+    agreeing_letters,
     cluster_letter,
     compare_arms,
     distribution,
@@ -197,6 +198,32 @@ class TestDistribution:
     def test_letters_beyond_z(self):
         assert cluster_letter(25) == "Z"
         assert cluster_letter(26) == "AA"
+
+
+class TestAgreeingLetters:
+    def test_a_resample_s_behaviours_keep_their_letters_and_new_ones_take_unused_ones(self):
+        known = {"key:x": "A", "key:y": "B", "key:z": "C"}
+        assert agreeing_letters(["key:y", "key:new", "key:x", "key:other"], known) == ["B", "D", "A", "E"]
+        assert agreeing_letters(["key:a", "key:b"]) == ["A", "B"]
+        assert [c.letter for c in distribution([outcome("y"), outcome("y"), outcome("w")], letters=known).clusters] == ["B", "D"]
+
+    def test_an_a_b_letters_its_behaviours_as_the_resample_its_target_came_from(self):
+        """Found in use: an A/B whose target was a resample's B lettered its own table afresh,
+        the target its row A, and only the target badge said which row it was."""
+        resample = {"key:count/total": "A", "key:row_count": "B"}
+        original = [outcome("row_count")] * 2 + [outcome("count/total")] * 3
+        variant = [outcome("row_count")] * 20
+        target = target_by_key("key:row_count", "B from resample 12345678: row_count")
+
+        afresh = compare_arms(original, variant, target=target)
+        agreeing = compare_arms(original, variant, target=target, letters=resample)
+
+        assert {shift.outcome.label: shift.letter for shift in afresh.shifts} == {"row_count": "A", "count/total": "B"}
+        assert {shift.outcome.label: shift.letter for shift in agreeing.shifts} == {"row_count": "B", "count/total": "A"}
+        # Each arm's own behaviours take the table's letters, whichever arm did them more.
+        assert agreeing.original.by_key("key:count/total").letter == "A"
+        assert agreeing.variant.by_key("key:row_count").letter == "B"
+        assert afresh.original.by_key("key:row_count").letter == "A"
 
 
 class TestABComparison:

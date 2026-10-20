@@ -474,6 +474,27 @@ class TestTargets:
         assert "count" in target.description
         assert normalizers == []
 
+    async def test_a_letter_target_keeps_its_resample_so_reports_letter_as_it_did(
+        self, store, mock_server, client
+    ):
+        """An A/B, a screen or a probe of a resample's B letters that behaviour B too. A target
+        stored before targets kept their resample still names it in its description."""
+        from tuningfork.experiment.sampling import target_letters
+
+        mock_server.script(write({"count": 4, "total": 61.5}), write({"row_count": 4}), write({"row_count": 4}))
+        checkpoint = load_checkpoint(store, record_pilot(store), 1)
+        resample = await run_resample(store, checkpoint, SamplingPlan(n=3), base_url=UPSTREAM, client=client)
+
+        target, _ = resolve_target(store, checkpoint, letter="B")
+
+        assert (target.spec["letter"], target.spec["resample"]) == ("B", resample.id)
+        letters = target_letters(store, target.spec)
+        assert letters[target.spec["value"]] == "B" and sorted(letters.values()) == ["A", "B"]
+        older = {key: value for key, value in target.spec.items() if key not in ("letter", "resample")}
+        assert target_letters(store, older) == letters
+        assert target_letters(store, older, ["tool_name"]) is None  # another lens keys them otherwise
+        assert target_letters(store, {"kind": "pattern", "value": "row_count"}) is None
+
     def test_a_letter_without_an_earlier_resample_is_refused(self, store):
         checkpoint = load_checkpoint(store, record_pilot(store), 1)
         with pytest.raises(CheckpointError, match="Run a resample first"):

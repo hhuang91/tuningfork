@@ -562,8 +562,34 @@ def forking(found: dict[str, Any] | None, *, positions: int = 10) -> dict[str, A
             ],
             positions,
         ),
-        "behaviours": distribution(found.get("behaviours")),
+        "behaviours": probe_behaviours(found.get("behaviours")),
     }
+
+
+def target_mark(counted: int, count: int) -> str:
+    """Whether the declared target counts a behaviour, as the web UI badges it."""
+    if not counted:
+        return "not target"
+    return "target" if counted >= count else f"target in {counted} of {count}"
+
+
+def probe_behaviours(found: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A probe's behaviours, as `distribution` gives them, each with whether its target counts
+    it and the tokens whose continuations reached it: a forced token can change what the model
+    does and still miss a target too fine to count it."""
+    shown = distribution(found)
+    if not shown:
+        return None
+    for cluster, compact in zip((found or {}).get("clusters") or [], shown["behaviours"]):
+        if "target_counted" in cluster:
+            compact["target"] = target_mark(cluster["target_counted"], (cluster.get("rate") or {}).get("successes") or 0)
+        led: dict[Any, list[str]] = {}
+        for arm in cluster.get("by_arm") or []:
+            led.setdefault(arm.get("position"), []).append(
+                f"{arm.get('text')!r}{' as run' if arm.get('original') else ''} {arm.get('count')}")
+        if led:
+            compact["led_to_by"] = "; ".join(f"[{position}] " + ", ".join(said) for position, said in led.items())
+    return shown
 
 
 def _screen_arm(arm: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -881,6 +907,15 @@ def forking_lines(found: dict[str, Any] | None) -> list[str]:
                     f"{(position.get('baseline') or {}).get('text')!r} → target {rate_text(alt.get('target'))}"
                     f" vs {rate_text((position.get('baseline') or {}).get('target'))}, adjusted {p_text(alt.get('adjusted_p'))}"
                 )
+    behaviours = (found.get("behaviours") or {}).get("behaviours") or []
+    for cluster in behaviours[:6]:
+        lines.append(
+            f"  behaviour {cluster.get('letter')} {cluster.get('label')!r}: {rate_text(cluster.get('rate'))}"
+            + (f", {cluster['target']}" if cluster.get("target") else "")
+            + (f"; reached from {cluster['led_to_by']}" if cluster.get("led_to_by") else "")
+        )
+    if len(behaviours) > 6:
+        lines.append(f"  … and {len(behaviours) - 6} more behaviour(s)")
     return lines
 
 

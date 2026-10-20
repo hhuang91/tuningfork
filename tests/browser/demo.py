@@ -85,6 +85,33 @@ def write(keys):
     return tool_call_message("write_file", arguments, call_id="c2")
 
 
+#: The demo task's check: a report without the keys fails it with the KeyError its runs print.
+DEMO_CHECK = (
+    "python3 -c \"import json; d = json.load(open('report.json'));"
+    " assert d['row_count'] == 4 and d['amount_total'] == 61.5\""
+)
+
+
+def demo_spec(home: Path) -> Path:
+    """The task the seeded runs were launched from, as a batch keeps its spec: `Run this task
+    again…` on their page opens it, for the lab's own harness (`fake`) to run."""
+    folder = home / "demo-task"
+    (folder / "tally-report").mkdir(parents=True, exist_ok=True)
+    (folder / "tally-report" / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    path = folder / "evals.json"
+    path.write_text(json.dumps({
+        "skill_name": "tally-report",
+        "tuningfork": {"skill_dir": "tally-report"},
+        "evals": [{
+            "id": "1",
+            "prompt": "Use the tally-report skill on data.csv.",
+            "files": [{"path": "data.csv", "content": CSV}],
+            "tuningfork": {"check": DEMO_CHECK, "skills": ["tally-report"], "max_turns": 6, "timeout": 600},
+        }],
+    }, indent=2), encoding="utf-8")
+    return path
+
+
 def keep_skill(store: Store) -> Path:
     """The skill as the seeded runs were given it, kept where a batch keeps its copy: what
     an A/B's original names, the Skills page reads, and the browser's variant editor starts
@@ -98,19 +125,35 @@ def keep_skill(store: Store) -> Path:
 
 
 def seed(home: Path) -> None:
-    """Nine runs of a flaky task that diverge at step 1: one edited at a breakpoint and
-    one whose skill changed mid-run, neither counted; a run with no task; a resample and
-    an A/B of a saved variant, its arms sent the two wordings."""
+    """Nine runs of a flaky task that diverge at step 1, each launched by a batch of it as
+    Hermes Agent: one edited at a breakpoint and one whose skill changed mid-run, neither
+    counted; a run with no task, recorded live; a resample and an A/B of a saved variant, its
+    arms sent the two wordings."""
     from tuningfork.experiment.skill import substitute, text_sha256
+    from tuningfork.launches import Assignment
     from tuningfork.ops.variants import save_variant
+    from tuningfork.runner import eval_record
+    from tuningfork.specs import load_spec
 
     store = Store(home)
+    spec = load_spec(demo_spec(home))
     skill_hash = hashlib.sha256(SKILL.encode()).hexdigest()
     base = {"model": MODEL, "tools": TOOLS, "stream": True, "stream_options": {"include_usage": True}}
     run_ids = []
     for index, good_keys in enumerate([True, True, False, True, False, True, True, False, True]):
         label = f"tally-report/1#demo.{index}"
-        store.begin_run(label, "tally-report/1")
+        # Launched as a batch launches a run (found in review: since runs nothing launched read
+        # "recorded live", every seeded run did, though each carries its check's verdict).
+        launch = store.create_launch(
+            kind="batch", label=label, harness="hermes", model=MODEL, task_id="tally-report/1",
+            eval=eval_record(spec.get("1"), spec.directory), spec_path=str(spec.path),
+            skill_dir=str(spec.directory / "tally-report"),
+        )
+        run_id = uuid.uuid4().hex
+
+        def at(idx: int, run_id: str = run_id, launch_id: str = launch.id, label: str = label) -> Assignment:
+            return Assignment(launch_id=launch_id, run_id=run_id, idx=idx, thread=0, label=label, task_id="tally-report/1")
+
         messages = [
             {"role": "system", "content": system_prompt()},
             {"role": "user", "content": "Use the tally-report skill on data.csv."},
@@ -121,6 +164,7 @@ def seed(home: Path) -> None:
             response=response(read, "tool_calls", "I should read data.csv first.", 4100, 45),
             timings={"ttft_ms": 1450.0, "total_ms": 2210.5},
             server_defaults=DEFAULTS,
+            assignment=at(0),
         )
         messages += [read, {"role": "tool", "tool_call_id": "c1", "content": CSV}]
         thought = "Four rows; 10 + 20.5 + 15 + 16 = 61.5. " + (
@@ -137,6 +181,7 @@ def seed(home: Path) -> None:
             edits={"response": {"fields": ["choices"], "message_fields": ["tool_calls"]}}
             if edited
             else None,
+            assignment=at(1),
         )
         messages += [written, {"role": "tool", "tool_call_id": "c2", "content": '{"success": true}'}]
         done = {"role": "assistant", "content": "Done — the totals are in report.json."}
@@ -144,8 +189,10 @@ def seed(home: Path) -> None:
             request={**base, "messages": list(messages)},
             response=response(done, "stop", "", 4260, 14),
             timings={"ttft_ms": 900.0, "total_ms": 1150.0},
+            assignment=at(2),
         )
-        run = store.get_run(label)
+        store.end_launch(launch.id, exit={"returncode": 0})
+        run = store.get_run(run_id)
         run_ids.append(run.id)
         passed = good_keys or edited
         skills_changed = ["tally-report/SKILL.md"] if index == 5 else []
@@ -210,7 +257,7 @@ def seed(home: Path) -> None:
     for arm, share, sent in (("original", 0.6, request), ("variant", 0.95, variant_request)):
         experiment = store.create_experiment(
             kind="ab", arm=arm, run_id=run_ids[0], step_idx=1, step_id=checkpoint.id,
-            request=sent, settings={**settings, "target": target}, variant=variant,
+            request=sent, settings={**settings, "target": target, "alpha": 0.05}, variant=variant,
             group_id=group,
         )
         add_samples(experiment, share)

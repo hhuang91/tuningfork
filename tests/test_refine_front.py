@@ -166,10 +166,15 @@ class TestAsJobs:
         pid = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="r", proposer={"via": "person"}).id
         with client(stack) as http:
             empty = http.post("/_tuningfork/api/jobs", json={"kind": "screen", "params": {"refinement": made.id}, "dry_run": True})
+            # A form asking as it is filled in takes the refusal as its answer, never an error a
+            # browser logs (found in review: an ordinary visit logged them in the console).
+            quiet = http.post("/_tuningfork/api/jobs", json={"kind": "screen", "params": {"refinement": made.id},
+                                                             "dry_run": True, "quiet": True})
             started = http.post("/_tuningfork/api/jobs", json={"kind": "screen", "params": {"refinement": made.id, "proposals": [pid[:8]], "n": 4}})
             job = self.wait(http, started.json()["id"])
             shown = http.get(f"{API}/{made.id}").json()
         assert empty.status_code == 400 and empty.json()["error"]["field"] == "proposals"
+        assert quiet.status_code == 200 and quiet.json()["refused"]["field"] == "proposals"
         assert job["status"] == "done" and job["result"]["screen"]["survivors"] == [pid[:8]]
         (verdict,) = shown["proposals"][0]["screens"]
         assert verdict["survives"] is True and shown["screens"][0]["status"] == "done"

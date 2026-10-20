@@ -702,10 +702,14 @@ async def run_ab(
     original_path: str | None = None,
     variant_path: str | None = None,
     target: Target | None = None,
+    alpha: float | None = None,
     client: httpx.AsyncClient | None = None,
     progress: Progress | None = None,
 ) -> ABRun:
     """Resample the checkpoint as recorded, then with the variant skill substituted.
+
+    `alpha`, the significance level the A/B was declared with, is kept with both arms beside
+    its target: a re-report judges at it unless asked otherwise.
 
     The arms run one after the other rather than interleaved. On a server with prefix
     caching, alternating arms would invalidate the cache at every switch and re-process the
@@ -745,8 +749,11 @@ async def run_ab(
                     variant=variant_info,
                     parity=parity,
                     # Stored with both arms, so the result can always be re-reported
-                    # against the test declared before sampling — not one chosen afterwards.
-                    annotations={"target": target.spec} if target else None,
+                    # against the test declared before sampling — not one chosen afterwards:
+                    # its target, and the level it is judged at (found in review: an A/B
+                    # declared at α 0.01 was judged at 0.05 on its own page).
+                    annotations={**({"target": target.spec} if target else {}),
+                                 **({"alpha": alpha} if alpha is not None else {})} or None,
                     progress=ended,
                 )
         return ABRun(original=arms["original"], variant=arms["variant"], spans=spans)
@@ -872,4 +879,29 @@ def resolve_target(
     if cluster is None:
         raise CheckpointError(f"resample {experiment.id[:8]} has no cluster {letter.upper()}")
     description = f"{cluster.letter} from resample {experiment.id[:8]}: {cluster.outcome.label}"
-    return target_by_key(cluster.outcome.key, description), experiment.normalizers
+    return (target_by_key(cluster.outcome.key, description, letter=cluster.letter, resample=experiment.id),
+            experiment.normalizers)
+
+
+def target_letters(store: Store, spec: dict[str, Any] | None, lens: list[str] | None = None) -> dict[str, str] | None:
+    """The letters, by behaviour key, of the resample a letter target came from — for a report
+    of that target to letter its behaviours as the resample did (`agreeing_letters`). None for
+    any other target, and where they would not agree: under another lens, or with the resample
+    gone. A target stored before targets kept their resample names it in its description."""
+    import re
+
+    from tuningfork.analysis.distribution import distribution
+
+    if not spec or spec.get("kind") != "key":
+        return None
+    reference = spec.get("resample")
+    if not reference:
+        named = re.match(r"([A-Z]+) from resample ([0-9a-f]{8}): ", spec.get("description") or "")
+        reference = named.group(2) if named else None
+    resample = store.get_experiment(reference) if reference else None
+    if resample is None or resample.kind != "resample":
+        return None
+    if lens is not None and _effective(lens) != _effective(resample.normalizers):
+        return None
+    found = distribution(experiment_outcomes(store, resample))
+    return {cluster.outcome.key: cluster.letter for cluster in found.clusters}

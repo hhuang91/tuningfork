@@ -169,11 +169,13 @@ class TestStartingWork:
         assert tokens.count("addEventListener") == 0
 
     def test_a_check_can_be_tried_where_it_is_written(self):
-        """The scenario editor tries the check on screen through the check-trial job: a
-        marked, guarded control, as any that starts work."""
-        editor = source("js/views/scenarios.js")
-        assert re.search(r'"data-control": true,\s*onclick: guard\(.{0,1200}?"Test this check…"', editor, re.S)
-        assert 'kind: "check-trial"' in source("js/checktry.js")
+        """A check is tried where it is written — a scenario's editor, a scenario made from a
+        run, which choose it with the same picker — through the check-trial job: a marked,
+        guarded control, as any that starts work."""
+        tried = source("js/checktry.js")
+        assert re.search(r'"data-control": true,\s*onclick: guard\(.{0,1200}?"Test this check…"', tried, re.S)
+        assert 'kind: "check-trial"' in tried
+        assert all("checkPicker(" in source(page) for page in ("js/views/scenarios.js", "js/views/import.js"))
 
 
 class TestRefining:

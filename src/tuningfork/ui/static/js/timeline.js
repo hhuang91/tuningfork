@@ -561,7 +561,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
         // A replayed step was answered from the recording: there is no call to sample.
         step.served ? h("p", { class: "muted small" }, "Answered from the recording: nothing starts from here.") : startPanel(detail, { go }),
         found.slot,
-        h("div", { class: "grid-2 tl-details" }, detailsPanel(detail), workspacePanel(detail)),
+        details(detailsPanel(detail), workspacePanel(detail)),
         h("p", { class: "tl-exact" },
           h("a", { class: "btn btn-small", href: exact }, "Exact context this step was sent →"),
           h("span", { class: "muted small" }, " every message as the model saw it: what a resample resends")));
@@ -569,6 +569,15 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       found.ready = null;
       replace(found.block, failure(error, "Could not load the step"));
     }
+  }
+
+  /** A step's details side by side where there are two; one alone across the width, and none
+   *  where neither has anything to say (found in review: a run nothing launched has no
+   *  workspace, and its timings sat in half a grid beside an empty one). */
+  function details(...panels) {
+    const shown = panels.filter(Boolean);
+    if (!shown.length) return null;
+    return h("div", { class: ["tl-details", shown.length > 1 && "grid-2"] }, shown);
   }
 
   function experimentsHere(step) {

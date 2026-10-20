@@ -78,10 +78,13 @@ export async function batchView(root, _, scope) {
       field("Skill", h("select", { class: "field", name: "skill_file" },
         h("option", { value: "" }, "the spec's own"),
         saved.map((variant) => h("option", { value: variant.path }, `${variant.skill}/${variant.name} (saved variant)`))),
-        { help: "A saved variant replaces the skill's SKILL.md in every run: confirming a wording with full runs." }),
-      field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "On one GPU, 1 is fastest. A chain's runs go one at a time." }),
-      field("Harness options", h("textarea", { class: "field", name: "harness_options", rows: 2, placeholder: '{"await_review": true, "review_every_turn": true}' }),
-        { help: "As JSON, recorded with each run. Hermes: await_review (let its background review finish before it exits), review_every_turn (its skill review after every run), mcp_servers.", wide: true })),
+        { help: "A saved variant replaces the skill's SKILL.md in every run: confirming a wording with full runs." })),
+    h("details", { class: "fold more-settings" },
+      h("summary", null, "More settings"),
+      h("div", { class: "form-grid" },
+        field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "On one GPU, 1 is fastest. A chain's runs go one at a time." }),
+        field("Harness options", h("textarea", { class: "field", name: "harness_options", rows: 2, placeholder: '{"await_review": true, "review_every_turn": true}' }),
+          { help: "As JSON, recorded with each run. Hermes: await_review (let its background review finish before it exits), review_every_turn (its skill review after every run), mcp_servers.", wide: true }))),
   ];
   const modeOf = (form) => (textOf(form, "mode") === "chain" ? "chain" : "batch");
   const { element } = planForm({

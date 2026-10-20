@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 from tuningfork.analysis.conditions import TIMED_OUT, fork_counted
-from tuningfork.analysis.distribution import Target, cluster_letter
+from tuningfork.analysis.distribution import Target, agreeing_letters
 from tuningfork.analysis.normalize import Outcome
 from tuningfork.analysis.stats import Rate, fisher_exact, holm, rate
 
@@ -163,16 +163,19 @@ def compare_to_baseline(
     target: Target,
     alpha: float = 0.05,
     planned: int,
+    letters: Mapping[str, str] | None = None,
 ) -> ScreenReport:
     """Each arm in `arms` (in the order planned) tested against `baseline` on `target`.
 
     `planned` is the samples each arm, the baseline included, was meant to draw: the
-    family is every arm named, drawn or not."""
+    family is every arm named, drawn or not. `letters`: the resample's that a letter target
+    came from, which the behaviours keep."""
     base, base_hits, base_total = _arm("original", baseline, target, planned)
     counted = [_arm(name, outcomes, target, planned) for name, outcomes in arms.items()]
     return _tested(
         base, base_hits, base_total, counted, alpha=alpha, planned=planned,
-        target=target.description, behaviours=_behaviours({"original": baseline, **arms}, target), reach="step",
+        target=target.description, behaviours=_behaviours({"original": baseline, **arms}, target, letters),
+        reach="step",
     )
 
 
@@ -253,10 +256,13 @@ def _tested(
     )
 
 
-def _behaviours(by_arm: Mapping[str, Sequence[Outcome]], target: Target | None = None) -> list[dict[str, Any]]:
-    """Behaviours lettered over every arm together, each with how many times each arm did it —
-    and, given the screen's target, how many of its samples the target counted (all, none, or
-    some, where a pattern meets what one script of it says and not another's)."""
+def _behaviours(
+    by_arm: Mapping[str, Sequence[Outcome]], target: Target | None = None, letters: Mapping[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Behaviours lettered over every arm together — as `letters` letter them, where given —
+    each with how many times each arm did it, and, given the screen's target, how many of its
+    samples the target counted (all, none, or some, where a pattern meets what one script of it
+    says and not another's)."""
     counts: Counter[str] = Counter()
     counted: Counter[str] = Counter()
     first: dict[str, Outcome] = {}
@@ -274,13 +280,13 @@ def _behaviours(by_arm: Mapping[str, Sequence[Outcome]], target: Target | None =
     ordered = sorted(counts, key=lambda key: (-counts[key], first[key].label))
     return [
         {
-            "letter": cluster_letter(position),
+            "letter": letter,
             "outcome": first[key].to_json(),
             "count": counts[key],
             "by_arm": {name: per_arm[name][key] for name in by_arm},
             **({"target_counted": counted[key]} if target is not None else {}),
         }
-        for position, key in enumerate(ordered)
+        for letter, key in zip(agreeing_letters(ordered, letters), ordered)
     ]
 
 

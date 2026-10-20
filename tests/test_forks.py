@@ -278,6 +278,9 @@ class TestToEnd:
         arm = stack.store.experiments(limit=1)[0]
         body = httpx.get(f"{stack.url}/_tuningfork/api/experiments/{arm.id}").json()
         assert body["to_end"]["direction"] == "up" and body["to_end"]["significant"]
+        # Each arm keeps the level it is judged at, as a step A/B's do.
+        assert {e.arm: e.settings.get("alpha") for e in stack.store.experiments(limit=2)} == {"original": 0.05, "variant": 0.05}
+        assert body["alpha"] == body["alpha_declared"] == 0.05
         # The edit it tested, as its forks were given it: the file has changed since.
         variant.write_text("another wording\n", encoding="utf-8")
         again = cli("experiment", stack.store.experiments(limit=1)[0].id[:8])

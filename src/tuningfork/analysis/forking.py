@@ -19,13 +19,16 @@ chance of the target from each position weighted by how likely each probed token
 et al.'s outcome estimate along the path. Where the run's own token seldom led back to its
 behaviour, what it led to instead says why: the same tools with other arguments, and the target
 is too fine a behaviour to be reproduced; something else, and the step had not decided yet — a
-later token decided it.
+later token decided it. And each behaviour says which tokens led to it, and whether the target
+counts it: a forced token can change what the model does and still miss a target too fine to
+count it.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from tuningfork.analysis.distribution import Target, distribution
 from tuningfork.analysis.normalize import Outcome, called_tools
@@ -126,6 +129,12 @@ class ForkingReport:
     reproduced: Rate | None = None
     #: Continuations planned for each arm.
     per_arm: int = 0
+    #: By behaviour key: the tokens whose continuations reached it, each {"position", "text",
+    #: "original", "count"} — position by position, the run's own token first.
+    led_by: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    #: By behaviour key: how many of its continuations the target counted — all, none, or some
+    #: where a pattern meets what one script says and not another's.
+    counted: dict[str, int] = field(default_factory=dict)
 
     @property
     def detectable(self) -> int | None:
@@ -140,13 +149,17 @@ class ForkingReport:
         return [position.position for position in self.positions if position.why_missed == why]
 
     def to_json(self) -> dict[str, Any]:
+        behaviours = self.behaviours.to_json()
+        for cluster, shown in zip(self.behaviours.clusters, behaviours["clusters"]):
+            shown["target_counted"] = self.counted.get(cluster.outcome.key, 0)
+            shown["by_arm"] = self.led_by.get(cluster.outcome.key, [])
         return {
             "target": self.target,
             "alpha": self.alpha,
             "family": self.family,
             "positions": [position.to_json() for position in self.positions],
             "flips": sum(len(position.flips()) for position in self.positions),
-            "behaviours": self.behaviours.to_json(),
+            "behaviours": behaviours,
             "letters": self.letters,
             "reproduced": self.reproduced.to_json() if self.reproduced else None,
             "missed": {why: self.missed(why) for why in ("too_fine", "undecided")},
@@ -164,11 +177,13 @@ def forking_report(
     alpha: float = 0.05,
     contexts: dict[int, str] | None = None,
     parts: dict[int, str | None] | None = None,
+    letters: Mapping[str, str] | None = None,
 ) -> ForkingReport:
     """Compare every alternative arm with its position's baseline arm.
 
     `arms` are the plan's, each {"position", "id", "text", "p", "original"}; `outcomes_by_arm`
-    holds the behaviours drawn for each, in the same order.
+    holds the behaviours drawn for each, in the same order. `letters`: the resample's that a
+    letter target came from, which the behaviours keep.
     """
     results = []
     for arm, outcomes in zip(arms, outcomes_by_arm):
@@ -215,9 +230,10 @@ def forking_report(
     target_tools = {tools for tools in map(called_tools, reached) if tools}
     for position in positions:
         position.why_missed = _why_missed(position.baseline, target, target_tools)
-    behaviours = distribution(every)
+    behaviours = distribution(every, letters=letters)
     baselines = [outcome for position in positions for outcome in position.baseline.outcomes if not outcome.is_error]
     reproduced = rate(sum(1 for outcome in baselines if target.matches(outcome)), len(baselines)) if baselines else None
+    led_by, counted = _led_by(results, target)
     return ForkingReport(
         positions=positions,
         target=target.description,
@@ -227,7 +243,38 @@ def forking_report(
         letters={cluster.outcome.key: cluster.letter for cluster in behaviours.clusters},
         reproduced=reproduced,
         per_arm=per_arm,
+        led_by=led_by,
+        counted=counted,
     )
+
+
+def _led_by(results: Sequence[ArmResult], target: Target) -> tuple[dict[str, list[dict[str, Any]]], dict[str, int]]:
+    """Which tokens' continuations reached each behaviour, and how many of each behaviour's
+    the target counted. Found on find-the-file: the target, the base's exact call, counted a
+    search with another pattern as a miss, and nothing said which tokens had led to it."""
+    reached: dict[str, Counter[int]] = {}
+    counted: Counter[str] = Counter()
+    for index, result in enumerate(results):
+        for outcome in result.outcomes:
+            if outcome.is_error:
+                continue
+            reached.setdefault(outcome.key, Counter())[index] += 1
+            if target.matches(outcome):
+                counted[outcome.key] += 1
+
+    def order(index: int) -> tuple[int, bool, int]:
+        arm = results[index].arm
+        return int(arm["position"]), not arm.get("original"), index
+
+    led_by = {
+        key: [
+            {"position": int(results[index].arm["position"]), "text": results[index].arm.get("text"),
+             "original": bool(results[index].arm.get("original")), "count": count}
+            for index, count in sorted(by_arm.items(), key=lambda item: order(item[0]))
+        ]
+        for key, by_arm in reached.items()
+    }
+    return led_by, dict(counted)
 
 
 def _why_missed(baseline: ArmResult, target: Target, target_tools: set[tuple[str, ...]]) -> str | None:

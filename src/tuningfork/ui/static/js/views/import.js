@@ -3,10 +3,11 @@
 // it has one, and import. Every skill it shows is kept; the one an A/B, a refinement or a
 // scenario studies is named when it starts. The run then works at its steps as any recorded one.
 
-import { api } from "../api.js";
+import { answered, api } from "../api.js";
 import { guard } from "../auth.js";
+import { checkPicker } from "../checktry.js";
 import { chip, command, crumbs, firstLine, h, kv, loading, longText, panel, plural, replace } from "../dom.js";
-import { field, formError, input } from "../forms.js";
+import { field, formError, input, planForm } from "../forms.js";
 import { live } from "../live.js";
 import { toolsOffered } from "../stepinfo.js";
 
@@ -196,7 +197,7 @@ export async function importView(root, _params, scope) {
 // conversation from there on, each step with what a run does with it. Each of its runs continues
 // the conversation; its inputs are the run's workspace there where tuningfork launched it, and
 // what is made says which files to add where it did not.
-export async function scenarioFromRunView(root, [runId]) {
+export async function scenarioFromRunView(root, [runId], scope) {
   const head = (title) => [
     crumbs([["Runs", "#/runs"], [`run ${runId.slice(0, 8)}`, `#/runs/${runId}`], ["Make a scenario"]]),
     h("div", { class: "page-head" }, h("div", null, h("h1", null, title),
@@ -263,9 +264,23 @@ export async function scenarioFromRunView(root, [runId]) {
   // fields after it keep their places.
   const steps = h("div", { class: "form-field wide" });
   // A launched run's task had a check: the scenario takes it unless told otherwise.
-  const kind = h("select", { class: "field", name: "check_kind" });
-  const check = input("check", { placeholder: "the command, or the text" });
   const hasCheck = () => found.check !== null && found.check !== undefined;
+  // How its runs pass, chosen as a scenario's editor chooses it (`checkPicker`), and tried before
+  // it is trusted on the run it is made of — its final reply, and the workspace it left where
+  // tuningfork launched it — or on a reply and files written here (the user's ask: the same as
+  // a new scenario's).
+  const checks = checkPicker({
+    own: hasCheck() ? found.check : null, scope, name: "run",
+    tester: {
+      runs: () => api.get(`/runs/${runId}`).then((detail) => [detail.run]),
+      runLabel: "The run it is made of",
+      runHelp: "The run this scenario is made of: the check runs in a copy of the workspace it left — a run tuningfork "
+        + "launched keeps one — on its final reply.",
+      task: () => "this run",
+      files: () => [],
+      where: "on the run it is made of, or on a reply you write — before trusting it",
+    },
+  });
   const shown = (before) => {
     replace(studies,
       h("option", { value: "", selected: !found.skill, disabled: true }, "choose the skill it studies"),
@@ -300,17 +315,10 @@ export async function scenarioFromRunView(root, [runId]) {
         : "No skill shows in the conversation: name its folder below.");
     replace(steps, unknown ? null
       : [h("span", { class: "form-label" }, "Each run beside the chat: what it is given, then what it does"), stepsView(found, promptRun)]);
-    const chosen = kind.value;
-    replace(kind,
-      hasCheck()
-        ? h("option", { value: "task" }, `the task's own: ${typeof found.check === "string" ? found.check : JSON.stringify(found.check)}`)
-        : null,
-      h("option", { value: "none" }, "none yet"),
-      h("option", { value: "shell" }, "a shell command, run in each run's workspace"),
-      h("option", { value: "reply_contains" }, "the final reply holds this text"));
-    if ([...kind.options].some((option) => option.value === chosen)) kind.value = chosen;
   };
   shown(found.cut);
+  // The plan on screen is asked again once a new choice of skill, harness or start is drawn.
+  let refreshPlan = null;
   // The answer asked for last is the one shown: a slower one for an earlier choice is dropped.
   let asking = 0;
   const again = (keepStart) => guard(async () => {
@@ -322,6 +330,7 @@ export async function scenarioFromRunView(root, [runId]) {
       if (mine !== asking) return;
       found = answer;
       shown(before);
+      refreshPlan?.();
     } catch (error) {
       if (mine === asking) replace(problem, formError(error));
     }
@@ -331,37 +340,27 @@ export async function scenarioFromRunView(root, [runId]) {
   from.addEventListener("change", again(true));
 
   const done = h("div");
-  const make = h("button", { class: "btn btn-primary", type: "button", "data-control": true }, "Make the scenario");
-  make.addEventListener("click", guard(async () => {
-    replace(problem);
-    const text = check.value.trim();
-    const body = { name: name.value.trim(), harness: harness.value };
-    if (found.cut !== null && found.cut !== undefined) body.cut = found.cut;
+  // What the form says, as the body `POST /runs/{run}/scenario` takes.
+  function body() {
+    const said = { name: name.value.trim(), harness: harness.value };
+    if (found.cut !== null && found.cut !== undefined) said.cut = found.cut;
     // Sent only where the person changed it: else the scenario keeps the chat's words as they were.
-    if (edited) body.prompt = prompt.value;
-    if (studies.value || found.skill) body.skill = studies.value || found.skill;
-    if (folder.value.trim()) body.skill_dir = folder.value.trim();
-    // Sent as nothing, the check is the task's own where the run's task had one.
-    if (kind.value === "none" && hasCheck()) body.task_check = false;
-    if (kind.value === "shell" && text) body.check = text;
-    if (kind.value === "reply_contains" && text) body.check = { reply_contains: text };
-    make.disabled = true;
-    try {
-      const made = await api.post(`/runs/${runId}/scenario`, body);
-      replace(done, panel("Made", h("div", { class: "stack" },
-        (made.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-        made.harness && made.harness !== "hermes"
-          ? h("p", { class: "hint" }, `Its runs go through ${made.harness}: choose it when you run the scenario.`) : null,
-        h("div", { class: "actions" },
-          h("a", { class: "btn btn-primary", href: `#/scenarios/${made.scenario.name}` }, "Open the scenario")))));
-    } catch (error) {
-      replace(problem, formError(error));
-      make.disabled = false;
-    }
-  }));
-  replace(root, ...head("Make a scenario"),
-    panel("The scenario", h("div", { class: "stack" },
-      several ? null : h("p", { class: "hint" }, about),
+    if (edited) said.prompt = prompt.value;
+    if (studies.value || found.skill) said.skill = studies.value || found.skill;
+    if (folder.value.trim()) said.skill_dir = folder.value.trim();
+    // Sent as nothing, the check is the task's own where the run's task had one; a kind chosen
+    // with nothing typed for it yet is no check, as it is in a scenario's editor.
+    const { kind, text } = checks.value();
+    const wording = kind === "shell" ? text.trim() : text;
+    if (kind !== "own" && kind !== "none" && wording) said.check = kind === "shell" ? text : { [kind]: text };
+    else if (kind !== "own" && hasCheck()) said.task_check = false;
+    return said;
+  }
+  // What will be made, shown as the form is filled in, as `tuningfork scenario --dry-run` shows it
+  // — and made only as shown (found in review: every other form that makes something showed its
+  // plan first, and this one said what was wrong only after it was asked to make it).
+  const plan = planForm({
+    fields: [
       h("div", { class: "form-grid" },
         found.recorded_harness ? null
           : field("Harness", harness, { help: "The agent the conversation was had with: the run does not say, so this is "
@@ -378,15 +377,58 @@ export async function scenarioFromRunView(root, [runId]) {
           + "put it in each run's workspace." }),
         fromNote,
         steps,
-        field("Check", kind, { help: "What passes. Without one, runs have no verdict until it has one." }),
-        field("Its text", check, { wide: true })),
+        h("div", { class: "form-field wide" }, checks.element)),
       h("p", { class: "hint" }, found.launched
         ? "Its inputs: the run's workspace where the scenario starts, from the snapshots tuningfork took as it ran."
         : "Its inputs: the run kept none. What is made says which files its conversation names, to add on the "
           + "scenario's page."),
+    ],
+    read: () => {
+      const said = body();
+      if (!said.name) throw Object.assign(new Error("Name the scenario: lowercase letters, digits, - and _."), { field: "scenario_name" });
+      return said;
+    },
+    render: scenarioPlan,
+    startLabel: "Make the scenario",
+    send: async (params, extra) =>
+      answered(await api.post(`/runs/${runId}/scenario`, extra.dry_run ? { ...params, dry_run: true, quiet: true } : params)),
+    onStarted: (made) => replace(done, panel("Made", h("div", { class: "stack" },
+      (made.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
+      made.harness && made.harness !== "hermes"
+        ? h("p", { class: "hint" }, `Its runs go through ${made.harness}: choose it when you run the scenario.`) : null,
+      h("div", { class: "actions" },
+        h("a", { class: "btn btn-primary", href: `#/scenarios/${made.scenario.name}` }, "Open the scenario"))))),
+  });
+  refreshPlan = plan.refresh;
+  replace(root, ...head("Make a scenario"),
+    panel("The scenario", h("div", { class: "stack" },
+      several ? null : h("p", { class: "hint" }, about),
       problem,
-      h("div", { class: "actions" }, make))),
+      plan.element)),
     done);
+}
+
+/** What a scenario of a run would be, as `prepare_scenario` plans it: written nowhere yet. */
+function scenarioPlan(plan) {
+  const check = plan.check === null || plan.check === undefined
+    ? h("span", { class: "muted" }, "none yet: its runs have no verdict until it has one")
+    : typeof plan.check === "string" ? h("span", { class: "mono" }, plan.check)
+      : plan.check.reply_contains !== undefined ? ["the final reply holds ", h("span", { class: "mono" }, JSON.stringify(plan.check.reply_contains))]
+        : plan.check.reply_matches !== undefined ? ["the final reply matches ", h("span", { class: "mono" }, `/${plan.check.reply_matches}/`)]
+          : h("span", { class: "mono" }, JSON.stringify(plan.check));
+  return h("div", { class: "stack", style: { gap: "6px" } },
+    kv([
+      ["scenario", [h("span", { class: "mono" }, plan.name), h("span", { class: "muted" }, ", a task of its own on the Scenarios page")]],
+      ["its skill", [h("span", { class: "mono" }, plan.skill), h("span", { class: "muted" }, plan.own_skill
+        ? " — a copy kept in the scenario's own folder" : " — tuned in its folder, "), plan.own_skill ? null : h("span", { class: "mono" }, plan.skill_dir)]],
+      ["each run", `continues ${plural(plan.context, "message")} of the conversation`
+        + (plan.in_turn ? `, then ${plural(plan.in_turn, "message")} of the prompt's own turn, given as done` : "")
+        + (plan.next_skill ? `; it stops where its model loads ${plan.next_skill.skill}` : "")],
+      ["its check", check],
+      ["its inputs", plan.files.length ? h("span", { class: "mono" }, plan.files.join(", "))
+        : h("span", { class: "muted" }, "none kept: add the files its conversation names on its page")],
+    ]),
+    (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)));
 }
 
 // Which of the person's messages the starting prompt is, and why their others are not offered.

@@ -66,7 +66,7 @@ export async function startForm(kind, step, query = new URLSearchParams(), { go 
     return panel(`Fork the run at step ${step.idx}`, forkForm(step), options);
   }
   if (kind === "forking-tokens") {
-    return panel(`Find the forking tokens at step ${step.idx}`, forkingForm(step, query), options);
+    return panel(`Find the forking tokens at step ${step.idx}`, await forkingForm(step, query), options);
   }
   if (kind === "refine") {
     return panel(`Refine the skill at step ${step.idx}`, await refineStartForm(step), options);
@@ -82,8 +82,16 @@ const REGIONS = [
   ["all", "Anywhere", "the likeliest forks wherever they are"],
 ];
 
-function forkingForm(step, query) {
+async function forkingForm(step, query) {
   const picked = query.get("positions") || "";
+  // The tools the step's own answer calls: where it calls any, the target first offered is
+  // calling them, with any arguments. Found on find-the-file: the answer's exact call counted
+  // a search with another pattern as a miss, so a token that changed what the model did went
+  // unseen.
+  const detail = await api.get(`/runs/${enc(step.run.id)}/steps/${step.idx}?context=0`).catch(() => null);
+  const calls = [...new Set((detail?.response?.choices?.[0]?.message?.tool_calls || [])
+    .map((call) => call.function?.name).filter(Boolean))];
+  const callsRules = calls.map((name) => ({ if: "calls", value: name }));
   const regions = h("fieldset", { class: "target-picker" }, h("legend", null, "Where to look, when no positions are named"),
     REGIONS.map(([value, label, detail]) =>
       h("label", { class: "target-choice" },
@@ -103,9 +111,17 @@ function forkingForm(step, query) {
   const pattern = input("target_match", { placeholder: "a regular expression, e.g. row_count" });
   pattern.addEventListener("input", () => pick("match"));
   const target = h("fieldset", { class: "target-picker" }, h("legend", null, "What counts as the same behaviour (declared before sampling)"),
+    calls.length
+      ? h("label", { class: "target-choice" },
+          h("input", { type: "radio", name: "target_kind", value: "tools", checked: true }),
+          h("span", null, h("strong", null, `Calls ${calls.join(" and ")}`),
+            h("span", { class: "muted small" }, " — the tools the answer calls, with any arguments: a continuation that calls them another way still counts")))
+      : null,
     h("label", { class: "target-choice" },
-      h("input", { type: "radio", name: "target_kind", value: "base", checked: true }),
-      h("span", null, h("strong", null, "The answer's own behaviour"), h("span", { class: "muted small" }, " — the base's tool call or reply, read the way every continuation is read"))),
+      h("input", { type: "radio", name: "target_kind", value: "base", checked: !calls.length }),
+      h("span", null, h("strong", null, "The answer's own behaviour"), h("span", { class: "muted small" }, calls.length
+        ? " — the base's exact tool call, arguments and all, read the way every continuation is read"
+        : " — the base's tool call or reply, read the way every continuation is read"))),
     h("label", { class: "target-choice" },
       h("input", { type: "radio", name: "target_kind", value: "describe" }),
       h("span", null, h("strong", null, "A behaviour I describe"), h("span", { class: "muted small" }, " — the tools it calls, the phrases it mentions"))),
@@ -163,6 +179,8 @@ function forkingForm(step, query) {
         params.target_match = pattern;
       } else if (kind === "describe") {
         params.target_rules = builder.read();
+      } else if (kind === "tools") {
+        params.target_rules = callsRules;
       }
       return params;
     },
@@ -175,6 +193,7 @@ function forkingForm(step, query) {
   const declared = () => {
     const kind = element.querySelector('[name="target_kind"]:checked')?.value;
     if (kind === "match") return textOf(element, "target_match").trim() ? { target_match: textOf(element, "target_match").trim() } : {};
+    if (kind === "tools") return { target_rules: callsRules };
     if (kind === "describe") {
       try {
         return { target_rules: builder.read() };
@@ -253,11 +272,11 @@ const opened = (job) => (location.hash = `#/jobs/${job.id}`);
 function samplingFields({ alpha = false } = {}) {
   return [
     h("div", { class: "form-grid" },
-      field("Samples", input("n", { type: "number", value: 20, min: 1, max: 1000 }), { help: alpha ? "Per arm." : "More samples, a narrower interval." }),
-      field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 64 }), { help: "The proxy's --max-inflight still caps the server." })),
+      field("Samples", input("n", { type: "number", value: 20, min: 1, max: 1000 }), { help: alpha ? "Per arm." : "More samples, a narrower interval." })),
     h("details", { class: "fold more-settings" },
       h("summary", null, "More settings"),
       h("div", { class: "form-grid" },
+        field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 64 }), { help: "The proxy's --max-inflight still caps the server." }),
         field("Max tokens", input("max_tokens", { type: "number", value: 4096, min: 1 }), { help: "Hitting it counts as truncated." }),
         seedField(),
         cacheField(),
@@ -407,9 +426,12 @@ async function abBody(step, toEnd, skill, named) {
 function forkFields({ alpha = false, n = 5 } = {}) {
   return [
     h("div", { class: "form-grid" },
-      field("Forks", input("n", { type: "number", value: n, min: 1, max: 200 }), { help: alpha ? "Per arm. Each is a full run from here: minutes, not seconds." : "Each is a full run from here: minutes, not seconds." }),
-      field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "No more than the proxy's --max-inflight; on one GPU, 1 is fastest." }),
-      alpha ? field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" })) : null),
+      field("Forks", input("n", { type: "number", value: n, min: 1, max: 200 }), { help: alpha ? "Per arm. Each is a full run from here: minutes, not seconds." : "Each is a full run from here: minutes, not seconds." })),
+    h("details", { class: "fold more-settings" },
+      h("summary", null, "More settings"),
+      h("div", { class: "form-grid" },
+        field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "No more than the proxy's --max-inflight; on one GPU, 1 is fastest." }),
+        alpha ? field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" })) : null)),
   ];
 }
 
@@ -465,8 +487,10 @@ function forkForm(step) {
   const { element } = planForm({
     kind: "fork",
     fields: [holds, h("div", { class: "form-grid" },
-      field("Forks", input("n", { type: "number", value: 1, min: 1, max: 20 })),
-      field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 })))],
+      field("Forks", input("n", { type: "number", value: 1, min: 1, max: 20 }))),
+      h("details", { class: "fold more-settings" },
+        h("summary", null, "More settings"),
+        h("div", { class: "form-grid" }, field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }))))],
     read: (form) => ({
       run: step.run.id,
       step: String(step.idx),

@@ -436,6 +436,10 @@ class ExperimentReport:
     screen: Any = None
     #: An A/B's edit: its two texts as a line diff (`ops.experiments.ab_wording`).
     wording: Any = None
+    #: An A/B's significance level: the one it is judged at here, and the one it was declared
+    #: with (`declared_alpha`; None where nothing kept it).
+    alpha: float | None = None
+    alpha_declared: float | None = None
 
     @property
     def interrupted_arm(self) -> str | None:
@@ -468,6 +472,8 @@ class ExperimentReport:
             "hold_id": found.hold_id,
             "origin": found.settings.get("origin"),
             "trashed_at": found.trashed_at,
+            "alpha": report.alpha,
+            "alpha_declared": report.alpha_declared,
         }
         if report.wording is not None:
             base["wording"] = report.wording.to_json()
@@ -519,9 +525,28 @@ class ExperimentReport:
         return next(iter(self.arms), None) if self.kind in ("interrupted", "ab_running") else None
 
 
+def declared_alpha(store: Store, experiment: Any) -> float | None:
+    """The significance level an A/B was declared with: kept with its arms — or, for one run
+    before it was kept, its job's own, where a job started it. None where neither says."""
+    def level(value: Any) -> float | None:
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+    kept = level(experiment.settings.get("alpha"))
+    if kept is not None:
+        return kept
+    job = store.get_job(experiment.job_id) if experiment.job_id else None
+    if job is None or job.kind not in ("ab", "ab-to-end"):
+        return None
+    # A job that named none ran at its kind's default.
+    return level((job.params or {}).get("alpha", 0.05))
+
+
 def experiment_report(
-    store: Store, reference: str, *, lens: Sequence[str] | None = None, alpha: float = 0.05
+    store: Store, reference: str, *, lens: Sequence[str] | None = None, alpha: float | None = None
 ) -> ExperimentReport:
+    """A stored experiment's result, as it reads again. An A/B is judged at the significance
+    level it was declared with, unless `alpha` names another (found in review: one declared at
+    0.01 was judged at 0.05 on its own page, while its job's page said 0.01)."""
     from tuningfork.analysis.distribution import compare_arms
     from tuningfork.experiment import (
         CheckpointError,
@@ -531,6 +556,7 @@ def experiment_report(
         experiment_reasoning,
         load_checkpoint,
     )
+    from tuningfork.experiment.sampling import target_letters
     from tuningfork.ops.forks import arm_summary, compare_to_end
 
     found = store.get_experiment(reference)
@@ -598,10 +624,13 @@ def experiment_report(
         else:
             report.distribution = experiment_distribution(store, arm, lens)
         return report
+    # Judged at the level it was declared with, unless asked to judge at another.
+    report.alpha_declared = declared_alpha(store, arms["original"])
+    report.alpha = alpha if alpha is not None else report.alpha_declared if report.alpha_declared is not None else 0.05
     if to_end:
         report.kind = "ab_to_end"
         report.to_end = compare_to_end(
-            arm_summary(store, arms["original"]), arm_summary(store, arms["variant"]), alpha
+            arm_summary(store, arms["original"]), arm_summary(store, arms["variant"]), report.alpha
         )
         return report
     declared, report.target_note = declared_target(arms["original"], lens)
@@ -610,8 +639,9 @@ def experiment_report(
         experiment_outcomes(store, arms["original"], lens),
         experiment_outcomes(store, arms["variant"], lens),
         target=declared,
-        alpha=alpha,
+        alpha=report.alpha,
         reasoning=(experiment_reasoning(store, arms["original"]), experiment_reasoning(store, arms["variant"])),
+        letters=target_letters(store, declared.spec, lens) if declared else None,
     )
     return report
 

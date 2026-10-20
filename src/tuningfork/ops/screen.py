@@ -858,11 +858,14 @@ def screen_result(store: Store, reference: str) -> ScreenResult:
         report.reused = sum(judged_forks(store, arm) for arm in by_arm.get(BASELINE, []) if arm.id in reused)
         report.checkpoints = checkpoint_breakdown(store, by_arm, planned.get("checkpoints") or [])
         return ScreenResult(group_id=group_id, experiments=arms, report=report, by_arm=by_arm)
+    from tuningfork.experiment.sampling import target_letters
+
     target = target_from_spec(arms[BASELINE].settings["target"])
     report = compare_to_baseline(
         experiment_outcomes(store, arms[BASELINE]),
         {name: experiment_outcomes(store, arms[name]) if name in arms else [] for name in names},
         target=target, alpha=alpha, planned=per_arm,
+        letters=target_letters(store, arms[BASELINE].settings["target"]),
     )
     return ScreenResult(group_id=group_id, experiments=arms, report=report, by_arm=by_arm)
 

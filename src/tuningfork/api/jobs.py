@@ -80,7 +80,7 @@ def job_routes(*, store: Any, runner: Any = None) -> list[Route]:
     async def submit(request: Request) -> Response:
         try:
             body = await _json_body(request)
-            unknown = sorted(set(body) - {"kind", "params", "dry_run", "request_id", "started_by", "dedupe"})
+            unknown = sorted(set(body) - {"kind", "params", "dry_run", "quiet", "request_id", "started_by", "dedupe"})
             if unknown:
                 raise OperationError(f"unknown field {unknown[0]!r}", code="bad_params", field=unknown[0])
             # The address this request reached is the proxy's own: where its jobs send
@@ -88,7 +88,14 @@ def job_routes(*, store: Any, runner: Any = None) -> list[Route]:
             runner.proxy.attach(asyncio.get_running_loop(), str(request.base_url))
             kind, params = body.get("kind"), body.get("params", {})
             if body.get("dry_run"):
-                return JSONResponse(await asyncio.to_thread(runner.plan, kind, params))
+                try:
+                    return JSONResponse(await asyncio.to_thread(runner.plan, kind, params))
+                except OperationError as error:
+                    if not body.get("quiet"):
+                        raise
+                    # A form asking as it is filled in: the refusal is its answer, never an error
+                    # a browser logs (found in review: an ordinary visit logged them in the console).
+                    return JSONResponse({"refused": error.to_json()})
             job = await asyncio.to_thread(
                 runner.submit, kind, params, request_id=body.get("request_id"),
                 started_by=body.get("started_by"), dedupe=bool(body.get("dedupe")),

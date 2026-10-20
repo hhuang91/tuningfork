@@ -6,7 +6,7 @@
 // server has not seen. Starting twice from one form (a double click, a retry) is one job:
 // each start carries the form's request id.
 
-import { api } from "./api.js";
+import { answered, api } from "./api.js";
 import { guard } from "./auth.js";
 import { h, replace } from "./dom.js";
 
@@ -65,9 +65,10 @@ export function samplingChoices(form) {
   return { ...(seed !== null ? { seed_base: seed } : {}), prompt_cache: form.querySelector('[name="prompt_cache"]')?.checked === true };
 }
 
-/** A refusal as the server gave it: what, why, and the field it is about. */
-export function formError(error) {
-  return h("div", { class: "form-error-box", role: "alert" },
+/** A refusal as the server gave it: what, why, and the field it is about. `quiet`: said of a
+ *  form nobody has touched yet, where it is what to fill in, not a mistake — a note, not red. */
+export function formError(error, { quiet = false } = {}) {
+  return h("div", { class: quiet ? "form-note-box" : "form-error-box", role: quiet ? "status" : "alert" },
     h("strong", null, error.message || String(error)),
     error.hint ? h("div", { class: "hint" }, error.hint) : null,
     error.detail ? h("pre", { class: "code small" }, error.detail) : null);
@@ -83,9 +84,14 @@ const newId = () =>
  * read      (form) => parameters; throws { message, field } for what the form can tell itself
  * render    (plan) => the preview of the server's plan
  * onStarted (job) => what to do once the job is queued
+ * send      (params, { dry_run, request_id }) => the server's answer, for a form whose work is
+ *           not a job: by default `POST /jobs` with `kind`. A dry run asks `quiet`: its refusal
+ *           is an answer (`answered`), never an error a browser logs.
  */
-export function planForm({ kind, fields, read, render, startLabel = "Start", onStarted }) {
+export function planForm({ kind, fields, read, render, startLabel = "Start", onStarted, send = null }) {
   const kindOf = typeof kind === "function" ? kind : () => kind;
+  const post = send || (async (params, extra) =>
+    answered(await api.post("/jobs", { kind: kindOf(form), params, ...extra, ...(extra.dry_run ? { quiet: true } : {}) })));
   const status = h("div", { class: "plan-status" });
   const preview = h("div", { class: "plan-preview" });
   const start = h("button", { class: "btn btn-primary", type: "submit", disabled: true, "data-control": true }, startLabel);
@@ -95,10 +101,25 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
   let checking = false;
   let requestId = newId();
   let timer = null;
+  // Whether the form says anything other than it did when it opened, or Start was pressed: until
+  // then a refusal says what to fill in, as a note (found in review: four forms opened on a red
+  // error nobody had made).
+  let touched = false;
+  let opened = null;
 
   // novalidate: the server checks every field and says which is wrong. The browser's own
   // checks would block a submit silently — a number off its step grid is enough.
-  const form = h("form", { class: "plan-form", novalidate: true, onsubmit: guard(submit), oninput: changed, onchange: changed },
+  // A form inside this one — a check's tester, in a scenario's form — answers its own fields
+  // and its own submit; theirs bubble here, and are not this form's (a tester's Try it would
+  // otherwise have made the scenario too).
+  const ours = (event) => !event?.target?.closest || event.target.closest("form") === form;
+  const started = guard(submit);
+  const form = h("form", {
+    class: "plan-form", novalidate: true,
+    onsubmit: (event) => (ours(event) ? started(event) : undefined),
+    oninput: (event) => (ours(event) ? changed(event) : undefined),
+    onchange: (event) => (ours(event) ? changed(event) : undefined),
+  },
     fields,
     h("div", { class: "plan-box" }, h("div", { class: "label" }, "What will run"), status, preview),
     h("div", { class: "form-actions" }, start, note));
@@ -111,12 +132,23 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     }
   }
 
+  /** What the form says, as one string: its parameters, or the reason it has none. */
+  function said() {
+    const { params, error } = current();
+    return params ? JSON.stringify(params) : `!${error?.message}`;
+  }
+
   function mark(name) {
     for (const invalid of form.querySelectorAll(".field-invalid")) invalid.classList.remove("field-invalid");
-    if (name) form.querySelector(`[name="${CSS.escape(name)}"]`)?.classList.add("field-invalid");
+    const found = name ? form.querySelector(`[name="${CSS.escape(name)}"]`) : null;
+    found?.classList.add("field-invalid");
+    // A field folded away under More settings is opened, so the one refused can be seen.
+    const fold = found?.closest("details");
+    if (fold) fold.open = true;
   }
 
   function changed(event) {
+    if (event && !touched) touched = said() !== opened;
     // An event that leaves what the form says as its plan came back: a text field's change as it
     // loses the focus, after its input events asked already. Start stays as it is: disabled there,
     // on the mousedown that moves the focus to Start, it lost the click that followed. A refresh
@@ -136,8 +168,8 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     const { params, error } = current();
     if (error) {
       shown = null;
-      mark(error.field);
-      replace(status, formError(error));
+      mark(touched ? error.field : null);
+      replace(status, formError(error, { quiet: !touched }));
       replace(preview);
       sync();
       return;
@@ -146,7 +178,7 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     sync();
     replace(status, h("span", { class: "muted small waiting-inline" }, h("span", { class: "spinner" }), "checking…"));
     try {
-      const answer = await api.post("/jobs", { kind: kindOf(form), params, dry_run: true });
+      const answer = await post(params, { dry_run: true });
       if (mine !== asked) return; // the form changed while this was asked
       shown = JSON.stringify(params);
       mark(null);
@@ -155,8 +187,8 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     } catch (failure) {
       if (mine !== asked) return;
       shown = null;
-      mark(failure.field);
-      replace(status, formError(failure));
+      mark(touched ? failure.field : null);
+      replace(status, formError(failure, { quiet: !touched }));
       replace(preview);
     } finally {
       if (mine === asked) {
@@ -173,6 +205,7 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
 
   async function submit(event) {
     event.preventDefault();
+    touched = true;
     const { params } = current();
     if (!params || JSON.stringify(params) !== shown) {
       changed();
@@ -181,7 +214,7 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     start.disabled = true;
     note.textContent = "starting…";
     try {
-      const job = await api.post("/jobs", { kind: kindOf(form), params, request_id: requestId });
+      const job = await post(params, { request_id: requestId });
       requestId = newId();
       note.textContent = "";
       onStarted(job);
@@ -193,6 +226,7 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     }
   }
 
+  opened = said();
   check(); // the plan for the form as it opens
   return { element: form, refresh: () => changed() };
 }

@@ -333,7 +333,7 @@ export function tokensPanel({ run, idx, scope, onProbe, focus = null }) {
       probes.map((probe, index) => [index ? ", " : null,
         h("a", { class: "mono", href: `#/experiments/${probe.experiment.id}` }, short(probe.experiment.id)),
         ` (${plural(probe.positions.reduce((total, position) => total + position.alternatives.filter((alt) => alt.flips).length, 0), "flip")})`]),
-      ". The tokens they forced are ringed: solid where a forced token changed what the model did.");
+      ". The tokens they forced are ringed: doubled where a forced token changed what the model did.");
   }
 
   function unscored() {

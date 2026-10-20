@@ -686,7 +686,9 @@ def execute_ab_to_end(
             arms.append(
                 execute_to_end(
                     store, plan, n, kind="ab", arm=name, group_id=group,
-                    concurrency=concurrency, progress=note, cancel=cancel, finalize=False, tag=tag,
+                    concurrency=concurrency, progress=note, cancel=cancel, finalize=False,
+                    # The level it is judged at, kept with both arms as a step A/B keeps it.
+                    tag={**(tag or {}), "alpha": alpha},
                 )
             )
         except Cancelled as stopped:

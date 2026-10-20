@@ -196,15 +196,18 @@ export function workspacePanel(step) {
   });
 }
 
+/** How a step was sampled and how long it took; null when nothing was recorded of either. */
 export function detailsPanel(step) {
   const params = step.params || {};
   const defaults = step.server_defaults || {};
+  const rows = [
+    ...Object.entries(params).map(([key, value]) => [key, h("span", { class: "mono" }, typeof value === "object" ? JSON.stringify(value) : String(value))]),
+    ["time to first token", step.timings?.ttft_ms != null ? millis(step.timings.ttft_ms) : null],
+    ["total time", step.timings?.total_ms != null ? millis(step.timings.total_ms) : null],
+  ].filter(([, value]) => value !== null && value !== undefined);
+  if (!rows.length && !Object.keys(defaults).length) return null;
   return panel("Sampling and timing", [
-    kv([
-      ...Object.entries(params).map(([key, value]) => [key, h("span", { class: "mono" }, typeof value === "object" ? JSON.stringify(value) : String(value))]),
-      ["time to first token", step.timings?.ttft_ms != null ? millis(step.timings.ttft_ms) : null],
-      ["total time", step.timings?.total_ms != null ? millis(step.timings.total_ms) : null],
-    ]),
+    kv(rows),
     Object.keys(defaults).length
       ? h("details", { class: "fold" }, h("summary", null, "Server defaults at the time"), h("pre", { class: "code" }, pretty(defaults)))
       : null,
