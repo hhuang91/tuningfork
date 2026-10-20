@@ -1398,7 +1398,7 @@ The proxy serves the web UI at the address it printed, with its token:
 Everything this part did from the terminal can be started from the web UI, as jobs the
 proxy runs. Open the address `tuningfork serve` printed — the one with `?token=`:
 
-1. **Scenarios** → *Import a spec*: the absolute path of `examples/tally-report.evals.json`,
+1. **Scenarios** → *Add a task file you have*: the absolute path of `examples/tally-report.evals.json`,
    named `tally-report`. The editor shows the spec exactly as it will be saved, keeps the
    skill folder where it is, and flags the check for what it is: a shell command that runs,
    as you, in every run's workspace.
@@ -1414,12 +1414,13 @@ proxy runs. Open the address `tuningfork serve` printed — the one with `?token
    runs. The plan says what will be sent, through the proxy, and how long it may take. The
    finished job links the experiment.
 4. *A/B a wording…* opens an editor holding the skill as that run was given it. Make the
-   change `SKILL.v2.md` makes — or paste the file — name it, and say what the A/B is about:
+   change `SKILL.v2.md` makes — or paste the file — name it, and choose what to count:
    *What the model does matches a pattern*, `row_count`. Nothing is chosen for you. The
    plan shows where the skill sits in the context, and any part of your edit the model
    never sees at this step. The variant is saved in the recordings folder when the A/B
    starts, never beside the skill.
-5. *Reach: each to the end* turns either form into forks followed to the task's check.
+5. *Judge each try by: whether the whole run then passes* turns either form into forks
+   followed to the task's check.
    *Fork from here…* stops a fork at the step for you; on the **Live** page, *Evidence at
    this call* samples the held call where it stands, and *Hypotheses, not evidence* asks
    the model about it — its answer is its own account, never a result.

@@ -586,8 +586,9 @@ there. Neither can be undone.
 
 ### `glossary`, `version`
 
-`glossary [word]` gives tuningfork's words, each defined once, as the web UI's front page shows
-them. `version` prints the version.
+`glossary [word]` gives tuningfork's words, each defined once, as the web UI's Words page shows
+them: where the pages say a word more plainly ("wording" for an arm, "test at this step" for a
+screen), the word's entry says that too. `version` prints the version.
 
 ### `mcp`
 

@@ -76,7 +76,7 @@ recorded, not after a failed run:
 | `n_ctx` of at least 64,000 | Hermes refuses a model reporting less, before its first request (above) |
 | Streaming tool calls | Hermes streams every call and acts on the tool calls in the stream |
 
-What a server offers is measured, not assumed: `tuningfork connections check` (or *Check
+What a server offers is measured, not assumed: `tuningfork connections check` (or *Test
 the server* on the Connections page) makes one streaming tool call and one `/v1/messages`
 call through the proxy, and keeps the answers with the server's identity. Until a server
 is checked, a launch goes ahead with a note that the requirement was not measured.
