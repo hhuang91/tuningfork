@@ -8,6 +8,11 @@ home, so even that leaves nothing behind.
 Before a batch or a fork launches a harness, its `requirements` of the server are checked
 (`preflight`): a context too small for Hermes, or no `/v1/messages` for Claude Code, is
 refused before a launch is recorded, not found out from a failed run.
+
+Token work is held to the same check (`token_work`): scoring an answer, forking tokens and
+keeping each sample's tokens each need something a server check measures, and one the check
+found the server without is refused before anything is sent, saying what was missing — the
+web UI greys its way in, with the same words. What was never measured refuses nothing.
 """
 
 from __future__ import annotations
@@ -281,7 +286,7 @@ class ServerCheckPlan:
     #: What a harness needs, then what token-level work needs.
     checks: tuple[str, ...] = (
         "streaming_tool_calls", "anthropic_messages", "fresh_prompts", "output_format", "prompt_equivalence",
-        "raw_completion",
+        "raw_completion", "logprobs",
     )
 
     def to_json(self) -> dict[str, Any]:
@@ -317,7 +322,8 @@ def prepare_server_check(proxy: Any, model: str | None = None) -> ServerCheckPla
 async def execute_server_check(store: Any, plan: ServerCheckPlan, *, progress: Any = None) -> dict[str, Any]:
     """Small calls, one at a time: what the harnesses need — a streaming tool call and a
     Messages call — then what token-level work needs: a known output format, a prompt rendered
-    as the chat endpoint renders it, and a raw completion with forced tokens."""
+    as the chat endpoint renders it, a raw completion with forced tokens, and the chat
+    endpoint's own token probabilities."""
     import httpx
 
     from tuningfork.backends.probe import (
@@ -354,3 +360,62 @@ async def execute_server_check(store: Any, plan: ServerCheckPlan, *, progress: A
     checks = {"checked_at": time.time(), "model": plan.model, "results": results}
     store.set_server_checks(plan.server_id, checks)
     return {"server_id": plan.server_id, **checks}
+
+
+# --- token work, held to the check ------------------------------------------------------------
+
+#: What each of a server check's measurements is, and what needs it: the Connections page's
+#: table, and the words a refusal of token work uses (`token_work`).
+MEASURES: dict[str, tuple[str, str]] = {
+    "streaming_tool_calls": ("tool calls while streaming", "Hermes, which streams every call and acts on its tool calls"),
+    "anthropic_messages": ("the Messages endpoint, /v1/messages", "Claude Code, which speaks only /v1/messages"),
+    "fresh_prompts": ("every prompt processed whole", "samples and forks that do not depend on what the server ran before"),
+    "known_output_format": ("a model whose raw output tuningfork reads", "scoring an answer and forking tokens: each token read as the model wrote it"),
+    "prompt_equivalence": ("prompts rendered as the chat endpoint renders them", "scoring an answer against the exact prompt its step was sent"),
+    "raw_completion": ("a raw completion with each token's probabilities", "scoring an answer (its heatmap) and forking tokens: tokens forced, each one's chance read"),
+    "logprobs": ("token probabilities from the chat endpoint (logprobs)", "keeping each sample's tokens in a resample, for its heatmap"),
+    "top_logprobs": ("the alternatives at each token (top_logprobs)", "what else the model weighed at each of a sample's tokens"),
+    "logprobs_all_tokens": ("probabilities for every token generated", "a sample's heatmap over its reasoning and tool calls, not only its reply"),
+}
+
+#: Each kind of token work: what it is called, the measurements it needs, and the server that
+#: has them. Scoring renders the step's prompt and forces the answer through llama.cpp's own
+#: endpoints; forking tokens forces tokens the same way; a resample keeps each sample's tokens
+#: from the chat endpoint's logprobs.
+TOKEN_WORK: dict[str, tuple[str, tuple[str, ...], str]] = {
+    "score": ("Scoring an answer", ("raw_completion", "prompt_equivalence", "known_output_format"),
+              "llama.cpp's server running a model tuningfork reads (Gemma 4)"),
+    "forking": ("Forking tokens", ("raw_completion", "known_output_format"),
+                "llama.cpp's server running a model tuningfork reads (Gemma 4)"),
+    "logprobs": ("Keeping each sample's tokens", ("logprobs",), "a server whose chat endpoint returns logprobs, as llama.cpp's does"),
+}
+
+
+def token_work(checks: dict[str, Any] | None) -> dict[str, str | None]:
+    """Why the server's check says each kind of token work cannot be done on it, or None.
+    Only a measurement that found the server without something is a reason: one never made,
+    or that could not tell, leaves the work to start and the server to say."""
+    measured = (checks or {}).get("results") or {}
+    reasons: dict[str, str | None] = {}
+    for work, (what, needs, _) in TOKEN_WORK.items():
+        missing = [name for name in needs if (measured.get(name) or {}).get("support") == "no"]
+        if not missing:
+            reasons[work] = None
+            continue
+        details = "; ".join(measured[name].get("detail") or "no detail" for name in missing)
+        reasons[work] = (
+            f"{what} needs {' and '.join(MEASURES[name][0] for name in missing)}: the server check found this "
+            f"server without {'it' if len(missing) == 1 else 'them'} ({details})"
+        )
+    return reasons
+
+
+def refuse_token_work(store: Any, proxy: Any, work: str, *, field: str | None = None) -> None:
+    """Refuse token work the proxy's server was measured unable to do, before anything is sent."""
+    server = proxy.raw.get("server") or {}
+    reason = token_work(store.server_checks(server.get("id"))).get(work)
+    if reason:
+        raise OperationError(
+            reason, code="unsupported", field=field,
+            hint=f"on Connections, point the proxy at {TOKEN_WORK[work][2]}, or check this server again if it has changed",
+        )

@@ -289,6 +289,27 @@ class TestLogprobs:
         stream = TokenStream.from_json(store.token_stream_data(record))
         assert stream.text() == "<|channel>thought\nhm<channel|>abcdefghijklmnop"
         assert [kind for kind, _, _ in stream.parts] == ["marker", "reasoning", "marker", "content", "marker"]
+        from tuningfork.ops.inspect import experiment_report
+
+        assert experiment_report(store, experiment.id).tokens_kept == 1
+        assert not any("sent none back" in note for note in experiment.notes)
+
+    async def test_a_server_that_sends_none_back_is_said_to(self, store, mock_server, client):
+        """Found in review: asked for and accepted with nothing back — a server without logprobs —
+        the resample kept no tokens and said nothing, and its page said each sample had kept them."""
+        from tuningfork.ops.inspect import experiment_report
+
+        mock_server.script(MockTurn(content="abc"), MockTurn(content="abd"))
+        checkpoint = load_checkpoint(store, record_pilot(store), 0)
+
+        experiment = await run_resample(
+            store, checkpoint, SamplingPlan(n=2, logprobs=5), base_url=UPSTREAM, client=client
+        )
+
+        said = "each sample's tokens were asked for, and the server sent none back: its chat endpoint returns no logprobs"
+        assert said in experiment.notes and said in store.get_experiment(experiment.id).notes
+        report = experiment_report(store, experiment.id)
+        assert report.tokens_kept == 0 and said in report.to_json()["notes"]
 
     async def test_without_logprobs_nothing_changes(self, store, mock_server, client):
         checkpoint = load_checkpoint(store, record_pilot(store), 0)

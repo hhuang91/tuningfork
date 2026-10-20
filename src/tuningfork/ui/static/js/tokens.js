@@ -7,7 +7,7 @@ import { api, enc } from "./api.js";
 import { guard } from "./auth.js";
 import { command, failure, h, loading, plural, replace, short, toggle, when } from "./dom.js";
 import { watchJob } from "./jobs.js";
-import { live } from "./live.js";
+import { live, tokenWork } from "./live.js";
 
 const PART_LABEL = { reasoning: "Reasoning", content: "Answer", tool_call: "Tool call" };
 const ENTROPY_EDGES = ["0.05", "0.25", "0.5", "1", "1.5", "2", "3"];
@@ -38,10 +38,12 @@ export function probeMarks(probes) {
 }
 
 /** The heatmap of one stream (`view` of a `/tokens` answer). `onProbe(positions)` opens the
- *  forking-token form with those positions; `marks` (from `probeMarks`) ring the tokens a
+ *  forking-token form with those positions — greyed, saying why, when `probeOff` is the
+ *  reason the server cannot force tokens; `marks` (from `probeMarks`) ring the tokens a
  *  probe forced; `focus` is a position to open on; `compact` leaves out the hotspot list.
  *  The element's `reveal(position)` scrolls to a token and opens it. */
-export function heatmap(view, { onProbe = null, marks = null, focus = null, compact = false } = {}) {
+export function heatmap(view, { onProbe = null, probeOff = null, marks = null, focus = null, compact = false } = {}) {
+  const probing = onProbe && !probeOff ? onProbe : null;
   const tokens = view.tokens;
   const byIndex = new Map(tokens.map((token) => [token.i, token]));
   const selected = new Set();
@@ -51,7 +53,7 @@ export function heatmap(view, { onProbe = null, marks = null, focus = null, comp
 
   const body = h("div", {
     class: "tk-body", tabindex: "0", role: "group",
-    "aria-label": "The answer, token by token. Arrow keys move between tokens; Enter selects one to probe.",
+    "aria-label": `The answer, token by token. Arrow keys move between tokens${probing ? "; Enter selects one to probe" : ""}.`,
     onclick: (event) => {
       const found = event.target.closest?.(".tk-t");
       if (found) show(Number(found.dataset.i));
@@ -193,8 +195,11 @@ export function heatmap(view, { onProbe = null, marks = null, focus = null, comp
               h("span", { class: "tk-alt-bar" }, h("span", { class: "tk-alt-fill", style: { width: `${Math.max(1, p * 100).toFixed(1)}%` } })),
               h("span", { class: "mono small" }, pct(p))))),
       markOf(position) ? probed(markOf(position)) : null,
-      onProbe && !token.redacted ? h("div", { class: "actions" }, pick,
-        h("button", { class: "btn btn-small", type: "button", "data-control": true, onclick: () => onProbe([position]) }, "Find forking tokens here…")) : null);
+      probing && !token.redacted ? h("div", { class: "actions" }, pick,
+        h("button", { class: "btn btn-small", type: "button", "data-control": true, onclick: () => probing([position]) }, "Find forking tokens here…")) : null,
+      onProbe && probeOff && !token.redacted ? [
+        h("div", { class: "actions" }, h("span", { class: "btn btn-small", "aria-disabled": "true", title: probeOff }, "Find forking tokens here…")),
+        h("div", { class: "muted small", style: { marginTop: "4px" } }, `${probeOff}. `, h("a", { href: "#/connections" }, "Connections"))] : null);
     detail.hidden = false;
   }
 
@@ -220,14 +225,14 @@ export function heatmap(view, { onProbe = null, marks = null, focus = null, comp
   }
 
   function drawBar() {
-    if (!onProbe || !selected.size) {
+    if (!probing || !selected.size) {
       replace(bar);
       return;
     }
     const positions = [...selected].sort((a, b) => a - b);
     replace(bar,
       h("span", null, `${plural(positions.length, "token")} selected: ${positions.map((p) => `[${p}]`).join(" ")}`),
-      h("button", { class: "btn btn-small btn-primary", type: "button", "data-control": true, onclick: () => onProbe(positions) }, "Find forking tokens at these…"),
+      h("button", { class: "btn btn-small btn-primary", type: "button", "data-control": true, onclick: () => probing(positions) }, "Find forking tokens at these…"),
       h("button", { class: "btn btn-quiet btn-small", type: "button", onclick: () => {
         const was = [...selected];
         selected.clear();
@@ -250,7 +255,7 @@ export function heatmap(view, { onProbe = null, marks = null, focus = null, comp
       span?.closest("details")?.setAttribute("open", "");
       span?.scrollIntoView({ block: "nearest" });
       show(next);
-    } else if ((event.key === "Enter" || event.key === " ") && current !== null && onProbe) {
+    } else if ((event.key === "Enter" || event.key === " ") && current !== null && probing) {
       event.preventDefault();
       choose(current);
     }
@@ -317,10 +322,12 @@ export function tokensPanel({ run, idx, scope, onProbe, focus = null }) {
   async function load(stream = null) {
     replace(host, loading("Loading the tokens…"));
     try {
-      const data = await api.get(`/runs/${enc(run.id)}/steps/${idx}/tokens${stream ? `?stream=${enc(stream)}` : ""}`);
+      const [data, work] = await Promise.all([
+        api.get(`/runs/${enc(run.id)}/steps/${idx}/tokens${stream ? `?stream=${enc(stream)}` : ""}`), tokenWork()]);
       const marks = probeMarks(data.probes);
       replace(host, probesLine(data.probes),
-        data.view ? heatmap(data.view, { onProbe, marks, focus: stream ? null : focus }) : unscored(), others(data));
+        data.view ? heatmap(data.view, { onProbe, probeOff: work.forking, marks, focus: stream ? null : focus }) : unscored(work),
+        others(data));
     } catch (error) {
       replace(host, failure(error, "Could not load the tokens"));
     }
@@ -336,11 +343,18 @@ export function tokensPanel({ run, idx, scope, onProbe, focus = null }) {
       ". The tokens they forced are ringed: doubled where a forced token changed what the model did.");
   }
 
-  function unscored() {
+  function unscored(work) {
     if (live.mode !== "live") {
       return h("div", { class: "stack", style: { gap: "6px" } },
         h("p", { class: "muted" }, "This answer has not been scored yet. Scoring sends its exact context once more, with the answer forced token by token, and reads how sure the model was of each. From a terminal, with the model server running:"),
         command(`tuningfork tokens ${short(run.id)} ${idx} --score`));
+    }
+    if (work.score) {
+      // The server's check found it cannot: greyed, with the words that would refuse it.
+      return h("div", { class: "stack", style: { gap: "6px" } },
+        h("p", { class: "muted" }, "Not scored yet. Scoring sends this step's exact context once more, with the answer forced token by token, and reads how sure the model was of each."),
+        h("div", { class: "actions" }, h("span", { class: "btn btn-small", "aria-disabled": "true", title: work.score }, "Score this answer")),
+        h("div", { class: "muted small" }, `${work.score}. `, h("a", { href: "#/connections" }, "Connections")));
     }
     const status = h("div", { class: "muted small" });
     const button = h("button", { class: "btn btn-primary btn-small", type: "button", "data-control": true, onclick: guard(score) }, "Score this answer");

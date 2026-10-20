@@ -324,8 +324,86 @@ def test_a_server_check_measures_what_the_harnesses_need(tmp_path, mock_server):
     # The mock answers a repeated prompt from its cache, as llama.cpp does by default.
     assert results["fresh_prompts"]["support"] == "no"
     assert shown["server"]["checks"]["results"]["anthropic_messages"]["support"] == "yes"
+    # The chat endpoint's own token probabilities are measured too: the mock accepts the
+    # request and sends none back, as a server without them does.
+    assert results["logprobs"] == {**results["logprobs"], "support": "no", "detail": "request accepted but `logprobs` came back null"}
+    assert shown["server"]["token_work"]["logprobs"] == (
+        "Keeping each sample's tokens needs token probabilities from the chat endpoint (logprobs): the server "
+        "check found this server without it (request accepted but `logprobs` came back null)"
+    )
+    # Each measurement says what it is and what needs it.
+    assert set(shown["server"]["measures"]) >= set(results)
+    assert "forking tokens" in shown["server"]["measures"]["raw_completion"]["for"]
     # The check's calls went through the proxy as an experiment's: never recorded as a run.
     assert [r for r in mock_server.requests if r.get("tools")] and store is not None
+
+
+def test_token_work_the_check_ruled_out_is_refused_before_anything_is_sent(tmp_path, mock_server):
+    """Found in use: token work a server cannot do was offered all the same, and failed only
+    once started. What the check found the server without refuses it at once, in the words the
+    web UI greys it with; what was never measured refuses nothing."""
+    from tuningfork.control import ControlClient, ControlError
+    from tests.helpers import serving
+
+    mock_server.props = PROPS
+    upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_server.app))
+    app = create_app(Settings(upstream_base_url="http://upstream.test", home=tmp_path / "home"), client=upstream)
+    store = app.state.recorder.store
+    identity = {"upstream": "http://upstream.test", "n_ctx": 65536, "models": ["mock-model"]}
+    app.state.server = {"id": store.add_server(identity), **identity}
+    store.set_server_checks(app.state.server["id"], {"checked_at": 0, "model": "mock-model", "results": {
+        "known_output_format": {"support": "yes", "detail": "gemma4"},
+        "raw_completion": {"support": "no", "detail": "no per-token probabilities came back"},
+        "logprobs": {"support": "no", "detail": "request accepted but `logprobs` came back null"},
+    }})
+    refused = {}
+    try:
+        with serving(app) as url, ControlClient(url) as client:
+            for kind, extra in (("tokens", {}), ("forking-tokens", {}), ("resample", {"logprobs": 5})):
+                with pytest.raises(ControlError) as caught:
+                    client.submit(kind, {"run": "nothing", "step": "0", **extra})
+                refused[kind] = caught.value.error
+            # A resample that keeps no tokens needs nothing the check ruled out: its run is what is missing.
+            with pytest.raises(ControlError) as plain:
+                client.submit("resample", {"run": "nothing", "step": "0"})
+            shown = client.connections()
+    finally:
+        store.close()
+        asyncio.run(upstream.aclose())
+
+    assert refused["tokens"]["message"] == (
+        "Scoring an answer needs a raw completion with each token's probabilities: the server check found this "
+        "server without it (no per-token probabilities came back)"
+    )
+    assert refused["forking-tokens"]["message"].startswith("Forking tokens needs a raw completion")
+    assert refused["resample"]["message"].startswith("Keeping each sample's tokens needs token probabilities")
+    assert refused["resample"]["field"] == "logprobs"
+    assert all(error["code"] == "unsupported" and "Connections" in error["hint"] for error in refused.values())
+    assert "no run matching" in str(plain.value)
+    # The page reads the same reasons, to grey what they rule out.
+    assert shown["server"]["token_work"] == {
+        "score": refused["tokens"]["message"],
+        "forking": refused["forking-tokens"]["message"],
+        "logprobs": refused["resample"]["message"],
+    }
+
+
+def test_what_a_check_never_measured_rules_out_nothing():
+    from tuningfork.ops.connections import token_work
+
+    assert token_work({}) == {"score": None, "forking": None, "logprobs": None}
+    unknown = {"results": {"raw_completion": {"support": "unknown", "detail": "probe raised ConnectError"}}}
+    assert token_work(unknown) == {"score": None, "forking": None, "logprobs": None}
+    both = token_work({"results": {
+        "raw_completion": {"support": "no", "detail": "the forced tokens were not kept"},
+        "known_output_format": {"support": "no", "detail": "the chat template is not one tuningfork reads raw output of"},
+    }})
+    assert both["forking"] == (
+        "Forking tokens needs a raw completion with each token's probabilities and a model whose raw output "
+        "tuningfork reads: the server check found this server without them (the forced tokens were not kept; "
+        "the chat template is not one tuningfork reads raw output of)"
+    )
+    assert both["logprobs"] is None
 
 
 def test_the_restart_command_keeps_what_the_proxy_was_started_with(tmp_path):

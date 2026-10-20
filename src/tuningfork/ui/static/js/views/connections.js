@@ -9,13 +9,10 @@ import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
 import { chip, command, h, kv, loading, panel, replace, short, when } from "../dom.js";
 import { field, formError, input } from "../forms.js";
-import { live } from "../live.js";
+import { forgetTokenWork, live } from "../live.js";
 
-const USES = {
-  streaming_tool_calls: "Hermes streams every call and acts on its tool calls",
-  anthropic_messages: "Claude Code speaks only /v1/messages",
-};
 const SUPPORT_TONE = { yes: "muted", no: "warn", unknown: "faint" };
+const capital = (text) => `${text[0].toUpperCase()}${text.slice(1)}`;
 
 export async function connectionsView(root, _, scope) {
   if (live.mode !== "live") {
@@ -58,6 +55,8 @@ export async function connectionsView(root, _, scope) {
     const server = state.server;
     const identity = server.identity || {};
     const results = server.checks?.results || {};
+    const measures = server.measures || {};
+    const ruledOut = Object.values(server.token_work || {}).filter(Boolean);
     switcher ??= switchForm();
     replace(serverEl, panel("Inference server", [
       server.problem
@@ -75,14 +74,22 @@ export async function connectionsView(root, _, scope) {
         ["identity", identity.id ? h("span", { class: "mono" }, short(identity.id)) : "not read yet"],
       ]),
       h("div", { class: "label" }, "Measured"),
+      // Each measurement in words, under the name the terminal prints, and what needs it.
       Object.keys(results).length
-        ? h("table", { class: "table" }, h("tbody", null, Object.entries(results).map(([name, found]) =>
+        ? h("table", { class: "table measured" }, h("tbody", null, Object.entries(results).map(([name, found]) =>
             h("tr", null,
-              h("td", { class: "mono" }, name.replaceAll("_", " ")),
+              h("td", null, h("div", null, capital(measures[name]?.what || name.replaceAll("_", " "))),
+                h("div", { class: "faint small mono" }, name)),
               h("td", null, chip(found.support, SUPPORT_TONE[found.support] || "muted")),
-              h("td", { class: "muted small" }, found.detail || ""),
-              h("td", { class: "faint small" }, USES[name] || "")))))
+              h("td", { class: "small" }, h("div", { class: "muted" }, found.detail || ""),
+                measures[name] ? h("div", { class: "faint" }, `Needed for ${measures[name].for}.`) : null)))))
         : h("p", { class: "muted small" }, "Nothing measured on this server yet."),
+      // What the check rules out is greyed wherever it is offered, saying the same.
+      ruledOut.length
+        ? h("div", { class: "stack", style: { gap: "4px" } },
+            h("div", { class: "label" }, "Greyed out on this server"),
+            ruledOut.map((reason) => h("div", { class: "small warn-text" }, `${reason}.`)))
+        : null,
       h("div", { class: "form-actions" }, checkButton(identity.models || [], server.checks?.model),
         server.checks?.checked_at ? h("span", { class: "faint small" }, `checked ${when(server.checks.checked_at)} with ${server.checks.model}`) : null),
       h("details", { class: "fold" }, h("summary", null, "Point the proxy at another server"), switcher),
@@ -104,6 +111,7 @@ export async function connectionsView(root, _, scope) {
         try {
           const job = await api.post("/jobs", { kind: "server-check", params: choice ? { model: choice.value } : {} });
           await finished(job.id);
+          forgetTokenWork();
           await load();
         } catch (error) {
           note.textContent = error.hint ? `${error.message} — ${error.hint}` : error.message;
@@ -148,6 +156,7 @@ export async function connectionsView(root, _, scope) {
         go.disabled = true;
         try {
           await api.post("/connections/upstream", { url: shown });
+          forgetTokenWork();
           url.value = "";
           shown = null;
           replace(preview);

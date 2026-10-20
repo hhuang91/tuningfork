@@ -294,7 +294,8 @@ tuningfork resample <run> write_file -n 20
   that hits it counts as truncated.
 - `--temperature`, `--top-p`, `--top-k` — override the recorded sampler; recorded as a change.
 - `--logprobs K` — keep each sample's tokens, with K alternatives each, on chat-completions steps:
-  `tokens --sample` shows one.
+  `tokens --sample` shows one. Where the server sends none back, the experiment says so; started
+  through the proxy, it is refused on a server the check found without them.
 - `--to-end` — each sample a fork run to the end through the harness, counted by the task's check
   (`--proxy`; `--spec` for a run recorded before tuningfork kept how it was launched).
 - `--normalizer`, `--seed-base`, `--prompt-cache`, `--base-url`, `--concurrency` — as
@@ -551,7 +552,11 @@ token alone; `--mcp` prints the MCP token, and `--header-json` the header an MCP
 - `switch <url>` — points the proxy at another server, while nothing is using it (`--dry-run`).
 - `harness <name> --executable <path>` — names the program a harness runs as, kept in the
   recordings folder and never in the harness's own configuration (`--reset`: the one on `PATH`).
-- `check` — measures what the harnesses and the experiments need of the server.
+- `check` — measures what the harnesses and the experiments need of the server: tool calls in a
+  stream, the Messages endpoint, every prompt processed whole, and what token work needs —
+  llama.cpp's raw completion for scoring an answer and forking tokens, the chat endpoint's
+  logprobs for a resample's tokens. Token work it found the server without is refused through
+  the proxy, saying what was missing, and greyed in the web UI; what it never measured is not.
 
 ### `probe`, `servers`
 

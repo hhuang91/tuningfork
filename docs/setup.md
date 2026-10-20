@@ -139,8 +139,10 @@ LM Studio, and any server that speaks OpenAI chat completions or Anthropic Messa
 recorded through and sampled at a step. `tuningfork connections check` measures what a server
 supports, and `tuningfork probe <url>` writes a full profile of it. Work at the level of tokens
 — scoring an answer, forking tokens — needs llama.cpp's own endpoints and a model whose raw
-output tuningfork reads: Gemma 4 today. Features degrade on what was measured, not on a guess
-about which server is running.
+output tuningfork reads: Gemma 4 today; keeping each sample's tokens in a resample needs the
+chat endpoint's logprobs. Features degrade on what was measured, not on a guess about which
+server is running: token work the check found a server without is greyed in the web UI, saying
+what was missing, and refused if started.
 
 ## The harnesses
 
@@ -184,8 +186,8 @@ tuningfork connections check
 
 It measures, with a few small calls, what the harnesses need — tool calls in a stream, the
 Messages API — whether the server processes every prompt whole, and what token-level work
-needs: a known output format, a prompt rendered as the chat endpoint renders it, and completions
-forced by a grammar of token ids. [The guide](../examples/README.md#2-start-tuningfork) shows
+needs: a known output format, a prompt rendered as the chat endpoint renders it, completions
+forced by a grammar of token ids, and the chat endpoint's own token probabilities (logprobs). [The guide](../examples/README.md#2-start-tuningfork) shows
 its output. `tuningfork connections show` lists the server, what was measured of it, the
 harnesses found with their versions, and whether launches run in the sandbox.
 

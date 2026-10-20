@@ -1011,6 +1011,13 @@ pre.code { color: var(--muted); }
 /* Where your own agent sends its calls: each API beside its address. */
 .connect-urls { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; align-items: center; }
 @media (max-width: 700px) { .connect-urls { grid-template-columns: minmax(0, 1fr); } }
+/* What a server check measured: on a phone, what was found and what needs it go under its name. */
+@media (max-width: 700px) {
+  .measured tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-bottom: 1px solid var(--border); }
+  .measured tr:last-child { border-bottom: none; }
+  .measured td { border-bottom: none; }
+  .measured td:last-child { grid-column: 1 / -1; padding-top: 0; }
+}
 
 /* --- comparisons and experiments -------------------------------------------------- */
 

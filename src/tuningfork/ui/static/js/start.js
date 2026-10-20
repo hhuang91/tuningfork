@@ -10,7 +10,7 @@
 import { api, enc } from "./api.js";
 import { chip, command, failure, h, kv, loading, panel, plural, replace, short } from "./dom.js";
 import { cacheField, field, input, numberOf, planForm, samplingChoices, seedField, textOf } from "./forms.js";
-import { live } from "./live.js";
+import { live, tokenWork } from "./live.js";
 import { describeBuilder, seenPreview } from "./targets.js";
 import { readTarget, readVariant, targetPicker, variantEditor } from "./variants.js";
 import { refineStartForm } from "./views/refine.js";
@@ -29,8 +29,8 @@ function way(href, go, props, label) {
 }
 
 /** A step's way in, under the same title in either mode: buttons with a running proxy,
- *  commands without one. */
-export function startPanel(step, { go = null } = {}) {
+ *  commands without one. `work` is what the server's check rules out (`tokenWork`). */
+export function startPanel(step, { go = null, work = {} } = {}) {
   const run = step.run;
   const here = `#/runs/${run.id}/${step.idx}`;
   if (live.mode !== "live") {
@@ -50,7 +50,10 @@ export function startPanel(step, { go = null } = {}) {
     h("div", { class: "start-actions" },
       way(`${here}?start=resample`, go, { class: "btn", "data-control": true }, "Resample…"),
       way(`${here}?start=ab`, go, { class: "btn", "data-control": true }, "A/B a wording…"),
-      way(`${here}?start=forking-tokens`, go, { class: "btn", "data-control": true }, "Find forking tokens…"),
+      // Greyed where the server's check found it cannot force tokens: the same words refuse it.
+      work.forking
+        ? h("span", { class: "btn", "aria-disabled": "true", title: work.forking }, "Find forking tokens…")
+        : way(`${here}?start=forking-tokens`, go, { class: "btn", "data-control": true }, "Find forking tokens…"),
       why
         ? h("span", {
             class: "btn", "aria-disabled": "true",
@@ -60,7 +63,8 @@ export function startPanel(step, { go = null } = {}) {
       way(`${here}?start=refine`, go, { class: "btn", "data-control": true }, "Refine the skill here…")),
     h("p", { class: "muted small start-note" }, "Measure what the model does here, with everything before it held fixed.",
       why ? ` ${why}` : null,
-      scenario ? [" ", h("a", { href: scenario, "data-control": true }, "Make a scenario of it"), ", run it, and fork from one of its runs."] : null),
+      scenario ? [" ", h("a", { href: scenario, "data-control": true }, "Make a scenario of it"), ", run it, and fork from one of its runs."] : null,
+      work.forking ? [` ${work.forking}. `, h("a", { href: "#/connections" }, "Connections")] : null),
   ], { className: "work-panel" });
 }
 
@@ -73,7 +77,7 @@ export async function startForm(kind, step, query = new URLSearchParams(), { go 
   const options = { actions: close, className: "start-panel" };
   if (kind === "resample") {
     return panel(`Resample step ${step.idx}`, [reachToggle(step, kind, toEnd, go),
-      toEnd ? resampleToEndForm(step) : resampleForm(step)], options);
+      toEnd ? resampleToEndForm(step) : resampleForm(step, await tokenWork())], options);
   }
   if (kind === "ab") {
     return panel(`A/B a wording at step ${step.idx}`, [reachToggle(step, kind, toEnd, go), await abForm(step, toEnd)], options);
@@ -303,10 +307,11 @@ const opened = (job) => (location.hash = `#/jobs/${job.id}`);
 
 // --- how a step is sampled, shared ---------------------------------------------------------
 
-function samplingFields({ alpha = false } = {}) {
+function samplingFields({ alpha = false, beside = null } = {}) {
   return [
     h("div", { class: "form-grid" },
-      field("Samples", input("n", { type: "number", value: 20, min: 1, max: 1000 }), { help: alpha ? "Per arm." : "More samples, a narrower interval." })),
+      field("Samples", input("n", { type: "number", value: 20, min: 1, max: 1000 }), { help: alpha ? "Per arm." : "More samples, a narrower interval." }),
+      beside),
     h("details", { class: "fold more-settings" },
       h("summary", null, "More settings"),
       h("div", { class: "form-grid" },
@@ -347,7 +352,15 @@ function checkpointLine(plan) {
 
 // --- resample -------------------------------------------------------------------------------
 
-function resampleForm(step) {
+function resampleForm(step, work = {}) {
+  // Each sample's tokens as the chat endpoint gives them, for its heatmap: greyed, saying why,
+  // where the server's check found it sends none.
+  const keep = input("logprobs", { type: "number", min: 1, max: 20, placeholder: "not kept" });
+  const kept = field("Keep each sample's tokens", keep, {
+    help: work.logprobs || "With this many alternatives at each token, for each sample's heatmap in the step's Tokens view.",
+  });
+  keep.disabled = Boolean(work.logprobs);
+  kept.classList.toggle("off", Boolean(work.logprobs));
   const overrides = h("details", { class: "fold more-settings" },
     h("summary", null, "Change the sampling parameters (recorded as a change)"),
     h("div", { class: "form-grid" },
@@ -356,15 +369,20 @@ function resampleForm(step) {
       field("top_k", input("top_k", { type: "number", min: 0, placeholder: "as recorded" }))));
   const { element } = planForm({
     kind: "resample",
-    fields: [...samplingFields(), overrides],
-    read: (form) => ({
-      run: step.run.id,
-      step: String(step.idx),
-      ...readSampling(form),
-      temperature: numberOf(form, "temperature", { integer: false }),
-      top_p: numberOf(form, "top_p", { integer: false }),
-      top_k: numberOf(form, "top_k"),
-    }),
+    fields: [...samplingFields({ beside: kept }), overrides],
+    read: (form) => {
+      const params = {
+        run: step.run.id,
+        step: String(step.idx),
+        ...readSampling(form),
+        temperature: numberOf(form, "temperature", { integer: false }),
+        top_p: numberOf(form, "top_p", { integer: false }),
+        top_k: numberOf(form, "top_k"),
+      };
+      const logprobs = numberOf(form, "logprobs");
+      if (logprobs !== null) params.logprobs = logprobs;
+      return params;
+    },
     render: (plan) => h("div", { class: "stack", style: { gap: "8px" } },
       kv([
         ["checkpoint", checkpointLine(plan)],
@@ -373,6 +391,8 @@ function resampleForm(step) {
         ["takes", estimateText(plan.estimate)],
         ["changed", Object.keys(plan.sampling.overrides || {}).length
           ? h("span", { class: "mono" }, JSON.stringify(plan.sampling.overrides)) : null],
+        ["tokens", plan.sampling.logprobs
+          ? `each sample's kept, with ${plural(plan.sampling.logprobs, "alternative")} at each token` : null],
       ]),
       h("p", { class: "hint" }, "Each sample resends this step's request exactly as recorded, with its own seed; the history before it stays fixed. Nothing is recorded as a run.")),
     startLabel: "Start the resample",

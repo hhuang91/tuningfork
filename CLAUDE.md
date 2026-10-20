@@ -296,7 +296,13 @@ recorded token count, or it is refused. The forking-token probe forces tokens fr
 stream, and tests each alternative against its position's baseline, Holm-corrected over the
 family planned before sampling; each behaviour it reached says whether the target counts it and
 which tokens led to it (`ForkingReport.led_by`): a token can change what the model does and miss
-a target too fine to count it. `tests/test_real_server.py` re-measures what all this stands
+a target too fine to count it. The server check (Connections) measures what each needs — the
+raw completion, the prompt rendered as the chat endpoint renders it, the output format, and the
+chat endpoint's own logprobs, which a resample's kept tokens need — and token work it found the
+server without is refused before anything is sent (`ops.connections.token_work`, in the job
+kinds' prepare: the web UI, MCP), greyed in the web UI with the same words; what was never
+measured refuses nothing, and a resample that asked for tokens and got none says so in a note.
+`tests/test_real_server.py` re-measures what all this stands
 on against a real server: `TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run pytest -m
 real_server tests/test_real_server.py`; skipped otherwise.
 

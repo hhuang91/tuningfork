@@ -2698,8 +2698,12 @@ def _positions(positions: list[int]) -> str:
 
 
 def _print_notes(notes: list[str]) -> None:
+    from tuningfork.experiment.sampling import NO_TOKENS
+
+    # Each says how the samples' conditions differed from the recording's, but one.
     for note in notes:
-        console.print(f"  [bold yellow]parity:[/bold yellow] {escape(note)}")
+        label = "tokens" if note == NO_TOKENS else "parity"
+        console.print(f"  [bold yellow]{label}:[/bold yellow] {escape(note)}")
 
 
 def _target_mark(counted: int, count: int) -> str:
@@ -4701,6 +4705,10 @@ def _print_checks(checks: dict) -> None:
         tone = {"yes": "green", "no": "red"}.get(found.get("support"), "yellow")
         detail = f" — {escape(found['detail'])}" if found.get("detail") else ""
         console.print(f"  {name:<22} [{tone}]{found.get('support')}[/{tone}]{detail}")
+    from tuningfork.ops.connections import token_work
+
+    for reason in filter(None, token_work(checks).values()):
+        console.print(f"  [yellow]{escape(reason)}[/yellow]")
 
 
 @connections_app.command("show")
@@ -4777,7 +4785,8 @@ def connections_check(
     model: Optional[str] = typer.Option(None, help="The model to check with; default the one the server lists."),
     proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP),
 ) -> None:
-    """Measure what the harnesses need of the server: a streaming tool call, /v1/messages."""
+    """Measure what the harnesses need of the server — a streaming tool call, /v1/messages —
+    and what token work needs: scoring, forking tokens, a resample's tokens (logprobs)."""
     client = _control(proxy)
     params = {"model": model} if model else {}
     job = _or_exit(lambda: client.submit("server-check", params))

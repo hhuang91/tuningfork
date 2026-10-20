@@ -83,6 +83,7 @@ def restart_command(settings: Any, upstream: str) -> str:
 def connection_routes() -> list[Route]:
     async def show(request: Request) -> Response:
         from tuningfork.endpoints import protected
+        from tuningfork.ops.connections import MEASURES, token_work
 
         state = request.app.state
         settings = state.settings
@@ -105,6 +106,9 @@ def connection_routes() -> list[Route]:
                 "started_with": settings.upstream_base_url,
                 "identity": server,
                 "checks": checks,
+                # What each measurement is and what needs it, and the token work it rules out.
+                "measures": {name: {"what": what, "for": needs} for name, (what, needs) in MEASURES.items()},
+                "token_work": token_work(checks),
                 # Why it is not answering, when it is not: down, or still loading its model.
                 "problem": getattr(state, "server_problem", None),
             },

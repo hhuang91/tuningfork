@@ -2208,6 +2208,18 @@ class Store:
             )
             self._conn.commit()
 
+    def add_experiment_notes(self, experiment_id: str, notes: list[str]) -> None:
+        """Notes learned while an experiment drew its samples, after its first ones."""
+        with self._lock:
+            row = self._conn.execute("SELECT notes FROM experiments WHERE id = ?", (experiment_id,)).fetchone()
+            if row is None:
+                return
+            kept = _loads(row["notes"], [])
+            self._conn.execute(
+                "UPDATE experiments SET notes = ? WHERE id = ?", (json.dumps([*kept, *notes]), experiment_id)
+            )
+            self._conn.commit()
+
     def set_experiment_job(self, experiment_id: str, job_id: str) -> None:
         with self._lock:
             self._conn.execute(

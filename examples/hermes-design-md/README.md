@@ -119,6 +119,9 @@ tuningfork connections check
   known_output_format    yes — gemma4
   prompt_equivalence     yes — rendered 68 tokens, the chat endpoint's prompt has 68
   raw_completion         yes — 2 tokens forced by a grammar of ids, with their top alternatives
+  logprobs               yes — 36 token entries
+  top_logprobs           yes — top_logprobs present
+  logprobs_all_tokens    yes — 36 entries for 36 generated tokens
 ```
 
 ## 3. Record runs

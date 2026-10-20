@@ -181,8 +181,9 @@ export async function experimentView(root, [id], scope) {
             }))
           : null,
         experiment.distribution ? distributionView(experiment.distribution) : null,
-        experiment.settings?.logprobs && checkpoint
-          ? h("p", { class: "hint" }, "Each sample kept its tokens: ",
+        // Only where they were kept: a server that sends no logprobs leaves a note instead.
+        experiment.settings?.logprobs && checkpoint && experiment.tokens_kept
+          ? h("p", { class: "hint" }, `${plural(experiment.tokens_kept, "sample")} kept ${experiment.tokens_kept === 1 ? "its" : "their"} tokens: `,
               h("a", { href: `${checkpoint}?view=tokens` }, "the step's Tokens view"), " lists them, each with its heatmap.")
           : null,
         nextSteps(experiment),
