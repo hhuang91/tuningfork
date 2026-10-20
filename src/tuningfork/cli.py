@@ -753,6 +753,8 @@ def glossary_command(
         for term in found:
             console.print(f"[bold]{escape(term.term)}[/bold]" + (f"  [dim]also {escape(', '.join(term.aka))}[/dim]" if term.aka else ""))
             console.print(f"  {escape(term.means)}", soft_wrap=True)
+            if term.ui:
+                console.print(f"  [dim]in the web UI:[/dim] {escape(term.ui)}", soft_wrap=True)
             if term.where:
                 console.print(f"  [dim]where:[/dim] {escape(term.where)}", soft_wrap=True)
             if term.see:
