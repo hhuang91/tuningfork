@@ -8,7 +8,7 @@
 
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
-import { checkTester } from "../checktry.js";
+import { checkPicker } from "../checktry.js";
 import { ago, chip, crumbs, firstLine, h, importedRun, loading, panel, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
 import { field, formError, input, textArea } from "../forms.js";
 import { live } from "../live.js";
@@ -366,86 +366,26 @@ export async function scenarioView(root, [name], scope) {
         : null));
   }
 
-  /** How a run passes: no check, the agent's final reply holding or matching something,
-   *  or a shell command run in the workspace. The kind chosen is kept here, so choosing one
-   *  before typing it does not fall back to "no check". */
+  /** How a run passes (`checkPicker`, shared with a scenario made from a run), written into
+   *  the eval as the spec holds a check: "" for none, a command, or a reply check. */
   function checkEditor(item, index) {
     const options = item.tuningfork;
-    const check = options.check;
-    let kind = check && typeof check === "object" ? Object.keys(check)[0]
-      : typeof check === "string" && check.trim() ? "shell" : "none";
-    const body = h("div", { class: "stack", style: { gap: "6px" } });
-    // Trying the check as written, before trusting it: opened below it on demand.
-    let tester = null;
-    const testerSlot = h("div");
-    const tryIt = live.mode === "live" && editable
-      ? h("button", {
-          class: "btn btn-small", type: "button", "data-control": true,
-          onclick: guard(() => {
-            if (tester) {
-              tester = null;
-              replace(testerSlot);
-              return;
-            }
-            tester = checkTester({
-              check: () => options.check,
-              task: () => `${draft.skill_name.trim()}/${String(item.id).trim()}`,
-              files: () => item.files
-                .filter((entry) => entry && typeof entry === "object" && typeof entry.content === "string")
-                .map((entry) => ({ path: entry.path, content: entry.content })),
-              scope,
-            });
-            replace(testerSlot, tester.element);
-          }),
-        }, "Test this check…")
-      : null;
-    const edited = (set) => (value) => {
-      set(value);
-      tester?.refresh();
-    };
-    const choices = [
-      ["none", "No check"],
-      ["reply_contains", "The reply contains…"],
-      ["reply_matches", "The reply matches…"],
-      ["shell", "A shell command"],
-    ];
-    const replyText = () => (options.check && typeof options.check === "object" ? Object.values(options.check)[0] ?? "" : "");
-    const picker = h("div", { class: "controls" }, choices.map(([value, label]) =>
-      h("label", { class: "check" },
-        h("input", {
-          type: "radio", name: `check-kind-${index}`, value, checked: kind === value, disabled: !editable,
-          onchange: () => {
-            const text = replyText();
-            kind = value;
-            options.check = value === "shell" ? "" : value === "none" ? "" : { [value]: text };
-            draw();
-            changed();
-            tester?.refresh();
-          },
-        }), label)));
-
-    function draw() {
-      if (kind === "shell") {
-        return replace(body,
-          h("p", { class: "form-help" }, "Runs as you, in the run's workspace — a fresh folder holding this eval's input files, where the harness worked. It passes when it exits 0. $TUNINGFORK_REPLY names a file holding the agent's final reply, and $TUNINGFORK_SPEC_DIR this scenario's folder: a longer check can be a script there, where the agent cannot read it."),
-          bind(textArea(`check-${index}`, typeof options.check === "string" ? options.check : "", {
-            rows: 3, placeholder: 'e.g. python3 -c "import json; json.load(open(\'report.json\'))", or grep -q 61.5 "$TUNINGFORK_REPLY"',
-          }), edited((v) => (options.check = v))));
-      }
-      if (kind === "reply_contains" || kind === "reply_matches") {
-        return replace(body,
-          h("p", { class: "form-help" }, kind === "reply_contains"
-            ? "Passes when the agent's final reply holds this text exactly (case counts). tuningfork judges it; nothing runs."
-            : "Passes when this regular expression (Python's) finds a match in the agent's final reply; start it with (?i) to ignore case, and . matches line breaks too. tuningfork judges it; nothing runs."),
-          bind(input(`check-text-${index}`, { value: replyText(), placeholder: kind === "reply_contains" ? "e.g. 61.5" : "e.g. (?i)total\\D+61\\.5" }),
-            edited((v) => (options.check = { [kind]: v }))));
-      }
-      return replace(body, h("p", { class: "form-help" }, "Runs have no verdict: none is counted as passed or failed."));
-    }
-    draw();
-    return h("div", { class: "check-command" }, h("div", { class: "label" }, "How a run passes"), picker, body,
-      tryIt ? h("div", { class: "controls" }, tryIt, h("span", { class: "muted small" }, "on a recorded run of this task, or on a reply you write — before trusting it")) : null,
-      testerSlot);
+    return checkPicker({
+      check: options.check, editable, scope, name: String(index),
+      onChange: ({ kind, text }) => {
+        options.check = kind === "shell" ? text : kind === "none" ? "" : { [kind]: text };
+        changed();
+      },
+      // Trying the check as written, before trusting it: opened below it on demand.
+      tester: live.mode === "live" && editable
+        ? {
+            task: () => `${draft.skill_name.trim()}/${String(item.id).trim()}`,
+            files: () => item.files
+              .filter((entry) => entry && typeof entry === "object" && typeof entry.content === "string")
+              .map((entry) => ({ path: entry.path, content: entry.content })),
+          }
+        : null,
+    }).element;
   }
 
   function fileRow(item, entry, position, redraw) {

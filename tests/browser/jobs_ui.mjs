@@ -1029,7 +1029,9 @@ try {
     return row.includes("yours, in place of the chat's") && row.includes("Summarize inputs/data.csv into report.json."); })()`),
     "and the table says each run is sent it in place of the chat's words");
   // The check takes no text until it is a shell command or a reply's words (found in review).
-  check(await page.eval(`document.querySelector('input[name="check"]').closest("label").hidden`), "with no check yet, there is no text to give it");
+  check(await page.eval(`document.querySelector('[name="check-kind-run"][value="none"]')?.checked
+    && !document.querySelector('[name="check-kind-run"][value="own"]') && !document.querySelector('[name="check-run"], [name="check-text-run"]')`),
+    "its check is chosen as a new scenario's is: with no task to take one from, none yet, and no text to give it");
   await until(() => page.eval(`(document.querySelector(".plan-status .form-note-box")?.textContent || "").includes("Name the scenario")`),
     "what it still needs, as a note");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-the-chat");
@@ -1160,14 +1162,26 @@ try {
   await page.eval(`location.hash = "#/runs/${ofTask.id}"`);
   await until(() => page.eval(`[...document.querySelectorAll(".page-head a")].some((a) => a.textContent === "Make a scenario…")`), "Make a scenario… on a launched run");
   await page.eval(`[...document.querySelectorAll(".page-head a")].find((a) => a.textContent === "Make a scenario…").click()`);
-  await until(() => page.eval(`location.hash === "#/runs/${ofTask.id}/scenario" && !!document.querySelector('select[name="check_kind"]')`), "the scenario form");
-  check(await page.eval(`document.querySelector('select[name="check_kind"]').selectedOptions[0].textContent.startsWith("the task's own: python3")`),
-    "its check is the task's own unless told otherwise");
+  await until(() => page.eval(`location.hash === "#/runs/${ofTask.id}/scenario" && !!document.querySelector('[name="check-kind-run"]')`), "the scenario form");
+  check(await page.eval(`document.querySelector('[name="check-kind-run"][value="own"]').checked
+    && document.querySelector(".check-command pre").textContent.startsWith("python3")`),
+    "its check is the task's own unless told otherwise, chosen as a new scenario's is");
   check(await page.eval(`document.querySelector("main").textContent.includes("Its inputs: the run's workspace where the scenario starts")`),
     "it says its inputs come from the run's workspace");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
   await planShows(page, "data.csv");
   await startButtonReady(page, "Make the scenario");
+  // Tried before it is trusted, on the run it is made of: the check in a copy of the workspace it
+  // left, on its final reply — and the trial's own Try it, a form inside this one, makes nothing.
+  await page.click("Test this check…");
+  await until(() => page.eval(`document.querySelector('.check-tester [name="trial_run"]')?.value === "${ofTask.id}"`),
+    "the tester, on the run the scenario is made of");
+  await until(() => page.eval(`[...document.querySelectorAll(".check-tester button")].some((b) => b.textContent === "Try it" && !b.disabled)`), "the trial's plan");
+  await page.click("Try it", `document.querySelector(".check-tester")`);
+  await until(() => page.eval(`!!document.querySelector(".check-tester .check-verdict")`), "the trial's verdict", 30000);
+  check(await page.eval(`document.querySelector(".check-tester .check-verdict").textContent.includes("as when the run ran")`),
+    "the task's check, tried on the run the scenario is made of, gives the verdict that run got");
+  check(!(await api("/scenarios")).some((scenario) => scenario.name === "from-a-launch"), "and trying it made no scenario");
   await page.click("Make the scenario");
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "Open the scenario")`), "the scenario made");
   check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("workspace as its step 0 found it: 1 file(s)"))`),

@@ -109,7 +109,17 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
 
   // novalidate: the server checks every field and says which is wrong. The browser's own
   // checks would block a submit silently — a number off its step grid is enough.
-  const form = h("form", { class: "plan-form", novalidate: true, onsubmit: guard(submit), oninput: changed, onchange: changed },
+  // A form inside this one — a check's tester, in a scenario's form — answers its own fields
+  // and its own submit; theirs bubble here, and are not this form's (a tester's Try it would
+  // otherwise have made the scenario too).
+  const ours = (event) => !event?.target?.closest || event.target.closest("form") === form;
+  const started = guard(submit);
+  const form = h("form", {
+    class: "plan-form", novalidate: true,
+    onsubmit: (event) => (ours(event) ? started(event) : undefined),
+    oninput: (event) => (ours(event) ? changed(event) : undefined),
+    onchange: (event) => (ours(event) ? changed(event) : undefined),
+  },
     fields,
     h("div", { class: "plan-box" }, h("div", { class: "label" }, "What will run"), status, preview),
     h("div", { class: "form-actions" }, start, note));
