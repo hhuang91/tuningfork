@@ -1201,6 +1201,10 @@ pre.code { color: var(--muted); }
 .target-picker legend { padding: 0 4px; color: var(--muted); font-size: 12px; }
 .target-choice { display: flex; align-items: baseline; gap: 8px; font-size: 13px; cursor: pointer; }
 .target-choice.disabled { color: var(--faint); cursor: default; }
+/* Settings that would not be used, as the form is filled in: greyed, never hidden. */
+.target-picker:disabled { opacity: 0.5; }
+.target-picker:disabled .target-choice { cursor: default; }
+.form-field.off .form-label { color: var(--faint); }
 /* How a person added a skill's folder, and the way to forget it. */
 .added-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .target-letters, .target-pattern { display: flex; flex-direction: column; gap: 4px; margin-left: 22px; }

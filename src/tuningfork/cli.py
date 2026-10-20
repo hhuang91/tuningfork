@@ -1301,7 +1301,7 @@ def forking_tokens(
     top: int = typer.Option(5, "--top", help="Without --at, how many positions to probe."),
     alternatives: int = typer.Option(3, "--alternatives", help="Other tokens to force at each position."),
     n: int = typer.Option(10, "-n", help="Continuations per forced token."),
-    min_p: float = typer.Option(0.05, "--min-p", help="Least chance the step's sampler gave an alternative, to count as a fork."),
+    min_p: float = typer.Option(0.05, "--min-p", help="Without --at, the least chance the step's sampler gave an alternative, to count as a fork."),
     target: Optional[str] = typer.Option(None, "--target", help="A behaviour's letter from an earlier resample of this step. Default: the base's own behaviour."),
     target_match: Optional[str] = typer.Option(None, "--target-match", help="Regular expression over the behaviour."),
     alpha: float = typer.Option(0.05, help="Significance level, Holm-corrected over the planned tests."),

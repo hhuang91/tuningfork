@@ -205,7 +205,7 @@ class ForkingParams(AtStep):
     region: Literal["answer", "reasoning", "all"] = field(default="answer", metadata=_help("Where to look for forks when no positions are given."))
     top: int = field(default=5, metadata=_help("Positions to probe when none are given.", minimum=1, maximum=20))
     alternatives: int = field(default=3, metadata=_help("Other tokens to force at each position.", minimum=1, maximum=10))
-    min_p: float = field(default=0.05, metadata=_help("Least chance the step's sampler gave an alternative, to count as a fork.", minimum=0.001, maximum=0.5))
+    min_p: float = field(default=0.05, metadata=_help("Least chance the step's sampler gave an alternative, to count as a fork, when no positions are given.", minimum=0.001, maximum=0.5))
     n: int = field(default=10, metadata=_help("Continuations per forced token.", minimum=1, maximum=200))
     max_tokens: int = field(default=4096, metadata=_help("Cap per continuation; hitting it counts as truncated.", minimum=1, maximum=262144))
     normalizers: list[str] = field(default_factory=list, metadata=_help("Restrict normalizers; none named means the defaults."))

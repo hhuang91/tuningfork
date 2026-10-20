@@ -126,6 +126,8 @@ async function forkingForm(step, query) {
   const seen = seenPreview({ run: step.run.id, idx: step.idx, onTools: builder.setTools });
   const pattern = input("target_match", { placeholder: "a regular expression, e.g. row_count" });
   pattern.addEventListener("input", () => pick("match"));
+  const howMany = input("top", { type: "number", value: 5, min: 1, max: 20 });
+  const leastChance = input("min_p", { type: "number", value: 0.05, min: 0.001, max: 0.5, step: "any" });
   const target = h("fieldset", { class: "target-picker" }, h("legend", null, "What counts as the same behaviour (declared before sampling)"),
     calls.length
       ? h("label", { class: "target-choice" },
@@ -153,14 +155,14 @@ async function forkingForm(step, query) {
         { help: "Comma-separated, as the Tokens view numbers them; select tokens there to fill this in.", wide: true }),
       regions,
       h("div", { class: "form-grid" },
-        field("Positions to probe", input("top", { type: "number", value: 5, min: 1, max: 20 }), { help: "When none are named." }),
+        field("Positions to probe", howMany, { help: "When none are named." }),
         field("Alternatives", input("alternatives", { type: "number", value: 3, min: 1, max: 10 }), { help: "Other tokens forced at each." }),
         field("Continuations", input("n", { type: "number", value: 10, min: 1, max: 200 }), { help: "Per forced token." })),
       target,
       h("details", { class: "fold more-settings" },
         h("summary", null, "More settings"),
         h("div", { class: "form-grid" },
-          field("Least chance", input("min_p", { type: "number", value: 0.05, min: 0.001, max: 0.5, step: "any" }), { help: "That the step's sampler gave an alternative, to count as a fork." }),
+          field("Least chance", leastChance, { help: "That the step's sampler gave an alternative, to count as a fork, when no positions are named." }),
           field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" }), { help: "Holm-corrected over the tests planned." }),
           field("Max tokens", input("max_tokens", { type: "number", value: 4096, min: 1 }), { help: "Per continuation; hitting it counts as truncated." }),
           field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "On one GPU, 1 keeps the prompt cache." }),
@@ -176,16 +178,20 @@ async function forkingForm(step, query) {
         run: step.run.id,
         step: String(step.idx),
         positions,
-        region: form.querySelector('[name="region"]:checked')?.value || "answer",
-        top: numberOf(form, "top") ?? 5,
         alternatives: numberOf(form, "alternatives") ?? 3,
         n: numberOf(form, "n") ?? 10,
         concurrency: numberOf(form, "concurrency") ?? 1,
         max_tokens: numberOf(form, "max_tokens") ?? 4096,
         normalizers: textOf(form, "normalizers").split(",").map((name) => name.trim()).filter(Boolean),
       };
-      const minP = numberOf(form, "min_p", { integer: false });
-      if (minP !== null) params.min_p = minP;
+      // Where to look, how many and the least chance choose the positions: named ones are
+      // probed as named, so these are sent only when none are.
+      if (!positions.length) {
+        params.region = form.querySelector('[name="region"]:checked')?.value || "answer";
+        params.top = numberOf(form, "top") ?? 5;
+        const minP = numberOf(form, "min_p", { integer: false });
+        if (minP !== null) params.min_p = minP;
+      }
       const alpha = numberOf(form, "alpha", { integer: false });
       if (alpha !== null) params.alpha = alpha;
       const kind = form.querySelector('[name="target_kind"]:checked')?.value;
@@ -223,6 +229,18 @@ async function forkingForm(step, query) {
   element.addEventListener("input", look);
   element.addEventListener("change", look);
   look();
+  // With positions named, the settings that would choose them are greyed: a setting nothing
+  // reads is not offered (found in use: a person read them as part of the probe they asked for).
+  const offer = () => {
+    const named = textOf(element, "positions").trim() !== "";
+    regions.disabled = named;
+    for (const control of [howMany, leastChance]) {
+      control.disabled = named;
+      control.closest(".form-field").classList.toggle("off", named);
+    }
+  };
+  element.querySelector('[name="positions"]').addEventListener("input", offer);
+  offer();
   return element;
 }
 

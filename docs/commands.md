@@ -365,10 +365,11 @@ likely alternative, let the model go on, and test which change what it does. Eac
 compared with the run's own token at the same position, Holm-corrected over the family planned
 before sampling.
 
-- `--in answer|reasoning|all` (default `answer`) and `--top N` (default 5) — where to look, and
-  how many positions to probe; or `--at 12,40` — positions as `tokens` numbers them.
-- `--alternatives K` (default 3), `-n N` continuations per forced token (default 10), `--min-p`
-  (default 0.05) — the least chance an alternative needs to count as a fork.
+- `--in answer|reasoning|all` (default `answer`), `--top N` (default 5) and `--min-p` (default
+  0.05) — where to look, how many positions to probe, and the least chance an alternative needs
+  to count as a fork; or `--at 12,40` — positions as `tokens` numbers them, probed as named, and
+  then those three are not used (the plan says so if one was given).
+- `--alternatives K` (default 3), `-n N` continuations per forced token (default 10).
 - `--target`, `--target-match` — the behaviour to test for; by default, what the run did.
 - `--score` — score the answer first, if it has no tokens yet. `--dry-run` — show the plan; draw
   nothing.
