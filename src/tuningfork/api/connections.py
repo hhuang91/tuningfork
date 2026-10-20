@@ -53,11 +53,13 @@ async def _harnesses(state: Any, *, fresh: bool = False) -> list[dict[str, Any]]
     return cached[1]
 
 
-def _preflight(home: Any, name: str, server: dict[str, Any], checks: dict[str, Any]) -> dict[str, Any]:
+def _preflight(
+    home: Any, name: str, server: dict[str, Any], checks: dict[str, Any], read: dict[str, Any] | None,
+) -> dict[str, Any]:
     from tuningfork.ops.connections import adapter_for, preflight
 
     try:
-        return preflight(adapter_for(home, name), server, checks).to_json()
+        return preflight(adapter_for(home, name), server, checks, read).to_json()
     except OperationError as error:
         return {"ok": False, "problems": [error.message], "notes": []}
 
@@ -83,15 +85,17 @@ def restart_command(settings: Any, upstream: str) -> str:
 def connection_routes() -> list[Route]:
     async def show(request: Request) -> Response:
         from tuningfork.endpoints import protected
+        from tuningfork.ops.connections import MEASURES, reminder, token_work
 
         state = request.app.state
         settings = state.settings
         server = getattr(state, "server", None) or {}
+        read = getattr(state, "server_read", None)
         checks = await asyncio.to_thread(state.recorder.store.server_checks, server.get("id"))
         harnesses = await _harnesses(state)
         # Each harness against this server: what stops it, what was never measured.
         harnesses = [
-            {**harness, "preflight": _preflight(state.settings.home, harness["name"], server, checks)}
+            {**harness, "preflight": _preflight(state.settings.home, harness["name"], server, checks, read)}
             for harness in harnesses
         ]
         # Why the server cannot be switched now, if it cannot: shown before anyone tries.
@@ -105,6 +109,13 @@ def connection_routes() -> list[Route]:
                 "started_with": settings.upstream_base_url,
                 "identity": server,
                 "checks": checks,
+                # What each measurement is and what needs it, and the token work it rules out.
+                "measures": {name: {"what": what, "for": needs} for name, (what, needs) in MEASURES.items()},
+                "token_work": token_work(checks, read),
+                # Where it is and how it answered tuningfork; on the internet, answering as a hosted
+                # model API does, the reminder that tuningfork is built for a model run oneself.
+                "read": read,
+                "reminder": reminder(read),
                 # Why it is not answering, when it is not: down, or still loading its model.
                 "problem": getattr(state, "server_problem", None),
             },

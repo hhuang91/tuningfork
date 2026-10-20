@@ -759,11 +759,14 @@ CORE_PROBES: tuple[tuple[str, ProbeFn], ...] = (
     ("output_format", probe_output_format),
 )
 
-#: What token-level work needs, measured by the server check (the Connections page).
+#: What token-level work needs, measured by the server check (the Connections page): scoring
+#: and forking tokens, through llama.cpp's own endpoints; a resample's tokens, through the chat
+#: endpoint's logprobs.
 TOKEN_PROBES: tuple[tuple[str, ProbeFn], ...] = (
     ("output_format", probe_output_format),
     ("prompt_equivalence", probe_prompt_equivalence),
     ("raw_completion", probe_raw_completion),
+    ("logprobs", probe_logprobs),
 )
 
 

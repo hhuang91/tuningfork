@@ -10,6 +10,7 @@
 
 import { api, enc } from "./api.js";
 import { chip, count, failure, firstLine, h, kv, loading, longText, millis, outcome, panel, plural, replace, short, toggle } from "./dom.js";
+import { tokenWork } from "./live.js";
 import { settle } from "./nav.js";
 import { messageSize, messageText, messageView, noReasoning, outputView, toolNames } from "./payload.js";
 import { startForm, startPanel } from "./start.js";
@@ -627,7 +628,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const { step } = found;
     replace(found.block, loading("Loading the step…"));
     try {
-      const detail = await api.get(`/runs/${enc(run.id)}/steps/${step.idx}?context=0`);
+      const [detail, work] = await Promise.all([api.get(`/runs/${enc(run.id)}/steps/${step.idx}?context=0`), tokenWork()]);
       const exact = `${base}/${step.idx}/context`;
       const here = state.skills.filter((span) => span.message_index < step.position);
       found.slot = h("div", { class: "start-slot" });
@@ -636,7 +637,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       found.actions = step.served
         // A replayed step was answered from the recording: there is no call to sample.
         ? panel("Work from here", h("p", { class: "muted" }, "Answered from the recording: nothing starts from here."), { className: "work-panel" })
-        : startPanel(detail, { go });
+        : startPanel(detail, { go, work });
       replace(found.block,
         found.actions,
         found.slot,

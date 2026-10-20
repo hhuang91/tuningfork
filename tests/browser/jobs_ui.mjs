@@ -450,9 +450,17 @@ try {
   await until(() => page.eval(`document.querySelectorAll(".harness-card").length >= 2`), "the harness cards");
   const startedOn = (await api("/connections")).server.url;
   await page.click("Check the server");
-  await until(() => page.eval(`[...document.querySelectorAll("table td.mono")].some((td) => td.textContent === "anthropic messages")`), "the check's results", 60000);
+  await until(() => page.eval(`[...document.querySelectorAll(".measured td .mono")].some((name) => name.textContent === "anthropic_messages")`), "the check's results", 60000);
   const checked = (await api("/connections")).server.checks.results;
   check(checked.streaming_tool_calls.support === "yes" && checked.anthropic_messages.support === "yes", "the server check measured both, and the page shows them");
+  check(await page.eval(`(() => {
+    const row = [...document.querySelectorAll(".measured tr")].find((tr) => tr.querySelector(".mono")?.textContent === "anthropic_messages");
+    return row.cells[0].textContent.startsWith("The Messages endpoint") && row.cells[2].textContent.includes("Needed for Claude Code");
+  })()`), "each measurement says what it is, under the name the terminal prints, and what needs it");
+  // The mock accepts a request for logprobs and sends none back, as a server without them does.
+  check(checked.logprobs.support === "no", "the check measured the chat endpoint's logprobs: none came back");
+  check(await page.eval(`[...document.querySelectorAll(".warn-text")].some((line) => line.textContent.startsWith("Keeping each sample's tokens needs token probabilities"))`),
+    "the page says what that rules out, in the words that grey it elsewhere");
   // A harness found, a capability there, a sandbox: fine is grey. Green and red are a check's.
   check(await page.eval(`!document.querySelector("main .chip.tone-ok, main .chip.tone-bad") && [...document.querySelectorAll("table td .chip")].some((c) => c.textContent === "yes" && c.classList.contains("tone-muted"))`),
     "nothing on the page is a verdict's green or red: what is there is grey");
@@ -483,6 +491,12 @@ try {
   await page.click("Open it");
   await until(() => page.eval(`location.hash === "#/runs/${run.id}/1?start=resample" && !!document.querySelector(".start-panel .plan-form")`), "the step's resample form");
   check(true, "Start… leads to the step's own resample form");
+  check(await page.eval(`(() => {
+    const keep = document.querySelector('.plan-form [name="logprobs"]');
+    const field = keep?.closest(".form-field");
+    return !!keep && keep.disabled && field.classList.contains("off")
+      && field.querySelector(".form-help").textContent.startsWith("Keeping each sample's tokens needs token probabilities");
+  })()`), "where the check found no logprobs, keeping each sample's tokens is greyed, saying why");
 
   // --- 10. A run as one conversation ------------------------------------------------------
   console.log("a run as one conversation");
@@ -622,6 +636,12 @@ try {
   await page.click("Find forking tokens at these", `document.querySelector(".tk-bar")`);
   await until(() => page.eval(`!!document.querySelector('.start-panel .plan-form [name="positions"]')`), "the forking form, in the step");
   check(await page.eval(`document.querySelector('.plan-form [name="positions"]').value === "${forkSpot.position}"`), "the form holds the selected position");
+  const choosers = `(() => {
+    const form = document.querySelector(".plan-form");
+    const controls = [form.querySelector('[name="region"]').closest("fieldset"), form.querySelector('[name="top"]'), form.querySelector('[name="min_p"]')];
+    return controls.map((control) => control.disabled);
+  })()`;
+  check((await page.eval(choosers)).every(Boolean), "with a position named, where to look, how many positions and the least chance are greyed");
   check(await page.eval(`(() => { const tools = document.querySelector('.plan-form [name="target_kind"][value="tools"]');
     return !!tools?.checked && tools.closest("label").textContent.startsWith("Calls read_file"); })()`),
     "the answer calls a tool, so the target first offered is calling it, with any arguments");
@@ -663,6 +683,11 @@ try {
   console.log("a target described, set against what the step has done");
   await page.eval(`location.hash = "#/runs/${scored.id}/0?start=forking-tokens"`);
   await until(() => page.eval(`!!document.querySelector('.plan-form [name="target_kind"][value="describe"]')`), "the forking form");
+  check(!(await page.eval(choosers)).some(Boolean), "with none named, they are offered");
+  await page.type(`document.querySelector('.plan-form [name="positions"]')`, "3");
+  check((await page.eval(choosers)).every(Boolean), "naming one greys them");
+  await page.type(`document.querySelector('.plan-form [name="positions"]')`, " ");
+  check(!(await page.eval(choosers)).some(Boolean), "and clearing it offers them again");
   await until(() => page.eval(`(document.querySelector(".seen-preview")?.textContent || "").includes("samples")`), "the behaviours seen at this step");
   await page.eval(`(() => {
     const value = document.querySelector(".rule-builder .rule input");

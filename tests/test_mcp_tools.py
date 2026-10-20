@@ -185,6 +185,40 @@ class TestReads:
         started = await call(server, "start_resample", {"run": run_id[:8], "step": 1, "n": 4})
         assert refusal(started) and "start one" in text(started)
 
+    async def test_the_token_work_a_check_ruled_out_is_said(self, recorded):
+        """An agent learns before it starts one that start_tokens and the rest would be refused."""
+        store, _ = recorded
+        server_id = store.add_server({"upstream": "http://upstream.test", "models": ["m"]})
+        store.set_server_checks(server_id, {"results": {
+            "logprobs": {"support": "no", "detail": "request accepted but `logprobs` came back null"},
+        }})
+        runner = JobRunner(store, Bus(), Proxy(), catalog=kinds())
+        try:
+            jobs = InProcessJobs(runner, status=lambda: {"upstream": "http://upstream.test", "server": {"id": server_id}})
+            status = await call(ToolServer(store, jobs), "server_status")
+        finally:
+            runner.shutdown(10)
+        reason = status.structured_content["cannot"]["logprobs"]
+        assert reason.startswith("Keeping each sample's tokens needs token probabilities") and reason in text(status)
+        assert set(status.structured_content["cannot"]) == {"logprobs"}
+        assert status.structured_content["reminder"] is None
+
+    async def test_a_hosted_model_api_is_said_to_be_one(self, recorded):
+        """An agent told what its own work can't reach there, before it starts any."""
+        store, _ = recorded
+        runner = JobRunner(store, Bus(), Proxy(), catalog=kinds())
+        read = {"internet": True, "asks_key": True, "props": False}
+        try:
+            jobs = InProcessJobs(runner, status=lambda: {"upstream": "https://api.example.com", "server": {},
+                                                        "server_read": read})
+            status = await call(ToolServer(store, jobs), "server_status")
+        finally:
+            runner.shutdown(10)
+        noted = status.structured_content["reminder"]
+        assert noted["headline"] == "This server is on the internet and asks for an API key."
+        assert noted["headline"] in text(status) and "built for a model you run yourself" in text(status)
+        assert set(status.structured_content["cannot"]) == {"score", "forking"}
+
 
 # --- jobs ------------------------------------------------------------------------------------------
 

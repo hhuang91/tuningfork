@@ -440,6 +440,9 @@ class ExperimentReport:
     #: with (`declared_alpha`; None where nothing kept it).
     alpha: float | None = None
     alpha_declared: float | None = None
+    #: Of a resample that asked for each sample's tokens, how many samples kept them: none
+    #: where the server sends no logprobs.
+    tokens_kept: int | None = None
 
     @property
     def interrupted_arm(self) -> str | None:
@@ -474,6 +477,7 @@ class ExperimentReport:
             "trashed_at": found.trashed_at,
             "alpha": report.alpha,
             "alpha_declared": report.alpha_declared,
+            "tokens_kept": report.tokens_kept,
         }
         if report.wording is not None:
             base["wording"] = report.wording.to_json()
@@ -588,6 +592,9 @@ def experiment_report(
         experiment=found, kind="resample", checkpoint=checkpoint, arms=arms, partial=partial,
         status=overall_status(statuses.values()), running=running,
     )
+    if found.settings.get("logprobs"):
+        samples = [sample.id for sample in store.samples(found.id)]
+        report.tokens_kept = len(store.token_streams(sample_ids=samples)) if samples else 0
     lens = list(lens) if lens else None
     if found.kind == "screen":
         from tuningfork.ops.screen import screen_result

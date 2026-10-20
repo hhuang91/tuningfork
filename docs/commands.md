@@ -294,7 +294,8 @@ tuningfork resample <run> write_file -n 20
   that hits it counts as truncated.
 - `--temperature`, `--top-p`, `--top-k` — override the recorded sampler; recorded as a change.
 - `--logprobs K` — keep each sample's tokens, with K alternatives each, on chat-completions steps:
-  `tokens --sample` shows one.
+  `tokens --sample` shows one. Where the server sends none back, the experiment says so; started
+  through the proxy, it is refused on a server the check found without them.
 - `--to-end` — each sample a fork run to the end through the harness, counted by the task's check
   (`--proxy`; `--spec` for a run recorded before tuningfork kept how it was launched).
 - `--normalizer`, `--seed-base`, `--prompt-cache`, `--base-url`, `--concurrency` — as
@@ -365,10 +366,11 @@ likely alternative, let the model go on, and test which change what it does. Eac
 compared with the run's own token at the same position, Holm-corrected over the family planned
 before sampling.
 
-- `--in answer|reasoning|all` (default `answer`) and `--top N` (default 5) — where to look, and
-  how many positions to probe; or `--at 12,40` — positions as `tokens` numbers them.
-- `--alternatives K` (default 3), `-n N` continuations per forced token (default 10), `--min-p`
-  (default 0.05) — the least chance an alternative needs to count as a fork.
+- `--in answer|reasoning|all` (default `answer`), `--top N` (default 5) and `--min-p` (default
+  0.05) — where to look, how many positions to probe, and the least chance an alternative needs
+  to count as a fork; or `--at 12,40` — positions as `tokens` numbers them, probed as named, and
+  then those three are not used (the plan says so if one was given).
+- `--alternatives K` (default 3), `-n N` continuations per forced token (default 10).
 - `--target`, `--target-match` — the behaviour to test for; by default, what the run did.
 - `--score` — score the answer first, if it has no tokens yet. `--dry-run` — show the plan; draw
   nothing.
@@ -532,7 +534,9 @@ evidence it is sent holds recorded prompts, answers and your skill. Its key is r
 
 The recording proxy: point a harness at `http://127.0.0.1:8787/v1`. It forwards to the inference
 server, records every call, serves the web UI and the MCP route, and runs the jobs the web UI and
-agents start. [Setup](setup.md#start-tuningfork) lists its options.
+agents start. [Setup](setup.md#start-tuningfork) lists its options. Pointed at a hosted model's
+API, it says in its first lines that tuningfork is built for a model you run yourself, and what
+works there ([cloud models](setup.md#cloud-models)).
 
 ### `ui`
 
@@ -546,11 +550,17 @@ token alone; `--mcp` prints the MCP token, and `--header-json` the header an MCP
 
 ### `connections show`, `connections switch`, `connections harness`, `connections check`
 
-- `show` — the server the proxy forwards to, what was measured of it, and the harnesses found.
+- `show` — the server the proxy forwards to, what was measured of it, and the harnesses found;
+  for a hosted model's API, that tuningfork is built for a model you run yourself.
 - `switch <url>` — points the proxy at another server, while nothing is using it (`--dry-run`).
+  A hosted API that asks for a key can be switched to, for recording; the plan says what it is.
 - `harness <name> --executable <path>` — names the program a harness runs as, kept in the
   recordings folder and never in the harness's own configuration (`--reset`: the one on `PATH`).
-- `check` — measures what the harnesses and the experiments need of the server.
+- `check` — measures what the harnesses and the experiments need of the server: tool calls in a
+  stream, the Messages endpoint, every prompt processed whole, and what token work needs —
+  llama.cpp's raw completion for scoring an answer and forking tokens, the chat endpoint's
+  logprobs for a resample's tokens. Token work it found the server without is refused through
+  the proxy, saying what was missing, and greyed in the web UI; what it never measured is not.
 
 ### `probe`, `servers`
 

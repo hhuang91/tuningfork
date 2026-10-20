@@ -494,11 +494,16 @@ tuningfork connections check
   known_output_format    yes — gemma4
   prompt_equivalence     yes — rendered 68 tokens, the chat endpoint's prompt has 68
   raw_completion         yes — 2 tokens forced by a grammar of ids, with their top alternatives
+  logprobs               yes — 47 token entries
+  top_logprobs           yes — top_logprobs present
+  logprobs_all_tokens    yes — 47 entries for 47 generated tokens
 ```
 
 A batch or a fork refuses to start a harness against a server that lacks what it needs —
 Hermes also needs a context of at least 64,000 tokens — rather than finding out from a
-failed run, and warns when the server answers prompts from its cache. `tuningfork
+failed run, and warns when the server answers prompts from its cache. Token work is held to
+the check too: scoring an answer, forking tokens and keeping a resample's tokens are greyed in
+the web UI, and refused, on a server it found without what they need. `tuningfork
 connections show` lists the server, what was measured of it, the harnesses found with their
 versions, and whether launches run in the sandbox.
 

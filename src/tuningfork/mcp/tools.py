@@ -963,13 +963,26 @@ def server_status(context: Context, args: NoArgs) -> Answer:
             "n_ctx": server.get("n_ctx"),
         }
         data["problem"] = health.get("server_problem")
-        data["checks"] = compact.fit(store.server_checks(server.get("id")) or {}, 6000) or None
+        checks = store.server_checks(server.get("id")) or {}
+        data["checks"] = compact.fit(checks, 6000) or None
         lines.append(f"the proxy sends model calls to {health.get('upstream')}"
                      + (" — paused" if health.get("paused") else ""))
         if health.get("server_problem"):
             lines.append(f"the server could not be read: {health['server_problem']}")
         elif server.get("models"):
             lines.append(f"it serves {', '.join(map(str, server['models']))}")
+        from tuningfork.ops.connections import reminder, token_work
+
+        # A server on the internet answering as a hosted API does: what the agent's own work can't reach.
+        read = health.get("server_read")
+        noted = reminder(read)
+        data["reminder"] = noted
+        if noted:
+            lines.append(f"{noted['headline']} {noted['body']}")
+        # The token work its check rules out, which start_tokens and the rest would be refused.
+        ruled_out = {work: reason for work, reason in token_work(checks, read).items() if reason}
+        data["cannot"] = ruled_out or None
+        lines.extend(ruled_out.values())
     data["recorded_servers"] = [
         {"id": compact.short(server_id), "models": identity.get("models"), "build": identity.get("build"),
          "first_seen": compact.when(first_seen), "runs": runs}

@@ -122,9 +122,13 @@ function setup(runs, scenarios, connections) {
   const tasks = [...new Set((runs || []).map((run) => run.task_id).filter(Boolean))];
   const items = [
     {
-      done: Boolean(connections && !server.problem && identity.id),
+      done: Boolean(connections && !server.problem && !server.reminder && identity.id),
       title: "An inference server answers",
-      body: server.problem
+      body: server.reminder
+        ? [h("span", { class: "warn-text" }, server.reminder.headline), " tuningfork is built for a model you run yourself: ",
+            h("a", { href: "#/words?term=local%20model" }, "why, and what works with this one"), " — ",
+            h("a", { href: "#/connections" }, "Connections")]
+        : server.problem
         ? [h("span", { class: "warn-text" }, server.problem), " — ", h("a", { href: "#/connections" }, "Connections")]
         : identity.id ? ["answering at ", h("span", { class: "mono" }, server.url || ""), models ? [", with ", h("span", { class: "mono" }, models)] : null]
           : ["model calls go to ", h("span", { class: "mono" }, server.url || "the upstream"), ", not read yet — ", h("a", { href: "#/connections" }, "check it")],

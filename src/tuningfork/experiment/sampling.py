@@ -619,7 +619,22 @@ async def run_arm(
     await draw_samples(
         store, experiment, client, base_url, sent, plan, progress, wire=anchor.wire
     )
+    if plan.logprobs is not None:
+        await asyncio.to_thread(note_no_tokens, store, experiment)
     return experiment
+
+
+#: What an experiment that asked for each sample's tokens and kept none says.
+NO_TOKENS = "each sample's tokens were asked for, and the server sent none back: its chat endpoint returns no logprobs"
+
+
+def note_no_tokens(store: Store, experiment: Experiment) -> None:
+    """An experiment that asked for each sample's tokens and kept none says so: asked for and
+    accepted with nothing back is how a server without logprobs answers."""
+    answered = [sample.id for sample in store.samples(experiment.id) if not sample.error]
+    if answered and not store.token_streams(sample_ids=answered):
+        store.add_experiment_notes(experiment.id, [NO_TOKENS])
+        experiment.notes.append(NO_TOKENS)
 
 
 class finished:

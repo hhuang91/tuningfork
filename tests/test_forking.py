@@ -178,6 +178,12 @@ class TestProbe:
         plan = prepare_forking(store, run_id, "0", positions=[position], min_p=0.5, n=3,
                                target_match="search_files", base_url=UPSTREAM)
         assert [arm["text"] for arm in plan.arms] == ["search_files", "read_file"]
+        # What chooses positions is not used once they are named, and the plan says so.
+        assert "min_p chooses positions only when none are named: not used" in plan.warnings
+        both = prepare_forking(store, run_id, "0", positions=[position], region="all", top=2, n=1, base_url=UPSTREAM)
+        assert "region and top choose positions only when none are named: not used" in both.warnings
+        plain = prepare_forking(store, run_id, "0", positions=[position], n=1, base_url=UPSTREAM)
+        assert not any("not used" in warning for warning in plain.warnings)
         result = await execute_forking(store, plan)
         (forced,) = result.report.positions[0].alternatives
         assert forced.target.successes == 3  # the target is now the alternative's behaviour

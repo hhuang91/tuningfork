@@ -17,6 +17,24 @@ export const live = {
 
 const listeners = new Set();
 
+// The token work the proxy's server was measured unable to do — each kind's reason, or none
+// (`token_work` in `GET /connections`): asked once, and again after a server check, a switch,
+// or the proxy coming back.
+let tokenWorkAsked = null;
+
+export function tokenWork() {
+  if (live.mode !== "live") return Promise.resolve({});
+  tokenWorkAsked ??= api.get("/connections").then((found) => found.server?.token_work || {}, () => {
+    tokenWorkAsked = null;
+    return {};
+  });
+  return tokenWorkAsked;
+}
+
+export function forgetTokenWork() {
+  tokenWorkAsked = null;
+}
+
 export function subscribe(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -54,7 +72,10 @@ function connect() {
     emit({ type: "connection" });
     // Back after a drop: the proxy may have restarted, with a new token. Ask again, so a
     // stale token shows as read-only now rather than at the first refused click.
-    if (dropped) api.get("/status").then((status) => setAuth(status.auth), () => {});
+    if (dropped) {
+      api.get("/status").then((status) => setAuth(status.auth), () => {});
+      forgetTokenWork();
+    }
     dropped = false;
   };
   source.onerror = () => {
@@ -87,7 +108,9 @@ function apply(event) {
       break;
     case "job": {
       const others = live.jobs.filter((job) => job.id !== event.job.id);
-      live.jobs = ["queued", "running"].includes(event.job.status) ? [...others, event.job] : others;
+      const going = ["queued", "running"].includes(event.job.status);
+      live.jobs = going ? [...others, event.job] : others;
+      if (event.job.kind === "server-check" && !going) forgetTokenWork();
       break;
     }
     case "breakpoints":

@@ -40,10 +40,11 @@ from tuningfork.jobs import JobRunner
 from tuningfork.proxy.local import LocalProxy
 from tuningfork.breakpoints import BreakpointEngine, EventBus
 from tuningfork.config import EXPERIMENT_HEADER, Settings
+from tuningfork.endpoints import find_on_internet
 from tuningfork.launches import split as split_launch
 from tuningfork.proxy.held import BreakpointPath
 from tuningfork.proxy.launches import LaunchRegistry, Refusal, context_note
-from tuningfork.proxy.recorder import ANSWERED, Recorder, Timings, fetch_server_identity, read_server
+from tuningfork.proxy.recorder import ANSWERED, Recorder, Timings, read_upstream
 from tuningfork.proxy.sse import SSEParser, unreadable
 from tuningfork.snapshots import SnapshotError, Snapshots
 from tuningfork.snapshots import available as git_available
@@ -276,13 +277,18 @@ def create_app(
         The harness may send no sampling parameters at all (Hermes sends none), so the
         server's own defaults are part of the checkpoint, not background detail.
         """
-        identity, problem = await read_server(app.state.client, server_address.url)
+        read = await read_upstream(app.state.client, server_address.url)
+        identity, problem = read.identity, read.problem
         server_id = await asyncio.to_thread(recorder.store.add_server, identity)
         recorder.server_id = server_id
         recorder.server_defaults = identity.get("defaults", {})
         app.state.server = {"id": server_id, **identity}
         # Why it said nothing of itself, when it did not: down, or still loading its model.
         app.state.server_problem = problem
+        # What the identity leaves out — a key asked for, llama.cpp's /props — and whether the
+        # server is on the internet: what the reminder of a model run oneself reads, and the
+        # token work (`ops.connections.reminder`, `token_work`).
+        app.state.server_read = {**read.facts(), "internet": await find_on_internet(server_address.url)}
 
     async def busy() -> list[str]:
         """Why the upstream cannot be switched now: anything that is using it."""
@@ -308,6 +314,7 @@ def create_app(
         new server's identity is recorded from then on, as a restart would.
         """
         from tuningfork.ops.common import OperationError
+        from tuningfork.ops.connections import reminder
 
         url = (url or "").strip().rstrip("/")
         if not re.match(r"https?://[^/]", url):
@@ -316,8 +323,11 @@ def create_app(
                 hint="like http://127.0.0.1:8081",
             )
         check_endpoint(url, home=settings.home, purpose="the proxy")
-        identity = await fetch_server_identity(app.state.client, url)
-        if not any(key in identity for key in ANSWERED):
+        read = await read_upstream(app.state.client, url)
+        identity = read.identity
+        # One that refuses tuningfork for want of a key answered all the same: a hosted model
+        # API, which records a harness's calls as `serve --upstream` does, and is said to be one.
+        if not any(key in identity for key in ANSWERED) and not read.asks_key:
             raise OperationError(
                 f"nothing answered at {url} as an inference server", field="url",
                 hint="check the address, and that the server is running",
@@ -333,6 +343,7 @@ def create_app(
                 if current.get(key) != identity.get(key)
             ],
             "busy": await busy(),
+            "reminder": reminder({**read.facts(), "internet": await find_on_internet(url)}),
         }
         if dry_run:
             return plan
@@ -432,6 +443,8 @@ def create_app(
                 "server": getattr(app.state, "server", None),
                 # Why it could not be read when last asked — down, or still loading.
                 "server_problem": getattr(app.state, "server_problem", None),
+                # What else that read found, and where the server is (`ServerRead`).
+                "server_read": getattr(app.state, "server_read", None),
             }
         )
 

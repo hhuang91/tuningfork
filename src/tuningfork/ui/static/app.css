@@ -1011,6 +1011,13 @@ pre.code { color: var(--muted); }
 /* Where your own agent sends its calls: each API beside its address. */
 .connect-urls { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; align-items: center; }
 @media (max-width: 700px) { .connect-urls { grid-template-columns: minmax(0, 1fr); } }
+/* What a server check measured: on a phone, what was found and what needs it go under its name. */
+@media (max-width: 700px) {
+  .measured tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-bottom: 1px solid var(--border); }
+  .measured tr:last-child { border-bottom: none; }
+  .measured td { border-bottom: none; }
+  .measured td:last-child { grid-column: 1 / -1; padding-top: 0; }
+}
 
 /* --- comparisons and experiments -------------------------------------------------- */
 
@@ -1201,6 +1208,10 @@ pre.code { color: var(--muted); }
 .target-picker legend { padding: 0 4px; color: var(--muted); font-size: 12px; }
 .target-choice { display: flex; align-items: baseline; gap: 8px; font-size: 13px; cursor: pointer; }
 .target-choice.disabled { color: var(--faint); cursor: default; }
+/* Settings that would not be used, as the form is filled in: greyed, never hidden. */
+.target-picker:disabled { opacity: 0.5; }
+.target-picker:disabled .target-choice { cursor: default; }
+.form-field.off .form-label { color: var(--faint); }
 /* How a person added a skill's folder, and the way to forget it. */
 .added-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .target-letters, .target-pattern { display: flex; flex-direction: column; gap: 4px; margin-left: 22px; }

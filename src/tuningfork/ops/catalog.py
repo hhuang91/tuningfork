@@ -156,9 +156,12 @@ def _sampling(params: Any) -> dict[str, Any]:
 
 
 def prepare_resample_job(context: JobContext, params: ResampleParams) -> Any:
+    from tuningfork.ops.connections import refuse_token_work
     from tuningfork.ops.experiments import prepare_resample
 
     _checkpoint(params)
+    if params.logprobs is not None:
+        refuse_token_work(context.store, context.proxy.status(), "logprobs", field="logprobs")
     return prepare_resample(
         context.store, params.run, params.step, base_url=context.model_url,
         normalizers=params.normalizers,
@@ -183,9 +186,11 @@ class TokensParams(AtStep):
 
 
 def prepare_tokens_job(context: JobContext, params: TokensParams) -> Any:
+    from tuningfork.ops.connections import refuse_token_work
     from tuningfork.ops.tokens import prepare_score
 
     _checkpoint(params)
+    refuse_token_work(context.store, context.proxy.status(), "score")
     return prepare_score(context.store, params.run, params.step, top_k=params.top_k, base_url=context.model_url)
 
 
@@ -205,7 +210,7 @@ class ForkingParams(AtStep):
     region: Literal["answer", "reasoning", "all"] = field(default="answer", metadata=_help("Where to look for forks when no positions are given."))
     top: int = field(default=5, metadata=_help("Positions to probe when none are given.", minimum=1, maximum=20))
     alternatives: int = field(default=3, metadata=_help("Other tokens to force at each position.", minimum=1, maximum=10))
-    min_p: float = field(default=0.05, metadata=_help("Least chance the step's sampler gave an alternative, to count as a fork.", minimum=0.001, maximum=0.5))
+    min_p: float = field(default=0.05, metadata=_help("Least chance the step's sampler gave an alternative, to count as a fork, when no positions are given.", minimum=0.001, maximum=0.5))
     n: int = field(default=10, metadata=_help("Continuations per forced token.", minimum=1, maximum=200))
     max_tokens: int = field(default=4096, metadata=_help("Cap per continuation; hitting it counts as truncated.", minimum=1, maximum=262144))
     normalizers: list[str] = field(default_factory=list, metadata=_help("Restrict normalizers; none named means the defaults."))
@@ -218,9 +223,11 @@ class ForkingParams(AtStep):
 
 
 def prepare_forking_job(context: JobContext, params: ForkingParams) -> Any:
+    from tuningfork.ops.connections import refuse_token_work
     from tuningfork.ops.forking import prepare_forking
 
     _checkpoint(params)
+    refuse_token_work(context.store, context.proxy.status(), "forking")
     return prepare_forking(
         context.store, params.run, params.step, stream=params.stream, positions=params.positions,
         top=params.top, region=params.region, alternatives=params.alternatives, min_p=params.min_p,

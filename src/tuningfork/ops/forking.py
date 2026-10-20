@@ -130,6 +130,13 @@ def prepare_forking(
                 raise OperationError(f"nothing is known of what else the model weighed at position {position}",
                                      field="positions")
             found.append(candidate)
+        # Named positions are probed as named: where to look, how many and the least chance
+        # choose positions only when none are.
+        unused = [name for name, value, default in (("region", region, "answer"), ("top", top, 5), ("min_p", min_p, 0.05))
+                  if value != default]
+        if unused:
+            warnings.append(f"{' and '.join(unused)} {'chooses' if len(unused) == 1 else 'choose'} positions only "
+                            "when none are named: not used")
     else:
         found = [c for c in candidates(tokens, sampler, top=top, region=region, min_p=min_p, alternatives=alternatives)
                  if c.position < first_masked]
