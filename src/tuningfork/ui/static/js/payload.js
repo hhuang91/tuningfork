@@ -128,9 +128,9 @@ export function skillMark(span, { recorded = true } = {}) {
 /** Whether the text the model read is, byte for byte, a skill file the run recorded. */
 export function fileChip(span, recorded) {
   if (span.file && span.match === "body") {
-    return chip(span.file, "ok", "The text matches this file's body; the harness left out its frontmatter. Line numbers are the file's");
+    return chip(`✓ ${span.file}`, "muted", "The text matches this file's body; the harness left out its frontmatter. Line numbers are the file's");
   }
-  if (span.file) return chip(span.file, "ok", "The text matches this file byte for byte, so its line numbers are the file's");
+  if (span.file) return chip(`✓ ${span.file}`, "muted", "The text matches this file byte for byte, so its line numbers are the file's");
   if (!recorded) {
     return chip("skill files not recorded", "muted", "A batch run records its skill files when it finishes; this run has none recorded (yet)");
   }
@@ -205,8 +205,8 @@ function harnessText(text) {
 // What changed a message before the model saw it: a person at a breakpoint, or a fork's
 // variant wording.
 const CHANGED = {
-  breakpoint: ["edited", "response", "Changed at a breakpoint before the model saw it"],
-  variant: ["variant", "skill", "The variant wording was swapped in here: the model saw it, the harness sent the original"],
+  breakpoint: ["edited", "change", "Changed at a breakpoint before the model saw it"],
+  variant: ["variant", "change", "The variant wording was swapped in here: the model saw it, the harness sent the original"],
 };
 
 /** One message, folded to a line. `extra` goes in its header line; `idPrefix` keeps ids

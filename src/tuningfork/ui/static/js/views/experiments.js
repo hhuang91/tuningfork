@@ -70,10 +70,8 @@ export async function experimentsView(root) {
 
 function kindChip(experiment) {
   const toEnd = experiment.reach === "end";
-  if (experiment.kind === "ab") return chip(toEnd ? "A/B to the end" : "A/B", "accent");
-  if (experiment.kind === "forking-tokens") return chip("forking tokens", "skill");
-  if (experiment.kind === "screen") return chip("screen", "accent");
-  return chip(toEnd ? "resample to the end" : "resample", "muted");
+  const kinds = { ab: toEnd ? "A/B to the end" : "A/B", "forking-tokens": "forking tokens", screen: "screen" };
+  return chip(kinds[experiment.kind] || (toEnd ? "resample to the end" : "resample"), "muted");
 }
 
 const TITLES = { ab: "Wording A/B", resample: "Resample", "forking-tokens": "Forking tokens", screen: "Screen of proposed edits" };
@@ -298,7 +296,7 @@ function toEndView(experiment) {
         targetLine("the task's check passes", "declared by the task, before any fork ran"),
         h("div", { class: "verdict-big" }, headline),
         h("div", { class: "stack", style: { gap: "4px" } },
-          armView(result.original, "original", undefined), armView(result.variant, "variant", "response")),
+          armView(result.original, "original", undefined), armView(result.variant, "variant", "change")),
         result.p_value === null ? null : h("div", { class: "mono small" }, `Fisher exact p = ${formatP(result.p_value)} (α = ${result.alpha})`)),
       h("p", { class: "hint" }, "Steps before this one were answered from the recording in every fork, so both arms share the history written under the original wording; from here each ran live with its own wording."),
     ]),

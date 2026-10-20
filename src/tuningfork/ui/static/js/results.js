@@ -75,7 +75,7 @@ export function comparisonView(experiment) {
       h("div", { class: "verdict-big" }, shiftWords(target)),
       h("div", { class: "stack", style: { gap: "4px" } },
         h("span", null, h("span", { class: "muted" }, "original  "), rateBar(target.original)),
-        h("span", null, h("span", { class: "muted" }, "variant   "), rateBar(target.variant, "response"))),
+        h("span", null, h("span", { class: "muted" }, "variant   "), rateBar(target.variant, "change"))),
       h("div", { class: "mono small" }, `Fisher exact p = ${formatP(target.p_value)} (α = ${target.alpha})`)));
     parts.push(h("p", { class: "hint" }, "A checkpoint A/B keeps the history written under the original wording: treat it as a screening result and confirm a winner with full runs."));
   } else {
@@ -91,7 +91,7 @@ export function comparisonView(experiment) {
         h("td", { class: "nowrap" }, h("span", { class: "chip tone-accent" }, shift.letter), mark ? [" ", mark] : null),
         h("td", null, outcome(shift.outcome)),
         h("td", null, rateBar(shift.original), reasonedText(shift.original_reasoned, shift.original.successes)),
-        h("td", null, rateBar(shift.variant, "response"), reasonedText(shift.variant_reasoned, shift.variant.successes)),
+        h("td", null, rateBar(shift.variant, "change"), reasonedText(shift.variant_reasoned, shift.variant.successes)),
         h("td", { class: "num mono" }, formatP(shift.p_value)),
         comparison.exploratory ? h("td", { class: "num mono" }, formatP(shift.adjusted_p)) : null);
     })))));
@@ -242,7 +242,7 @@ function forkRow(label, arm, tested, ledTo = null) {
   return h("tr", null,
     h("td", { class: "muted" }, label),
     h("td", { class: "mono" }, `${JSON.stringify(arm.arm.text)} ${pct(arm.arm.p)}`),
-    h("td", null, arm.target.total ? rateBar(arm.target, tested ? "response" : "accent") : h("span", { class: "muted" }, "none drawn"), drawn),
+    h("td", null, arm.target.total ? rateBar(arm.target, tested ? "change" : "accent") : h("span", { class: "muted" }, "none drawn"), drawn),
     h("td", { class: "num mono" }, tested ? formatP(tested.p_value) : ""),
     h("td", { class: "num mono" }, tested ? formatP(tested.adjusted_p) : ""),
     h("td", null, tested?.flips ? chip(tested.direction === "away" ? "flips away" : "flips toward", "accent") : null),
@@ -325,7 +325,7 @@ export function screenView(screen, { arms = {} } = {}) {
             h("td", null, ""), h("td", null, ""), h("td", { class: "muted small" }, originalNote)),
           screen.arms.map((arm) => h("tr", null,
             h("td", null, name(arm)),
-            h("td", null, arm.target.total ? rateBar(arm.target, "response") : h("span", { class: "muted" }, "none drawn"), drawn(arm), timedOut(arm)),
+            h("td", null, arm.target.total ? rateBar(arm.target, "change") : h("span", { class: "muted" }, "none drawn"), drawn(arm), timedOut(arm)),
             h("td", { class: "num mono" }, formatP(arm.p_value)),
             h("td", { class: "num mono" }, formatP(arm.adjusted_p)),
             h("td", null, verdict(arm))))))),

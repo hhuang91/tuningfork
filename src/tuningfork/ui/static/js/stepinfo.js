@@ -19,8 +19,8 @@ export function summaryStrip(step) {
     item("tokens", usage.prompt_tokens !== undefined ? `${count(usage.prompt_tokens)} in → ${count(usage.completion_tokens)} out` : null),
     item("first token", step.timings?.ttft_ms != null ? millis(step.timings.ttft_ms) : null),
     item("total", step.timings?.total_ms != null ? millis(step.timings.total_ms) : null),
-    step.edits && Object.keys(step.edits).length ? chip("edited at a breakpoint", "response") : null,
-    step.substitution?.spans ? chip("variant swapped in", "skill") : null,
+    step.edits && Object.keys(step.edits).length ? chip("edited at a breakpoint", "change") : null,
+    step.substitution?.spans ? chip("variant swapped in", "change") : null,
   );
 }
 
@@ -43,7 +43,7 @@ export function banners(step, { original = null } = {}) {
       replay.workspace ? `; the workspace was ${replay.workspace === "same" ? "the recording's" : "not the recording's"} at this point.` : "."));
   }
   if (replay.mismatch) {
-    out.push(h("div", { class: "banner banner-bad" }, h("strong", null, "The replay left the recording here. "),
+    out.push(h("div", { class: "banner banner-warn" }, h("strong", null, "The replay left the recording here. "),
       "The harness asked for something the recording never answered, so this fork's history is not the recorded one, and it is not counted."));
   }
   if (step.substitution?.spans) {
@@ -66,14 +66,14 @@ export function banners(step, { original = null } = {}) {
   const undelivered = step.error && step.error.startsWith("tuningfork could not deliver");
   if (step.error && step.response && !response) {
     // A stream that broke off keeps what arrived: shown, but it is not a behaviour.
-    out.push(h("div", { class: "banner banner-bad" }, h("strong", null, "This call failed. "),
+    out.push(h("div", { class: "banner banner-warn" }, h("strong", null, "This call failed. "),
       `${step.error}. What arrived before it did is shown; it counts as an error, not as behaviour.`));
   }
   if (response?.dropped) {
-    out.push(h("div", { class: "banner banner-bad" }, h("strong", null, "Dropped at a breakpoint. "),
+    out.push(h("div", { class: "banner banner-warn" }, h("strong", null, "Dropped at a breakpoint. "),
       "The model answered, but the harness received an error instead."));
   } else if (response && undelivered) {
-    out.push(h("div", { class: "banner banner-bad" }, h("strong", null, "The response was edited, but the edit could not be delivered. "),
+    out.push(h("div", { class: "banner banner-warn" }, h("strong", null, "The response was edited, but the edit could not be delivered. "),
       `The harness received an error instead (${step.error}). The step's behaviour is what the model produced.`));
   } else if (response) {
     const fields = (response.message_fields || response.fields || []).join(", ");

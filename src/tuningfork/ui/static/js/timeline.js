@@ -201,7 +201,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
         class: "tl-changed",
         href: `${base}/${mark.steps[0]}/context`,
         title: `The model saw a different version of this message at ${plural(mark.steps.length, "step")} ${mark.steps.join(", ")}: open its exact context`,
-      }, chip(mark.by === "variant" ? "variant" : "edited", mark.by === "variant" ? "skill" : "response")));
+      }, chip(mark.by === "variant" ? "variant" : "edited", "change")));
     const withSkill = state.skills.some((span) => span.message_index === entry.index);
     // Short turns start open, and any carrying a skill; system prompts and long results fold.
     const open = withSkill || (entry.message.role !== "system" && messageSize(entry.message) < 1500);
@@ -257,11 +257,11 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     if (none) out.push(none);
     if (step.served) out.push(chip("replayed", "muted", `Answered from the recording: step ${replay.source_idx} of run ${short(replay.source_run || "")}`));
     if (replay.live_from !== undefined && replay.live_from !== null) out.push(chip("live from here", "accent", "The fork went live at this step"));
-    if (replay.mismatch) out.push(chip("left the recording", "bad"));
+    if (replay.mismatch) out.push(chip("left the recording", "warn"));
     if (step.variant) out.push(chip("variant", "skill", "A variant wording was swapped in: the model saw it, the harness sent the original"));
     if (step.leaked) out.push(chip("original leaked", "warn"));
-    if (step.edited.request) out.push(chip("context edited", "response", "Edited at a breakpoint before the model saw it"));
-    if (step.edited.response) out.push(chip(`answer ${step.edited.response}`, "response", "At a breakpoint, before the harness acted on it"));
+    if (step.edited.request) out.push(chip("context edited", "change", "Edited at a breakpoint before the model saw it"));
+    if (step.edited.response) out.push(chip(`answer ${step.edited.response}`, "change", "At a breakpoint, before the harness acted on it"));
     if (step.kept === "retried") out.push(chip("not kept", "warn", `The harness called again from the same place, at step ${step.retried_by}`));
     if (step.kept === "differs") out.push(chip("kept differently", "warn", "The harness's copy of this answer is not what the model gave"));
     if (step.kept === "missing") out.push(chip("not kept", "warn", "No copy of this answer reached the conversation"));

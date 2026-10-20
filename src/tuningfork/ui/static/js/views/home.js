@@ -32,11 +32,23 @@ export async function homeView(root, _, scope) {
           h("p", null, h("strong", null, "Record. "), "A scenario holds a skill's tasks and a check. A batch job launches the harness once per run, each in a fresh workspace; the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way."),
           h("p", null, h("strong", null, "Measure. "), "At any step, an experiment sends the step's exact request again, with everything before it held fixed: the model's behaviours there, counted. Run to the end, each sample is a fork of the run, judged by the task's check."),
           h("p", null, h("strong", null, "Improve. "), "A refinement declares what should happen at a step, then screens small edits against the original wording. A survivor is validated with full runs — held-out tasks included — and written back only when a person approves it: a new version of the skill, measured again from the top."),
-          h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a screen, a validation, each run inside `tuningfork serve`. A job is a record of the work; what it made — runs, experiments — is kept on its own.")),
+          h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a screen, a validation, each run inside `tuningfork serve`. A job is a record of the work; what it made — runs, experiments — is kept on its own."),
+          colours()),
       ]),
       panel("What do you want to find out?", h("div", { class: "workflows" }, WORKFLOWS.map(workflowCard))),
       glossaryEl));
   if (scope.query?.get("term")) glossaryEl.scrollIntoView({ block: "start" });
+}
+
+// The colours, each shown as the chips that wear it (app.css keeps the legend beside its tokens).
+function colours() {
+  return h("p", { class: "colours" }, h("strong", null, "Colours. "),
+    chip("pass", "ok"), " ", chip("fail", "bad"), " Green and red are a check's verdict. ",
+    chip("not counted", "warn"), " Amber is a caution. ",
+    chip("edited", "change"), " Teal is what a person or tuningfork changed. ",
+    chip("skill", "skill"), " Purple is a skill's own words. ",
+    chip("tool call", "accent"), " Indigo is what you can act on, what is current or significant, and the model's own answer. "
+      + "Everything else is grey.");
 }
 
 // --- where you left off -----------------------------------------------------------------------

@@ -1469,8 +1469,7 @@ def import_chat(
         console.print(f"  skill      {escape(found['name'])} ({escape(how + where)}); kept: {escape(kept)}{chosen}")
     if not shown["skills"]:
         console.print("  skill      [dim]none shows in the conversation[/dim]")
-    for warning in shown["warnings"]:
-        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    _print_said(shown["warnings"], shown["notes"])
     if scenario:
         if not plan.study:
             _refuse(OperationError(
@@ -1506,11 +1505,18 @@ def import_chat(
         made = make_scenario(store, planned)
     except OperationError as error:
         _refuse(error)
-    for warning in [*planned.warnings, *made.checked.warnings]:
-        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    _print_said([*planned.warnings, *made.checked.warnings], planned.notes)
     spec_file = scenario_files.spec_path(store.home, scenario)
     console.print(f"scenario [bold]{escape(scenario)}[/bold] made: {escape(str(spec_file))}")
     _run_it(spec_file, planned.harness)
+
+
+def _print_said(warnings: list[str], notes: list[str] = ()) -> None:
+    """What a plan says: its cautions in yellow, then what is so and needs no care."""
+    for warning in warnings:
+        console.print(f"  [yellow]warning[/yellow]    {escape(warning)}", soft_wrap=True)
+    for note in notes:
+        console.print(f"  note       {escape(note)}", soft_wrap=True)
 
 
 def _run_it(spec_file: Path, harness: Optional[str]) -> None:
@@ -1593,8 +1599,7 @@ def scenario_of_run(
     if plan.next_skill is not None:
         did = f" (the chat did at step {plan.next_skill['step']})" if plan.next_skill["step"] is not None else ""
         console.print(f"  stops      where the model loads a skill other than {escape(plan.skill)}{escape(did)}")
-    for warning in plan.warnings:
-        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    _print_said(plan.warnings, plan.notes)
     if dry_run:
         console.print("\n[dim]nothing written (--dry-run)[/dim]")
         return
@@ -1602,8 +1607,7 @@ def scenario_of_run(
         made = make_scenario(store, plan)
     except OperationError as error:
         _refuse(error)
-    for warning in made.checked.warnings:
-        console.print(f"  [yellow]note[/yellow]       {escape(warning)}", soft_wrap=True)
+    _print_said(made.checked.warnings)
     spec_file = scenario_files.spec_path(store.home, name)
     console.print(f"\nscenario [bold]{escape(name)}[/bold] made: {escape(str(spec_file))}")
     _run_it(spec_file, plan.harness)

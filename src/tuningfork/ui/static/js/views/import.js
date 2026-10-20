@@ -19,6 +19,12 @@ const SOURCES = {
 // The file's text is sent whole; past this the server refuses it anyway.
 const MAX_BYTES = 64 * 1024 * 1024;
 
+// What a plan says: its cautions in amber, then what is so and needs no care, as plain notes.
+const said = (plan) => [
+  (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
+  (plan.notes || []).map((note) => h("div", { class: "banner" }, note)),
+];
+
 export async function importView(root, _params, scope) {
   // Come from the Scenarios page: the chat imported, its scenario is made next.
   const forScenario = scope?.query?.get("then") === "scenario";
@@ -141,7 +147,7 @@ export async function importView(root, _params, scope) {
         ["tools", plan.tools ? `${plan.tools}${plan.tools_from ? ` from run ${plan.tools_from.slice(0, 8)}` : ""}` : "none in the file"],
         ["skills", skills],
       ])),
-      (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)));
+      said(plan));
   }
 
   file.addEventListener("change", async () => {
@@ -393,7 +399,7 @@ export async function scenarioFromRunView(root, [runId], scope) {
     send: async (params, extra) =>
       answered(await api.post(`/runs/${runId}/scenario`, extra.dry_run ? { ...params, dry_run: true, quiet: true } : params)),
     onStarted: (made) => replace(done, panel("Made", h("div", { class: "stack" },
-      (made.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
+      said(made),
       made.harness && made.harness !== "hermes"
         ? h("p", { class: "hint" }, `Its runs go through ${made.harness}: choose it when you run the scenario.`) : null,
       h("div", { class: "actions" },
@@ -428,7 +434,7 @@ function scenarioPlan(plan) {
       ["its inputs", plan.files.length ? h("span", { class: "mono" }, plan.files.join(", "))
         : h("span", { class: "muted" }, "none kept: add the files its conversation names on its page")],
     ]),
-    (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)));
+    said(plan));
 }
 
 // Which of the person's messages the starting prompt is, and why their others are not offered.

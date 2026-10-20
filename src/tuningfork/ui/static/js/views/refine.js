@@ -873,7 +873,7 @@ export async function refinementView(root, [id], scope) {
         const report = screen.report;
         return h("tr", { class: "clickable", onclick: () => (location.hash = `#/experiments/${screen.experiment}`) },
           h("td", null, h("a", { class: "mono", href: `#/experiments/${screen.experiment}` }, short(screen.experiment))),
-          h("td", null, chip(screen.status, screen.status === "done" ? "ok" : screen.status === "running" ? "accent" : "warn")),
+          h("td", null, chip(screen.status, screen.status === "done" ? "muted" : screen.status === "running" ? "accent" : "warn")),
           h("td", { class: "mono" }, report.arms.map((arm) => arm.name).join(", ")),
           // A quick look draws no original arm: the original's forks drawn before, if any.
           h("td", null, report.baseline.target.total ? rateBar(report.baseline.target) : h("span", { class: "faint" }, "none drawn here")),

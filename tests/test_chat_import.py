@@ -139,6 +139,10 @@ class TestTheSkill:
         shown = plan.to_json()
         assert any("names no tools (Hermes's export keeps none)" in warning for warning in shown["warnings"])
         assert any("extracted from what the model read" in warning for warning in shown["warnings"])
+        # Whose answers they are is so, and needs no care: a note, never a caution the page shows in amber.
+        assert shown["notes"] == ["its answers are gemma-4-31b's: an experiment here samples your server's model, "
+                                  "given this conversation"]
+        assert not any("its answers are" in warning for warning in shown["warnings"])
 
     def test_a_preloaded_skill_is_in_context_from_the_first_step(self, store):
         plan = imports.prepare_import(store, snapshot(conversation(), system=SYSTEM + PRELOADED))
@@ -155,7 +159,7 @@ class TestTheSkill:
         data = export(conversation(("tally-report", SKILL), ("csv-tidy", OTHER)))
         plan = imports.prepare_import(store, data)
         assert plan.names == ["tally-report", "csv-tidy"] and plan.study is None
-        assert any("it keeps 2 skills, tally-report and csv-tidy" in warning for warning in plan.warnings)
+        assert any("it keeps 2 skills, tally-report and csv-tidy" in note for note in plan.notes)
         result = imports.execute_import(store, plan)
         run = store.get_run(result.run_id)
         assert result.skills == ["tally-report", "csv-tidy"] and result.skill is None
@@ -479,7 +483,7 @@ class TestAScenarioOfAnImport:
         assert [message["role"] for message in plan.context.in_turn] == ["assistant", "tool"]
         assert plan.context.in_turn[0]["tool_calls"][0]["function"]["arguments"] == '{"name":"csv-tidy"}'  # as sent
         assert any("each run starts at step 1, where the chat loaded tally-report, with the turn's step 0 taken as done"
-                   in warning for warning in plan.warnings)
+                   in note for note in plan.notes)
         # The chat from the prompt on, each step with what a run does with it.
         assert [(entry["step"], entry["part"], entry["stop"]) for entry in plan.steps] == [
             (0, "done", False), (1, "first", False), (2, "live", False), (3, "live", False)]
@@ -497,6 +501,10 @@ class TestAScenarioOfAnImport:
         assert first.spec()["evals"][0]["tuningfork"]["stop_at_next_skill"] is True
         assert any("each run stops where the model loads a skill other than csv-tidy" in warning
                    and "a check of the final reply finds none there" in warning for warning in first.warnings)
+        # A check of the workspace reads it where each run stops: then the stop is only so.
+        files = imports.prepare_scenario(store, result.run_id, "tidy-files", skill="csv-tidy", check="test -s out.csv")
+        assert any("each run stops where the model loads a skill other than csv-tidy" in note for note in files.notes)
+        assert not any("each run stops" in warning for warning in files.warnings)
 
     def test_the_skills_own_folder_is_the_one_it_tunes(self, store, tmp_path):
         folder = tmp_path / "tally-report"
@@ -550,7 +558,7 @@ class TestAScenarioOfAnImport:
         assert plan.harness == "claude-code" and plan.cut == 1 and not plan.context.messages
         assert plan.prompt == "Use the tally-report skill on data.csv."
         assert plan.extract.startswith('---\nname: tally-report\ndescription: "Tally report"\n---\n\n# Tally report')
-        assert any("without its frontmatter" in warning for warning in plan.warnings)
+        assert any("without its frontmatter" in note for note in plan.notes)
         assert imports.make_scenario(store, plan).checked.ok
 
         request = claude_code_request()
@@ -704,7 +712,7 @@ def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_chec
     assert plan.skill_dir.resolve() == (stack.tmp / "skills-src" / "tally-report").resolve()
     assert plan.files == {"data.csv": b"id,amount\n1,10\n2,20\n3,30\n4,1.5\n"}
     assert plan.check == stack.item.tuningfork.check and set(plan.check_files) == {"checks"}
-    assert any("its check is task tally-report/1's own" in warning for warning in plan.warnings)
+    assert any("its check is task tally-report/1's own" in note for note in plan.notes)
     made = imports.make_scenario(stack.store, plan)
     assert made.checked.ok, made.checked.problems
     (item,) = made.spec["evals"]
@@ -767,7 +775,7 @@ def test_a_launched_runs_scenario_from_later_in_its_turn_has_its_workspace_there
     plan = imports.prepare_scenario(stack.store, source.run_id, "after-notes")
     assert plan.cut == 1 and [message["role"] for message in plan.context.in_turn] == ["assistant", "tool"]
     assert plan.files == {"data.csv": b"id,amount\n1,10\n2,20\n3,30\n4,1.5\n", "notes.txt": b"rows: 4"}
-    assert any("workspace as its step 1 found it" in warning for warning in plan.warnings)
+    assert any("workspace as its step 1 found it" in note for note in plan.notes)
     # Not in the sandbox: the steps taken as done name this run's own folder, which no other run has.
     assert any("own workspace" in warning for warning in plan.warnings)
 

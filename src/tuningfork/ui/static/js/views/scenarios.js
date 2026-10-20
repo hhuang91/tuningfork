@@ -40,7 +40,7 @@ export async function scenariosView(root, _, scope) {
             h("tbody", null, found.map((scenario) =>
               h("tr", { class: "clickable", onclick: () => (location.hash = `#/scenarios/${scenario.name}`) },
                 h("td", null, h("a", { class: "mono", href: `#/scenarios/${scenario.name}` }, scenario.name),
-                  scenario.problems ? chip(`${plural(scenario.problems, "problem")}`, "bad") : null),
+                  scenario.problems ? chip(`${plural(scenario.problems, "problem")}`, "warn") : null),
                 h("td", { class: "mono" }, scenario.skill_name || "—"),
                 h("td", { class: "num" }, String(scenario.evals)),
                 h("td", null, scenario.results.length

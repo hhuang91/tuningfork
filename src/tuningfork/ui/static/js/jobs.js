@@ -27,7 +27,7 @@ export const KIND_LABEL = {
   validate: "Edit validated",
 };
 
-const STATE_TONE = { queued: "muted", running: "accent", done: "ok", failed: "bad", cancelled: "warn", interrupted: "warn" };
+const STATE_TONE = { queued: "muted", running: "accent", done: "muted", failed: "warn", cancelled: "muted", interrupted: "warn" };
 export const ACTIVE = new Set(["queued", "running"]);
 
 export const kindLabel = (job) => KIND_LABEL[job.kind] || job.kind;
@@ -140,7 +140,7 @@ export function logLine(entry) {
     case "sample":
       return h("div", { class: "log-line" }, at,
         h("span", { class: "muted" }, `${data.arm && data.arm !== "original" ? `${data.arm} ` : ""}sample ${Number(data.index) + 1}`),
-        data.error ? chip("failed", "bad", data.error) : data.outcome ? outcome(data.outcome) : null);
+        data.error ? chip("failed", "warn", data.error) : data.outcome ? outcome(data.outcome) : null);
     case "launch":
       return h("div", { class: "log-line" }, at, chip("launched", "muted"), h("span", { class: "mono small" }, data.label || short(data.launch_id)));
     case "run": {

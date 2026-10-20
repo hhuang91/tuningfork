@@ -141,7 +141,7 @@ function batchPreview(plan) {
     h("div", { class: "check-command" },
       plan.check_kind === "shell"
         ? [
-            h("div", { class: "label" }, "How a run passes — this runs as a shell command, as you, in each run's workspace, where the harness worked. $TUNINGFORK_REPLY names a file holding the agent's final reply."),
+            h("div", { class: "label warn-text" }, "How a run passes — this runs as a shell command, as you, in each run's workspace, where the harness worked. $TUNINGFORK_REPLY names a file holding the agent's final reply."),
             h("pre", { class: "code" }, plan.check),
           ]
         : plan.check_kind
