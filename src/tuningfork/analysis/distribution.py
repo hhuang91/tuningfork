@@ -19,7 +19,7 @@ import json
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from tuningfork.analysis.normalize import Outcome, called_tools
 from tuningfork.analysis.stats import Rate, fisher_exact, rate, samples_needed
@@ -40,6 +40,27 @@ def cluster_letter(index: int) -> str:
 def _ordered_keys(counts: dict[str, int], outcomes: dict[str, Outcome]) -> list[str]:
     # Largest first; ties broken by label so the lettering is stable between runs.
     return sorted(counts, key=lambda key: (-counts[key], outcomes[key].label))
+
+
+def agreeing_letters(keys: Sequence[str], known: Mapping[str, str] | None = None) -> list[str]:
+    """Letters for the behaviours `keys`, in their order: A, B, C ... — or, given `known`, the
+    letters an earlier resample gave its behaviours by key, so that a behaviour it saw keeps its
+    letter and one it never saw takes a letter it did not use. Found in use: an A/B whose target
+    was a resample's B lettered its own table afresh, the target its row D, and only the target
+    badge said which row it was."""
+    if not known:
+        return [cluster_letter(position) for position in range(len(keys))]
+    taken = set(known.values())
+    letters, fresh = [], 0
+    for key in keys:
+        if key in known:
+            letters.append(known[key])
+            continue
+        while cluster_letter(fresh) in taken:
+            fresh += 1
+        taken.add(cluster_letter(fresh))
+        letters.append(cluster_letter(fresh))
+    return letters
 
 
 @dataclass(slots=True)
@@ -97,9 +118,15 @@ def _reasoned(indices: Sequence[int], reasoning: Sequence[int | None] | None) ->
     return sum(1 for index in indices if (reasoning[index] or 0) > 0)
 
 
-def distribution(outcomes: Sequence[Outcome], reasoning: Sequence[int | None] | None = None) -> Distribution:
+def distribution(
+    outcomes: Sequence[Outcome],
+    reasoning: Sequence[int | None] | None = None,
+    *,
+    letters: Mapping[str, str] | None = None,
+) -> Distribution:
     """`reasoning`, aligned with `outcomes`, is each sample's reasoning in characters: with it,
-    each cluster says how many of its samples reasoned."""
+    each cluster says how many of its samples reasoned. `letters`, by key, are the letters the
+    behaviours take where they have one (`agreeing_letters`)."""
     members: dict[str, list[int]] = defaultdict(list)
     first: dict[str, Outcome] = {}
     errors = 0
@@ -112,10 +139,10 @@ def distribution(outcomes: Sequence[Outcome], reasoning: Sequence[int | None] | 
 
     total = sum(len(indices) for indices in members.values())
     counts = {key: len(indices) for key, indices in members.items()}
+    ordered = _ordered_keys(counts, first)
     clusters = [
-        Cluster(cluster_letter(position), first[key], members[key], rate(counts[key], total),
-                _reasoned(members[key], reasoning))
-        for position, key in enumerate(_ordered_keys(counts, first))
+        Cluster(letter, first[key], members[key], rate(counts[key], total), _reasoned(members[key], reasoning))
+        for letter, key in zip(agreeing_letters(ordered, letters), ordered)
     ]
     return Distribution(clusters=clusters, total=total, errors=errors)
 
@@ -131,12 +158,14 @@ class Target:
     spec: dict[str, Any] = field(default_factory=dict)
 
 
-def target_by_key(key: str, description: str) -> Target:
-    return Target(
-        description,
-        lambda outcome: outcome.key == key,
-        {"kind": "key", "value": key, "description": description},
-    )
+def target_by_key(key: str, description: str, *, letter: str | None = None, resample: str | None = None) -> Target:
+    """One behaviour, by its key. Named by a resample's letter, the target keeps the letter and
+    the resample's id, so that a report of it can letter its behaviours as that resample did
+    (`agreeing_letters`)."""
+    spec: dict[str, Any] = {"kind": "key", "value": key, "description": description}
+    if letter and resample:
+        spec.update(letter=letter, resample=resample)
+    return Target(description, lambda outcome: outcome.key == key, spec)
 
 
 def target_by_pattern(pattern: str, *, code: bool = True) -> Target:
@@ -285,7 +314,8 @@ def target_from_spec(spec: dict[str, Any] | None) -> Target | None:
     if spec.get("kind") == "check":
         return target_check()
     if spec.get("kind") == "key":
-        return target_by_key(spec["value"], spec.get("description", spec["value"]))
+        return target_by_key(spec["value"], spec.get("description", spec["value"]),
+                             letter=spec.get("letter"), resample=spec.get("resample"))
     if spec.get("kind") == "pattern":
         return target_by_pattern(spec["value"], code=bool(spec.get("code")))
     if spec.get("kind") == "rules":
@@ -406,9 +436,12 @@ def compare_arms(
     target: Target | None = None,
     alpha: float = 0.05,
     reasoning: tuple[Sequence[int | None], Sequence[int | None]] | None = None,
+    letters: Mapping[str, str] | None = None,
 ) -> ABComparison:
     """`reasoning`, each arm's samples' reasoning aligned with its outcomes: with it, each
-    behaviour says how many of each arm's samples of it reasoned."""
+    behaviour says how many of each arm's samples of it reasoned. `letters`, by key: the
+    resample's that a letter target came from, which the behaviours keep (`agreeing_letters`).
+    Each arm's own behaviours take the letters of the table, the two arms together."""
     from tuningfork.analysis.reasoning import reasons
 
     shown = reasoning is not None and (reasons(reasoning[0]) or reasons(reasoning[1]))
@@ -438,14 +471,15 @@ def compare_arms(
     )
 
     ordered = _ordered_keys(pooled, first)
+    named = dict(zip(ordered, agreeing_letters(ordered, letters)))
     tests = max(1, len(ordered))
     shifts = []
-    for position, key in enumerate(ordered):
+    for key in ordered:
         a, c = count_original[key], count_variant[key]
         p_value = fisher_exact(a, n_original - a, c, n_variant - c)
         shifts.append(
             ClusterShift(
-                letter=cluster_letter(position),
+                letter=named[key],
                 outcome=first[key],
                 original=rate(a, n_original),
                 variant=rate(c, n_variant),
@@ -469,8 +503,8 @@ def compare_arms(
         )
 
     return ABComparison(
-        original=distribution(original, reasoning[0] if reasoning else None),
-        variant=distribution(variant, reasoning[1] if reasoning else None),
+        original=distribution(original, reasoning[0] if reasoning else None, letters=named),
+        variant=distribution(variant, reasoning[1] if reasoning else None, letters=named),
         shifts=shifts,
         target=target_test,
         alpha=alpha,

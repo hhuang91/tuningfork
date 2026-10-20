@@ -175,7 +175,9 @@ the runner turns into one — kills the harness it was waiting on: each runs in 
 Resampling sends straight to the inference server (`TUNINGFORK_UPSTREAM`, default :8081) —
 never a protected endpoint (`endpoints.py`: none until a person lists one). An A/B must declare its target before sampling
 (`--target <letter>` from an earlier resample, or `--target-match <regex>`); without one
-the result is exploratory and Bonferroni-corrected. Run to the end, the target is the task's
+the result is exploratory and Bonferroni-corrected. A letter target keeps its resample, and an
+A/B, a screen or a probe of it letters its behaviours as that resample did
+(`experiment.sampling.target_letters`): its B is their B. Run to the end, the target is the task's
 check. A pattern or described target also reads what a behaviour says (`Outcome.text`): a
 script's code, which its key keeps only as a syntax-tree digest; one stored before that (no
 `code` in its spec) matches as it was declared. Every sample's prompt is processed whole where llama.cpp takes `cache_prompt: false` —
@@ -287,7 +289,9 @@ Scoring rebuilds a recorded answer as the model's tokens and forces it after the
 exact prompt in one request (a grammar of token ids); the prompt must have the step's
 recorded token count, or it is refused. The forking-token probe forces tokens from a stored
 stream, and tests each alternative against its position's baseline, Holm-corrected over the
-family planned before sampling. `tests/test_real_server.py` re-measures what all this stands
+family planned before sampling; each behaviour it reached says whether the target counts it and
+which tokens led to it (`ForkingReport.led_by`): a token can change what the model does and miss
+a target too fine to count it. `tests/test_real_server.py` re-measures what all this stands
 on against a real server: `TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run pytest -m
 real_server tests/test_real_server.py`; skipped otherwise.
 

@@ -531,6 +531,7 @@ def experiment_report(
         experiment_reasoning,
         load_checkpoint,
     )
+    from tuningfork.experiment.sampling import target_letters
     from tuningfork.ops.forks import arm_summary, compare_to_end
 
     found = store.get_experiment(reference)
@@ -612,6 +613,7 @@ def experiment_report(
         target=declared,
         alpha=alpha,
         reasoning=(experiment_reasoning(store, arms["original"]), experiment_reasoning(store, arms["variant"])),
+        letters=target_letters(store, declared.spec, lens) if declared else None,
     )
     return report
 

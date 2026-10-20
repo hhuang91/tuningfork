@@ -715,8 +715,9 @@ def show(
     store = _store(home)
     target = _resolve_run(store, run)
 
-    console.print(f"[bold]run {target.id[:8]}[/bold]  {escape(target.label or '')}"
-                  + ("  [dim](recorded live)[/dim]" if target.recorded == "live" else ""))
+    head = [f"[bold]run {target.id[:8]}[/bold]", escape(target.label) if target.label else None,
+            "[dim](recorded live)[/dim]" if target.recorded == "live" else None]
+    console.print("  ".join(part for part in head if part))
     console.print(f"  task    {target.task_id or '-'}")
     console.print(f"  model   {target.model or '-'}")
     console.print(f"  started {_when(target.started_at)}")
@@ -2530,7 +2531,7 @@ def _print_forking(report) -> None:
             console.print(line)
         if position.weighted is not None:
             console.print(f"  [dim]the chance of the target from here, weighted by each token's chance: {position.weighted:.0%}[/dim]")
-    _print_distribution(report.behaviours, "behaviours, across the probe")
+    _print_probe_behaviours(report)
     flips = sum(len(position.flips()) for position in report.positions)
     corrected = f"Holm-corrected over the {report.family} planned before sampling; α={report.alpha}"
     if flips:
@@ -2609,6 +2610,49 @@ def _positions(positions: list[int]) -> str:
 def _print_notes(notes: list[str]) -> None:
     for note in notes:
         console.print(f"  [bold yellow]parity:[/bold yellow] {escape(note)}")
+
+
+def _target_mark(counted: int, count: int) -> str:
+    """Whether the declared target counts a behaviour, as the web UI badges it."""
+    if not counted:
+        return "not target"
+    return "target" if counted >= count else f"target in {counted} of {count}"
+
+
+def _print_probe_behaviours(report) -> None:
+    """A probe's behaviours, each with whether its target counts it and the tokens whose
+    continuations reached it: a forced token can change what the model does and still miss a
+    target too fine to count it."""
+    dist = report.behaviours
+    console.print("\n[bold]behaviours, across the probe[/bold]")
+    table = Table("", "count", "rate", "95% CI", "target", "behaviour", box=None, pad_edge=False)
+    for cluster in dist.clusters:
+        label = _clip(cluster.outcome.label, full=False, limit=80)
+        if cluster.outcome.kind == "truncated":
+            label = f"[yellow]{label}[/yellow]"
+        table.add_row(
+            cluster.letter,
+            f"{cluster.count}/{cluster.rate.total}",
+            f"{cluster.rate.point:.0%}",
+            escape(f"[{cluster.rate.low:.0%}-{cluster.rate.high:.0%}]"),
+            _target_mark(report.counted.get(cluster.outcome.key, 0), cluster.count),
+            label,
+        )
+    console.print(table)
+    console.print("[dim]  the tokens whose continuations reached each, a line a position:[/dim]")
+    for cluster in dist.clusters:
+        by_position: dict[int, list[str]] = {}
+        for arm in report.led_by.get(cluster.outcome.key, []):
+            said = f"{arm['text']!r}{' as run' if arm['original'] else ''} {arm['count']}"
+            by_position.setdefault(arm["position"], []).append(said)
+        for line, (position, said) in enumerate(by_position.items()):
+            console.print(f"  {cluster.letter if not line else ' ' * len(cluster.letter)}  "
+                          + escape(f"[{position}] " + ", ".join(said)))
+    if dist.errors:
+        console.print(
+            f"  [red]{dist.errors} sample(s) failed in transport[/red] and are excluded from "
+            "every rate above"
+        )
 
 
 def _print_distribution(dist, heading: str) -> None:

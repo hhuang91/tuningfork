@@ -62,6 +62,18 @@ class TestTheScreen:
         assert (first["letter"], first["count"], first["by_arm"]) == ("A", 25, {"original": 20, "p1": 5})
         assert (second["letter"], second["by_arm"]) == ("B", {"original": 0, "p1": 15})
 
+    def test_a_letter_target_s_behaviours_keep_its_resample_s_letters(self):
+        """A refinement whose target was a resample's B screens it as B, whichever behaviour
+        the screen's own samples did most."""
+        report = compare_to_baseline(arm(0, 20), {"p1": arm(15, 5)}, target=TARGET, planned=20,
+                                     letters={HIT.key: "B", MISS.key: "A", "write:other": "C"})
+        assert [(found["outcome"]["label"], found["letter"]) for found in report.behaviours] == [
+            (MISS.label, "A"), (HIT.label, "B"),
+        ]
+        report = compare_to_baseline(arm(20, 0), {"p1": arm(20, 0)}, target=TARGET, planned=20,
+                                     letters={HIT.key: "C"})
+        assert [found["letter"] for found in report.behaviours] == ["C"]
+
     def test_each_behaviour_says_how_many_of_its_samples_the_target_counted(self):
         """The page badges each row target or not target: a row's own counts say how often a
         behaviour happened, never whether it was the one wanted."""

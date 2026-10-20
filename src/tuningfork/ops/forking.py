@@ -241,6 +241,7 @@ def forking_result(store: Store, experiment: Any) -> Any:
     from tuningfork.analysis.normalize import Outcome
     from tuningfork.analysis.tokens import TokenStream
     from tuningfork.experiment.forking import forking_outcome
+    from tuningfork.experiment.sampling import target_letters
 
     settings = experiment.settings
     arms, per_arm = settings.get("arms") or [], int(settings.get("per_arm") or 1)
@@ -266,6 +267,7 @@ def forking_result(store: Store, experiment: Any) -> Any:
     return forking_report(
         arms, outcomes, per_arm=per_arm, target=target_from_spec(settings.get("target")),
         alpha=float(settings.get("alpha") or 0.05), contexts=contexts, parts=parts,
+        letters=target_letters(store, settings.get("target")),
     )
 
 

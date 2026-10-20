@@ -99,7 +99,7 @@ tuningfork runs
 
 ```
  run       label                  steps  model        started      check
- 47e2a902  -                      1      gemma-4-31b  10-16 19:15  -
+ 47e2a902  (recorded live)        1      gemma-4-31b  10-16 19:15  -
  3737aa51  tally-report/1#demo.8  3      gemma-4-31b  10-16 19:15  pass
  40778f94  tally-report/1#demo.7  3      gemma-4-31b  10-16 19:15  pass (not counted)
  074730b3  tally-report/1#demo.6  3      gemma-4-31b  10-16 19:15  pass
@@ -354,7 +354,7 @@ tuningfork show $(tuningfork runs -q -n 1)
 ```
 
 ```
-run 2ee2322c
+run 2ee2322c  (recorded live)
   task    -
   model   demo
   started 10-11 11:16:19
@@ -1668,13 +1668,28 @@ the target
   the chance of the target from here, weighted by each token's chance: 38%
 
 behaviours, across the probe
-   count   rate  95% CI     behaviour
-A  66/110  60%   [51%-69%]  read_file(path='data.csv')
-B  40/110  36%   [28%-46%]  search_files(pattern='data.csv', target='files')
-C  1/110   1%    [0%-5%]    execute_code(code='<ast:49e7ce2d>')
-D  1/110   1%    [0%-5%]    execute_code(code='<ast:926c89bb>')
-E  1/110   1%    [0%-5%]    execute_code(code='<ast:de4c3c2e>')
-F  1/110   1%    [0%-5%]    execute_code(code='<ast:f65bd3b2>')
+   count   rate  95% CI     target      behaviour
+A  66/110  60%   [51%-69%]  not target  read_file(path='data.csv')
+B  40/110  36%   [28%-46%]  target      search_files(pattern='data.csv', target='files')
+C  1/110   1%    [0%-5%]    not target  execute_code(code='<ast:49e7ce2d>')
+D  1/110   1%    [0%-5%]    not target  execute_code(code='<ast:926c89bb>')
+E  1/110   1%    [0%-5%]    not target  execute_code(code='<ast:de4c3c2e>')
+F  1/110   1%    [0%-5%]    not target  execute_code(code='<ast:f65bd3b2>')
+  the tokens whose continuations reached each, a line a position:
+  A  [7] ' use' as run 10, ' summarize' 6
+     [42] ' (' as run 9, '.' 4
+     [56] ' defined' as run 7, ' outlined' 7
+     [94] ' and' as run 6, ',' 6
+     [133] ' and' 10, '.' 1
+  B  [7] ' summarize' 2
+     [42] ' (' as run 1, '.' 4
+     [56] ' defined' as run 3, ' outlined' 3
+     [94] ' and' as run 4, ',' 4
+     [133] ' in' as run 10, '.' 9
+  C  [42] '.' 1
+  D  [7] ' summarize' 1
+  E  [7] ' summarize' 1
+  F  [42] '.' 1
 
 1 of 6 forced tokens changed what the model did (Holm-corrected over the 6 planned before sampling;
 α=0.05).
@@ -1781,11 +1796,16 @@ than to its behaviour, so a later token decided it (`tuningfork tokens` shows th
   the chance of the target from here, weighted by each token's chance: 21%
 
 behaviours, across the probe
-   count  rate  95% CI     behaviour
-A  35/40  88%   [74%-95%]  read_file(path='data.csv')
-B  3/40   8%    [3%-20%]   search_files(pattern='data.csv', target='files')
-C  1/40   2%    [0%-13%]   execute_code(code='<ast:54d4c953>')
-D  1/40   2%    [0%-13%]   execute_code(code='<ast:852d48ec>')
+   count  rate  95% CI     target      behaviour
+A  35/40  88%   [74%-95%]  not target  read_file(path='data.csv')
+B  3/40   8%    [3%-20%]   target      search_files(pattern='data.csv', target='files')
+C  1/40   2%    [0%-13%]   not target  execute_code(code='<ast:54d4c953>')
+D  1/40   2%    [0%-13%]   not target  execute_code(code='<ast:852d48ec>')
+  the tokens whose continuations reached each, a line a position:
+  A  [120] 'First' as run 7, 'I' 10, 'Plan' 8, 'Let' 10
+  B  [120] 'First' as run 3
+  C  [120] 'Plan' 1
+  D  [120] 'Plan' 1
 
 No forced token decided what the model did (Holm-corrected over the 3 planned before sampling;
 α=0.05).

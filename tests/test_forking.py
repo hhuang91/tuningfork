@@ -293,6 +293,48 @@ class TestReport:
         assert detectable(10, 15) == 7  # 10/10 against 3/10: p ≈ 0.0031, x15 < 0.05
         assert detectable(2, 30) is None
 
+    def test_each_behaviour_says_whether_the_target_counts_it_and_which_tokens_reached_it(self, monkeypatch):
+        """Found on find-the-file: the target, the base's exact call, counted a search with
+        another pattern as a miss, and nothing said which tokens had led to it. The page, the
+        command and an agent's answer each say it now."""
+        from tuningfork.cli import _print_forking
+        from tuningfork.ops.compact import forking as compact, forking_lines
+
+        exact = Outcome("tool_call", "search:data.csv", "search_files(pattern='data.csv')")
+        other = Outcome("tool_call", "search:*.csv", "search_files(pattern='*.csv')")
+        stop = Outcome("text", "text:stop", "stop")
+        arms = [{"position": 121, "id": 2, "text": "According", "p": 0.80, "original": False},
+                {"position": 121, "id": 1, "text": "Wait", "p": 0.07, "original": True},
+                {"position": 130, "id": 3, "text": "The", "p": 0.5, "original": True}]
+        report = forking_report(
+            arms, [[stop] * 9 + [other], [exact] * 2 + [other] * 2 + [stop] * 6, [stop] * 10],
+            per_arm=10, target=target_by_key(exact.key, "the base's own behaviour"),
+        )
+
+        found = {cluster["outcome"]["label"]: cluster for cluster in report.to_json()["behaviours"]["clusters"]}
+        assert {label: cluster["target_counted"] for label, cluster in found.items()} == {
+            "stop": 0, "search_files(pattern='*.csv')": 0, "search_files(pattern='data.csv')": 2}
+        assert found["search_files(pattern='*.csv')"]["by_arm"] == [
+            {"position": 121, "text": "Wait", "original": True, "count": 2},
+            {"position": 121, "text": "According", "original": False, "count": 1},
+        ]
+        assert [(arm["position"], arm["count"]) for arm in found["stop"]["by_arm"]] == [(121, 6), (121, 9), (130, 10)]
+
+        console = Console(width=200, record=True)
+        monkeypatch.setattr("tuningfork.cli.console", console)
+        _print_forking(report)
+        printed = console.export_text()
+        assert "not target" in printed and "[121] 'Wait' as run 2, 'According' 1" in printed
+        # A position a line, so no token is wrapped in two.
+        assert "[121] 'Wait' as run 6, 'According' 9\n     [130] 'The' as run 10" in printed
+
+        shown = compact(report.to_json())
+        rows = {row["label"]: row for row in shown["behaviours"]["behaviours"]}
+        assert rows["search_files(pattern='*.csv')"]["target"] == "not target"
+        assert rows["search_files(pattern='data.csv')"]["target"] == "target"
+        assert rows["search_files(pattern='*.csv')"]["led_to_by"] == "[121] 'Wait' as run 2, 'According' 1"
+        assert any("not target; reached from [121] 'Wait' as run 2, 'According' 1" in line for line in forking_lines(shown))
+
     def test_a_probe_that_found_nothing_says_what_it_could_have_seen(self, monkeypatch):
         """Measured on find-the-file: 'Wait' led to the search 4 times in 10 and 'According'
         once, and the page said no forced token had changed what the model did. Ten

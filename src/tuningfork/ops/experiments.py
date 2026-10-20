@@ -711,12 +711,15 @@ async def execute_ab(
         _stopped(store, created, stopped.reason)
         # What was sampled is stored and can be re-reported; there is no comparison yet.
         raise Cancelled(stopped.reason, partial=created) from None
+    from tuningfork.experiment.sampling import target_letters
+
     comparison = compare_arms(
         experiment_outcomes(store, result.original),
         experiment_outcomes(store, result.variant),
         target=prepared.target,
         alpha=prepared.alpha,
         reasoning=(experiment_reasoning(store, result.original), experiment_reasoning(store, result.variant)),
+        letters=target_letters(store, prepared.target.spec if prepared.target else None),
     )
     return ABResult(
         run=result,
