@@ -502,9 +502,9 @@ closes one, keeping everything it holds.
 `skills` lists the skills the recordings know — from runs, scenarios, saved variants and
 refinements, and those added with `add-skill` — each with its tasks, runs and versions. `skill
 <name>` gives each version with its pass rate under every condition it ran under, and what its
-text is known as, and the scenarios that run it; `--text <ref>` prints one text (a version's
-fingerprint, `file`, `variant:<name>` or `history:<file>`), and `--diff A B` compares two line by
-line.
+text is known as, the scenarios that run it, and how its folder was added, where it was; `--text
+<ref>` prints one text (a version's fingerprint, `file`, `variant:<name>` or `history:<file>`),
+and `--diff A B` compares two line by line.
 
 ### `add-skill`, `forget-skill`
 

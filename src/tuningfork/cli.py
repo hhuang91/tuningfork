@@ -612,6 +612,8 @@ def skill_command(
                else "its SKILL.md has not been run yet" if folder.text is not None else "[yellow]no SKILL.md there[/yellow]")
         console.print(f"  folder     {escape(_shown_path(folder.path))}", soft_wrap=True)
         console.print(f"             {now}")
+        if folder.added is not None:
+            console.print(f"             {escape(_added_words(folder.added))}", soft_wrap=True)
         if folder.changelog is not None:
             console.print(f"             changelog beside it: {escape(folder.path.name)}.changelog.md"
                           + (f"; {len(folder.history)} old version(s) in {escape(folder.path.name)}.history/" if folder.history else ""))
@@ -644,6 +646,17 @@ def skill_command(
                           f"{_clip(each.get('target') or '', full=False, limit=70)}", soft_wrap=True)
     console.print("\n[dim]--text <version|file|variant:NAME> prints one text; --diff A B compares two. "
                   "Intervals are Wilson 95%.[/dim]")
+
+
+def _added_words(added: dict[str, Any]) -> str:
+    """How a person added a skill's folder (`ops.addskill.Added`), as the skill's page says it."""
+    if added.get("kind") != "copy":
+        return "added: a folder on this machine, remembered where it is — approved edits are written to it"
+    origin = added.get("origin") or {}
+    upload = origin.get("upload") or {}
+    source = (f"from run {str(origin['run'])[:8]}: {origin.get('how', '')}" if origin.get("run")
+              else f"copied from {upload['from']}" if upload.get("from") else "uploaded")
+    return f"added: tuningfork's copy, {source} — approved edits are written to this copy, never back to where it came from"
 
 
 @app.command("add-skill")

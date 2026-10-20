@@ -183,6 +183,11 @@ def test_a_person_adds_and_forgets_a_skill_from_the_terminal(store, tmp_path):
     assert done.exit_code == 0 and "added: `tuningfork skill tally-report` shows it" in done.output, done.output
     copied = runner.invoke(app, ["add-skill", str(mine), "--copy", "--name", "tally-copy", *home], env={"COLUMNS": "160"})
     assert copied.exit_code == 0 and "a copy kept in the recordings folder" in copied.output, copied.output
+    # Its page in the terminal says how each was added, as the web page does.
+    shown = runner.invoke(app, ["skill", "tally-copy", *home], env={"COLUMNS": "200"})
+    assert f"added: tuningfork's copy, copied from {mine}" in shown.output, shown.output
+    shown = runner.invoke(app, ["skill", "tally-report", *home], env={"COLUMNS": "200"})
+    assert "added: a folder on this machine, remembered where it is" in shown.output, shown.output
     both = runner.invoke(app, ["add-skill", *home], env={"COLUMNS": "160"})
     assert both.exit_code != 0 and "name the skill's folder, or a run with --run" in both.output
     forgot = runner.invoke(app, ["forget-skill", "tally-copy", *home], env={"COLUMNS": "160"})
