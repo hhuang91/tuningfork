@@ -53,11 +53,13 @@ async def _harnesses(state: Any, *, fresh: bool = False) -> list[dict[str, Any]]
     return cached[1]
 
 
-def _preflight(home: Any, name: str, server: dict[str, Any], checks: dict[str, Any]) -> dict[str, Any]:
+def _preflight(
+    home: Any, name: str, server: dict[str, Any], checks: dict[str, Any], read: dict[str, Any] | None,
+) -> dict[str, Any]:
     from tuningfork.ops.connections import adapter_for, preflight
 
     try:
-        return preflight(adapter_for(home, name), server, checks).to_json()
+        return preflight(adapter_for(home, name), server, checks, read).to_json()
     except OperationError as error:
         return {"ok": False, "problems": [error.message], "notes": []}
 
@@ -93,7 +95,7 @@ def connection_routes() -> list[Route]:
         harnesses = await _harnesses(state)
         # Each harness against this server: what stops it, what was never measured.
         harnesses = [
-            {**harness, "preflight": _preflight(state.settings.home, harness["name"], server, checks)}
+            {**harness, "preflight": _preflight(state.settings.home, harness["name"], server, checks, read)}
             for harness in harnesses
         ]
         # Why the server cannot be switched now, if it cannot: shown before anyone tries.

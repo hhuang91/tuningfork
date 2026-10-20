@@ -223,6 +223,35 @@ class TestPreflight:
         assert refused.value.code == "preflight"
         assert store._conn.execute("SELECT count(*) FROM launches").fetchone()[0] == 0
 
+    @pytest.mark.parametrize("adapter", [HermesAdapter(), ClaudeCodeAdapter()], ids=["hermes", "claude-code"])
+    def test_a_server_that_asks_for_a_key_refuses_every_launched_call(self, adapter):
+        """Found on Connections: beside a hosted API, each harness was said to need what "a server
+        check measures" — a check that server refuses. A launched harness carries no key of the
+        person's, so every call it made would be refused: that, and nothing else, is said."""
+        found = preflight(adapter, {}, {}, {"asks_key": True, "props": False, "internet": True})
+        assert found.problems == [
+            "this server asks for an API key, and a harness tuningfork launches carries none of yours, so every "
+            f"call {adapter.name} made would be refused"
+        ]
+        assert found.notes == []
+        assert preflight(adapter, {}, {}, {"asks_key": False}).problems == []
+
+    def test_a_batch_on_a_server_that_asks_for_a_key_is_refused_before_a_launch(self, tmp_path, monkeypatch, store):
+        from tuningfork.ops.batch import prepare_batch
+        from tuningfork.ops.launch import ProxyStatus
+
+        monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}")
+        if os.name == "posix":
+            fake_program(tmp_path / "bin", "hermes", "v", tmp_path / "log")
+        spec = tmp_path / "evals.json"
+        spec.write_text('{"skill_name": "t", "evals": [{"id": "1", "prompt": "p"}]}')
+        hosted = ProxyStatus(url="http://127.0.0.1:1", home=store.home, max_inflight=1,
+                             raw={"server": {"id": "s"}, "server_read": {"asks_key": True, "props": False, "internet": True}})
+        with pytest.raises(OperationError, match="asks for an API key") as refused:
+            prepare_batch(store, spec, harness="hermes", model="hosted-model", proxy=hosted, base_url="http://127.0.0.1:1/v1")
+        assert refused.value.code == "preflight" and "local model" in refused.value.hint
+        assert store._conn.execute("SELECT count(*) FROM launches").fetchone()[0] == 0
+
 
 # --- the server check --------------------------------------------------------------------------
 
@@ -491,6 +520,7 @@ def test_a_hosted_model_api_is_said_to_be_one_and_records_all_the_same(tmp_path,
             answered = httpx.post(f"{url}/v1/chat/completions", headers={"x-api-key": "the agent's"}, timeout=10,
                                   json={"model": "m", "messages": [{"role": "user", "content": "hi"}]})
             elsewhere = client.switch_upstream("https://api.other.example.com", dry_run=True)
+            harnesses = client.connections()["harnesses"]
     finally:
         app.state.recorder.store.close()
         asyncio.run(upstream.aclose())
@@ -508,6 +538,12 @@ def test_a_hosted_model_api_is_said_to_be_one_and_records_all_the_same(tmp_path,
     assert answered.status_code == 200 and seen == ["the agent's"]
     # Another such server can be switched to, as `serve --upstream` takes one, and the plan says what it is.
     assert elsewhere["reminder"]["headline"] == shown["reminder"]["headline"]
+    # Each harness is said to be refused there, and nothing a check could never measure.
+    assert harnesses and all(
+        harness["preflight"]["problems"][0].startswith("this server asks for an API key")
+        and harness["preflight"]["notes"] == []
+        for harness in harnesses
+    )
 
 
 def test_a_server_nearby_or_a_rented_llama_cpp_is_said_nothing_of(tmp_path, monkeypatch, mock_server):

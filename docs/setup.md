@@ -165,9 +165,11 @@ The proxy says so where it shows its server: in `tuningfork serve`'s first lines
 Connections page, in the status line at the sidebar's foot, on the Guide, in `connections show`
 and `switch`, and in MCP's `server_status`. It does so when the server is on the internet
 (every address its name resolves to is public: not this machine, your network, or a VPN like
-Tailscale) and either asks for an API key or is not llama.cpp's server. Nothing is refused for it.
-A llama.cpp server rented on the internet, answering without a key, is a model you run yourself:
-nothing is said, and everything works.
+Tailscale) and either asks for an API key or is not llama.cpp's server. Only a launch is refused
+for it: a batch, a fork or a validation would have every call refused, since a harness tuningfork
+launches carries none of your keys, so it is refused before it starts, and the Connections page
+says so beside each harness. A llama.cpp server rented on the internet, answering without a key,
+is a model you run yourself: nothing is said, and everything works.
 
 ## The harnesses
 

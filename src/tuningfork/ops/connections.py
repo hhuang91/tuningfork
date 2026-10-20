@@ -16,8 +16,9 @@ web UI greys its way in, with the same words. What was never measured refuses no
 
 tuningfork is built for a model one runs oneself. A server on the internet that answers as a
 hosted model API does — asking for a key tuningfork does not send, or without llama.cpp's
-/props — is said to be one wherever the server is shown (`reminder`), and nothing is refused
-for it: a harness's calls are recorded through it, its own key passed on.
+/props — is said to be one wherever the server is shown (`reminder`). A harness's calls are
+recorded through it, its own key passed on; only a launch is refused where a key is asked for,
+since a harness tuningfork launches carries none (`preflight`).
 """
 
 from __future__ import annotations
@@ -218,14 +219,25 @@ class Preflight:
         return {"ok": self.ok, "problems": self.problems, "notes": self.notes}
 
 
-def preflight(adapter: Any, server: dict[str, Any] | None, checks: dict[str, Any] | None) -> Preflight:
+def preflight(
+    adapter: Any, server: dict[str, Any] | None, checks: dict[str, Any] | None, read: dict[str, Any] | None = None,
+) -> Preflight:
     """Check a harness's requirements against the server's identity and what a server
-    check measured. What was never measured is a note, not a refusal."""
+    check measured. What was never measured is a note, not a refusal. A server that asks for
+    an API key (`read`, the proxy's own read of it) refuses every call a launched harness
+    makes, since one carries none of the person's: that is the one thing said of it — no
+    check could measure the rest there."""
     result = Preflight()
     server = server or {}
     measured = (checks or {}).get("results") or {}
+    name = getattr(adapter, "name", "the harness")
+    if (read or {}).get("asks_key"):
+        result.problems.append(
+            f"this server asks for an API key, and a harness tuningfork launches carries none of yours, so every "
+            f"call {name} made would be refused"
+        )
+        return result
     for requirement in getattr(adapter, "requirements", ()):
-        name = getattr(adapter, "name", "the harness")
         if requirement.minimum is not None:
             value = server.get(requirement.what)
             if not isinstance(value, (int, float)):
@@ -263,14 +275,21 @@ def cached_prompts_warning(checks: dict[str, Any] | None) -> str | None:
     return None
 
 
+#: Where a refusal for want of a key points: why tuningfork wants a model run oneself.
+LOCAL_MODEL_HINT = ("tuningfork is built for a model you run yourself: see “local model” on the Words page, or "
+                    "`tuningfork glossary local model`")
+
+
 def check_harness(store: Any, adapter: Any, proxy: Any) -> list[str]:
     """Refuse a launch its server cannot serve; return the notes that do not stop it."""
     server = proxy.raw.get("server") or {}
-    found = preflight(adapter, server, store.server_checks(server.get("id")))
+    read = proxy.raw.get("server_read") or {}
+    found = preflight(adapter, server, store.server_checks(server.get("id")), read)
     if found.problems:
         raise OperationError(
             "; ".join(found.problems),
-            hint="point the proxy at a server that has it (Connections), or choose another harness",
+            hint=LOCAL_MODEL_HINT if read.get("asks_key")
+            else "point the proxy at a server that has it (Connections), or choose another harness",
             code="preflight",
             field="harness",
         )
@@ -307,8 +326,7 @@ def prepare_server_check(proxy: Any, model: str | None = None) -> ServerCheckPla
         raise OperationError(
             f"the server at {server.get('upstream') or 'the upstream'} asks for an API key, and tuningfork sends "
             "none of its own: it cannot be checked",
-            hint="tuningfork is built for a model you run yourself: see “local model” on the Words page, or "
-            "`tuningfork glossary local model`",
+            hint=LOCAL_MODEL_HINT,
             code="asks_key",
         )
     if problem:

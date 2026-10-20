@@ -308,8 +308,9 @@ The proxy's own read of its server, every half minute, notes what its identity l
 has scoring and forking greyed checked or not; one on the internet that asks for a key, or is
 not llama.cpp's, is said to be a hosted model's API (`ops.connections.reminder`) wherever the
 server is shown — serve's first lines, Connections and its switch, the status strip, the Guide,
-`connections show`, MCP's `server_status` — and nothing is refused for it: tuningfork is built
-for a model run oneself, and records a harness's calls through any server, its own key passed on.
+`connections show`, MCP's `server_status`: tuningfork is built for a model run oneself, and
+records a harness's calls through any server, its own key passed on. Only a launch is refused
+where a key is asked for (`preflight` with the read): a harness tuningfork launches carries none.
 `tests/test_real_server.py` re-measures what all this stands
 on against a real server: `TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run pytest -m
 real_server tests/test_real_server.py`; skipped otherwise.
