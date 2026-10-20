@@ -3,7 +3,7 @@
 // context, and the workspace its call found.
 
 import { api, enc } from "./api.js";
-import { chip, count, firstLine, h, kv, millis, panel, plural, pretty, replace, short } from "./dom.js";
+import { chip, count, firstLine, foldPanel, h, kv, millis, plural, pretty, replace, short } from "./dom.js";
 import { fileChip, skillAnchor } from "./payload.js";
 
 export function summaryStrip(step) {
@@ -164,11 +164,17 @@ function typeName(param) {
 }
 
 /** The workspace as this call found it: every tool effect before it, on disk. Only a run
- *  tuningfork launched has one. */
+ *  tuningfork launched has one. Folded, and read when opened. */
 export function workspacePanel(step) {
   if (!step.workspace_commit) return null;
-  const body = h("p", { class: "muted" }, "Loading…");
-  const holder = h("div", null, body);
+  return foldPanel("Workspace", () => workspaceFiles(step), {
+    className: "workspace-panel",
+    meta: h("span", { class: "muted" }, "as this call found it · snapshot ", h("span", { class: "mono" }, short(step.workspace_commit))),
+  });
+}
+
+function workspaceFiles(step) {
+  const holder = h("div", null, h("p", { class: "muted" }, "Loading…"));
   api.get(`/runs/${enc(step.run.id)}/files?at=${step.idx}`).then((view) => {
     if (view.error) {
       replace(holder, h("p", { class: "muted" }, view.error));
@@ -191,12 +197,11 @@ export function workspacePanel(step) {
       h("p", { class: "faint" }, `tuningfork files ${short(step.run.id)} ${step.idx} --diff shows the changes; --out <dir> writes the files out.`),
     );
   }).catch((error) => replace(holder, h("p", { class: "muted" }, String(error?.message || error))));
-  return panel("Workspace", holder, {
-    meta: h("span", { class: "muted" }, "as this call found it · snapshot ", h("span", { class: "mono" }, short(step.workspace_commit))),
-  });
+  return holder;
 }
 
-/** How a step was sampled and how long it took; null when nothing was recorded of either. */
+/** How a step was sampled and how long it took, kept for the record: folded, the two
+ *  timings already in its summary. Null when nothing was recorded of either. */
 export function detailsPanel(step) {
   const params = step.params || {};
   const defaults = step.server_defaults || {};
@@ -206,10 +211,10 @@ export function detailsPanel(step) {
     ["total time", step.timings?.total_ms != null ? millis(step.timings.total_ms) : null],
   ].filter(([, value]) => value !== null && value !== undefined);
   if (!rows.length && !Object.keys(defaults).length) return null;
-  return panel("Sampling and timing", [
+  return foldPanel("Details for the record", [
     kv(rows),
     Object.keys(defaults).length
       ? h("details", { class: "fold" }, h("summary", null, "Server defaults at the time"), h("pre", { class: "code" }, pretty(defaults)))
       : null,
-  ]);
+  ], { className: "record-panel", meta: h("span", { class: "muted" }, "how it was sampled, and how long it took") });
 }

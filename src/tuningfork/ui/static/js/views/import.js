@@ -55,7 +55,7 @@ export async function importView(root, _params, scope) {
   const toolsFrom = input("tools_from", { placeholder: "optional: a run id, or its first characters" });
   const label = input("label", { placeholder: "optional" });
   const task = input("task_id", { placeholder: "optional: a task id to file the run under" });
-  const preview = h("div", { class: "stack" });
+  const preview = h("div", { class: "stack slot" });
   const problem = h("div");
   const start = h("button", { class: "btn btn-primary", type: "button", "data-control": true, disabled: true },
     forScenario ? "Import, then make its scenario" : "Import");
@@ -179,7 +179,7 @@ export async function importView(root, _params, scope) {
     }
   }));
 
-  replace(root, ...head,
+  replace(root, ...head, h("div", { class: "stack" },
     panel("The conversation", h("div", { class: "form-grid" },
       field("File", file, { wide: true, help: "Hermes's session file (~/.hermes/sessions/session_<id>.json), its export "
         + "(hermes sessions export), or an OpenAI-style list of messages." }),
@@ -194,7 +194,7 @@ export async function importView(root, _params, scope) {
         field("Label", label),
         field("Task", task)),
       problem,
-      h("div", { class: "actions" }, start))));
+      h("div", { class: "actions" }, start)))));
 }
 
 // A scenario of a run — imported, launched or recorded as it happened: the person's message it
@@ -345,7 +345,7 @@ export async function scenarioFromRunView(root, [runId], scope) {
   harness.addEventListener("change", again(false));
   from.addEventListener("change", again(true));
 
-  const done = h("div");
+  const done = h("div", { class: "slot" });
   // What the form says, as the body `POST /runs/{run}/scenario` takes.
   function body() {
     const said = { name: name.value.trim(), harness: harness.value };
@@ -406,12 +406,12 @@ export async function scenarioFromRunView(root, [runId], scope) {
         h("a", { class: "btn btn-primary", href: `#/scenarios/${made.scenario.name}` }, "Open the scenario"))))),
   });
   refreshPlan = plan.refresh;
-  replace(root, ...head("Make a scenario"),
+  replace(root, ...head("Make a scenario"), h("div", { class: "stack" },
     panel("The scenario", h("div", { class: "stack" },
       several ? null : h("p", { class: "hint" }, about),
       problem,
       plan.element)),
-    done);
+    done));
 }
 
 /** What a scenario of a run would be, as `prepare_scenario` plans it: written nowhere yet. */

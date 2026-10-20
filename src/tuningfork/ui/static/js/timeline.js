@@ -9,7 +9,7 @@
 // verdict: what its task's check said, coloured by it — the only green or red on the page.
 
 import { api, enc } from "./api.js";
-import { chip, count, failure, firstLine, h, kv, loading, longText, millis, outcome, plural, replace, short, toggle } from "./dom.js";
+import { chip, count, failure, firstLine, h, kv, loading, longText, millis, outcome, panel, plural, replace, short, toggle } from "./dom.js";
 import { settle } from "./nav.js";
 import { messageSize, messageText, messageView, noReasoning, outputView, toolNames } from "./payload.js";
 import { startForm, startPanel } from "./start.js";
@@ -21,10 +21,11 @@ const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking
 // but the last folded to their turn's line.
 const FOLD_FROM = 3;
 
-/** The timeline for `data`, a run's `/timeline`. Returns its element and its step rail, and
- *  `start()` — to call once both are on the page — `update(data)` for a run still going,
- *  and `dispose()`. `focus` opens a step; `query` may name a form to open in it, or
- *  `view=tokens` its answer's tokens. `scope` is the page's, for following work started here. */
+/** The timeline for `data`, a run's `/timeline`. Returns its element, its step rail and its
+ *  verdict strip — the verdict in a line, for the top of the page — and `start()` — to call
+ *  once they are on the page — `update(data)` for a run still going, and `dispose()`. `focus`
+ *  opens a step; `query` may name a form to open in it, or `view=tokens` its answer's tokens.
+ *  `scope` is the page's, for following work started here. */
 export function timeline(data, { focus = null, query = new URLSearchParams(), scope = null } = {}) {
   const run = data.run;
   const base = `#/runs/${run.id}`;
@@ -40,6 +41,15 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   let asking = 0;
   const element = h("div", { class: "tl" });
   const rail = h("nav", { class: "tl-rail", "aria-label": "Steps of the run" });
+  const strip = h("div", { class: "verdict-strip", role: "status" });
+  // The rail's way to the actions of the step being read, following it as the page scrolls.
+  let railStep = null;
+  const railWork = h("button", {
+    class: "tl-rail-work", type: "button", hidden: true,
+    onclick: () => {
+      if (railStep !== null) workFrom(railStep);
+    },
+  });
   // What is being read marks its line in the rail: a step, or a message the harness added.
   const seen = new IntersectionObserver((changes) => {
     for (const change of changes) {
@@ -64,6 +74,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   return {
     element,
     rail,
+    strip,
     start() {
       if (focus !== null && sections.has(focus)) reveal(focus, { start: query.get("start"), query });
     },
@@ -82,6 +93,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     verdictNode = verdictSection();
     toolsNode = toolsSection();
     replace(element, toolsNode, nodesFrom(0, () => true), verdictNode);
+    drawStrip();
     drawRail();
   }
 
@@ -102,11 +114,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       return h("div", { class: "tl-tools" }, toolsOffered(offered, { note }));
     }
     const imported = state.run.imported;
-    return h("p", { class: "tl-tools tl-note" }, !imported
-      ? "No tools offered: the model was sent none."
-      : imported.format === "hermes-export"
-        ? "No tools recorded: Hermes's export keeps none, so each step was rebuilt without the ones the model was offered. Imported again with Tools from naming a run recorded through the same harness, its steps take that run's."
-        : "No tools recorded: the file named none, so each step was rebuilt without any.");
+    if (!imported) return h("p", { class: "tl-tools tl-note" }, "No tools offered: the model was sent none.");
+    // An import that kept none: said in the tools' own line, the why a click away.
+    return h("div", { class: "tl-tools" }, h("details", { class: "fold no-tools" },
+      h("summary", null, "No tools recorded"),
+      h("p", { class: "tl-note" }, imported.format === "hermes-export"
+        ? "Hermes's export keeps none, so each step was rebuilt without the ones the model was offered. Imported again with Tools from naming a run recorded through the same harness, its steps take that run's."
+        : "The file named none, so each step was rebuilt without any.")));
   }
 
   /** The steps whose call offered other tools than the call before. */
@@ -162,6 +176,50 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
                     },
                   }, `made by step ${line.made_by}'s call`)))))
         : null);
+  }
+
+  /** The verdict in a line, for under the run's title: what its end says — the headline, a
+   *  line the check printed, and where the check ran along the run, the call that made it.
+   *  Coloured as the end is; a run with no verdict says why. */
+  function drawStrip() {
+    const { run, launch } = state;
+    const verdict = verdictOf(run, launch, state.ended);
+    const output = String(run.result?.check_output || "").trim();
+    const lines = output.split("\n").map((line) => line.trim()).filter(Boolean);
+    const made = (state.made_by || []).filter((line) => line.at_end);
+    const toEnd = (label) => h("a", {
+      class: "verdict-strip-more", href: base,
+      onclick: (event) => {
+        event.preventDefault();
+        verdictNode?.scrollIntoView({ block: "start" });
+      },
+    }, label);
+    strip.className = ["verdict-strip", verdict.tone || "tone-none"].join(" ");
+    // A failure says what the check printed — the first line it placed where it ran along the
+    // run, else its last: a traceback's error, a script's closing word.
+    const failed = run.result?.passed === false;
+    const said = failed && lines.length ? made[0]?.line ?? lines[lines.length - 1] : null;
+    replace(strip,
+      h("strong", null, verdict.headline.endsWith(".") ? verdict.headline : `${verdict.headline}.`),
+      // A space between the parts for whoever reads the line aloud: the row's gap is only drawn.
+      " ",
+      said
+        ? h("span", null,
+            lines.length > 1 ? `It printed ${plural(lines.length, "line")}; ${made.length ? "the first" : "the last"}: ` : "It printed ",
+            h("code", null, said),
+            made.length ? [", ", made[0].made_by === null ? "there from the start: work not done"
+              : h("a", {
+                  href: `${base}/${made[0].made_by}`,
+                  onclick: (event) => {
+                    event.preventDefault();
+                    reveal(made[0].made_by);
+                  },
+                }, `made by step ${made[0].made_by}'s call`)] : null,
+            ".")
+        : null,
+      // Why there is none, or why it is not counted.
+      verdict.detail && (!failed || run.result?.usable === false) ? h("span", null, verdict.detail) : null,
+      output || made.length ? toEnd("The check and all it printed ↓") : null);
   }
 
   /** The entries from `from` on, and the steps placed among them that `wanted` takes. */
@@ -220,18 +278,28 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return h("div", { class: "tl-gap" }, `step ${idx} · not recorded — a call refused while the proxy was paused`);
   }
 
+  /** A step's row: a line that opens it, and — always in sight — the way to work from it, which
+   *  opens it at its actions. */
   function stepSection(step, spawned) {
     const marker = h("button", {
       class: "tl-marker", type: "button", "aria-expanded": "false",
-      title: `The model was sent the ${plural(step.position, "message")} above. Open for this step's details, and work from it.`,
+      title: `The model was sent the ${plural(step.position, "message")} above. Open for this step's details.`,
       onclick: () => toggleOpen(step.idx),
     }, markerParts(step));
+    // A replayed step was answered from the recording: nothing starts there, and its button
+    // says so rather than leave.
+    const work = h("button", {
+      class: "btn btn-small tl-work", type: "button", disabled: Boolean(step.served),
+      title: step.served ? "Answered from the recording: nothing starts from here"
+        : `Resample, A/B a wording, fork or refine the skill from step ${step.idx}`,
+      onclick: () => workFrom(step.idx),
+    }, "Work from here");
     const output = h("div", { class: ["tl-output", finalReply(step) && "tl-final"] }, outputParts(step));
     const block = h("div", { class: "tl-block", hidden: true });
     const section = h("section", {
       class: ["tl-step", step.kept === "retried" && "tl-retried"], id: `s${step.idx}`, dataset: { idx: step.idx },
-    }, marker, output, block, spawned.map(threadLink));
-    sections.set(step.idx, { step, section, marker, output, block, slot: null, ready: null });
+    }, h("div", { class: "tl-head" }, marker, work), output, block, spawned.map(threadLink));
+    sections.set(step.idx, { step, section, marker, output, block, actions: null, slot: null, ready: null });
     seen.observe(section);
     return section;
   }
@@ -240,13 +308,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const usage = step.usage || {};
     const took = step.timings?.total_ms;
     return [
+      h("span", { class: "chevron", "aria-hidden": "true" }),
       h("span", { class: "tl-k" }, `Step ${step.idx}`),
       outcome(step.outcome),
       h("span", { class: "tl-meta" },
         usage.prompt_tokens !== undefined ? `${count(usage.prompt_tokens)} → ${count(usage.completion_tokens)} tokens` : null,
         took != null ? ` · ${millis(took)}` : null),
       flags(step),
-      h("span", { class: "tl-chevron", "aria-hidden": "true" }, "▸"),
     ];
   }
 
@@ -258,7 +326,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     if (step.served) out.push(chip("replayed", "muted", `Answered from the recording: step ${replay.source_idx} of run ${short(replay.source_run || "")}`));
     if (replay.live_from !== undefined && replay.live_from !== null) out.push(chip("live from here", "accent", "The fork went live at this step"));
     if (replay.mismatch) out.push(chip("left the recording", "warn"));
-    if (step.variant) out.push(chip("variant", "skill", "A variant wording was swapped in: the model saw it, the harness sent the original"));
+    if (step.variant) out.push(chip("variant", "change", "A variant wording was swapped in: the model saw it, the harness sent the original"));
     if (step.leaked) out.push(chip("original leaked", "warn"));
     if (step.edited.request) out.push(chip("context edited", "change", "Edited at a breakpoint before the model saw it"));
     if (step.edited.response) out.push(chip(`answer ${step.edited.response}`, "change", "At a breakpoint, before the harness acted on it"));
@@ -365,6 +433,9 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
             reveal(step.idx);
           },
         }, h("span", { class: "mono" }, String(step.idx)), h("span", { class: "tl-rail-what" }, railLabel(step)),
+        step.experiments.length
+          ? h("span", { class: "tl-exp-dot", title: `${plural(step.experiments.length, "experiment")} at this step` })
+          : null,
         step.variant || step.edited.request || step.edited.response ? h("span", { class: "tl-dot", title: "changed by tuningfork" }) : null),
         ...(added.get(step.idx) || []).map((entry) => railEntry(entry, step, names)),
       ]),
@@ -378,6 +449,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
         + "first, unnumbered, then the steps this run recorded" : null },
         h("span", null, plural(state.steps.length, "step") + (earlier ? ` · after ${plural(earlier, "earlier answer")}` : "")), foldAll),
       lines,
+      railWork,
       h("a", {
         class: ["tl-rail-verdict", verdict.tone], href: base, title: "What the task's check said: the end of the run",
         onclick: (event) => {
@@ -524,6 +596,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     }
     // A line folded away under its turn: the turn's own line says where the page is.
     if (current?.classList.contains("tl-folded")) rail.querySelector(`.tl-rail-turn[data-entry="${current.dataset.turn}"]`)?.classList.add("current");
+    // The step being read is the one the rail offers to work from; a message read after it
+    // leaves it so.
+    if (idx !== null && sections.has(idx)) {
+      railStep = idx;
+      railWork.hidden = false;
+      replace(railWork, `Work from step ${idx}`);
+    }
   }
 
   // --- a step, opened -------------------------------------------------------------------------
@@ -552,16 +631,19 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       const exact = `${base}/${step.idx}/context`;
       const here = state.skills.filter((span) => span.message_index < step.position);
       found.slot = h("div", { class: "start-slot" });
-      replace(found.block,
-        summaryStrip(detail),
-        banners(detail, { original: () => h("a", { href: exact }, "open the exact context to compare.") }),
-        here.length ? h("div", null, h("div", { class: "label" }, "Skills in this step's context"),
-          skillsSummary(here, recorded)) : null,
-        experimentsHere(step),
+      // The work first, a form opening under it; then what happened at the step, what it was,
+      // and the record, folded.
+      found.actions = step.served
         // A replayed step was answered from the recording: there is no call to sample.
-        step.served ? h("p", { class: "muted small" }, "Answered from the recording: nothing starts from here.") : startPanel(detail, { go }),
+        ? panel("Work from here", h("p", { class: "muted" }, "Answered from the recording: nothing starts from here."), { className: "work-panel" })
+        : startPanel(detail, { go });
+      replace(found.block,
+        found.actions,
         found.slot,
-        details(detailsPanel(detail), workspacePanel(detail)),
+        banners(detail, { original: () => h("a", { href: exact }, "open the exact context to compare.") }),
+        facts(detail, step, here),
+        detailsPanel(detail),
+        workspacePanel(detail),
         h("p", { class: "tl-exact" },
           h("a", { class: "btn btn-small", href: exact }, "Exact context this step was sent →"),
           h("span", { class: "muted small" }, " every message as the model saw it: what a resample resends")));
@@ -571,22 +653,33 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     }
   }
 
-  /** A step's details side by side where there are two; one alone across the width, and none
-   *  where neither has anything to say (found in review: a run nothing launched has no
-   *  workspace, and its timings sat in half a grid beside an empty one). */
-  function details(...panels) {
-    const shown = panels.filter(Boolean);
-    if (!shown.length) return null;
-    return h("div", { class: ["tl-details", shown.length > 1 && "grid-2"] }, shown);
+  /** What the step was, in one block of labelled lines: its call, the skills in its context,
+   *  and the experiments already run at it. */
+  function facts(detail, step, here) {
+    return h("div", { class: "tl-facts" }, kv([
+      ["the call", summaryStrip(detail)],
+      ["skills in its context", here.length ? skillsSummary(here, recorded) : null],
+      ["experiments here", step.experiments.length
+        ? h("div", { class: "tl-experiments" }, step.experiments.map((experiment) =>
+            h("a", { href: `#/experiments/${experiment.id}` },
+              chip(`${EXPERIMENT[experiment.kind] || experiment.kind}${experiment.reach === "end" ? " to the end" : ""} · ${experiment.samples}${experiment.n ? ` of ${experiment.n}` : ""}`,
+                experiment.status === "done" ? "accent" : "muted", experiment.target || ""))))
+        : null],
+    ]));
   }
 
-  function experimentsHere(step) {
-    if (!step.experiments.length) return null;
-    return h("div", { class: "tl-experiments" }, h("span", { class: "label" }, "Experiments here"),
-      step.experiments.map((experiment) =>
-        h("a", { href: `#/experiments/${experiment.id}` },
-          chip(`${EXPERIMENT[experiment.kind] || experiment.kind}${experiment.reach === "end" ? " to the end" : ""} · ${experiment.samples}${experiment.n ? ` of ${experiment.n}` : ""}`,
-            experiment.status === "done" ? "accent" : "muted", experiment.target || ""))));
+  /** Open step `idx` at its actions — what its "Work from here" and the rail offer — the first
+   *  of them ready for a key. */
+  async function workFrom(idx) {
+    const found = sections.get(idx);
+    if (!found) return;
+    unfoldAround(rail.querySelector(`.tl-rail-step[data-idx="${idx}"]`));
+    setOpen(found, true);
+    settle(`${base}/${idx}`);
+    await found.ready;
+    if (!found.actions) return;
+    found.actions.scrollIntoView({ block: "nearest" });
+    found.actions.querySelector(".start-actions a")?.focus({ preventScroll: true });
   }
 
   /** Open step `idx`, bring it into view, and — given `start` — open that form in it. */
@@ -665,6 +758,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const fresh = verdictSection();
     verdictNode.replaceWith(fresh);
     verdictNode = fresh;
+    drawStrip();
     // A new step may have offered other tools: said again, left open if it was.
     if (toolsKey() !== toolsDrawn) {
       const open = Boolean(toolsNode.querySelector("details.tools-offered")?.open);
@@ -691,7 +785,8 @@ function verdictOf(run, launch, ended) {
       };
     }
     if (!launch) {
-      return { headline: "No verdict", rail: "No verdict", detail: "This run was recorded as it happened, not launched by tuningfork: no check ran." };
+      // How it came — recorded live, imported — its title's chip says.
+      return { headline: "No verdict", rail: "No verdict", detail: "No check ran: tuningfork did not launch this run." };
     }
     if (!launch.check) return { headline: "No verdict", rail: "No verdict", detail: "The task defines no check." };
     return ended

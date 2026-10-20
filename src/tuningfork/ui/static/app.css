@@ -248,7 +248,8 @@ pre { margin: 0; }
   white-space: nowrap;
 }
 .btn:hover { background: var(--panel-2); text-decoration: none; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+.btn[aria-disabled="true"]:hover { background: var(--panel); }
 .btn-small { padding: 3px 10px; font-size: 13px; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
@@ -311,6 +312,24 @@ main { padding: 20px 24px 64px; }
   margin-bottom: 16px;
 }
 .page-head .sub { margin: 4px 0 0; color: var(--muted); }
+/* A page's facts as short items: each wraps whole. */
+.page-head .facts .fact { white-space: nowrap; }
+
+/* A run's verdict under its title, in the words and colour of its end. */
+.verdict-strip {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+  margin-bottom: 16px; padding: 10px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); font-size: 13.5px;
+}
+.verdict-strip strong { font-size: 14.5px; }
+.verdict-strip code { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+.verdict-strip .verdict-strip-more { margin-left: auto; white-space: nowrap; }
+.verdict-strip.tone-ok { border-color: var(--ok); background: var(--ok-soft); }
+.verdict-strip.tone-ok strong { color: var(--ok); }
+.verdict-strip.tone-bad { border-color: var(--bad); background: var(--bad-soft); }
+.verdict-strip.tone-bad strong { color: var(--bad); }
+.verdict-strip.tone-warn { border-color: var(--warn); background: var(--warn-soft); }
+.verdict-strip.tone-warn strong { color: var(--warn); }
 .page-head .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .h-sub { margin-left: 10px; color: var(--muted); font-weight: 400; font-size: 15px; }
 
@@ -319,6 +338,8 @@ main { padding: 20px 24px 64px; }
 .crumbs .sep { color: var(--faint); }
 
 .stack { display: flex; flex-direction: column; gap: 16px; }
+/* A slot a page fills later — an import's preview, what was made, a job's summary — takes no gap while empty. */
+.slot:empty { display: none; }
 
 .panel {
   background: var(--panel);
@@ -630,24 +651,31 @@ a.chip:hover { text-decoration: none; filter: brightness(0.97); }
   font-size: 12px;
   min-width: 0;
 }
-summary.msg-head { cursor: pointer; list-style: none; }
-summary.msg-head::-webkit-details-marker { display: none; }
-summary.msg-head::before,
-.fold > summary::before,
-.tool > summary::before {
+/* Every fold, one look — a message, "More settings", a panel kept for the record, a step's row
+   (`.chevron`), a turn in the rail: a chevron pointing right while folded and down while open. */
+details > summary { cursor: pointer; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before,
+.chevron {
   content: "";
+  display: inline-block;
   flex: none;
   width: 6px;
   height: 6px;
-  margin: 0 3px 0 1px;
+  margin: 0 9px 0.15em 2px;
   border-right: 1.5px solid var(--faint);
   border-bottom: 1.5px solid var(--faint);
   transform: rotate(-45deg);
   transition: transform 0.1s;
 }
-details[open] > summary.msg-head::before,
-.fold[open] > summary::before,
-.tool[open] > summary::before { transform: rotate(45deg); }
+details[open] > summary::before,
+.tl-open .chevron { transform: rotate(45deg); }
+/* Where the summary lays its parts out in a row, its gap spaces the chevron. */
+summary.msg-head::before,
+.fold > summary::before,
+.tool > summary::before,
+details.panel > summary::before,
+.tl-marker .chevron { margin: 0 1px 0 2px; }
 .msg-preview {
   flex: 1;
   min-width: 0;
@@ -1243,17 +1271,18 @@ pre.code { color: var(--muted); }
 }
 .tl-step.tl-open { box-shadow: var(--shadow); border-left-color: var(--accent); }
 .tl-step.tl-retried { opacity: 0.72; }
+/* A step's row: the line that opens it, and its way to work from it, always in sight. */
+.tl-head { display: flex; align-items: center; gap: 8px; padding-right: 10px; border-radius: var(--radius) var(--radius) 0 0; }
+.tl-head:hover { background: var(--panel-2); }
 .tl-marker {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%;
+  display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0;
   padding: 9px 12px; border: none; background: transparent; color: inherit; font: inherit;
   text-align: left; cursor: pointer;
 }
-.tl-marker:hover { background: var(--panel-2); }
+.tl-work { flex: none; }
 .tl-k { font-weight: 650; white-space: nowrap; }
 .tl-meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .tl-flags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
-.tl-chevron { margin-left: auto; color: var(--faint); transition: transform 0.15s; }
-.tl-open .tl-chevron { transform: rotate(90deg); }
 .tl-output { display: flex; flex-direction: column; gap: 8px; padding: 2px 12px 11px; }
 /* The run's last word is the assistant's: its colour, never a verdict's (`.tl-verdict` is that). */
 .tl-output.tl-final { margin: 0 10px 10px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent-soft); }
@@ -1262,9 +1291,13 @@ pre.code { color: var(--muted); }
 .tl-verdict pre.text { margin: 0; max-height: 320px; overflow: auto; }
 .tl-note { margin: 0; color: var(--muted); font-size: 12.5px; }
 .tl-block { display: flex; flex-direction: column; gap: 12px; padding: 12px; border-top: 1px dashed var(--border-strong); }
-.tl-block .summary-strip { margin-bottom: 0; }
+.tl-block .summary-strip { margin-bottom: 0; gap: 4px 16px; }
 .tl-block .skills-list { margin-bottom: 0; }
-.tl-details { margin-top: 0; }
+.start-slot:empty { display: none; }
+.start-note { margin: 10px 0 0; }
+/* What the step was, one style for each line: its call, the skills in its context, its experiments. */
+.tl-facts { padding: 0 4px; }
+.tl-facts .kv { gap: 8px 16px; align-items: baseline; }
 .tl-experiments { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .tl-experiments a { text-decoration: none; }
 .tl-exact { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
@@ -1286,6 +1319,15 @@ pre.code { color: var(--muted); }
 .tl-rail-step.tl-rail-earlier > .mono { color: var(--faint); }
 .tl-rail-step.tl-rail-earlier.current { background: var(--accent-soft); color: var(--accent); }
 .tl-dot { flex: none; width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: var(--change); }
+/* A step with experiments run at it: a ring, beside the dot of one tuningfork changed. */
+.tl-exp-dot { flex: none; width: 7px; height: 7px; margin-left: auto; border: 1.5px solid var(--accent); border-radius: 50%; }
+.tl-exp-dot + .tl-dot { margin-left: 3px; }
+/* The way to the actions of the step being read, following it down the page. */
+.tl-rail-work {
+  margin-top: 8px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 6px;
+  background: var(--panel); color: var(--accent); font: inherit; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer;
+}
+.tl-rail-work:hover { background: var(--panel-2); }
 /* What the harness added after a step — a tool's result — on a line of its own, under it. */
 .tl-rail-result { display: flex; align-items: center; gap: 4px; padding: 1px 6px 1px 16px; border-radius: 6px; color: var(--muted); font-size: 11.5px; text-decoration: none; }
 .tl-rail-result:hover { background: var(--panel); color: var(--text); }
@@ -1298,7 +1340,7 @@ pre.code { color: var(--muted); }
 /* A turn's fold: a chevron, down while its exchange shows, right while it is folded to this line. */
 .tl-rail-fold { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; border: none; border-radius: 4px; background: none; cursor: pointer; }
 .tl-rail-fold:hover { background: var(--panel-2); }
-.tl-rail-fold::before { content: ""; width: 5px; height: 5px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); transition: transform 0.1s; }
+.tl-rail-fold::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint); transform: rotate(45deg); transition: transform 0.1s; }
 .tl-rail-fold[aria-expanded="false"]::before { transform: rotate(-45deg); }
 .tl-rail-fold-none { visibility: hidden; }
 /* What a folded turn holds, on a line of its own under its words: they keep the rail's width. */
@@ -1315,11 +1357,14 @@ pre.code { color: var(--muted); }
 .tl-rail-verdict.tone-ok { color: var(--ok); background: var(--ok-soft); }
 .tl-rail-verdict.tone-bad { color: var(--bad); background: var(--bad-soft); }
 .tl-rail-verdict.tone-warn { color: var(--warn); background: var(--warn-soft); }
-details.about-run > summary { display: flex; align-items: center; gap: 10px; list-style: none; cursor: pointer; }
-details.about-run > summary::-webkit-details-marker { display: none; }
-details.about-run > summary::before { content: "▸"; color: var(--faint); transition: transform 0.15s; }
-details.about-run[open] > summary::before { transform: rotate(90deg); }
-details.about-run:not([open]) > summary { border-bottom: none; }
+/* A panel folded to its title line (`foldPanel`): what is kept for the record — About this run,
+   a step's details, what a job was asked, how an experiment was sampled. */
+details.panel > summary { gap: 8px 12px; }
+details.panel:not([open]) > summary { border-bottom: none; }
+details.panel > summary:hover { background: var(--panel-2); border-radius: var(--radius); }
+details.panel[open] > summary:hover { border-radius: var(--radius) var(--radius) 0 0; }
+/* Inside a step, a panel is one part of a card: no shadow of its own. */
+.tl-block .panel { box-shadow: none; }
 .banners { margin-bottom: 4px; }
 .tools-offered { margin-bottom: 10px; }
 .tl-tools .tools-offered { margin-bottom: 0; }

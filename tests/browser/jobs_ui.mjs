@@ -50,9 +50,24 @@ try {
   // runs nothing launched read "recorded live", every seeded run did).
   check(await page.eval(`!document.querySelector(".page-head h1 .chip") && document.querySelector(".about-run summary").textContent.includes("launched by tuningfork, batch")`),
     "a seeded run reads as a batch's, not as one recorded live");
-  // A run with no workspace snapshot shows its timings alone, across the width (found in review: half a grid).
-  check(await page.eval(`(() => { const details = document.querySelector("#s1 .tl-details"); return !!details && !details.classList.contains("grid-2"); })()`),
-    "a step with one panel of details lays it across the width, not in half a grid");
+  // A step opens at its actions; what it was is one block of lines, in one style; its record is
+  // folded, its timings already in its call's line (the review's §7 and §3.6).
+  check(await page.eval(`(() => {
+    const block = document.querySelector("#s1 .tl-block");
+    const record = block.querySelector("details.record-panel");
+    return block.firstElementChild.classList.contains("work-panel")
+      && block.firstElementChild.querySelector(".panel-head h2").textContent === "Work from here"
+      && [...block.querySelectorAll(".tl-facts dt")].map((dt) => dt.textContent).join("|").startsWith("the call|")
+      && block.querySelector(".tl-facts").textContent.includes("total")
+      && !!record && !record.open && record.querySelector("summary h2").textContent === "Details for the record";
+  })()`), "a step opens at its actions, what it was in one block of lines, its record folded");
+  // Every step's row says how to work from it, open or not, and the button opens it there.
+  check(await page.eval(`[...document.querySelectorAll(".tl-step")].every((s) => s.querySelector(".tl-head > .tl-work")?.textContent === "Work from here")`),
+    "every step's row has its Work from here, in sight");
+  await page.eval(`document.querySelector("#s0 .tl-work").click()`);
+  await until(() => page.eval(`!!document.querySelector("#s0.tl-open .start-actions") && document.activeElement?.textContent === "Resample…"`),
+    "step 0, opened at its actions");
+  check(await page.eval(`location.hash === "#/runs/${run.id}/0"`), "Work from here opens its step at the actions, the first ready for a key");
   await openStep(page, "resample");
   await planShows(page, "20 samples");
   check(await page.eval(`(document.querySelector(".plan-preview").textContent).includes(${JSON.stringify(BASE)})`), "the plan says its calls go through this proxy");
@@ -228,8 +243,9 @@ try {
   const stoppedText = await until(() => page.eval(`document.querySelector("#verdict")?.textContent || ""`), "the cancelled fork's verdict");
   check(stoppedText.includes("the run was stopped") && stoppedText.includes("Cancelled before it finished") && !stoppedText.includes("defines no check"),
     `a cancelled run says it was stopped, and why (${stoppedText})`);
-  const headChips = await page.eval(`[...document.querySelectorAll(".page-head .chip")].map((c) => c.textContent).join(",")`);
-  check(headChips.includes("stopped") && !headChips.includes("no check"), `its page's head says so too, not "no check" (${headChips})`);
+  const stripText = await page.eval(`document.querySelector(".verdict-strip")?.textContent || ""`);
+  check(stripText.startsWith("No verdict: the run was stopped. ") && stripText.includes("Cancelled before it finished") && !stripText.includes("defines no check"),
+    `its verdict strip, under the title, says so too, not "no check" (${stripText})`);
 
   await openStepOf(page, launched, 1, "resample&reach=end");
   await planShows(page, "the task's check passes");
@@ -485,6 +501,21 @@ try {
       && document.querySelector(".tl-rail-verdict").textContent === "Verdict: ${said}"
       && getComputedStyle(document.querySelector(".tl-final")).borderTopColor !== ok;
   })()`), `the run ends with its verdict — ${said}, what the check printed — and so does the rail; the reply is not green`);
+  // ... and says it first, under its title, in the same words and colour (the review's §3.2): the
+  // verdict chip that sat among the buttons is gone.
+  check(await page.eval(`(() => { const strip = document.querySelector(".page-head + .verdict-strip");
+    return strip?.classList.contains("${said === "passed" ? "tone-ok" : "tone-bad"}") && strip.querySelector("strong").textContent === "The check ${said}."
+      && !document.querySelector(".page-head .actions .chip"); })()`), `the verdict is said first, under the title: ${said}`);
+  const failing = (await api("/runs?task=tally-report/1&limit=20")).find((found) => found.result?.passed === false && found.result?.usable !== false);
+  const printed = String(failing.result.check_output || "").trim().split("\n").map((line) => line.trim()).filter(Boolean);
+  await page.eval(`location.hash = "#/runs/${failing.id}"`);
+  await until(() => page.eval(`(document.querySelector(".verdict-strip strong")?.textContent || "") === "The check failed."`), "a failed run's verdict strip");
+  check(printed.length > 0 && await page.eval(`(() => { const strip = document.querySelector(".verdict-strip");
+    return strip.classList.contains("tone-bad") && strip.querySelector("code")?.textContent === ${JSON.stringify(printed[printed.length - 1])}
+      && [...strip.querySelectorAll("a")].some((a) => a.textContent === "The check and all it printed ↓"); })()`),
+    `a failed run's strip says what its check printed (${printed[printed.length - 1]})`);
+  await page.eval(`location.hash = "#/runs/${run.id}"`);
+  await until(() => page.eval(`document.querySelectorAll(".tl-step").length === ${shape.steps.length}`), "back to the timeline");
   // The tools its first call offered come first, above the system prompt: no message holds
   // them, but the model reads them.
   const offered = shape.tools_offered.map((tool) => tool.name);
@@ -523,6 +554,11 @@ try {
     "a step opens in place, and the address names it");
   check(await page.eval(`getComputedStyle(document.querySelector("#s1")).borderLeftColor === ${colourOf("var(--accent)")}`),
     "open, it takes the accent");
+  // The rail offers the actions of the step being read, and marks the steps with experiments.
+  await page.eval(`document.querySelector("#s1").scrollIntoView({ block: "start" })`);
+  await until(() => page.eval(`document.querySelector(".tl-rail-work")?.textContent === "Work from step 1"`), "the rail's way to the step being read");
+  check(await page.eval(`!!document.querySelector('.tl-rail-step[data-idx="1"] .tl-exp-dot') === ${shape.steps.find((step) => step.idx === 1).experiments.length > 0}`),
+    "the rail offers to work from the step being read, and rings a step with experiments");
   await page.eval(`[...document.querySelectorAll("#s1 .start-actions a")].find((a) => a.textContent === "Resample…").click()`);
   await until(() => page.eval(`!!document.querySelector("#s1 .start-panel .plan-form")`), "the form in the step");
   check(await page.eval(`location.hash === "#/runs/${run.id}/1?start=resample" && document.querySelector(".view").dataset.sentinel === "kept"`),
@@ -999,8 +1035,9 @@ try {
     "a run's tools named on the page, as --tools-from names them: the warning gone");
   await page.eval(`[...document.querySelectorAll("button")].find((b) => b.textContent === "Import" && !b.disabled).click()`);
   await until(() => page.eval(`/^#\\/runs\\/[0-9a-f]{32}$/.test(location.hash)`), "the imported run's page");
-  await until(() => page.eval(`(document.querySelector(".page-head .sub")?.textContent || "").includes("imported from a Hermes export (session 20261018_120001_aa11bb)")`),
-    "the run says where it came from");
+  await until(() => page.eval(`document.querySelector(".page-head h1 .chip")?.textContent === "imported"
+    && (document.querySelector(".about-run summary")?.textContent || "").includes("from a Hermes export (session 20261018_120001_aa11bb)")`),
+    "the run says once that it was imported, and its About from what");
   const imported = (await api(`/runs/${(await page.eval("location.hash")).split("/")[2]}`)).run;
   check(imported.label === "imported: chat 1" && imported.harness === "hermes", "labelled by its session's title, its harness Hermes");
   check(await page.eval(`(document.querySelector(".tl-tools summary")?.textContent || "").startsWith("${offered.length} tools offered")`),
@@ -1014,6 +1051,17 @@ try {
     return first?.classList.contains("tl-rail-turn") && first.textContent === "userEarlier: keep the reports small."
       && first.nextElementSibling?.dataset.idx === "0";
   })()`), "and the turn the run began with heads the rail, above its first step");
+  // Nothing launched it, so nothing can fork it: the button stays, greyed, and says why (N14).
+  await page.eval(`document.querySelector("#s1 .tl-work").click()`);
+  await until(() => page.eval(`!!document.querySelector("#s1.tl-open .start-actions")`), "the imported run's step, at its actions");
+  check(await page.eval(`(() => {
+    const fork = [...document.querySelectorAll("#s1 .start-actions .btn")].find((b) => b.textContent === "Fork from here…");
+    const note = document.querySelector("#s1 .start-note");
+    return fork?.getAttribute("aria-disabled") === "true" && !fork.hasAttribute("href")
+      && fork.title.endsWith("Make a scenario of this run, run it with tuningfork, and fork from one of its runs.")
+      && note.textContent.includes("Forking needs a run tuningfork launched; this one was imported. Make a scenario of it, run it, and fork from one of its runs.")
+      && note.querySelector("a")?.getAttribute("href") === "#/runs/${imported.id}/scenario";
+  })()`), "on an imported run, Fork from here… is greyed, says why, and leads to a scenario whose runs fork");
   await page.eval(`location.hash = "#/runs"`);
   const importedRow = `[...document.querySelectorAll(".run-row")].find((row) => row.querySelector("a.run-id")?.getAttribute("href") === "#/runs/${imported.id}")`;
   await until(() => page.eval(`!!${importedRow}`), "the imported run on the Runs page");
@@ -1067,8 +1115,10 @@ try {
   const bare = await post("/imports", { content: exported, session: "20261018_120000_aa11bb" });
   await page.eval(`location.hash = "#/runs/${bare.run}"`);
   await until(() => page.eval(`!!document.querySelector(".tl-tools")`), "the bare import's page");
-  check(await page.eval(`document.querySelector(".tl-tools").textContent.startsWith("No tools recorded: Hermes's export keeps none")`),
-    "no tools recorded, and why, where they would be");
+  check(await page.eval(`(() => { const fold = document.querySelector(".tl-tools details.no-tools");
+    return fold?.querySelector("summary").textContent === "No tools recorded" && !fold.open
+      && fold.textContent.includes("Hermes's export keeps none"); })()`),
+    "no tools recorded, where they would be, and why a click away");
   // A reply cut at the output limit, and the nudge Hermes sends itself to go on.
   const nudged = [
     { role: "user", content: "Summarize data.csv into report.json." },
@@ -1236,9 +1286,9 @@ try {
   await until(() => page.eval(`!!document.querySelector(".tl-rail-head")`), "its page");
   check(await page.eval(`(() => { const head = document.querySelector(".page-head");
     return head.querySelector("h1 .chip")?.textContent === "recorded live"
-      && head.querySelector(".sub").textContent.includes("recorded live through the proxy")
-      && head.querySelector(".sub").textContent.includes("its first call continuing a conversation of 5 messages, 2 turns of the person's"); })()`),
-    "its page says it was recorded live, continuing a conversation");
+      && head.textContent.split("recorded live").length === 2
+      && head.querySelector(".sub").textContent.includes("continues an earlier chat: 5 messages, 2 turns"); })()`),
+    "its page says once that it was recorded live, and that it continues a conversation");
   const lines = await page.eval(`[...document.querySelector(".tl-rail").children].map((line) => line.textContent).join(" | ")`);
   check(lines.startsWith("1 step · after 2 earlier answers | userFile receipt A. | ·read_file | ↳read_file result | ·reply | userNow file receipt B. | 0"),
     `its rail lists the conversation the first call continued, its answers unnumbered, then the run's step (${lines})`);

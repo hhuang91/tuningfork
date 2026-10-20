@@ -2,7 +2,7 @@
 
 import { api, enc, query } from "../api.js";
 import {
-  ago, chip, crumbs, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
+  ago, chip, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
 } from "../dom.js";
 import { costOf } from "../cost.js";
 import { live } from "../live.js";
@@ -332,11 +332,14 @@ function forksPanel(arms) {
     h("div", { class: "table-wrap" }, h("table", { class: "table" }, h("tbody", null, rows)))));
 }
 
+/** How the experiment was sampled: kept for the record, folded, what it cost on its line. What
+ *  differed from the recording stays in sight — each a caution about every rate above. */
 function notesPanel(experiment) {
   const settings = experiment.settings || {};
   const scalars = Object.entries(settings).filter(([, value]) => value === null || typeof value !== "object");
-  return panel("How it was sampled", [
-    kv([["cost", costOf({ experiment: experiment.id })]]),
+  const notes = (experiment.notes || []).map((note) =>
+    h("div", { class: "banner banner-warn" }, `${note[0].toUpperCase()}${note.slice(1)}.`));
+  return [notes, foldPanel("How it was sampled", [
     kv(scalars.map(([key, value]) => [key, h("span", { class: "mono" }, String(value))])),
     experiment.variant ? h("div", null, h("div", { class: "label" }, "Variant"),
       kv([
@@ -348,10 +351,9 @@ function notesPanel(experiment) {
           ? ["swapped in", `from step ${experiment.step_idx} on, in every call the model answered`]
           : ["substituted", plural((experiment.variant.spans || []).length, "place")],
       ])) : null,
-    experiment.notes?.length ? h("div", null, h("div", { class: "label" }, "Notes"), h("ul", { class: "small" }, experiment.notes.map((note) => h("li", null, note)))) : null,
     Object.keys(experiment.changes || {}).length
       ? h("details", { class: "fold" }, h("summary", null, "Parameters changed from the recording"), h("pre", { class: "code" }, pretty(experiment.changes)))
       : null,
     h("details", { class: "fold" }, h("summary", null, "All settings"), h("pre", { class: "code" }, pretty(settings))),
-  ]);
+  ], { className: "record-panel", meta: costOf({ experiment: experiment.id }) })];
 }

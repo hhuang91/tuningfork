@@ -2,7 +2,7 @@
 
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
-import { ago, crumbs, h, kv, loading, panel, plural, pretty, rateBar, replace, short, tick, when } from "../dom.js";
+import { ago, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, tick, when } from "../dom.js";
 import {
   ACTIVE, cancelButton, duration, kindLabel, logLine, originChip, progressBar, stateChip, subject, watchJob,
 } from "../jobs.js";
@@ -137,10 +137,10 @@ function jobsTable(jobs, { selected, toggle }) {
 export async function jobView(root, [id], scope) {
   replace(root, loading());
   const head = h("div", { class: "page-head" });
-  const summary = h("div", { class: "stack" });
+  const summary = h("div", { class: "stack slot" });
   const logEl = h("div", { class: "job-log" });
-  replace(root, crumbs([["Jobs", "#/jobs"], [short(id)]]), head, summary,
-    panel("Progress", logEl, { meta: h("span", { class: "muted" }, "as it happened, newest last") }));
+  replace(root, crumbs([["Jobs", "#/jobs"], [short(id)]]), head, h("div", { class: "stack" }, summary,
+    panel("Progress", logEl, { meta: h("span", { class: "muted" }, "as it happened, newest last") })));
 
   let cancel = null;
   let last = null;
@@ -225,13 +225,14 @@ function jobSummary(job) {
         h("span", { class: "muted small" }, stream ? `${plural(stream.tokens, "token")} scored${stream.exact === false ? ", rebuilt approximately" : ""}` : ""))));
     }
   }
-  parts.push(panel("What it was asked", [
+  // What it was asked is kept for the record: folded, the page leading with what it did.
+  parts.push(foldPanel("What it was asked", [
     kv(Object.entries(job.params || {})
       .filter(([key, value]) => value !== null && value !== "" && key !== "variant_text" && !(Array.isArray(value) && !value.length))
       .map(([key, value]) => [key, h("span", { class: "mono" }, typeof value === "object" ? JSON.stringify(value) : String(value))])),
     job.params?.variant_text ? h("details", { class: "fold" }, h("summary", null, "The variant's text"), h("pre", { class: "code" }, job.params.variant_text)) : null,
     job.plan ? h("details", { class: "fold" }, h("summary", null, "The plan it ran"), h("pre", { class: "code" }, pretty(job.plan))) : null,
-  ], { meta: h("span", { class: "muted" }, `queued ${when(job.created_at)}`) }));
+  ], { className: "record-panel", meta: h("span", { class: "muted" }, `queued ${when(job.created_at)}`) }));
   return parts;
 }
 
