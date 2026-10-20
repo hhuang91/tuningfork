@@ -18,8 +18,8 @@ import {
 } from "../payload.js";
 
 const PHASE = {
-  request: { chip: ["before the model", "request"], editable: "request" },
-  response: { chip: ["after the model", "response"], editable: "response" },
+  request: { chip: ["before the model", "muted"], editable: "request" },
+  response: { chip: ["after the model", "muted"], editable: "response" },
 };
 
 // The phase has its own chip beside the reason, so the reason need not repeat it.
@@ -271,11 +271,11 @@ export async function liveView(root, [holdId], scope) {
       replace(recentEl, h("p", { class: "muted small" }, "Nothing decided yet."));
       return;
     }
-    const tones = { continue: "ok", step: "request", drop: "bad" };
+    const tones = { drop: "warn" };
     replace(recentEl, recent.map((hold) =>
       h("div", { class: "recent-item" },
         hold.abandoned ? chip("abandoned", "warn") : chip(hold.action, tones[hold.action] || "muted"),
-        hold.edited ? chip("edited", "response") : null,
+        hold.edited ? chip("edited", "change") : null,
         h("span", { class: "reason", title: hold.reason }, hold.reason),
         hold.run_id ? h("a", { class: "mono small", href: `#/runs/${hold.run_id}` }, short(hold.run_id)) : null)));
   }
@@ -343,7 +343,7 @@ function holdEditor(hold, { deciding, decided, tooLate }) {
   const rawToggle = h("button", { class: "btn btn-small", type: "button", onclick: switchRaw }, "Edit as JSON");
   const continueButton = h("button", { class: "btn btn-primary", type: "button", "data-control": true, onclick: guard(() => send("continue")) }, "Continue");
   const stepButton = h("button", {
-    class: "btn btn-step",
+    class: "btn",
     type: "button",
     title: phase === "request" ? "Send it on, and stop again when the model has answered" : "Hand it to the harness, and stop before its next call",
     "data-control": true,
@@ -592,7 +592,7 @@ function holdEditor(hold, { deciding, decided, tooLate }) {
       if (error.status === 409 || error.status === 404) {
         // No longer waiting: decided elsewhere first, or abandoned. This editor may be off
         // the page already; the page shows what did happen instead.
-        toast(`Hold ${hold.id} was no longer waiting: decided elsewhere, or abandoned`, { tone: "bad" });
+        toast(`Hold ${hold.id} was no longer waiting: decided elsewhere, or abandoned`, { tone: "warn" });
         tooLate(hold.id);
         return;
       }
@@ -605,7 +605,7 @@ function holdEditor(hold, { deciding, decided, tooLate }) {
       status.textContent = error.message;
       return;
     }
-    toast(`${action === "drop" ? "Dropped" : action === "step" ? "Stepped" : "Continued"} ${hold.id}${edited ? " with your edit" : ""}`, { tone: action === "drop" ? "bad" : "ok", timeout: 3000 });
+    toast(`${action === "drop" ? "Dropped" : action === "step" ? "Stepped" : "Continued"} ${hold.id}${edited ? " with your edit" : ""}`, { tone: action === "drop" ? "warn" : "accent", timeout: 3000 });
     decided(hold.id, action);
   }
 

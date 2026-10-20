@@ -426,6 +426,9 @@ try {
   await until(() => page.eval(`[...document.querySelectorAll("table td.mono")].some((td) => td.textContent === "anthropic messages")`), "the check's results", 60000);
   const checked = (await api("/connections")).server.checks.results;
   check(checked.streaming_tool_calls.support === "yes" && checked.anthropic_messages.support === "yes", "the server check measured both, and the page shows them");
+  // A harness found, a capability there, a sandbox: fine is grey. Green and red are a check's.
+  check(await page.eval(`!document.querySelector("main .chip.tone-ok, main .chip.tone-bad") && [...document.querySelectorAll("table td .chip")].some((c) => c.textContent === "yes" && c.classList.contains("tone-muted"))`),
+    "nothing on the page is a verdict's green or red: what is there is grey");
   await page.eval(`document.querySelector("details.fold > summary")?.parentElement && [...document.querySelectorAll("details.fold > summary")].find((s) => s.textContent.startsWith("Point the proxy")).click()`);
   await page.type(`document.querySelector('[name="url"]')`, "http://127.0.0.1:18099");
   await until(() => page.eval(`(document.querySelector(".form-error-box")?.textContent || "").includes("protected")`), "the protected endpoint refused", 10000);
@@ -463,6 +466,11 @@ try {
   check(shown === shape.entries.filter((entry) => entry.origin !== "copy").length,
     `each message once, a step's own answer in place of the harness's copy (${shown} messages, ${shape.steps.length} steps)`);
   check(await page.eval(`!!document.querySelector(".tl-final .tl-final-label")`), "the final reply is marked at the end");
+  // A step is no caution: grey until it is open. A tool's message is no verdict: grey too.
+  const colourOf = (value) => `(() => { const el = document.body.appendChild(document.createElement("span")); el.style.color = "${value}"; const got = getComputedStyle(el).color; el.remove(); return got; })()`;
+  check(await page.eval(`getComputedStyle(document.querySelector(".tl-step:not(.tl-open)")).borderLeftColor === ${colourOf("var(--border-strong)")}
+    && [...document.querySelectorAll(".tl .role-tool")].every((role) => getComputedStyle(role).color === ${colourOf("var(--muted)")})
+    && document.querySelectorAll(".tl .role-tool").length > 0`), "a step's border is grey while it is closed, and a tool's role chip grey");
   // Then its verdict, coloured by it: green and red are the check's alone, never the reply's.
   const said = shape.run.result.passed ? "passed" : "failed";
   check(shape.run.result.usable && await page.eval(`(() => {
@@ -513,6 +521,8 @@ try {
   await until(() => page.eval(`!!document.querySelector("#s1.tl-open .start-actions")`), "step 1's details");
   check(await page.eval(`location.hash === "#/runs/${run.id}/1" && document.querySelector(".view").dataset.sentinel === "kept"`),
     "a step opens in place, and the address names it");
+  check(await page.eval(`getComputedStyle(document.querySelector("#s1")).borderLeftColor === ${colourOf("var(--accent)")}`),
+    "open, it takes the accent");
   await page.eval(`[...document.querySelectorAll("#s1 .start-actions a")].find((a) => a.textContent === "Resample…").click()`);
   await until(() => page.eval(`!!document.querySelector("#s1 .start-panel .plan-form")`), "the form in the step");
   check(await page.eval(`location.hash === "#/runs/${run.id}/1?start=resample" && document.querySelector(".view").dataset.sentinel === "kept"`),
@@ -903,6 +913,9 @@ try {
     "each piece says what its word means");
   check(await page.eval(`document.querySelectorAll(".checklist li").length === 4 && !!document.querySelector(".left-off")`),
     "what is set up, and where you left off");
+  check(await page.eval(`[...document.querySelectorAll(".colours .chip")].map((c) => c.classList[1]).join(",") === "tone-ok,tone-bad,tone-warn,tone-change,tone-skill,tone-accent"
+    && document.querySelector(".colours").textContent.includes("Green and red are a check's verdict.")`),
+    "the colours, each shown on a chip that wears it");
   check(await page.eval(`document.querySelectorAll(".workflow").length === 8 && [...document.querySelectorAll(".workflow .cmd span")].some((s) => s.textContent.startsWith("tuningfork forking-tokens"))`),
     "eight ways in, each a question, each with its terminal command");
   const words = (await api("/glossary")).terms.length;
@@ -975,6 +988,9 @@ try {
     "the skill it shows, and from which step it is in context");
   check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("names no tools"))`),
     "what the file lacked, said before anything is recorded");
+  // Whose answers they are is only so: a plain note, never a caution's amber (N3).
+  check(await page.eval(`[...document.querySelectorAll(".banner")].some((b) => b.textContent.startsWith("its answers are m's") && !b.classList.contains("banner-warn"))`),
+    "whose answers they are, a plain note beside the cautions");
   await page.type(`document.querySelector('input[name="tools_from"]')`, run.id.slice(0, 8));
   await page.eval(`document.querySelector('input[name="tools_from"]').dispatchEvent(new Event("change", { bubbles: true }))`);
   await until(() => page.eval(`document.querySelector("main").textContent.includes("from run ${run.id.slice(0, 8)}")`),
@@ -1112,7 +1128,7 @@ try {
 
   console.log("a scenario of the second skill takes the first one's steps as done; one of the first stops at the second");
   const later = await post(`/imports/${two.run}/scenario`, { name: "after-tidy", skill: "tally-report" });
-  check(later.warnings.some((warning) => warning.includes("each run starts at step 1, where the chat loaded tally-report, with the turn's step 0 taken as done")),
+  check(later.notes.some((note) => note.includes("each run starts at step 1, where the chat loaded tally-report, with the turn's step 0 taken as done")),
     "a scenario of the second skill takes the first one's steps as done");
   await page.eval(`location.hash = "#/scenarios/after-tidy"`);
   await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "The conversation it continues")`), "the scenario's conversation");
@@ -1184,8 +1200,8 @@ try {
   check(!(await api("/scenarios")).some((scenario) => scenario.name === "from-a-launch"), "and trying it made no scenario");
   await page.click("Make the scenario");
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "Open the scenario")`), "the scenario made");
-  check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("workspace as its step 0 found it: 1 file(s)"))`),
-    "its inputs are the run's workspace as it started");
+  check(await page.eval(`[...document.querySelectorAll(".banner")].some((b) => b.textContent.includes("workspace as its step 0 found it: 1 file(s)") && !b.classList.contains("banner-warn"))`),
+    "its inputs are the run's workspace as it started: a note, not a caution");
   const fromLaunch = await api("/scenarios/from-a-launch");
   check(fromLaunch.spec.evals[0].id === "from-a-launch" && fromLaunch.spec.evals[0].files[0].path === "data.csv"
     && fromLaunch.inputs.length === 1 && fromLaunch.spec.evals[0].tuningfork.check.startsWith("python3"),

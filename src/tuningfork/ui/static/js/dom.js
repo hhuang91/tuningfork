@@ -224,7 +224,7 @@ export function rateBar(rate, tone = "accent") {
 
 // --- outcomes and verdicts ----------------------------------------------------------
 
-const OUTCOME_TONES = { tool_call: "accent", text: "muted", empty: "warn", truncated: "warn", error: "bad", ended: "faint" };
+const OUTCOME_TONES = { tool_call: "accent", text: "muted", empty: "warn", truncated: "warn", error: "warn", ended: "faint" };
 
 export function outcome(o) {
   if (!o) return h("span", { class: "faint" }, "—");

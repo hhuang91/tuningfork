@@ -140,7 +140,7 @@ function textChoices(skill) {
 function folderPanel(folder) {
   const status = folder.text === null
     ? chip("no SKILL.md there", "warn")
-    : folder.version ? chip(`its SKILL.md is version ${folder.version}`, "ok", "Runs have been given exactly this text")
+    : folder.version ? chip(`its SKILL.md is version ${folder.version}`, "accent", "Runs have been given exactly this text")
       : chip("its SKILL.md has not been run yet", "warn", "No run has been given this text: run a task to measure it");
   return panel("Its own folder", h("div", { class: "stack", style: { gap: "6px" } },
     h("div", null, h("span", { class: "mono" }, folder.path), " ", status),
@@ -166,7 +166,7 @@ function versionsPanel(skill, show) {
         h("th", { class: "num" }, "runs"), h("th", null, "when"), h("th", null, ""))),
       h("tbody", null, skill.versions.map((version) => h("tr", null,
         h("td", null, h("div", { class: "mono" }, version.fingerprint),
-          version.known_as.map((label) => h("div", null, chip(label, label.startsWith("its own file") ? "ok" : "skill")))),
+          version.known_as.map((label) => h("div", null, chip(label, label.startsWith("its own file") ? "accent" : "skill")))),
         h("td", null, version.conditions.map((condition) => h("div", { class: "condition-rate" },
           h("span", { class: "muted small" }, [condition.task_id, condition.harness, condition.model].filter(Boolean).join(" · ")),
           condition.passed ? rateBar(condition.passed, "ok") : h("span", { class: "faint small" }, " no verdicts"),

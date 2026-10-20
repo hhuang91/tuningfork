@@ -130,10 +130,10 @@ def import_routes(*, store: Any) -> list[Route]:
                                             skill_dir=body.get("skill_dir") or None, harness=body.get("harness") or None,
                                             task_check=body.get("task_check", True), prompt=body.get("prompt"))
             if body.get("dry_run"):
-                return {"plan": plan.to_json(), "warnings": plan.warnings, "harness": plan.harness}
+                return {"plan": plan.to_json(), "warnings": plan.warnings, "notes": plan.notes, "harness": plan.harness}
             made = imports.make_scenario(store, plan)
             return {"scenario": made.to_json(), "warnings": [*plan.warnings, *made.checked.warnings],
-                    "harness": plan.harness}
+                    "notes": plan.notes, "harness": plan.harness}
 
         body: Any = {}
         try:

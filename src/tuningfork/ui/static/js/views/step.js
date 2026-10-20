@@ -131,7 +131,7 @@ export async function stepView(root, [reference, index], scope) {
     );
     const response = state.response === "delivered" ? step.delivered_response : step.response;
     if (!response) {
-      replace(responseEl, step.error ? h("div", { class: "banner banner-bad" }, `No response: ${step.error}`) : h("p", { class: "muted" }, "No response was recorded."));
+      replace(responseEl, step.error ? h("div", { class: "banner banner-warn" }, `No response: ${step.error}`) : h("p", { class: "muted" }, "No response was recorded."));
       return;
     }
     // The recorded behaviour is the model's, whichever version is on screen.

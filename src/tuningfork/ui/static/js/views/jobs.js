@@ -179,7 +179,7 @@ function heldBanner(job) {
   const launches = new Set(job.links?.launches || []);
   const held = live.holds.filter((hold) => launches.has(hold.launch_id));
   if (!held.length) return null;
-  return h("div", { class: "banner banner-edit" },
+  return h("div", { class: "banner banner-warn" },
     h("strong", null, held.length === 1 ? "A fork is waiting at a breakpoint. " : `${held.length} forks are waiting at breakpoints. `),
     held.map((hold) => h("a", { class: "btn btn-small", href: `#/live/${hold.id}` }, `Open it: step ${hold.step}`)));
 }

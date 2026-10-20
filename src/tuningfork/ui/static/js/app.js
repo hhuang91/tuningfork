@@ -212,7 +212,7 @@ function renderTokenBanner() {
             error.hidden = false;
             return;
           }
-          toast("Token accepted: this page can act now", { tone: "ok", timeout: 3000 });
+          toast("Token accepted: this page can act now", { timeout: 3000 });
         } catch (failed) {
           error.textContent = failed.message;
           error.hidden = false;
@@ -250,7 +250,7 @@ function renderJobs() {
 // A job that ends while you are elsewhere says so, once, with a way to it. Only jobs this
 // page saw running: a page opened later is not told about what ended before.
 const watched = new Set();
-const ENDINGS = { done: ["finished", "ok"], failed: ["failed", "bad"], cancelled: ["was cancelled", "bad"], interrupted: ["was interrupted", "bad"] };
+const ENDINGS = { done: ["finished", "accent"], failed: ["failed", "warn"], cancelled: ["was cancelled", "muted"], interrupted: ["was interrupted", "warn"] };
 
 function noteJobEnd(job) {
   if (["queued", "running"].includes(job.status)) {
@@ -308,7 +308,7 @@ pickUpToken();
 
 onAuthChange((_, { blocked } = {}) => {
   if (blocked) {
-    toast("Read-only: this page needs the access token to change anything", { tone: "bad", timeout: 4000 });
+    toast("Read-only: this page needs the access token to change anything", { tone: "warn", timeout: 4000 });
     flashTokenBanner();
   }
   renderTokenBanner();
@@ -316,7 +316,7 @@ onAuthChange((_, { blocked } = {}) => {
 
 subscribe((event) => {
   if (event.type === "hold" && !location.hash.startsWith("#/live")) {
-    toast(`A call is held: ${event.hold.reason}`, { tone: "response", href: `#/live/${event.hold.id}`, timeout: 0 });
+    toast(`A call is held: ${event.hold.reason}`, { tone: "warn", href: `#/live/${event.hold.id}`, timeout: 0 });
   }
   if (["mode", "connection", "snapshot", "paused"].includes(event.type)) renderStatus();
   if (["snapshot", "hold", "resolved"].includes(event.type)) renderHeld();

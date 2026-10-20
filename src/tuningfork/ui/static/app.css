@@ -1,5 +1,21 @@
 /* tuningfork web UI. Plain CSS, no build step. Colours are tokens so the dark theme is
-   the same sheet with different values. */
+   the same sheet with different values.
+
+   One meaning a colour (CLAUDE.md says the same, and the Guide in a line):
+     --ok, --bad   green and red: a check's verdict — passed or failed, a gate met or not, an
+                   approval, a change in how often a task's check passes. Nowhere else, but for
+                   what every page means by them: a diff's added and removed lines, a button
+                   that deletes, a field to put right.
+     --warn        amber: a caution — not counted, unfinished, paused, held, something missing
+                   or gone wrong.
+     --accent      indigo: what can be acted on, what is current, a significant result, and
+                   the model's own answer.
+     --skill       purple: a skill's own words.
+     --change      teal, with a pencil: what a person or tuningfork changed — an edit at a
+                   breakpoint, a variant swapped in. Chips, outlines and banners; never a step's
+                   border.
+     the rest      grey, what is fine included: found, done, a file that matches, every role
+                   but the assistant's. */
 
 :root {
   --bg: #f6f6f3;
@@ -12,10 +28,8 @@
   --faint: #93938b;
   --accent: #4353e0;
   --accent-soft: #e8eaff;
-  --request: #2a6bd6;
-  --request-soft: #e4eefd;
-  --response: #a4640b;
-  --response-soft: #fbf0dc;
+  --change: #0b7471;
+  --change-soft: #dcf1ef;
   --ok: #247a3a;
   --ok-soft: #e2f3e6;
   --bad: #c0302b;
@@ -44,10 +58,8 @@
     --faint: #75756d;
     --accent: #8b95ff;
     --accent-soft: #262a4d;
-    --request: #6ea5ff;
-    --request-soft: #1c2a43;
-    --response: #e5a54a;
-    --response-soft: #3a2c16;
+    --change: #4cc3bb;
+    --change-soft: #17312f;
     --ok: #62c27b;
     --ok-soft: #1b3122;
     --bad: #f07b72;
@@ -72,10 +84,8 @@
   --faint: #75756d;
   --accent: #8b95ff;
   --accent-soft: #262a4d;
-  --request: #6ea5ff;
-  --request-soft: #1c2a43;
-  --response: #e5a54a;
-  --response-soft: #3a2c16;
+  --change: #4cc3bb;
+  --change-soft: #17312f;
   --ok: #62c27b;
   --ok-soft: #1b3122;
   --bad: #f07b72;
@@ -170,22 +180,24 @@ pre { margin: 0; }
   min-width: 18px;
   padding: 0 6px;
   border-radius: 9px;
-  background: var(--response);
-  color: #fff;
+  background: var(--accent);
+  color: var(--panel);
   font-size: 11px;
   font-weight: 700;
   line-height: 18px;
   text-align: center;
 }
+/* Calls held at a breakpoint: each keeps a harness waiting. */
+.badge-warn { background: var(--warn); }
 
 .topbar-end { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 
 .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
-.dot-live { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.dot-live { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .dot-wait { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
-.dot-bad { background: var(--bad); }
+.dot-bad { background: var(--warn); }
 
 .paused-banner {
   padding: 8px 20px;
@@ -240,8 +252,6 @@ pre { margin: 0; }
 .btn-small { padding: 3px 10px; font-size: 13px; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
-.btn-step { background: var(--request); border-color: var(--request); color: #fff; }
-.btn-step:hover { background: var(--request); filter: brightness(1.08); }
 .btn-danger { color: var(--bad); border-color: var(--bad); }
 .btn-danger:hover { background: var(--bad-soft); }
 .btn-danger.armed { background: var(--bad); color: #fff; }
@@ -283,7 +293,7 @@ textarea.field {
   tab-size: 2;
 }
 .field:disabled { opacity: 0.45; }
-.field-changed { border-color: var(--response); box-shadow: 0 0 0 1px var(--response); }
+.field-changed { border-color: var(--change); box-shadow: 0 0 0 1px var(--change); }
 .field-invalid { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
 .search { width: 300px; max-width: 100%; }
 
@@ -355,12 +365,14 @@ main { padding: 20px 24px 64px; }
 .empty h2 { color: var(--text); margin-bottom: 6px; }
 .empty p { max-width: 560px; margin: 6px auto; }
 
+/* Something that went wrong — a page that could not load, a job that failed: a caution, never
+   a verdict's red. */
 .error-box {
   padding: 14px 16px;
-  border: 1px solid var(--bad);
+  border: 1px solid var(--warn);
   border-radius: var(--radius);
-  background: var(--bad-soft);
-  color: var(--bad);
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 .error-box p { margin: 4px 0 0; color: var(--text); }
 
@@ -377,8 +389,7 @@ main { padding: 20px 24px 64px; }
   font-size: 13px;
 }
 .banner + .banner { margin-top: 8px; }
-.banner-edit { background: var(--response-soft); border-color: var(--response); }
-.banner-ok { background: var(--ok-soft); border-color: var(--ok); }
+.banner-edit { background: var(--change-soft); border-color: var(--change); }
 .cited { color: var(--warn); margin-top: 2px; }
 .warn-text { color: var(--warn); }
 
@@ -393,27 +404,30 @@ main { padding: 20px 24px 64px; }
 .checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .checklist li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; }
 .check-mark { font-weight: 700; color: var(--faint); }
-.checklist li.done .check-mark { color: var(--ok); }
+.checklist li.done .check-mark { color: var(--text); }
 details.setup-done > summary { padding: 12px 16px; cursor: pointer; }
 .map { overflow-x: auto; }
 .map svg { width: 100%; min-width: 640px; height: auto; display: block; }
 .map-node rect { fill: var(--panel); stroke: var(--border-strong); stroke-width: 1.5; }
-.map-node.lane-0 rect { stroke: var(--accent); }
-.map-node.lane-1 rect { stroke: var(--request); }
+/* The loop's three lanes: what is recorded plain, what is measured in the accent, what improves
+   the skill in its purple. */
+.map-node.lane-0 rect { stroke: var(--muted); }
+.map-node.lane-1 rect { stroke: var(--accent); }
 .map-node.lane-2 rect { stroke: var(--skill); }
 .map-node:hover rect, .map-node:focus-visible rect { fill: var(--panel-2); stroke-width: 2.5; }
 .map-label { font: 600 14px var(--sans); fill: var(--text); }
 .map-sub { font: 11.5px var(--sans); fill: var(--muted); }
 .map-lane, .map-edge-label { paint-order: stroke fill; stroke: var(--panel); stroke-width: 6px; stroke-linejoin: round; }
 .map-lane { font: 600 12px var(--sans); }
-.map-lane.lane-0 { fill: var(--accent); }
-.map-lane.lane-1 { fill: var(--request); }
+.map-lane.lane-0 { fill: var(--muted); }
+.map-lane.lane-1 { fill: var(--accent); }
 .map-lane.lane-2 { fill: var(--skill); }
 .map-edge line { stroke: var(--border-strong); stroke-width: 1.5; }
 .map-arrowhead { fill: var(--border-strong); }
 .map-edge-label { font: 11px var(--sans); fill: var(--faint); }
 .map-notes { display: grid; gap: 8px; margin-top: 12px; font-size: 13px; }
 .map-notes p { margin: 0; }
+.colours { line-height: 1.9; }
 .workflows { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 12px; }
 .workflow { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: var(--panel); }
 .workflow h3 { margin: 0; font-size: 14px; }
@@ -485,8 +499,8 @@ pre.md-front { display: block; white-space: pre-wrap; }
    it does not, an outline — the same height, its border inside the chip's line. */
 .chip.tone-target { background: var(--accent); color: var(--panel); }
 .chip.tone-not-target { background: transparent; color: var(--muted); border: 1px dashed var(--border-strong); line-height: 17px; }
-.chip.tone-request { background: var(--request-soft); color: var(--request); }
-.chip.tone-response { background: var(--response-soft); color: var(--response); }
+.chip.tone-change { background: var(--change-soft); color: var(--change); }
+.chip.tone-change::before { content: "✎"; margin-right: 4px; font-weight: 400; }
 .chip.tone-ok { background: var(--ok-soft); color: var(--ok); }
 .chip.tone-bad { background: var(--bad-soft); color: var(--bad); }
 .chip.tone-warn { background: var(--warn-soft); color: var(--warn); }
@@ -516,8 +530,7 @@ a.chip:hover { text-decoration: none; filter: brightness(0.97); }
 .ci-point { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; background: var(--accent); border-radius: 1px; }
 .ci-track.tone-ok .ci-band, .ci-track.tone-ok .ci-point { background: var(--ok); }
 .ci-track.tone-bad .ci-band, .ci-track.tone-bad .ci-point { background: var(--bad); }
-.ci-track.tone-response .ci-band, .ci-track.tone-response .ci-point { background: var(--response); }
-.ci-track.tone-request .ci-band, .ci-track.tone-request .ci-point { background: var(--request); }
+.ci-track.tone-change .ci-band, .ci-track.tone-change .ci-point { background: var(--change); }
 .ci-text { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 
 .kv {
@@ -546,9 +559,9 @@ a.chip:hover { text-decoration: none; filter: brightness(0.97); }
 .table tr:last-child td { border-bottom: none; }
 .table tr.clickable { cursor: pointer; }
 .table tr.clickable:hover td { background: var(--panel-2); }
-.table tr.diverged td { background: var(--response-soft); }
+.table tr.diverged td { background: var(--accent-soft); }
 .table td.num, .table th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.table .first-divergence td:first-child { box-shadow: inset 3px 0 0 var(--response); }
+.table .first-divergence td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .table-wrap { overflow-x: auto; }
 
 /* --- runs ------------------------------------------------------------------------- */
@@ -648,7 +661,7 @@ details[open] > summary.msg-head::before,
 details[open] > summary .msg-preview { visibility: hidden; }
 .msg-body { padding: 10px; }
 .msg-body > * + * { margin-top: 8px; }
-.msg-edited { border-color: var(--response); box-shadow: 0 0 0 1px var(--response); }
+.msg-edited { border-color: var(--change); box-shadow: 0 0 0 1px var(--change); }
 
 .role {
   padding: 0 6px;
@@ -661,10 +674,8 @@ details[open] > summary .msg-preview { visibility: hidden; }
   background: var(--border);
   color: var(--muted);
 }
-.role-system { background: var(--skill-soft); color: var(--skill); }
-.role-user { background: var(--request-soft); color: var(--request); }
+/* Every role grey, its name doing the work, but the model's own: the accent. */
 .role-assistant { background: var(--accent-soft); color: var(--accent); }
-.role-tool { background: var(--ok-soft); color: var(--ok); }
 
 pre.text, pre.code {
   white-space: pre-wrap;
@@ -827,7 +838,7 @@ pre.code { color: var(--muted); }
 }
 .hold-head .reason { font-weight: 600; font-size: 15px; }
 .hold-where { font-size: 13px; }
-.timer { margin-left: auto; font-family: var(--mono); color: var(--response); font-size: 13px; }
+.timer { margin-left: auto; font-family: var(--mono); color: var(--warn); font-size: 13px; }
 .pulse { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.45; } }
 
@@ -847,7 +858,7 @@ pre.code { color: var(--muted); }
   border-radius: 0 0 var(--radius) var(--radius);
 }
 .edit-status { color: var(--muted); font-size: 13px; }
-.edit-status.edited { color: var(--response); font-weight: 600; }
+.edit-status.edited { color: var(--change); font-weight: 600; }
 .edit-status.error { color: var(--bad); }
 
 .waiting { display: flex; align-items: center; gap: 10px; justify-content: center; }
@@ -889,7 +900,7 @@ pre.code { color: var(--muted); }
   background: #fff;
   transition: transform 0.15s;
 }
-.switch input:checked + .switch-track { background: var(--ok); }
+.switch input:checked + .switch-track { background: var(--accent); }
 .switch input:checked + .switch-track::after { transform: translateX(12px); }
 .switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -1014,9 +1025,10 @@ pre.code { color: var(--muted); }
   font-size: 13px;
 }
 .toast > span { flex: 1; }
-.toast.tone-response { border-left-color: var(--response); }
+.toast.tone-warn { border-left-color: var(--warn); }
+.toast.tone-muted { border-left-color: var(--border-strong); }
+/* An action refused: what you did is to put right, as a field is. */
 .toast.tone-bad { border-left-color: var(--bad); }
-.toast.tone-ok { border-left-color: var(--ok); }
 
 @media (max-width: 700px) {
   main { padding: 16px 16px 64px; }
@@ -1051,7 +1063,7 @@ pre.code { color: var(--muted); }
 /* A path field's resolved path, under its help text. */
 .path-note { display: block; }
 .path-line { display: block; margin-top: 3px; overflow-wrap: anywhere; }
-.path-line.path-ok { color: var(--ok); }
+.path-line.path-ok { color: var(--muted); }
 .path-line.path-bad { color: var(--bad); }
 .plan-form { display: flex; flex-direction: column; gap: 14px; }
 .plan-box {
@@ -1150,9 +1162,9 @@ pre.code { color: var(--muted); }
 .seen-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .seen { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .seen-mark { font-weight: 700; width: 1.2em; text-align: center; color: var(--faint); }
-.seen-yes .seen-mark { color: var(--ok); }
+/* Whether the target would count a behaviour: its badge's accent, never a verdict's colours. */
+.seen-yes .seen-mark { color: var(--accent); }
 .seen-no { opacity: 0.75; }
-.seen-no .seen-mark { color: var(--bad); }
 .tk-probes { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
 .tk-probe { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
 .tk-probe-flip { color: var(--accent); font-weight: 600; }
@@ -1161,7 +1173,6 @@ pre.code { color: var(--muted); }
 .passes-when { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 8px 16px 0; }
 .passes-when .label { margin: 0; }
 .passes-when code { overflow-wrap: anywhere; }
-.check-command .label { color: var(--warn); }
 .empty ol.setup { max-width: 620px; margin: 10px auto 0; text-align: left; line-height: 1.6; }
 
 /* --- connections ------------------------------------------------------------------------ */
@@ -1210,7 +1221,7 @@ pre.code { color: var(--muted); }
 /* --- tools at a held call ----------------------------------------------------------------- */
 
 .hold-tools { margin-top: 16px; }
-.hold-tools .evidence { border-left: 3px solid var(--ok); }
+.hold-tools .evidence { border-left: 3px solid var(--accent); }
 .hold-tools .hypotheses { border-left: 3px solid var(--warn); }
 .reply { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
 .reply-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -1222,21 +1233,22 @@ pre.code { color: var(--muted); }
 .tl-entry .msg { margin: 0; }
 .tl-tag { color: var(--faint); font-size: 11.5px; white-space: nowrap; }
 .tl-changed { text-decoration: none; }
+/* A step is no caution and no edit: grey, and the accent while it is open. */
 .tl-step {
   border: 1px solid var(--border-strong);
-  border-left: 4px solid var(--response);
+  border-left: 4px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--panel);
   scroll-margin-top: calc(var(--topbar) + 12px);
 }
-.tl-step.tl-open { box-shadow: var(--shadow); }
-.tl-step.tl-retried { opacity: 0.72; border-left-color: var(--warn); }
+.tl-step.tl-open { box-shadow: var(--shadow); border-left-color: var(--accent); }
+.tl-step.tl-retried { opacity: 0.72; }
 .tl-marker {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%;
   padding: 9px 12px; border: none; background: transparent; color: inherit; font: inherit;
   text-align: left; cursor: pointer;
 }
-.tl-marker:hover { background: var(--response-soft); }
+.tl-marker:hover { background: var(--panel-2); }
 .tl-k { font-weight: 650; white-space: nowrap; }
 .tl-meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .tl-flags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
@@ -1267,13 +1279,13 @@ pre.code { color: var(--muted); }
 .tl-rail-step:hover { background: var(--panel); }
 .tl-rail-step.current { background: var(--accent-soft); color: var(--accent); }
 .tl-rail-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tl-rail-error { color: var(--bad); }
+.tl-rail-error { color: var(--warn); }
 .tl-rail-retried { opacity: 0.6; }
 /* An answer of the conversation the run's first call continued: no call this run made. */
 .tl-rail-step.tl-rail-earlier { color: var(--muted); }
 .tl-rail-step.tl-rail-earlier > .mono { color: var(--faint); }
 .tl-rail-step.tl-rail-earlier.current { background: var(--accent-soft); color: var(--accent); }
-.tl-dot { flex: none; width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: var(--skill); }
+.tl-dot { flex: none; width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: var(--change); }
 /* What the harness added after a step — a tool's result — on a line of its own, under it. */
 .tl-rail-result { display: flex; align-items: center; gap: 4px; padding: 1px 6px 1px 16px; border-radius: 6px; color: var(--muted); font-size: 11.5px; text-decoration: none; }
 .tl-rail-result:hover { background: var(--panel); color: var(--text); }
@@ -1296,7 +1308,7 @@ pre.code { color: var(--muted); }
 .tl-rail-head { display: flex; align-items: baseline; gap: 8px; }
 .tl-rail-foldall { flex: none; margin-left: auto; padding: 0; border: none; background: none; color: var(--accent); font: inherit; font-size: 11px; text-transform: none; letter-spacing: 0; white-space: nowrap; cursor: pointer; }
 .tl-rail-foldall:hover { text-decoration: underline; }
-.tl-rail-who { flex: none; color: var(--request); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.tl-rail-who { flex: none; color: var(--muted); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .tl-rail-arrow { flex: none; color: var(--faint); }
 .tl-entry .msg { scroll-margin-top: calc(var(--topbar) + 12px); }
 .tl-rail-verdict { margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-weight: 600; text-decoration: none; color: var(--muted); background: var(--panel-2); }

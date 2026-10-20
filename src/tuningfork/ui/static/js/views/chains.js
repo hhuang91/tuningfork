@@ -7,6 +7,9 @@ import { ago, chip, crumbs, h, kv, loading, panel, plural, rateBar, replace, sho
 import { costOf } from "../cost.js";
 import { diffView } from "./refine.js";
 
+// A chain running is current; one that failed, a caution; done or cancelled, only so.
+const STATUS_TONE = { running: "accent", failed: "warn" };
+
 /** The chains kept, newest first. */
 export async function chainsView(root) {
   replace(root, loading());
@@ -25,7 +28,7 @@ export async function chainsView(root) {
             h("td", null, chain.harness || "—"),
             h("td", { class: "num" }, String(chain.links)),
             h("td", null, chain.rate ? rateBar(chain.rate) : h("span", { class: "muted" }, "none counted")),
-            h("td", null, chip(chain.status, chain.status === "done" ? "ok" : "muted")),
+            h("td", null, chip(chain.status, STATUS_TONE[chain.status] || "muted")),
             h("td", { class: "faint", title: when(chain.started_at) }, ago(chain.started_at)))))))
       : h("p", { class: "muted" }, "No chain yet: start one from Run a task, choosing a chain."));
 }
@@ -53,7 +56,7 @@ export async function chainView(root, [id]) {
           : "nothing between runs"],
         ["budget", chain.budget_seconds ? `${Math.round(chain.spent_seconds)} s of model calls spent of ${chain.budget_seconds}` : null],
         ["passed", chain.rate ? [rateBar(chain.rate), h("span", { class: "muted small" }, chain.not_counted ? `  ${chain.not_counted} not counted: the skill changed during them, or they timed out` : "")] : null],
-        ["state", [chip(chain.status, chain.status === "done" ? "ok" : "muted"), chain.stopped ? h("span", { class: "muted" }, `  ${chain.stopped}`) : null]],
+        ["state", [chip(chain.status, STATUS_TONE[chain.status] || "muted"), chain.stopped ? h("span", { class: "muted" }, `  ${chain.stopped}`) : null]],
         ["cost", costOf({ chain: chain.id })],
         ["the skill it left", chain.final_skill ? h("span", { class: "mono" }, chain.final_skill) : null],
       ])),

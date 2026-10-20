@@ -53,6 +53,8 @@ try {
   const [held] = await until(async () => (await api("/holds")).length && api("/holds"), "the harness's call to be held");
   await until(() => page.eval(`!!document.querySelector(".hold-head")`), "the hold to render");
   check((await page.text(".hold-head .reason")) === "write_file on *.json", "the reason drops the repeated phase");
+  check(await page.eval(`(() => { const badge = document.getElementById("held-count"); return !badge.hidden && badge.classList.contains("badge-warn"); })()`),
+    "the held call's badge is a caution's amber");
   check((await page.eval(`${argField("content")}.value`)).includes('"count"'), "the content argument is shown raw, unescaped");
 
   const fixed = JSON.stringify({ row_count: 4, amount_total: 61.5 }, null, 2);
@@ -73,6 +75,14 @@ try {
   check(step.edits.response.message_fields.includes("tool_calls"), "the edit is described on the step");
   await until(() => page.eval(`document.body.textContent.includes("Nothing is held")`), "the page to go idle");
   check(true, "the page goes idle once nothing is held");
+  // What was decided, in grey; the edit a person made, in the teal of a change, never a verdict's green.
+  await until(() => page.eval(`!!document.querySelector(".recent-item .chip.tone-change")`), "the decision among the recent ones");
+  check(await page.eval(`(() => {
+    const item = [...document.querySelectorAll(".recent-item")].find((row) => row.querySelector(".chip.tone-change"));
+    const [action, edited] = item.querySelectorAll(".chip");
+    return action.textContent === "continue" && action.classList.contains("tone-muted") && edited.textContent === "edited"
+      && !document.querySelector(".recent-item .chip.tone-ok");
+  })()`), "the decision is grey, its edit teal");
 
   // --- 2. A request hold: edit the context, step, then continue after the model -------
   console.log("request hold: edit a message, step, continue");

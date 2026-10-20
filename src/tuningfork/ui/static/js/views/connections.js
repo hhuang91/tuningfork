@@ -15,7 +15,7 @@ const USES = {
   streaming_tool_calls: "Hermes streams every call and acts on its tool calls",
   anthropic_messages: "Claude Code speaks only /v1/messages",
 };
-const SUPPORT_TONE = { yes: "ok", no: "bad", unknown: "warn" };
+const SUPPORT_TONE = { yes: "muted", no: "warn", unknown: "faint" };
 
 export async function connectionsView(root, _, scope) {
   if (live.mode !== "live") {
@@ -240,7 +240,7 @@ export async function connectionsView(root, _, scope) {
         ["max tokens", String(settings.max_tokens)],
         ["temperature", settings.temperature === null ? "the server's default" : String(settings.temperature)],
         ["another machine", settings.allow_remote ? chip("allowed", "warn") : chip("not allowed", "muted")],
-        ["key", key.set ? chip(key.from === "environment" ? "set, from TUNINGFORK_PROPOSER_KEY" : "set, in the recordings folder", "ok") : chip("not set", "muted")],
+        ["key", key.set ? chip(key.from === "environment" ? "set, from TUNINGFORK_PROPOSER_KEY" : "set, in the recordings folder", "muted") : chip("not set", "muted")],
       ]),
       h("p", { class: "hint" }, "The model the built-in proposer asks for edits of a skill, on a refinement's page. What it is sent — the skill, recorded prompts and answers — goes to this address."),
       error,
@@ -296,7 +296,7 @@ export async function connectionsView(root, _, scope) {
     return h("div", { class: "harness-card" },
       h("div", { class: "harness-head" },
         h("strong", null, "sandbox"),
-        sandbox.available ? chip(`bubblewrap ${sandbox.version || ""}`.trim(), "ok") : chip("none", "warn")),
+        sandbox.available ? chip(`bubblewrap ${sandbox.version || ""}`.trim(), "muted") : chip("none", "warn")),
       sandbox.available
         ? kv([
             ["every launch sees", h("span", null, "its folder ", h("span", { class: "mono" }, sandbox.workspace), ", its home ", h("span", { class: "mono" }, sandbox.home))],
@@ -321,7 +321,7 @@ export async function connectionsView(root, _, scope) {
     return h("div", { class: "harness-card" },
       h("div", { class: "harness-head" },
         h("strong", null, harness.name),
-        harness.path ? chip(harness.version || "found", "ok") : chip("not found", "bad"),
+        harness.path ? chip(harness.version || "found", "muted") : chip("not found", "warn"),
         h("span", { class: "muted small" }, harness.source === "override" ? "named in the recordings folder" : harness.source === "PATH" ? "on PATH" : "")),
       kv([
         ["program", harness.path ? h("span", { class: "mono" }, harness.path) : h("span", { class: "muted" }, harness.executable)],
@@ -333,7 +333,7 @@ export async function connectionsView(root, _, scope) {
               h("li", null, need.minimum ? `${need.what} of at least ${need.minimum.toLocaleString()}` : need.what.replaceAll("_", " "),
                 h("span", { class: "faint" }, ` — ${need.why}`)))))
         : null,
-      pre.problems.map((problem) => h("div", { class: "banner banner-bad" }, h("strong", null, "Cannot run here: "), problem)),
+      pre.problems.map((problem) => h("div", { class: "banner banner-warn" }, h("strong", null, "Cannot run here: "), problem)),
       pre.notes.map((note) => h("div", { class: "banner" }, note)),
       h("details", { class: "fold" }, h("summary", null, "Use another program"),
         h("div", { class: "stack", style: { gap: "8px", marginTop: "8px" } },
