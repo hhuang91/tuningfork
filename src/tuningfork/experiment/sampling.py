@@ -702,10 +702,14 @@ async def run_ab(
     original_path: str | None = None,
     variant_path: str | None = None,
     target: Target | None = None,
+    alpha: float | None = None,
     client: httpx.AsyncClient | None = None,
     progress: Progress | None = None,
 ) -> ABRun:
     """Resample the checkpoint as recorded, then with the variant skill substituted.
+
+    `alpha`, the significance level the A/B was declared with, is kept with both arms beside
+    its target: a re-report judges at it unless asked otherwise.
 
     The arms run one after the other rather than interleaved. On a server with prefix
     caching, alternating arms would invalidate the cache at every switch and re-process the
@@ -745,8 +749,11 @@ async def run_ab(
                     variant=variant_info,
                     parity=parity,
                     # Stored with both arms, so the result can always be re-reported
-                    # against the test declared before sampling — not one chosen afterwards.
-                    annotations={"target": target.spec} if target else None,
+                    # against the test declared before sampling — not one chosen afterwards:
+                    # its target, and the level it is judged at (found in review: an A/B
+                    # declared at α 0.01 was judged at 0.05 on its own page).
+                    annotations={**({"target": target.spec} if target else {}),
+                                 **({"alpha": alpha} if alpha is not None else {})} or None,
                     progress=ended,
                 )
         return ABRun(original=arms["original"], variant=arms["variant"], spans=spans)

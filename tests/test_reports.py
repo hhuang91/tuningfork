@@ -115,6 +115,79 @@ class TestWording:
         assert "the edit  not shown: neither what its arms recorded" in shown.output
 
 
+class TestAlpha:
+    """An A/B is judged again at the significance level it was declared with. Found in review:
+    one declared at α 0.01 was judged at 0.05 on its own page, while its job's page said 0.01 —
+    a level chosen after the p-value is seen makes any p under 0.05 significant."""
+
+    @staticmethod
+    def ab(store, *, alpha=None) -> dict[str, str]:
+        """An A/B of the pilot's step 1 whose target the original hit 8 times in 20 and the
+        variant 16: p ≈ 0.02, significant at 0.05 and not at 0.01."""
+        from tuningfork.analysis.normalize import outcome_for
+        from tests.helpers import as_response, tool_call_message
+
+        run = next(found for found in store.runs(limit=10) if found.label == "pilot")
+        step = store.step(run.id, 1)
+        group, made = os.urandom(8).hex(), {}
+        target = {"kind": "pattern", "value": "row_count", "description": "writes row_count", "code": True}
+        for arm, hits in (("original", 8), ("variant", 16)):
+            experiment = store.create_experiment(
+                kind="ab", arm=arm, run_id=run.id, step_idx=1, step_id=step.id, request=store.rebuild_request(step),
+                settings={"n": 20, "normalizers": [], "target": target, **({"alpha": alpha} if alpha is not None else {})},
+                group_id=group,
+            )
+            for idx in range(20):
+                keys = {"row_count": 4} if idx < hits else {"count": 4}
+                answer = as_response(tool_call_message("write_file", {"path": "r.json", "content": json.dumps(keys)}), "tool_calls")
+                found = outcome_for(answer)
+                store.add_sample(experiment.id, idx, seed=idx, response=answer, outcome_kind=found.kind,
+                                 outcome_key=found.key, outcome_label=found.label, finish_reason="tool_calls")
+            made[arm] = experiment.id
+        store.finish_experiments(list(made.values()), "done")
+        return made
+
+    def test_an_ab_is_judged_at_the_level_it_was_declared_with(self, home):
+        store = Store(home)
+        try:
+            arms = self.ab(store, alpha=0.01)
+            declared = experiment_report(store, arms["original"])
+            asked = experiment_report(store, arms["original"], alpha=0.05)
+        finally:
+            store.close()
+        assert 0.01 < declared.comparison.target.p_value < 0.05
+        assert (declared.alpha, declared.alpha_declared, declared.comparison.target.significant) == (0.01, 0.01, False)
+        assert declared.to_json()["alpha"] == 0.01
+        # Judged at another level only when asked to, and the command says so.
+        assert (asked.alpha, asked.alpha_declared, asked.comparison.target.significant) == (0.05, 0.01, True)
+        said = CliRunner().invoke(app, ["experiment", arms["original"][:8], "--alpha", "0.05", "--home", str(home)])
+        assert said.exit_code == 0 and "judged at α=0.05: it was declared at α=0.01" in said.output
+        assert "judged at" not in CliRunner().invoke(app, ["experiment", arms["original"][:8], "--home", str(home)]).output
+
+    def test_an_ab_run_before_its_level_was_kept_takes_its_jobs(self, home):
+        store = Store(home)
+        try:
+            arms = self.ab(store)
+            unknown = experiment_report(store, arms["variant"])
+            job = store.create_job(kind="ab", lane="background", params={"run": "pilot", "step": "1", "alpha": 0.01})
+            for experiment in arms.values():
+                store.set_experiment_job(experiment, job.id)
+            from_job = experiment_report(store, arms["variant"])
+        finally:
+            store.close()
+        assert (unknown.alpha, unknown.alpha_declared, unknown.comparison.target.significant) == (0.05, None, True)
+        assert (from_job.alpha, from_job.alpha_declared, from_job.comparison.target.significant) == (0.01, 0.01, False)
+
+    def test_an_ab_keeps_its_level_with_both_arms(self, home):
+        """The fixture's A/B ran from the command line at the default level."""
+        store = Store(home)
+        try:
+            kept = {e.arm: e.settings.get("alpha") for e in store.experiments(limit=10)}
+        finally:
+            store.close()
+        assert kept == {"original": 0.05, "variant": 0.05}
+
+
 class TestPartial:
     def test_an_ab_stopped_in_its_variant_arm_says_so(self, home):
         """Found in review: an A/B interrupted part way through its second arm read as a

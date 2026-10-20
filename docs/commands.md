@@ -313,7 +313,8 @@ tuningfork ab <run> write_file --variant examples/variants/tally-report/SKILL.v2
   recorded; by default, the copy a batch run was given. `--skill <name>` — for an imported chat
   that kept several skills, the one the variant replaces.
 - `--target`, `--target-match`, `--target-rules` — the target, declared before sampling;
-  `--alpha` (default 0.05).
+  `--alpha` (default 0.05), kept with the A/B and the level it is judged at whenever it is shown
+  again.
 - `--to-end` — each sample a fork run to the end, both arms compared on the task's check: the
   confirmation a checkpoint A/B asks for.
 - `-n N` (default 20 an arm), and the sampling options of `resample`.
@@ -333,8 +334,9 @@ breakpoints apply from there: a restart from any step of a recorded run.
 
 `experiments` lists them, newest first (`--run`, `-n`, `-q`). `experiment <id>` shows one's
 result again, drawing no new samples: `--normalizer` analyses its samples again under another
-normalizer, `--alpha` at another level. An A/B's starts with the edit it tested, as a line diff
-of the two texts its arms sent the model.
+normalizer, `--alpha` judges an A/B at another level than the one it was declared with, and says
+so. An A/B's starts with the edit it tested, as a line diff of the two texts its arms sent the
+model.
 
 ## Which token decided it?
 

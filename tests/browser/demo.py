@@ -257,7 +257,7 @@ def seed(home: Path) -> None:
     for arm, share, sent in (("original", 0.6, request), ("variant", 0.95, variant_request)):
         experiment = store.create_experiment(
             kind="ab", arm=arm, run_id=run_ids[0], step_idx=1, step_id=checkpoint.id,
-            request=sent, settings={**settings, "target": target}, variant=variant,
+            request=sent, settings={**settings, "target": target, "alpha": 0.05}, variant=variant,
             group_id=group,
         )
         add_samples(experiment, share)

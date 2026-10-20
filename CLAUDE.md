@@ -177,7 +177,9 @@ never a protected endpoint (`endpoints.py`: none until a person lists one). An A
 (`--target <letter>` from an earlier resample, or `--target-match <regex>`); without one
 the result is exploratory and Bonferroni-corrected. A letter target keeps its resample, and an
 A/B, a screen or a probe of it letters its behaviours as that resample did
-(`experiment.sampling.target_letters`): its B is their B. Run to the end, the target is the task's
+(`experiment.sampling.target_letters`): its B is their B. An A/B keeps its α with both arms too,
+and is shown again judged at it — another only when asked (`--alpha`), and said
+(`ops.inspect.declared_alpha`; one run before it was kept takes its job's). Run to the end, the target is the task's
 check. A pattern or described target also reads what a behaviour says (`Outcome.text`): a
 script's code, which its key keeps only as a syntax-tree digest; one stored before that (no
 `code` in its spec) matches as it was declared. Every sample's prompt is processed whole where llama.cpp takes `cache_prompt: false` —

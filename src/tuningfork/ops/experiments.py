@@ -701,6 +701,7 @@ async def execute_ab(
                 original_path=str(prepared.original),
                 variant_path=str(prepared.variant),
                 target=prepared.target,
+                alpha=prepared.alpha,
                 progress=_tracking(created, progress),
             ),
             cancel,

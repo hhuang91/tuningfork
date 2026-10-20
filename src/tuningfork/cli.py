@@ -3280,7 +3280,11 @@ def experiments(
 @app.command()
 def experiment(
     reference: str = typer.Argument(..., help="Experiment id or prefix."),
-    alpha: float = typer.Option(0.05, help="Significance level."),
+    alpha: Optional[float] = typer.Option(
+        None,
+        help="Judge an A/B at this significance level, not the one it was declared with (0.05 where "
+        "none was kept). Screens and probes keep their own.",
+    ),
     normalizer: list[str] = typer.Option(
         [],
         "--normalizer",
@@ -3326,6 +3330,8 @@ def experiment(
 
     if lens:
         console.print(f"  [dim]re-analysed under: {', '.join(lens)}[/dim]")
+    if alpha is not None and report.alpha_declared is not None and alpha != report.alpha_declared:
+        console.print(f"  [yellow]judged at α={alpha}: it was declared at α={report.alpha_declared}[/yellow]")
     if report.status in ("cancelled", "interrupted", "failed"):
         console.print(f"  [yellow]this experiment was {report.status}[/yellow]")
     for arm, drawn, meant in report.running:
@@ -3372,7 +3378,7 @@ def experiment(
     console.print(f"  swapped   {escape(swapped)}", soft_wrap=True)
     _print_wording(report.wording)
     if report.kind == "ab_to_end":
-        _print_ab_to_end(report.to_end, k, alpha)
+        _print_ab_to_end(report.to_end, k, report.alpha)
         return
     if report.target_note:
         console.print(f"  [yellow]{escape(report.target_note)}[/yellow]")
