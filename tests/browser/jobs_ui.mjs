@@ -1056,9 +1056,12 @@ try {
   await until(() => page.eval(`!!document.querySelector("#s1.tl-open .start-actions")`), "the imported run's step, at its actions");
   check(await page.eval(`(() => {
     const fork = [...document.querySelectorAll("#s1 .start-actions .btn")].find((b) => b.textContent === "Fork from here…");
+    const note = document.querySelector("#s1 .start-note");
     return fork?.getAttribute("aria-disabled") === "true" && !fork.hasAttribute("href")
-      && document.querySelector("#s1 .start-note").textContent.includes("Forking needs a run tuningfork launched: this one was imported.");
-  })()`), "on an imported run, Fork from here… is greyed, and says why");
+      && fork.title.endsWith("Make a scenario of this run, run it with tuningfork, and fork from one of its runs.")
+      && note.textContent.includes("Forking needs a run tuningfork launched; this one was imported. Make a scenario of it, run it, and fork from one of its runs.")
+      && note.querySelector("a")?.getAttribute("href") === "#/runs/${imported.id}/scenario";
+  })()`), "on an imported run, Fork from here… is greyed, says why, and leads to a scenario whose runs fork");
   await page.eval(`location.hash = "#/runs"`);
   const importedRow = `[...document.querySelectorAll(".run-row")].find((row) => row.querySelector("a.run-id")?.getAttribute("href") === "#/runs/${imported.id}")`;
   await until(() => page.eval(`!!${importedRow}`), "the imported run on the Runs page");

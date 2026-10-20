@@ -41,20 +41,26 @@ export function startPanel(step, { go = null } = {}) {
       command(`tuningfork refine start ${short(run.id)} ${step.idx} --target-match '<regex>'`)), { className: "work-panel" });
   }
   // A fork replays the launch that made the run, up to the step: a run nothing launched has
-  // none to replay. Its button stays, greyed, and says why.
-  const unforkable = run.launch_id ? null
-    : `needs a run tuningfork launched: this one was ${run.recorded === "imported" ? "imported" : "recorded live"}`;
+  // none to replay. Its button stays, greyed, and says why — and the way to runs that fork: a
+  // scenario of this one, whose runs tuningfork launches. A thread is never a scenario.
+  const why = run.launch_id ? null
+    : `Forking needs a run tuningfork launched; this one was ${run.recorded === "imported" ? "imported" : "recorded live"}.`;
+  const scenario = why && !run.trashed_at && !["subagent", "side", "thread"].includes(run.role) ? `#/runs/${run.id}/scenario` : null;
   return panel("Work from here", [
     h("div", { class: "start-actions" },
       way(`${here}?start=resample`, go, { class: "btn", "data-control": true }, "Resample…"),
       way(`${here}?start=ab`, go, { class: "btn", "data-control": true }, "A/B a wording…"),
       way(`${here}?start=forking-tokens`, go, { class: "btn", "data-control": true }, "Find forking tokens…"),
-      unforkable
-        ? h("span", { class: "btn", "aria-disabled": "true", title: `Fork from here ${unforkable}` }, "Fork from here…")
+      why
+        ? h("span", {
+            class: "btn", "aria-disabled": "true",
+            title: why + (scenario ? " Make a scenario of this run, run it with tuningfork, and fork from one of its runs." : ""),
+          }, "Fork from here…")
         : way(`${here}?start=fork`, go, { class: "btn", "data-control": true }, "Fork from here…"),
       way(`${here}?start=refine`, go, { class: "btn", "data-control": true }, "Refine the skill here…")),
     h("p", { class: "muted small start-note" }, "Measure what the model does here, with everything before it held fixed.",
-      unforkable ? ` Forking ${unforkable}.` : null),
+      why ? ` ${why}` : null,
+      scenario ? [" ", h("a", { href: scenario, "data-control": true }, "Make a scenario of it"), ", run it, and fork from one of its runs."] : null),
   ], { className: "work-panel" });
 }
 
