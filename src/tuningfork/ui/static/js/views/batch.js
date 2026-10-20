@@ -33,7 +33,7 @@ export async function batchView(root, _, scope) {
   const head = h("div", { class: "page-head" }, h("div", null, h("h1", null, "Run a task"),
     h("p", { class: "sub" }, "Each run gets a fresh workspace and home: in a batch with the skill frozen for every run, in a chain with the skill each run left handed to the next.")));
   if (live.mode !== "live") {
-    replace(root, crumbs([["Runs", "#/runs"], ["run a task"]]), head,
+    replace(root, crumbs([["Scenarios", "#/scenarios"], ["Run a task"]]), head,
       panel("From a terminal", h("div", { class: "stack", style: { gap: "8px" } },
         h("p", { class: "hint" }, "Starting runs needs a running proxy (tuningfork serve). Or:"),
         command(`tuningfork batch ${prefill.spec || "<evals.json>"} -n 5 --harness ${prefill.harness}`))));
@@ -132,7 +132,7 @@ export async function batchView(root, _, scope) {
     element.querySelector('[name="concurrency"]').disabled = chain;
     element.querySelector('[name="skill_file"]').disabled = chain;
   });
-  replace(root, crumbs([["Runs", "#/runs"], ["run a task"]]), head, panel("The task", element, { className: "start-panel" }));
+  replace(root, crumbs([["Scenarios", "#/scenarios"], ["Run a task"]]), head, panel("The task", element, { className: "start-panel" }));
 }
 
 function batchPreview(plan) {

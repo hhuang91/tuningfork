@@ -113,10 +113,15 @@ export function failure(error, title = "Could not load this") {
   return h("div", { class: "error-box" }, h("strong", null, title), h("p", null, error.message || String(error)));
 }
 
+// The loop's stage each section is in, as the sidebar groups them: a deep page says it first.
+const STAGES = { "#/runs": "Record", "#/chains": "Record", "#/experiments": "Measure", "#/refine": "Improve" };
+
 export function crumbs(items) {
-  const parts = [];
-  for (const item of items.filter(Boolean)) {
-    if (parts.length) parts.push(h("span", { class: "sep" }, "/"));
+  const shown = items.filter(Boolean);
+  const stage = STAGES[shown[0]?.[1]];
+  const parts = stage ? [h("span", { class: "crumb-stage" }, stage)] : [];
+  for (const item of shown) {
+    if (parts.length) parts.push(h("span", { class: "sep" }, parts.length === 1 && stage ? "›" : "/"));
     const [label, href] = item;
     parts.push(href ? h("a", { href }, label) : h("span", null, label));
   }

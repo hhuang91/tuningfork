@@ -14,7 +14,7 @@ import { diffView, divergenceView } from "./views/compare.js";
 import { connectionsView } from "./views/connections.js";
 import { scenariosView, scenarioView } from "./views/scenarios.js";
 import { experimentsView, experimentView } from "./views/experiments.js";
-import { homeView } from "./views/home.js";
+import { homeView, wordsView } from "./views/home.js";
 import { importView, scenarioFromRunView } from "./views/import.js";
 import { jobsView, jobView } from "./views/jobs.js";
 import { liveView } from "./views/live.js";
@@ -25,8 +25,10 @@ import { skillsView, skillView } from "./views/skills.js";
 import { stepView } from "./views/step.js";
 import { trashView } from "./views/trash.js";
 
+// Each page, and the sidebar item it is under.
 const ROUTES = [
   [/^\/guide$/, homeView, "guide"],
+  [/^\/words$/, wordsView, "words"],
   [/^\/live(?:\/([0-9a-f]+))?$/, liveView, "live"],
   [/^\/runs$/, runsView, "runs"],
   [/^\/runs\/([^/]+)$/, runView, "runs"],
@@ -42,12 +44,12 @@ const ROUTES = [
   [/^\/refine\/([0-9a-f]+)$/, refinementView, "refine"],
   [/^\/skills$/, skillsView, "skills"],
   [/^\/skills\/([^/]+)$/, skillView, "skills"],
-  [/^\/batch$/, batchView, "runs"],
-  [/^\/import$/, importView, "runs"],
+  [/^\/batch$/, batchView, "batch"],
+  [/^\/import$/, importView, "import"],
   // The address an imported run's scenario had first.
-  [/^\/import\/([0-9a-f]{32})\/scenario$/, scenarioFromRunView, "runs"],
-  [/^\/chains$/, chainsView, "runs"],
-  [/^\/chains\/([0-9a-f]+)$/, chainView, "runs"],
+  [/^\/import\/([0-9a-f]{32})\/scenario$/, scenarioFromRunView, "import"],
+  [/^\/chains$/, chainsView, "chains"],
+  [/^\/chains\/([0-9a-f]+)$/, chainView, "chains"],
   [/^\/connections$/, connectionsView, "connections"],
   [/^\/scenarios$/, scenariosView, "scenarios"],
   [/^\/scenarios\/([a-z0-9][a-z0-9_-]*)$/, scenarioView, "scenarios"],
@@ -98,6 +100,7 @@ async function route() {
   }
   leaving.guard = null;
   place.hash = location.hash;
+  closeNav();
   const [path, queryText = ""] = (location.hash.replace(/^#/, "") || "/").split("?", 2);
   if (path === "/") {
     // The front page: what tuningfork is, what is set up, where you left off.
@@ -133,29 +136,92 @@ function markNav(active) {
   }
 }
 
-// --- top bar ----------------------------------------------------------------------------
+// --- the sidebar ----------------------------------------------------------------------------
+
+// Narrowest, the sections are a drawer under a bar: it closes once a page is chosen.
+function initNav() {
+  const toggle = document.getElementById("nav-toggle");
+  toggle.addEventListener("click", () => {
+    const open = !document.getElementById("sidebar").classList.contains("open");
+    document.getElementById("sidebar").classList.toggle("open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", open ? "Hide the sections" : "Show the sections");
+  });
+}
+
+function closeNav() {
+  document.getElementById("sidebar").classList.remove("open");
+  const toggle = document.getElementById("nav-toggle");
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-label", "Show the sections");
+}
+
+// What Connections says, for the status strip and the dot beside Connections: asked when the
+// page starts, when the proxy is back after a drop, and every minute.
+let health = null;
+
+async function checkHealth() {
+  if (live.mode !== "live") return;
+  try {
+    health = await api.get("/connections");
+  } catch {
+    health = null;
+  }
+  renderStatus();
+}
+
+/** The server and the harnesses, a short line each, linking to Connections; amber where one
+ *  needs a look. Sets the dot beside Connections the same way. */
+function healthLines() {
+  const dot = document.getElementById("health-dot");
+  if (!health) {
+    dot.hidden = true;
+    return null;
+  }
+  const server = health.server || {};
+  const found = (health.harnesses || []).filter((each) => each.path).map((each) => each.name);
+  const answering = !server.problem && Boolean(server.identity?.id);
+  const trouble = Boolean(server.problem) || !found.length;
+  dot.hidden = false;
+  dot.className = ["dot", "nav-dot", trouble ? "dot-wait" : "dot-live"].join(" ");
+  dot.title = trouble ? "Something here needs a look" : "The server answers, and a harness was found";
+  return h("div", { class: "status-health" },
+    h("a", { href: "#/connections", class: server.problem ? "warn-text" : null, title: server.problem || server.url || "" },
+      server.problem ? "server not answering" : answering ? "server answering" : "server not read yet"),
+    h("a", { href: "#/connections", class: found.length ? null : "warn-text" },
+      found.length ? `${found.join(", ")} found` : "no harness found"));
+}
 
 function renderStatus() {
   const status = document.getElementById("status");
-  document.querySelector('[data-nav="live"]').hidden = live.mode !== "live";
-  document.querySelector('[data-nav="connections"]').hidden = live.mode !== "live";
-  document.getElementById("paused-banner").hidden = !(live.mode === "live" && live.paused);
+  const proxied = live.mode === "live";
+  // What needs a running proxy stays in the list where none runs — greyed, saying why — so the
+  // sections never move between modes.
+  for (const link of document.querySelectorAll(".side-nav [data-proxy]")) {
+    link.dataset.title ??= link.title;
+    link.classList.toggle("nav-off", !proxied);
+    link.title = proxied ? link.dataset.title : `${link.dataset.title}. Needs a running proxy: tuningfork serve`;
+  }
+  document.getElementById("paused-banner").hidden = !(proxied && live.paused);
 
   if (live.mode === "browse") {
-    replace(status, h("span", { class: "dot" }), h("span", null, "browsing recordings"));
+    document.getElementById("health-dot").hidden = true;
+    replace(status, h("div", { class: "status-line", title: "Browsing recordings: no proxy behind this page" },
+      h("span", { class: "dot" }), h("span", { class: "status-word" }, "browsing recordings")));
     return;
   }
   if (live.mode === "down") {
-    replace(status, h("span", { class: "dot dot-bad" }), h("span", null, "cannot reach tuningfork"));
+    document.getElementById("health-dot").hidden = true;
+    replace(status, h("div", { class: "status-line", title: "Cannot reach tuningfork" },
+      h("span", { class: "dot dot-bad" }), h("span", { class: "status-word" }, "cannot reach tuningfork")));
     return;
   }
   replace(
     status,
-    h("span", {
-      class: ["dot", live.connected ? "dot-live" : "dot-wait"],
-      title: live.connected ? "Connected to the proxy" : "Reconnecting to the proxy…",
-    }),
-    h("span", null, live.connected ? (live.paused ? "paused" : "live") : "reconnecting…"),
+    h("div", { class: "status-line", title: live.connected ? "Connected to the proxy" : "Reconnecting to the proxy…" },
+      h("span", { class: ["dot", live.connected ? "dot-live" : "dot-wait"] }),
+      h("span", { class: "status-word" }, live.connected ? (live.paused ? "paused" : "live") : "reconnecting…")),
+    healthLines(),
     h("button", {
       class: ["btn", "btn-small", live.paused && "btn-warn"],
       type: "button",
@@ -304,6 +370,7 @@ function initTheme() {
 // --- start --------------------------------------------------------------------------------
 
 initTheme();
+initNav();
 pickUpToken();
 
 onAuthChange((_, { blocked } = {}) => {
@@ -319,6 +386,8 @@ subscribe((event) => {
     toast(`A call is held: ${event.hold.reason}`, { tone: "warn", href: `#/live/${event.hold.id}`, timeout: 0 });
   }
   if (["mode", "connection", "snapshot", "paused"].includes(event.type)) renderStatus();
+  // Back after a drop, the proxy may have restarted: what it answers to is asked again.
+  if (event.type === "connection" && live.connected) checkHealth();
   if (["snapshot", "hold", "resolved"].includes(event.type)) renderHeld();
   if (event.type === "snapshot") for (const job of event.jobs || []) watched.add(job.id);
   if (event.type === "job") noteJobEnd(event.job);
@@ -332,4 +401,6 @@ start().then(() => {
   renderJobs();
   renderTokenBanner();
   route();
+  checkHealth();
+  setInterval(checkHealth, 60000);
 });

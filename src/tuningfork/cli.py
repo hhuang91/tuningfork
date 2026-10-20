@@ -617,6 +617,8 @@ def skill_command(
                           + (f"; {len(folder.history)} old version(s) in {escape(folder.path.name)}.history/" if folder.history else ""))
     if found.tasks:
         console.print(f"  tasks      {escape(', '.join(found.tasks))}", soft_wrap=True)
+    if found.scenarios:
+        console.print(f"  scenarios  {escape(', '.join(found.scenarios))}", soft_wrap=True)
     console.print(f"\n[bold]versions[/bold] ({len(found.versions)}, newest first)")
     for version in found.versions:
         known = f"  [dim]{escape('; '.join(version.known_as))}[/dim]" if version.known_as else ""

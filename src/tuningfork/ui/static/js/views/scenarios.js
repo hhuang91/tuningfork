@@ -188,6 +188,11 @@ export async function scenarioView(root, [name], scope) {
   const loaded = isNew ? null : await api.get(`/scenarios/${enc(name)}`);
   let draft = loaded ? structuredClone(loaded.spec) : blank();
   draft.tuningfork ??= { skill_dir: "" };
+  // Come from a skill's page: its name and its folder filled in.
+  if (isNew) {
+    draft.skill_name = scope.query?.get("skill") || draft.skill_name;
+    draft.tuningfork.skill_dir = scope.query?.get("skill_dir") || draft.tuningfork.skill_dir;
+  }
   // A spec written elsewhere — imported from a file, made from a chat — may leave out what this
   // page writes: each eval with every field, defaults where it is silent.
   draft.evals = (draft.evals || []).map((item) => {

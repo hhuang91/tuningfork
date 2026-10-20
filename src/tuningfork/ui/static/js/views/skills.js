@@ -59,7 +59,8 @@ export async function skillView(root, [name]) {
   replace(root,
     crumbs([["Skills", "#/skills"], [skill.name]]),
     h("div", { class: "page-head" }, h("div", null, h("h1", null, skill.name),
-      h("p", { class: "sub" }, skill.tasks.length ? `Tasks: ${skill.tasks.join(", ")}` : "No run has been given this skill yet."))),
+      h("p", { class: "sub" }, skill.tasks.length ? `Tasks: ${skill.tasks.join(", ")}` : "No run has been given this skill yet.")),
+      waysIn(skill)),
     h("div", { class: "stack" },
       skill.folders.map(folderPanel),
       panel("SKILL.md", viewer),
@@ -114,6 +115,25 @@ export async function skillView(root, [name]) {
       replace(body, h("p", { class: "form-error" }, error.message));
     }
   }
+}
+
+/** A skill's ways in: run it again — from a scenario that names it, else from the spec its
+ *  runs were launched from — or make a scenario for it, with its name and folder filled in
+ *  where its folder is known, else of one of the runs it was in. */
+function waysIn(skill) {
+  if (live.mode !== "live") return null;
+  const folder = skill.folders[0]?.path;
+  const spec = skill.folders.flatMap((each) => each.specs)[0];
+  const run = (scenario, label) =>
+    h("a", { class: "btn btn-small", href: `#/batch${query({ scenario })}`, "data-control": true, title: `Run a task: scenario ${scenario}` }, label);
+  return h("div", { class: "actions" },
+    skill.scenarios.length === 1 ? run(skill.scenarios[0], "Run it…")
+      : skill.scenarios.length ? skill.scenarios.slice(0, 3).map((scenario) => run(scenario, `Run ${scenario}…`))
+        : spec ? h("a", { class: "btn btn-small", href: `#/batch${query({ spec })}`, "data-control": true, title: `Run a task: ${spec}` }, "Run it…") : null,
+    folder
+      ? h("a", { class: "btn btn-small", href: `#/scenarios/new${query({ skill: skill.name, skill_dir: folder })}`, "data-control": true }, "Make a scenario for it…")
+      : h("a", { class: "btn btn-small", href: "#/scenarios?from=run", "data-control": true,
+          title: "Its folder is not known: a scenario of one of the runs it was in keeps the SKILL.md the model read" }, "Make a scenario of one of its runs…"));
 }
 
 /** Every text the page can show: its own file now, each version, each variant, each old

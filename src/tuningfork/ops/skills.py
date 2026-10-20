@@ -318,13 +318,15 @@ class SkillDetail:
     folders: list[Folder]
     variants: list[dict[str, Any]]
     refinements: list[dict[str, Any]]
+    #: The scenarios that run it, by name: each a way to run it again.
+    scenarios: list[str] = field(default_factory=list)
 
     def to_json(self, *, text: bool = True) -> dict[str, Any]:
         return {
             "name": self.name, "tasks": self.tasks,
             "versions": [version.to_json(text=text) for version in self.versions],
             "folders": [folder.to_json() for folder in self.folders],
-            "variants": self.variants, "refinements": self.refinements,
+            "variants": self.variants, "refinements": self.refinements, "scenarios": self.scenarios,
         }
 
 
@@ -370,6 +372,7 @@ def skill(store: Store, name: str) -> SkillDetail:
     return SkillDetail(
         name=name, tasks=sorted({run.task_id for run in runs if run.task_id}), versions=versions,
         folders=folders, variants=variant_rows, refinements=refinements,
+        scenarios=[scenario for scenario, _ in _scenarios(store).get(name, [])],
     )
 
 

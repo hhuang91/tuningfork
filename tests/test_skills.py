@@ -133,6 +133,8 @@ class TestVersions:
         assert listed["other"].folders == [str(folder.resolve())]
         found = skills.skill(stack.store, "other")
         assert found.versions == [] and found.folders[0].text.endswith("Do the other thing.\n")
+        # The scenarios that run it: the Skills page's way to run it again.
+        assert found.scenarios == ["another"] and found.to_json()["scenarios"] == ["another"]
 
 
 class TestSkillOf:
