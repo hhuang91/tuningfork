@@ -1,12 +1,19 @@
 // The front page: what tuningfork is for, what is set up, where you left off, how its pieces
-// fit, what each way of looking at a step answers, and its words — each defined once, on the
-// server (`ops/glossary.py`), as the terminal's `tuningfork glossary` shows them.
+// fit, and what each way of looking at a step answers; and its words, on a page of their own —
+// each defined once, on the server (`ops/glossary.py`), as the terminal's `tuningfork glossary`
+// shows them.
 
 import { api } from "../api.js";
 import { ago, chip, command, h, loading, panel, plural, replace, short, verdict, when } from "../dom.js";
 import { live } from "../live.js";
 
 export async function homeView(root, _, scope) {
+  // A word asked for here before the words had a page of their own: there now.
+  const asked = scope.query?.get("term");
+  if (asked) {
+    location.replace(`#/words?term=${encodeURIComponent(asked)}`);
+    return;
+  }
   replace(root, loading());
   const quiet = (promise) => promise.catch(() => null);
   const [runs, refinements, scenarios, words, connections] = await Promise.all([
@@ -17,7 +24,6 @@ export async function homeView(root, _, scope) {
     live.mode === "live" ? quiet(api.get("/connections")) : null,
   ]);
   const terms = new Map((words?.terms || []).map((term) => [term.term, term]));
-  const glossaryEl = glossaryPanel(words, scope.query?.get("term") || "");
 
   replace(root,
     h("div", { class: "page-head" }, h("div", null,
@@ -29,15 +35,42 @@ export async function homeView(root, _, scope) {
       panel("How the pieces fit", [
         mapView(terms),
         h("div", { class: "map-notes" },
-          h("p", null, h("strong", null, "Record. "), "A scenario holds a skill's tasks and a check. A batch job launches the harness once per run, each in a fresh workspace; the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way."),
+          h("p", null, h("strong", null, "Record. "), "A scenario holds a skill's tasks and a check. A batch job launches the harness once per run, each in a fresh workspace; the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way, and a chat it already had can be imported as a run. Any run can be made a scenario: its runs continue its conversation."),
           h("p", null, h("strong", null, "Measure. "), "At any step, an experiment sends the step's exact request again, with everything before it held fixed: the model's behaviours there, counted. Run to the end, each sample is a fork of the run, judged by the task's check."),
           h("p", null, h("strong", null, "Improve. "), "A refinement declares what should happen at a step, then screens small edits against the original wording. A survivor is validated with full runs — held-out tasks included — and written back only when a person approves it: a new version of the skill, measured again from the top."),
           h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a screen, a validation, each run inside `tuningfork serve`. A job is a record of the work; what it made — runs, experiments — is kept on its own."),
           colours()),
       ]),
       panel("What do you want to find out?", h("div", { class: "workflows" }, WORKFLOWS.map(workflowCard))),
-      glossaryEl));
-  if (scope.query?.get("term")) glossaryEl.scrollIntoView({ block: "start" });
+      lookUp(words)));
+}
+
+/** tuningfork's words on a page of their own, looked up as they are typed. */
+export async function wordsView(root, _, scope) {
+  replace(root, loading());
+  const words = await api.get("/glossary").catch(() => null);
+  const found = glossaryPanel(words, scope.query?.get("term") || "");
+  replace(root,
+    h("div", { class: "page-head" }, h("div", null, h("h1", null, "Words"),
+      h("p", { class: "sub" }, "tuningfork's own words, each as it means it here. The same list in a terminal: ",
+        h("code", null, "tuningfork glossary [word]"), "."))),
+    found);
+  found.querySelector('input[type="search"]')?.focus({ preventScroll: true });
+}
+
+/** On the Guide, the way to the words with one typed. */
+function lookUp(words) {
+  const field = h("input", { class: "field", type: "search", name: "term", placeholder: "Look a word up…", "aria-label": "Look a word up" });
+  const go = () => {
+    const term = field.value.trim();
+    location.hash = term ? `#/words?term=${encodeURIComponent(term)}` : "#/words";
+  };
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") go();
+  });
+  return panel("Words", h("div", { class: "look-up" }, field, h("button", { class: "btn", type: "button", onclick: go }, "Look it up"),
+    h("a", { href: "#/words" }, words ? `All ${words.terms.length} words →` : "All the words →")),
+  { meta: h("span", { class: "muted" }, "tuningfork's own, each defined once") });
 }
 
 // The colours, each shown as the chips that wear it (app.css keeps the legend beside its tokens).
@@ -118,7 +151,8 @@ function setup(runs, scenarios, connections) {
       title: "A run recorded",
       body: runs?.length
         ? ["the latest ", ago(runs[0].started_at), " — ", h("a", { href: "#/runs" }, "Runs")]
-        : [h("a", { href: "#/batch" }, "Run a task…"), ", or send your harness's calls through ", h("code", null, `${location.origin}/v1`)],
+        : [h("a", { href: "#/batch" }, "Run a task…"), ", ", h("a", { href: "#/import" }, "import a chat"), " you had, or point your own agent at ",
+            h("code", null, `${location.origin}/v1`), " — ", h("a", { href: "#/live" }, "Live"), " says how"],
     },
   ];
   const done = items.filter((item) => item.done).length;
@@ -143,9 +177,9 @@ function serverNote() {
     h("code", null, "--no-cache-prompt"), " and, for a model with sliding-window layers (Gemma 2, 3, 4), ",
     h("code", null, "--ctx-checkpoints 0"), " or ", h("code", null, "--swa-full"),
     ". Without the first, a step's behaviour can depend on what the server ran before: Claude Code's samples and every fork share one cached state, and a screen favours its proposals (",
-    h("a", { href: "#/guide?term=prompt%20cache" }, "why"),
+    h("a", { href: "#/words?term=prompt%20cache" }, "why"),
     "). Without the second, an answer scores differently on the raw endpoint than on the chat one it was sampled on (",
-    h("a", { href: "#/guide?term=sliding-window" }, "why"),
+    h("a", { href: "#/words?term=sliding-window" }, "why"),
     "). The server check measures prompt reuse; llama-server reports neither --ctx-checkpoints nor --swa-full.");
 }
 
@@ -241,6 +275,12 @@ const WORKFLOWS = [
     cli: "tuningfork batch evals.json -n 8", href: "#/batch", go: "Run a task…",
   },
   {
+    question: "Where did my agent go wrong in a chat I already had?",
+    answer: "The conversation imported as a run: each answer a step, with everything before it as its context. Made a scenario, its runs continue the chat from where the skill came in.",
+    steps: ["Import a chat… — Hermes's session file or export, or a list of messages", "On its run: Make a scenario… — each of its runs continues the chat", "Run it, and work from the step where it went wrong"],
+    cli: "tuningfork import <chat.json> --scenario <name>", href: "#/import", go: "Import a chat…",
+  },
+  {
     question: "Where did runs stop agreeing?",
     answer: "The first step where runs of one task did different things: where to look first.",
     steps: ["Runs: a task's row → Where do they diverge?", "Open that step in one of the runs"],
@@ -277,15 +317,15 @@ const WORKFLOWS = [
     cli: "tuningfork refine start <run> <step> --target-rules '[…]'", href: "#/refine", go: "Refine",
   },
   {
-    question: "What is the model doing right now?",
-    answer: "Breakpoints on live traffic: hold a call before the model sees it, or after it answers with a tool call you name.",
-    steps: ["Live → Add a breakpoint", "Run your harness through the proxy", "Look at what is held; edit it, continue, step or drop it"],
+    question: "What does my own agent do as I use it?",
+    answer: "Point it at the proxy and use it as usual: each call it makes is recorded as a step of a run — and a breakpoint holds any call, before the model sees it or after it answers, for you to look at or change.",
+    steps: ["Live: set your agent's base URL to the proxy, and use it", "Its runs appear on Runs, recorded live: work from any step", "Live → Add a breakpoint; what it holds, edit, continue, step or drop"],
     cli: "tuningfork break add --tool write_file", href: "#/live", go: "Live",
   },
 ];
 
 function workflowCard(flow) {
-  const reachable = live.mode === "live" || !["#/batch", "#/live"].includes(flow.href);
+  const reachable = live.mode === "live" || !["#/batch", "#/live", "#/import"].includes(flow.href);
   return h("article", { class: "workflow" },
     h("h3", null, flow.question),
     h("p", { class: "muted" }, flow.answer),
@@ -297,7 +337,7 @@ function workflowCard(flow) {
 // --- words ----------------------------------------------------------------------------------------------
 
 function glossaryPanel(words, initial) {
-  if (!words) return panel("Words", h("p", { class: "muted" }, "The glossary could not be read."));
+  if (!words) return panel("Words", h("p", { class: "muted" }, "The words could not be read."));
   const filter = h("input", { class: "field", type: "search", placeholder: "Look a word up…", value: initial, "aria-label": "Look a word up" });
   const body = h("div");
   const rows = new Map();
@@ -340,6 +380,5 @@ function glossaryPanel(words, initial) {
   };
   filter.addEventListener("input", draw);
   draw();
-  return panel(`Words · ${words.terms.length}`, [h("p", { class: "hint" }, "tuningfork's words, each as it means it here. The same list in a terminal: ",
-    h("code", null, "tuningfork glossary [word]"), "."), filter, body]);
+  return panel(plural(words.terms.length, "word"), [filter, body]);
 }

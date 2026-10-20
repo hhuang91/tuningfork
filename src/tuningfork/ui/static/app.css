@@ -42,7 +42,9 @@
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --radius: 8px;
-  --topbar: 52px;
+  /* What a sticky element stays below: nothing beside the sidebar, the drawer's bar when narrow. */
+  --topbar: 0px;
+  --sidebar: 216px;
   color-scheme: light;
 }
 
@@ -129,19 +131,85 @@ pre { margin: 0; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* --- top bar -------------------------------------------------------------------- */
+/* --- the sidebar: the sections in the loop's order ---------------------------------- */
 
-.topbar {
+body { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); min-height: 100vh; }
+.page { min-width: 0; }
+
+.sidebar {
   position: sticky;
   top: 0;
   z-index: 20;
   display: flex;
-  align-items: center;
-  gap: 20px;
-  height: var(--topbar);
-  padding: 0 20px;
+  flex-direction: column;
+  height: 100vh;
   background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.side-head { display: flex; flex: none; align-items: center; gap: 8px; height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+.sidebar .nav-toggle { display: none; margin-left: auto; }
+.side-drawer { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.side-nav { display: flex; flex: 1; flex-direction: column; gap: 1px; min-height: 0; padding: 10px 8px; overflow-y: auto; }
+.side-nav a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.side-nav a:hover { background: var(--panel-2); color: var(--text); text-decoration: none; }
+.side-nav a.active { background: var(--accent-soft); color: var(--accent); }
+.nav-icon { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.nav-icon .knob { fill: currentColor; }
+.side-nav .badge, .side-nav .nav-dot { margin-left: auto; }
+/* Beside the flow — the health check, what is running — in a lighter hand. */
+.side-nav a.nav-side { font-size: 13px; font-weight: 400; }
+/* Under its section: Words, Run a task…, Chains. */
+.side-nav a.nav-sub { padding: 3px 10px 3px 38px; font-size: 12.5px; font-weight: 400; }
+.nav-group { margin: 14px 10px 4px; color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.nav-rule { margin: 10px; border-top: 1px solid var(--border); }
+/* What needs a running proxy, where none runs: greyed, and still a link to the page that says so. */
+.side-nav a.nav-off { opacity: 0.5; }
+
+/* The status strip: the proxy, the server, the harnesses, and pausing it all. */
+.side-foot { display: flex; flex: none; align-items: flex-start; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.side-foot .status { flex: 1; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.status-line { display: flex; align-items: center; gap: 8px; }
+.status-health { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.status-health a { color: var(--muted); }
+.status-health .warn-text a, .status-health a.warn-text { color: var(--warn); }
+
+/* Narrower: each section its icon, its name on hover. */
+@media (max-width: 1000px) and (min-width: 701px) {
+  :root { --sidebar: 60px; }
+  .sidebar .nav-text, .side-nav a.nav-sub, .status-word, .status-health { display: none; }
+  .side-head { justify-content: center; padding: 0; }
+  .side-nav { padding: 10px 6px; }
+  .side-nav a { justify-content: center; padding: 8px 0; }
+  .nav-group { height: 0; margin: 8px 6px; border-top: 1px solid var(--border); }
+  .nav-rule { margin: 8px 6px; }
+  .side-nav .badge { position: absolute; top: 1px; right: 4px; min-width: 15px; padding: 0 4px; font-size: 10px; line-height: 15px; }
+  .side-nav .nav-dot { position: absolute; top: 5px; right: 10px; }
+  .side-foot { flex-direction: column; align-items: center; padding: 10px 0; }
+  .side-foot .status { align-items: center; }
+}
+
+/* Narrowest: a bar across the top, the sections a drawer under it. */
+@media (max-width: 700px) {
+  :root { --topbar: 52px; }
+  body { display: block; }
+  .sidebar { height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+  .side-head { height: var(--topbar); border-bottom: none; }
+  .sidebar .nav-toggle { display: inline-grid; }
+  .side-drawer {
+    display: none; position: absolute; top: var(--topbar); left: 0; right: 0;
+    max-height: calc(100vh - var(--topbar)); background: var(--panel); border-bottom: 1px solid var(--border); box-shadow: var(--shadow);
+  }
+  .sidebar.open .side-drawer { display: flex; }
 }
 
 .brand {
@@ -163,19 +231,6 @@ pre { margin: 0; }
   stroke-linejoin: round;
 }
 
-.tabs { display: flex; gap: 2px; }
-.tabs a {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  color: var(--muted);
-  font-weight: 500;
-}
-.tabs a:hover { background: var(--panel-2); color: var(--text); text-decoration: none; }
-.tabs a.active { background: var(--panel-2); color: var(--text); }
-
 .badge {
   min-width: 18px;
   padding: 0 6px;
@@ -189,8 +244,6 @@ pre { margin: 0; }
 }
 /* Calls held at a breakpoint: each keeps a harness waiting. */
 .badge-warn { background: var(--warn); }
-
-.topbar-end { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 
 .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 
@@ -330,12 +383,13 @@ main { padding: 20px 24px 64px; }
 .verdict-strip.tone-bad strong { color: var(--bad); }
 .verdict-strip.tone-warn { border-color: var(--warn); background: var(--warn-soft); }
 .verdict-strip.tone-warn strong { color: var(--warn); }
-.page-head .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.page-head .actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .h-sub { margin-left: 10px; color: var(--muted); font-weight: 400; font-size: 15px; }
 
 .crumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; color: var(--faint); font-size: 13px; }
 .crumbs a { color: var(--muted); }
 .crumbs .sep { color: var(--faint); }
+.crumb-stage { color: var(--faint); font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; align-self: center; }
 
 .stack { display: flex; flex-direction: column; gap: 16px; }
 /* A slot a page fills later — an import's preview, what was made, a job's summary — takes no gap while empty. */
@@ -452,6 +506,9 @@ details.setup-done > summary { padding: 12px 16px; cursor: pointer; }
 .workflows { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 12px; }
 .workflow { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: var(--panel); }
 .workflow h3 { margin: 0; font-size: 14px; }
+/* The Guide's way to the words: a field, a button, and all of them. */
+.look-up { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.look-up .field { max-width: 360px; }
 .workflow p { margin: 0; font-size: 13px; }
 .workflow-steps { margin: 0; padding-left: 18px; font-size: 13px; display: grid; gap: 2px; }
 .workflow .btn { align-self: flex-start; margin-top: auto; }
@@ -674,7 +731,7 @@ details[open] > summary::before,
 summary.msg-head::before,
 .fold > summary::before,
 .tool > summary::before,
-details.panel > summary::before,
+details.panel > summary.panel-head::before,
 .tl-marker .chevron { margin: 0 1px 0 2px; }
 .msg-preview {
   flex: 1;
@@ -951,6 +1008,9 @@ pre.code { color: var(--muted); }
 .recent-item .reason { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 
 .connect code { display: block; padding: 6px 8px; background: var(--panel-2); border-radius: 4px; overflow-wrap: anywhere; }
+/* Where your own agent sends its calls: each API beside its address. */
+.connect-urls { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; align-items: center; }
+@media (max-width: 700px) { .connect-urls { grid-template-columns: minmax(0, 1fr); } }
 
 /* --- comparisons and experiments -------------------------------------------------- */
 
@@ -1015,6 +1075,9 @@ pre.code { color: var(--muted); }
 /* A behaviour a declared target counts: the rows its rates add up. */
 .table tr.is-target td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .nowrap { white-space: nowrap; }
+/* What to do next, after a result: the same words on every result page. */
+.next-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; border: 1px dashed var(--border-strong); border-radius: var(--radius); }
+.next-line strong { margin-right: 4px; }
 
 .cmd {
   display: flex;
@@ -1060,9 +1123,6 @@ pre.code { color: var(--muted); }
 
 @media (max-width: 700px) {
   main { padding: 16px 16px 64px; }
-  .topbar { gap: 10px; padding: 0 12px; }
-  .brand span { display: none; }
-  .status > span:not(.dot) { display: none; }
   .form-grid { grid-template-columns: 1fr; }
   .search { width: 100%; }
 }

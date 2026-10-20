@@ -9,35 +9,96 @@
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#/guide" aria-label="Tuning Fork home">
-      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-        <path d="M10 3v11a6 6 0 0 0 12 0V3M16 20v9" />
-      </svg>
-      <span>Tuning Fork</span>
-    </a>
-    <nav class="tabs" aria-label="Sections">
-      <a href="#/live" data-nav="live" hidden>Live <span id="held-count" class="badge badge-warn" hidden></span></a>
-      <a href="#/runs" data-nav="runs">Runs</a>
-      <a href="#/experiments" data-nav="experiments">Experiments</a>
-      <a href="#/refine" data-nav="refine">Refine</a>
-      <a href="#/skills" data-nav="skills">Skills</a>
-      <a href="#/scenarios" data-nav="scenarios">Scenarios</a>
-      <a href="#/jobs" data-nav="jobs">Jobs <span id="jobs-count" class="badge" hidden></span></a>
-      <a href="#/connections" data-nav="connections" hidden>Connections</a>
-      <a href="#/trash" data-nav="trash">Trash</a>
-      <a href="#/guide" data-nav="guide">Guide</a>
-    </nav>
-    <div class="topbar-end">
-      <div id="status" class="status" aria-live="polite"></div>
-      <button id="theme" class="icon-btn" type="button" title="Theme"></button>
+  <!-- The sections in the loop's order: the Guide first, the ways in, then Record, Measure,
+       Improve; what runs beside them in a lighter hand; the Trash last. Narrow, each item is its
+       icon; narrower, the list is a drawer. -->
+  <aside class="sidebar" id="sidebar">
+    <div class="side-head">
+      <a class="brand" href="#/guide" aria-label="Tuning Fork home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M10 3v11a6 6 0 0 0 12 0V3M16 20v9" />
+        </svg>
+        <span class="nav-text">Tuning Fork</span>
+      </a>
+      <button id="nav-toggle" class="icon-btn nav-toggle" type="button" aria-controls="side-drawer" aria-expanded="false" aria-label="Show the sections">☰</button>
     </div>
-  </header>
-  <div id="token-banner" class="token-banner" hidden></div>
-  <div id="paused-banner" class="paused-banner" hidden>
-    Paused — model calls are refused until you resume. Calls already held stay held.
+    <div class="side-drawer" id="side-drawer">
+      <nav class="side-nav" aria-label="Sections">
+        <a href="#/guide" data-nav="guide" title="Guide: start here — where you left off, and how the pieces fit">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.25" /><path d="M12.9 7.1 11.3 11.3 7.1 12.9 8.7 8.7Z" /></svg>
+          <span class="nav-text">Guide</span>
+        </a>
+        <a href="#/words" data-nav="words" class="nav-sub" title="Words: tuningfork's own, each defined once">
+          <span class="nav-text">Words</span>
+        </a>
+        <a href="#/connections" data-nav="connections" data-proxy class="nav-side" title="Connections: the server, the harnesses, the sandbox and the proposer">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 2.5v4M13 2.5v4M5 6.5h10V9a5 5 0 0 1-10 0Z M10 14v3.5" /></svg>
+          <span class="nav-text">Connections</span>
+          <span id="health-dot" class="dot nav-dot" hidden></span>
+        </a>
+        <div class="nav-group"><span class="nav-text">Start</span></div>
+        <a href="#/scenarios" data-nav="scenarios" title="Scenarios: the tasks you write, each with its check">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="3" width="11" height="14" rx="1.5" /><path d="M7.5 7h5M7.5 10h5M7.5 13h3" /></svg>
+          <span class="nav-text">Scenarios</span>
+        </a>
+        <a href="#/batch" data-nav="batch" data-proxy class="nav-sub" title="Run a task: a scenario run again and again, each run fresh">
+          <span class="nav-text">Run a task…</span>
+        </a>
+        <a href="#/import" data-nav="import" data-proxy title="Import a chat: a conversation your agent already had, as a run">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4h13v9H9l-3.5 3v-3h-2Z" /><path d="M10 6v4.2M8.2 8.6 10 10.4l1.8-1.8" /></svg>
+          <span class="nav-text">Import a chat</span>
+        </a>
+        <a href="#/live" data-nav="live" data-proxy title="Live: your own agent, recorded as you use it, and the calls a breakpoint holds">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="1.8" /><path d="M6.6 6.6a4.8 4.8 0 0 0 0 6.8M13.4 6.6a4.8 4.8 0 0 1 0 6.8M4.2 4.2a8.2 8.2 0 0 0 0 11.6M15.8 4.2a8.2 8.2 0 0 1 0 11.6" /></svg>
+          <span class="nav-text">Live</span>
+          <span id="held-count" class="badge badge-warn" hidden></span>
+        </a>
+        <a href="#/skills" data-nav="skills" title="Skills: each skill's versions, how often each passed, and a way to run it">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3 17 6.8 10 10.6 3 6.8Z" /><path d="M3 10.2l7 3.8 7-3.8M3 13.6l7 3.8 7-3.8" /></svg>
+          <span class="nav-text">Skills</span>
+        </a>
+        <a href="#/jobs" data-nav="jobs" class="nav-side" title="Jobs: the work started here, and what is running">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.25" /><path d="M10 6v4.3l2.8 1.7" /></svg>
+          <span class="nav-text">Jobs</span>
+          <span id="jobs-count" class="badge" hidden></span>
+        </a>
+        <div class="nav-group"><span class="nav-text">Record</span></div>
+        <a href="#/runs" data-nav="runs" title="Runs: every run recorded, by task">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.25" /><path d="M8.5 7.2v5.6L13 10Z" /></svg>
+          <span class="nav-text">Runs</span>
+        </a>
+        <a href="#/chains" data-nav="chains" class="nav-sub" title="Chains: runs in order, each given the skill the one before left">
+          <span class="nav-text">Chains</span>
+        </a>
+        <div class="nav-group"><span class="nav-text">Measure</span></div>
+        <a href="#/experiments" data-nav="experiments" title="Experiments: a step's behaviours, counted — resamples, A/Bs, tokens">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M8 3h4M8.8 3v4.8L4.6 14.7A1.6 1.6 0 0 0 6 17h8a1.6 1.6 0 0 0 1.4-2.3L11.2 7.8V3M6.3 12.3h7.4" /></svg>
+          <span class="nav-text">Experiments</span>
+        </a>
+        <div class="nav-group"><span class="nav-text">Improve</span></div>
+        <a href="#/refine" data-nav="refine" title="Refine: a skill's edits, screened, validated and approved">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 6h13M3.5 14h13" /><circle class="knob" cx="7.5" cy="6" r="1.9" /><circle class="knob" cx="12.5" cy="14" r="1.9" /></svg>
+          <span class="nav-text">Refine</span>
+        </a>
+        <div class="nav-rule"></div>
+        <a href="#/trash" data-nav="trash" title="Trash: what was set aside, until it is restored or deleted for good">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 6V4.2h4V6M5.8 6l.8 10.8h6.8L14.2 6" /></svg>
+          <span class="nav-text">Trash</span>
+        </a>
+      </nav>
+      <div class="side-foot">
+        <div id="status" class="status" aria-live="polite"></div>
+        <button id="theme" class="icon-btn" type="button" title="Theme"></button>
+      </div>
+    </div>
+  </aside>
+  <div class="page">
+    <div id="token-banner" class="token-banner" hidden></div>
+    <div id="paused-banner" class="paused-banner" hidden>
+      Paused — model calls are refused until you resume. Calls already held stay held.
+    </div>
+    <main id="main"></main>
   </div>
-  <main id="main"></main>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 </body>
 </html>

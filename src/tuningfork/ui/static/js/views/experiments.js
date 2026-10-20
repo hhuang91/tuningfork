@@ -147,7 +147,7 @@ export async function experimentView(root, [id], scope) {
           : h("span", { class: "mono" }, `a call held at a breakpoint (${short(experiment.hold_id)}), not recorded yet`),
           how,
           refinement ? [" Part of ", h("a", { class: "mono", href: `#/refine/${refinement}` }, `refinement ${short(refinement)}`), "."] : null)),
-        h("div", { class: "actions" }, nextSteps(experiment),
+        h("div", { class: "actions" },
           experiment.trashed_at || experiment.status === "running" ? null
             : trashButton({ kind: "experiment", id: experiment.id, onDone: () => experimentView(root, [id], scope) }))),
       h("div", { class: "stack" },
@@ -185,6 +185,7 @@ export async function experimentView(root, [id], scope) {
           ? h("p", { class: "hint" }, "Each sample kept its tokens: ",
               h("a", { href: `${checkpoint}?view=tokens` }, "the step's Tokens view"), " lists them, each with its heatmap.")
           : null,
+        nextSteps(experiment),
         notesPanel(experiment)),
     );
   }
@@ -236,9 +237,13 @@ function runningBanner(experiment) {
     experiment.job_id ? " shows its progress." : "");
 }
 
-/** What to do next from here, with a running proxy: the loop is resample, A/B, confirm. */
+/** What to do next from here, with a running proxy — the loop is resample, A/B, confirm — in
+ *  a line after the result, where the page is read to: then back to the step it came from. */
 function nextSteps(experiment) {
-  if (live.mode !== "live" || experiment.reach === "end" || !experiment.run_id) return null;
+  if (!experiment.run_id) return null;
+  const step = `#/runs/${experiment.run_id}/${experiment.step_idx}`;
+  const back = h("a", { class: "btn btn-quiet btn-small", href: step }, "Back to the step");
+  if (live.mode !== "live" || experiment.reach === "end") return h("nav", { class: "next-line", "aria-label": "Next" }, h("strong", null, "Next"), back);
   const here = `#/runs/${experiment.run_id}/${experiment.step_idx}`;
   const refinement = experiment.settings?.refinement;
   const links = experiment.kind === "screen" && refinement
@@ -258,7 +263,7 @@ function nextSteps(experiment) {
         h("a", { class: "btn btn-quiet btn-small", href: `${here}?start=refine` }, "Refine the skill here"),
         h("a", { class: "btn btn-quiet btn-small", href: `${here}?start=resample` }, "Resample again"),
       ];
-  return h("div", { class: "actions" }, links);
+  return h("nav", { class: "next-line", "aria-label": "Next" }, h("strong", null, "Next"), links, back);
 }
 
 function armView(arm, label, tone) {

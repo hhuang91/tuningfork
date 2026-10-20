@@ -42,6 +42,17 @@ const page = await Page.open(`${UI}#/runs`);
 try {
   // The tab loads after it opens: wait for the app, and for it to take the token in.
   await until(() => page.eval(`location.pathname.endsWith("/ui/") && location.search === "" && !!document.querySelector(".view")`), "the app to load");
+  // --- 0. The sidebar: the sections in the loop's order, and the status strip at its foot ----
+  console.log("the sidebar");
+  check(await page.eval(`[...document.querySelectorAll(".side-nav a")].map((a) => a.dataset.nav).join(",")`)
+    === "guide,words,connections,scenarios,batch,import,live,skills,jobs,runs,chains,experiments,refine,trash",
+    "the sections in the loop's order: the Guide, the ways in, Record, Measure, Improve, the Trash");
+  check(await page.eval(`[...document.querySelectorAll(".nav-group")].map((g) => g.textContent).join(",") === "Start,Record,Measure,Improve"
+    && document.querySelector('[data-nav="runs"]').classList.contains("active") && !document.querySelector(".side-nav .nav-off")`),
+    "grouped by stage, Runs marked as the page shown, nothing greyed with a proxy running");
+  await until(() => page.eval(`(document.querySelector(".status-health")?.textContent || "").includes("found")`), "the status strip's health");
+  check(await page.eval(`document.querySelector(".status-word").textContent === "live" && !document.getElementById("health-dot").hidden`),
+    "the status strip says the proxy is live, the server's and the harnesses' state, and Connections carries its dot");
   // --- 1. Resample from the step page -----------------------------------------------------
   console.log("resample a step from its page");
   await openStep(page);
@@ -952,15 +963,22 @@ try {
   check(await page.eval(`[...document.querySelectorAll(".colours .chip")].map((c) => c.classList[1]).join(",") === "tone-ok,tone-bad,tone-warn,tone-change,tone-skill,tone-accent"
     && document.querySelector(".colours").textContent.includes("Green and red are a check's verdict.")`),
     "the colours, each shown on a chip that wears it");
-  check(await page.eval(`document.querySelectorAll(".workflow").length === 8 && [...document.querySelectorAll(".workflow .cmd span")].some((s) => s.textContent.startsWith("tuningfork forking-tokens"))`),
-    "eight ways in, each a question, each with its terminal command");
+  check(await page.eval(`document.querySelectorAll(".workflow").length === 9 && [...document.querySelectorAll(".workflow .cmd span")].some((s) => s.textContent.startsWith("tuningfork forking-tokens"))
+    && [...document.querySelectorAll(".workflow h3")].some((h3) => h3.textContent === "Where did my agent go wrong in a chat I already had?")`),
+    "nine ways in, each a question with its terminal command, an imported chat's among them");
+  // The words have a page of their own; the Guide's field leads there with one typed.
+  await page.type(`document.querySelector('.look-up input[type="search"]')`, "forking");
+  await page.eval(`[...document.querySelectorAll(".look-up button")].find((b) => b.textContent === "Look it up").click()`);
+  await until(() => page.eval(`location.hash === "#/words?term=forking" && !!document.querySelector(".glossary")`), "the Words page, the word looked up");
   const words = (await api("/glossary")).terms.length;
-  check(await page.eval(`document.querySelectorAll(".glossary .term-row").length === ${words}`), `the glossary, all ${words} words`);
-  await page.type(`document.querySelector('.panel input[type="search"]')`, "forking");
-  check(await page.eval(`[...document.querySelectorAll(".glossary .term-row strong")].map((s) => s.textContent).includes("forking token") && document.querySelectorAll(".glossary .term-row").length < ${words}`),
-    "a word looked up narrows the table");
+  check(await page.eval(`[...document.querySelectorAll(".glossary .term-row strong")].map((s) => s.textContent).includes("forking token") && document.querySelectorAll(".glossary .term-row").length < ${words}
+    && document.querySelector('[data-nav="words"]').classList.contains("active")`),
+    "a word looked up narrows the table, on the Words page the sidebar marks");
+  await page.type(`document.querySelector('.panel input[type="search"]')`, "");
+  check(await page.eval(`document.querySelectorAll(".glossary .term-row").length === ${words}`), `cleared, all ${words} words`);
+  // A word named on the Guide's address, as links made before the page had its own, lands there too.
   await page.eval(`location.hash = "#/guide?term=validation"`);
-  await until(() => page.eval(`document.querySelector('.panel input[type="search"]')?.value === "validation"`), "a word named in the address");
+  await until(() => page.eval(`location.hash === "#/words?term=validation" && document.querySelector('.panel input[type="search"]')?.value === "validation"`), "a word named in the address");
 
   console.log("the Skills page: versions, their rates, the text rendered, two texts compared");
   await page.eval(`location.hash = "#/skills"`);
@@ -969,6 +987,16 @@ try {
   await until(() => page.eval(`!!document.querySelector(".markdown .md-front")`), "its SKILL.md, rendered with its frontmatter as fields");
   check(await page.eval(`!!document.querySelector(".markdown h1") && document.querySelector(".markdown").textContent.includes("report.json")`), "the text, as Markdown");
   const skill = await api("/skills/tally-report");
+  // A skill is a way in: run it again from a scenario that names it, or make one with its folder filled in.
+  const ways = await page.eval(`[...document.querySelectorAll(".page-head .actions a")].map((a) => a.textContent + "=" + a.getAttribute("href")).join(" | ")`);
+  check(ways.includes("Make a scenario for it…=#/scenarios/new?skill=tally-report&skill_dir=")
+    && (skill.scenarios.length ? skill.scenarios.every((name) => ways.includes(`=#/batch?scenario=${name}`)) : ways.includes("Run it…=#/batch?spec=")),
+    `the skill's page runs it again and makes a scenario for it (${ways})`);
+  await page.eval(`[...document.querySelectorAll(".page-head .actions a")].find((a) => a.textContent === "Make a scenario for it…").click()`);
+  await until(() => page.eval(`document.querySelector('input[name="skill_name"]')?.value === "tally-report"`), "a new scenario, its task named for the skill");
+  check(await page.eval(`document.querySelector('input[name="skill_dir"]').value === ${JSON.stringify(skill.folders[0].path)}`), "its skill folder filled in");
+  await page.eval(`location.hash = "#/skills/tally-report"`);
+  await until(() => page.eval(`!!document.querySelector(".markdown .md-front")`), "back on the skill's page");
   check(skill.versions.length >= 2 && await page.eval(`document.querySelectorAll(".condition-rate .ci").length >= 2`),
     "each version with its pass rates, intervals drawn");
   check(skill.folders.some((folder) => folder.changelog && folder.history.length === 1), "the folder the approval wrote: its changelog and the old version beside it");

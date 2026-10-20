@@ -28,9 +28,9 @@ const said = (plan) => [
 export async function importView(root, _params, scope) {
   // Come from the Scenarios page: the chat imported, its scenario is made next.
   const forScenario = scope?.query?.get("then") === "scenario";
+  // A section of its own in the sidebar: a trail only where the Scenarios page led here.
   const head = [
-    crumbs(forScenario ? [["Scenarios", "#/scenarios"], ["From a run", "#/scenarios?from=run"], ["Import a chat"]]
-      : [["Runs", "#/runs"], ["Import a chat"]]),
+    forScenario ? crumbs([["Scenarios", "#/scenarios"], ["From a run", "#/scenarios?from=run"], ["Import a chat"]]) : null,
     h("div", { class: "page-head" },
       h("div", null, h("h1", null, "Import a chat"),
         h("p", { class: "sub" }, "A conversation an agent had elsewhere, as a run: each assistant turn a step, with "

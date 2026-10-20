@@ -56,8 +56,8 @@ export async function liveView(root, [holdId], scope) {
     root,
     h("div", { class: "live-layout" },
       h("section", null,
-        h("div", { class: "page-head" }, h("div", null, h("h1", null, "Held calls"),
-          h("p", { class: "sub" }, "A call stopped at a breakpoint waits here. Your harness just sees a slow response."))),
+        h("div", { class: "page-head" }, h("div", null, h("h1", null, "Live"),
+          h("p", { class: "sub" }, "Your own agent, recorded as you use it — and any call of it a breakpoint holds here, while your harness just sees a slow response."))),
         listEl,
         detailEl),
       h("aside", { class: "live-side" },
@@ -235,10 +235,19 @@ export async function liveView(root, [holdId], scope) {
         h("p", null, "The call went on, and will stop again at the next stop point: when the model has answered, or at the harness's next call. If the run has finished, nothing more will arrive."));
     }
     const armed = live.breakpoints.filter((bp) => bp.enabled).length;
-    return h("div", { class: "panel empty" }, h("h2", null, "Nothing is held"),
-      h("p", null, armed
-        ? `${plural(armed, "breakpoint")} armed. A matching call will appear here the moment it arrives.`
-        : "No breakpoint is armed, so every call passes straight through. Add one on the right."));
+    // Nothing held: the way in this page is — your own agent, recorded as you use it — first.
+    return h("div", { class: "stack" },
+      panel("Record your own agent", h("div", { class: "connect stack" },
+        h("p", null, "Set your agent's base URL — where it sends its model calls — to this proxy, and use it as usual:"),
+        h("div", { class: "connect-urls" },
+          h("span", { class: "muted small" }, "an OpenAI-style API, such as Hermes Agent"), command(`${location.origin}/v1`),
+          h("span", { class: "muted small" }, "Anthropic's, such as Claude Code"), command(location.origin)),
+        h("p", { class: "hint" }, "Each call it makes is recorded as a step of a run, recorded live: its runs appear on ",
+          h("a", { href: "#/runs" }, "Runs"), ", where any step can be resampled, A/B-tested or refined. A breakpoint stops a call here first."))),
+      h("div", { class: "panel empty" }, h("h2", null, "Nothing is held"),
+        h("p", null, armed
+          ? `${plural(armed, "breakpoint")} armed. A matching call will appear here the moment it arrives.`
+          : "No breakpoint is armed, so every call passes straight through. Add one on the right.")));
   }
 
   // A call decided somewhere else — the CLI, another tab — or abandoned by the harness.
@@ -313,8 +322,8 @@ export async function liveView(root, [holdId], scope) {
   }
 
   function connectPanel() {
-    return panel("Connect a harness", h("div", { class: "connect stack" },
-      h("p", { class: "hint" }, "Point the harness's OpenAI-compatible base URL here:"),
+    return panel("Connect your agent", h("div", { class: "connect stack" },
+      h("p", { class: "hint" }, "Its base URL, for an OpenAI-style API; for Anthropic's, the same without /v1:"),
       command(`${location.origin}/v1`),
       h("p", { class: "hint" }, "The same controls from a terminal:"),
       command("tuningfork hold list")));

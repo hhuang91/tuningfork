@@ -431,11 +431,15 @@ server, never at the proxy it studies.
 A tool call made without reasoning is marked only where the same run reasons at another step
 (`analysis/reasoning.py`), with whether a tool call had just failed — a reply in text without
 reasoning is the usual end of a run, and is not; an experiment counts, per behaviour, the
-samples that reasoned, said where some did not. The web UI's front page is `#/guide` — setup, where
-you left off, a map of the loop, the ways in, and the glossary, whose words live once in
+samples that reasoned, said where some did not. The web UI's sections are a sidebar in the
+loop's order (`index.html`): the Guide, the ways in (Scenarios, Import a chat, Live, Skills), then
+Record, Measure, Improve, and the Trash; what needs a running proxy stays in it where none runs,
+greyed and saying why, and its foot is a status strip — the proxy, the server and the harnesses,
+from `GET /connections`. Its front page is `#/guide` — setup, where you left off, a map of the
+loop and the ways in — and its words have a page of their own, `#/words`, each living once in
 `ops/glossary.py`. The Skills page (`ops/skills.py`) names a skill by its folder, as variants
-and refinements do; it is the person's view, never offered over MCP: the changelog an
-approval writes carries held-out verdicts.
+and refinements do, and runs it again from the scenarios that name it; it is the person's view,
+never offered over MCP: the changelog an approval writes carries held-out verdicts.
 
 Every state change under `/_tuningfork/` needs the proxy's access token
 (`x-tuningfork-token`, or `Authorization: Bearer`): minted each `serve`, written to
