@@ -182,13 +182,16 @@ function healthLines() {
   const server = health.server || {};
   const found = (health.harnesses || []).filter((each) => each.path).map((each) => each.name);
   const answering = !server.problem && Boolean(server.identity?.id);
-  const trouble = Boolean(server.problem) || !found.length;
+  const trouble = Boolean(server.problem || server.reminder) || !found.length;
   dot.hidden = false;
   dot.className = ["dot", "nav-dot", trouble ? "dot-wait" : "dot-live"].join(" ");
   dot.title = trouble ? "Something here needs a look" : "The server answers, and a harness was found";
   return h("div", { class: "status-health" },
-    h("a", { href: "#/connections", class: server.problem ? "warn-text" : null, title: server.problem || server.url || "" },
-      server.problem ? "server not answering" : answering ? "server answering" : "server not read yet"),
+    // A server on the internet that asks for a key answered: say where it is, not that it is down.
+    h("a", {
+      href: "#/connections", class: server.problem || server.reminder ? "warn-text" : null,
+      title: server.reminder?.headline || server.problem || server.url || "",
+    }, server.reminder ? "server on the internet" : server.problem ? "server not answering" : answering ? "server answering" : "server not read yet"),
     h("a", { href: "#/connections", class: found.length ? null : "warn-text" },
       found.length ? `${found.join(", ")} found` : "no harness found"));
 }

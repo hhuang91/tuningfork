@@ -217,6 +217,10 @@ def serve(
     console.print(f"[bold]tuningfork[/bold] {__version__}")
     console.print(f"  listening on  http://{host}:{port}/v1")
     console.print(f"  forwarding to {upstream}")
+    from tuningfork.ops.connections import read_reminder
+
+    # Asked before the proxy starts, and only of a server on the internet: no wait for one nearby.
+    _print_reminder(asyncio.run(read_reminder(upstream)), indent="                ")
     console.print(f"  recording to  {settings.home}")
     console.print(f"  max in flight {max_inflight}")
     if max_output is not None:
@@ -4696,19 +4700,25 @@ def jobs_wait(
 # --- connections -----------------------------------------------------------------------------
 
 
-def _print_checks(checks: dict) -> None:
+def _print_checks(checks: dict, read: dict | None = None) -> None:
+    from tuningfork.ops.connections import token_work
+
     results = (checks or {}).get("results") or {}
     if not results:
         console.print("  checks    [dim]not measured — `tuningfork connections check`[/dim]")
-        return
     for name, found in results.items():
         tone = {"yes": "green", "no": "red"}.get(found.get("support"), "yellow")
         detail = f" — {escape(found['detail'])}" if found.get("detail") else ""
         console.print(f"  {name:<22} [{tone}]{found.get('support')}[/{tone}]{detail}")
-    from tuningfork.ops.connections import token_work
-
-    for reason in filter(None, token_work(checks).values()):
+    for reason in filter(None, token_work(checks, read).values()):
         console.print(f"  [yellow]{escape(reason)}[/yellow]")
+
+
+def _print_reminder(noted: dict | None, *, indent: str = "  ") -> None:
+    """That tuningfork is built for a model you run yourself, where the server says otherwise."""
+    if noted:
+        console.print(f"{indent}[yellow]{escape(noted['headline'])}[/yellow] {escape(noted['body'])} "
+                      "(`tuningfork glossary local model`)", soft_wrap=True)
 
 
 @connections_app.command("show")
@@ -4724,7 +4734,8 @@ def connections_show(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)
         if identity.get(key) is not None:
             value = ", ".join(identity[key]) if isinstance(identity[key], list) else identity[key]
             console.print(f"  {key:<11} {escape(str(value))}")
-    _print_checks(server.get("checks") or {})
+    _print_reminder(server.get("reminder"))
+    _print_checks(server.get("checks") or {}, server.get("read"))
     console.print("\n[bold]harnesses[/bold]")
     for harness in found["harnesses"]:
         where = harness["path"] or "[red]not found[/red]"
@@ -4757,6 +4768,7 @@ def connections_switch(
     found = _or_exit(lambda: _control(proxy).switch_upstream(url, dry_run=dry_run))
     for change in found["differences"]:
         console.print(f"  {change['field']:<22} {escape(str(change['current']))} → {escape(str(change['proposed']))}")
+    _print_reminder(found.get("reminder"))
     if dry_run:
         busy = found.get("busy") or []
         console.print(f"[yellow]in use: {escape('; '.join(busy))}[/yellow]" if busy else "nothing is using the proxy: it can switch")

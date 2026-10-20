@@ -971,10 +971,16 @@ def server_status(context: Context, args: NoArgs) -> Answer:
             lines.append(f"the server could not be read: {health['server_problem']}")
         elif server.get("models"):
             lines.append(f"it serves {', '.join(map(str, server['models']))}")
-        from tuningfork.ops.connections import token_work
+        from tuningfork.ops.connections import reminder, token_work
 
+        # A server on the internet answering as a hosted API does: what the agent's own work can't reach.
+        read = health.get("server_read")
+        noted = reminder(read)
+        data["reminder"] = noted
+        if noted:
+            lines.append(f"{noted['headline']} {noted['body']}")
         # The token work its check rules out, which start_tokens and the rest would be refused.
-        ruled_out = {work: reason for work, reason in token_work(checks).items() if reason}
+        ruled_out = {work: reason for work, reason in token_work(checks, read).items() if reason}
         data["cannot"] = ruled_out or None
         lines.extend(ruled_out.values())
     data["recorded_servers"] = [

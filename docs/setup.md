@@ -142,7 +142,32 @@ supports, and `tuningfork probe <url>` writes a full profile of it. Work at the 
 output tuningfork reads: Gemma 4 today; keeping each sample's tokens in a resample needs the
 chat endpoint's logprobs. Features degrade on what was measured, not on a guess about which
 server is running: token work the check found a server without is greyed in the web UI, saying
-what was missing, and refused if started.
+what was missing, and refused if started. A server without llama.cpp's `/props` has scoring and
+forking tokens greyed before any check: the proxy asks for it every half minute.
+
+### Cloud models
+
+tuningfork is built for a model you run yourself: on your machine, on your network, or on a GPU
+you rent, with llama.cpp's server. A hosted model's API, such as Anthropic's or OpenAI's, can be
+the upstream, but only for recording:
+
+- **What works:** your agent's calls are recorded through the proxy, with your agent's own API
+  key passed on. So does everything that reads recordings: a run's timeline, where runs diverge,
+  what failed checks said, imported chats, and scenarios made from runs.
+- **What does not:** whatever tuningfork sends itself — resamples, A/Bs, forks, batches,
+  validations and the server check — carries no API key, so a hosted API refuses it. Scoring an
+  answer and forking tokens need llama.cpp's own endpoints, which no hosted API has.
+- **Why a model of your own:** it answers tuningfork without a key, it shows the settings it
+  samples with, it gives each token's probabilities, and it costs nothing per call, where one
+  experiment makes dozens.
+
+The proxy says so where it shows its server: in `tuningfork serve`'s first lines, on the
+Connections page, in the status line at the sidebar's foot, on the Guide, in `connections show`
+and `switch`, and in MCP's `server_status`. It does so when the server is on the internet
+(every address its name resolves to is public: not this machine, your network, or a VPN like
+Tailscale) and either asks for an API key or is not llama.cpp's server. Nothing is refused for it.
+A llama.cpp server rented on the internet, answering without a key, is a model you run yourself:
+nothing is said, and everything works.
 
 ## The harnesses
 

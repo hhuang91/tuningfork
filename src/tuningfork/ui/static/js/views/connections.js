@@ -14,6 +14,13 @@ import { forgetTokenWork, live } from "../live.js";
 const SUPPORT_TONE = { yes: "muted", no: "warn", unknown: "faint" };
 const capital = (text) => `${text[0].toUpperCase()}${text.slice(1)}`;
 
+/** That tuningfork is built for a model you run yourself (`ops.connections.reminder`): where the
+ *  server is on the internet and answers as a hosted model API does. Never a refusal. */
+export function cloudNote(reminder) {
+  return h("div", { class: "banner banner-warn" }, h("strong", null, reminder.headline), " ", reminder.body, " ",
+    h("a", { href: "#/words?term=local%20model" }, "Why a model you run yourself"));
+}
+
 export async function connectionsView(root, _, scope) {
   if (live.mode !== "live") {
     replace(root, h("div", { class: "panel empty" }, h("h2", null, "No live proxy"),
@@ -59,10 +66,13 @@ export async function connectionsView(root, _, scope) {
     const ruledOut = Object.values(server.token_work || {}).filter(Boolean);
     switcher ??= switchForm();
     replace(serverEl, panel("Inference server", [
-      server.problem
-        ? h("div", { class: "banner banner-warn" }, h("strong", null, "Not answering: "), `${server.problem}. `,
-            "Start the server — or let it finish loading its model — then check it again.")
-        : null,
+      // A server that asks for a key answered: it is no server to start again.
+      server.reminder
+        ? cloudNote(server.reminder)
+        : server.problem
+          ? h("div", { class: "banner banner-warn" }, h("strong", null, "Not answering: "), `${server.problem}. `,
+              "Start the server — or let it finish loading its model — then check it again.")
+          : null,
       kv([
         ["forwarding to", h("span", { class: "mono" }, server.url)],
         ["started with", server.started_with !== server.url ? h("span", { class: "mono" }, server.started_with) : null],
@@ -206,6 +216,7 @@ export async function connectionsView(root, _, scope) {
               h("td", { class: "mono small" }, JSON.stringify(change.current ?? null)),
               h("td", { class: "mono small" }, JSON.stringify(change.proposed ?? null))))))
         : h("p", { class: "muted small" }, "It reports itself the same as the server now in use."),
+      plan.reminder ? cloudNote(plan.reminder) : null,
       plan.busy.length
         ? h("div", { class: "banner banner-warn" }, h("strong", null, "Not now: "), plan.busy.join("; "), ".")
         : null);

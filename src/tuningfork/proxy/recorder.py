@@ -158,10 +158,36 @@ CONNECT_TIMEOUT = 3.0
 _READ = httpx.Timeout(15.0, connect=CONNECT_TIMEOUT)
 
 
+#: Answers that say a server wants a key tuningfork does not send: a hosted model API's, most often.
+ASKS_KEY = (401, 403)
+
+
+@dataclass(slots=True)
+class ServerRead:
+    """One read of the upstream: its identity, why it said nothing of itself when it did not,
+    and two things the identity leaves out — whether it refused tuningfork for want of an API
+    key, and whether llama.cpp's `/props` answered (None where nothing answered at all, or the
+    server was not ready: a 5xx is no answer to that)."""
+
+    identity: dict[str, Any]
+    problem: str | None = None
+    asks_key: bool = False
+    props: bool | None = None
+
+    def facts(self) -> dict[str, Any]:
+        return {"asks_key": self.asks_key, "props": self.props}
+
+
 async def read_server(client: httpx.AsyncClient, base_url: str) -> tuple[dict[str, Any], str | None]:
     """The server's identity (see `fetch_server_identity`), and — when it said nothing of
     itself — why, in words: nothing listening there, nothing accepting a connection, or its
     own answer (llama.cpp answers 503 "Loading model" while it loads)."""
+    read = await read_upstream(client, base_url)
+    return read.identity, read.problem
+
+
+async def read_upstream(client: httpx.AsyncClient, base_url: str) -> ServerRead:
+    """`read_server`, with what the read found beyond the identity (`ServerRead`)."""
     import hashlib
     from pathlib import PurePosixPath
 
@@ -171,11 +197,12 @@ async def read_server(client: httpx.AsyncClient, base_url: str) -> tuple[dict[st
     try:
         response = await client.get(f"{root}/v1/models", timeout=_READ)
     except httpx.ConnectTimeout:
-        return identity, f"nothing accepted a connection there within {CONNECT_TIMEOUT:g} seconds"
+        return ServerRead(identity, f"nothing accepted a connection there within {CONNECT_TIMEOUT:g} seconds")
     except httpx.ConnectError:
-        return identity, "nothing is listening there"
+        return ServerRead(identity, "nothing is listening there")
     except httpx.HTTPError as exc:
         response, problem = None, f"it did not answer ({type(exc).__name__})"
+    asks_key = response is not None and response.status_code in ASKS_KEY
     if response is not None and response.status_code == 200:
         try:
             listed = response.json().get("data")
@@ -187,7 +214,11 @@ async def read_server(client: httpx.AsyncClient, base_url: str) -> tuple[dict[st
             )
     elif response is not None:
         problem = _answered(response)
-    body = await _props(client, base_url, timeout=_READ)
+    body, status = await _read_props(client, root)
+    # Told no — not found, or refused without a key — is a server with no /props; a 5xx, or
+    # no answer, says nothing either way (llama.cpp answers 503 while it loads its model).
+    props = True if body else False if status in (*ASKS_KEY, 404, 405) else None
+    asks_key = asks_key or status in ASKS_KEY
     if body:
         settings = body.get("default_generation_settings")
         settings = settings if isinstance(settings, dict) else {}
@@ -208,8 +239,23 @@ async def read_server(client: httpx.AsyncClient, base_url: str) -> tuple[dict[st
         if defaults:
             identity["defaults"] = defaults
     if any(key in identity for key in ANSWERED):
-        return identity, None
-    return identity, problem or "it answered, but said nothing of what it is"
+        return ServerRead(identity, None, asks_key, props)
+    return ServerRead(identity, problem or "it answered, but said nothing of what it is", asks_key, props)
+
+
+async def _read_props(client: httpx.AsyncClient, root: str) -> tuple[dict[str, Any] | None, int | None]:
+    """llama.cpp's `/props`, and the status it was answered with (None: no answer)."""
+    try:
+        response = await client.get(f"{root}/props", timeout=_READ)
+    except httpx.HTTPError:
+        return None, None
+    if response.status_code != 200:
+        return None, response.status_code
+    try:
+        body = response.json()
+    except ValueError:
+        return None, response.status_code
+    return (body if isinstance(body, dict) else None), response.status_code
 
 
 def _answered(response: httpx.Response) -> str:

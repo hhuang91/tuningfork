@@ -13,6 +13,11 @@ Token work is held to the same check (`token_work`): scoring an answer, forking 
 keeping each sample's tokens each need something a server check measures, and one the check
 found the server without is refused before anything is sent, saying what was missing — the
 web UI greys its way in, with the same words. What was never measured refuses nothing.
+
+tuningfork is built for a model one runs oneself. A server on the internet that answers as a
+hosted model API does — asking for a key tuningfork does not send, or without llama.cpp's
+/props — is said to be one wherever the server is shown (`reminder`), and nothing is refused
+for it: a harness's calls are recorded through it, its own key passed on.
 """
 
 from __future__ import annotations
@@ -297,6 +302,15 @@ class ServerCheckPlan:
 def prepare_server_check(proxy: Any, model: str | None = None) -> ServerCheckPlan:
     server = proxy.raw.get("server") or {}
     problem = proxy.raw.get("server_problem")
+    if (proxy.raw.get("server_read") or {}).get("asks_key"):
+        # Up, and refusing tuningfork: not "start it", which a server down or loading needs.
+        raise OperationError(
+            f"the server at {server.get('upstream') or 'the upstream'} asks for an API key, and tuningfork sends "
+            "none of its own: it cannot be checked",
+            hint="tuningfork is built for a model you run yourself: see “local model” on the Words page, or "
+            "`tuningfork glossary local model`",
+            code="asks_key",
+        )
     if problem:
         # Found in use: a server that was down, or still loading, was reported as a missing
         # model name — the model list was empty because nothing had answered.
@@ -391,31 +405,83 @@ TOKEN_WORK: dict[str, tuple[str, tuple[str, ...], str]] = {
 }
 
 
-def token_work(checks: dict[str, Any] | None) -> dict[str, str | None]:
+def token_work(checks: dict[str, Any] | None, read: dict[str, Any] | None = None) -> dict[str, str | None]:
     """Why the server's check says each kind of token work cannot be done on it, or None.
     Only a measurement that found the server without something is a reason: one never made,
-    or that could not tell, leaves the work to start and the server to say."""
+    or that could not tell, leaves the work to start and the server to say. The proxy's own
+    read of its server (`read`, every half minute) is one too: a server that answered without
+    llama.cpp's /props cannot score or force tokens, checked or not."""
     measured = (checks or {}).get("results") or {}
+    no_props = (read or {}).get("props") is False
     reasons: dict[str, str | None] = {}
     for work, (what, needs, _) in TOKEN_WORK.items():
         missing = [name for name in needs if (measured.get(name) or {}).get("support") == "no"]
-        if not missing:
+        if missing:
+            details = "; ".join(measured[name].get("detail") or "no detail" for name in missing)
+            reasons[work] = (
+                f"{what} needs {' and '.join(MEASURES[name][0] for name in missing)}: the server check found this "
+                f"server without {'it' if len(missing) == 1 else 'them'} ({details})"
+            )
+        elif no_props and "raw_completion" in needs:
+            reasons[work] = f"{what} needs llama.cpp's server: this one has no /props"
+        else:
             reasons[work] = None
-            continue
-        details = "; ".join(measured[name].get("detail") or "no detail" for name in missing)
-        reasons[work] = (
-            f"{what} needs {' and '.join(MEASURES[name][0] for name in missing)}: the server check found this "
-            f"server without {'it' if len(missing) == 1 else 'them'} ({details})"
-        )
     return reasons
 
 
 def refuse_token_work(store: Any, proxy: Any, work: str, *, field: str | None = None) -> None:
     """Refuse token work the proxy's server was measured unable to do, before anything is sent."""
     server = proxy.raw.get("server") or {}
-    reason = token_work(store.server_checks(server.get("id"))).get(work)
+    reason = token_work(store.server_checks(server.get("id")), proxy.raw.get("server_read")).get(work)
     if reason:
         raise OperationError(
             reason, code="unsupported", field=field,
             hint=f"on Connections, point the proxy at {TOKEN_WORK[work][2]}, or check this server again if it has changed",
         )
+
+
+# --- a model run oneself ------------------------------------------------------------------------
+
+
+def reminder(read: dict[str, Any] | None) -> dict[str, str] | None:
+    """What to say of a server on the internet that answers as a hosted model API does —
+    asking for a key tuningfork does not send, or without llama.cpp's /props — or None.
+    Never a refusal: a harness's calls are recorded through any server, its own key passed on.
+    Measured, never a list of providers: a llama.cpp server rented on the internet, answering
+    without a key, is a model run oneself, and is said nothing of."""
+    read = read or {}
+    if read.get("internet") is not True:
+        return None
+    if read.get("asks_key"):
+        headline = "This server is on the internet and asks for an API key."
+    elif read.get("props") is False:
+        headline = "This server is on the internet, and is not llama.cpp's."
+    else:
+        return None
+    return {
+        "headline": headline,
+        "body": "tuningfork is built for a model you run yourself. It records your agent's calls through this "
+                "server — your agent sends its own key — but what tuningfork runs itself (resamples, A/Bs, forks, "
+                "batches) sends none, and scoring and forking tokens need llama.cpp.",
+    }
+
+
+async def read_reminder(url: str, *, client: Any = None) -> dict[str, str] | None:
+    """The reminder for a server no proxy reads yet — what `serve` says before it starts. The
+    server is asked only when it is on the internet."""
+    import httpx
+
+    from tuningfork.endpoints import find_on_internet, guard_hooks
+    from tuningfork.proxy.recorder import read_upstream
+
+    internet = await find_on_internet(url)
+    if not internet:
+        return None
+    owned = client is None
+    client = client or httpx.AsyncClient(event_hooks=guard_hooks())
+    try:
+        read = await read_upstream(client, url)
+    finally:
+        if owned:
+            await client.aclose()
+    return reminder({**read.facts(), "internet": internet})

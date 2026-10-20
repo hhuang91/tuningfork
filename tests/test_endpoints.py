@@ -202,6 +202,36 @@ class TestEveryPlaceAUrlIsChosen:
         assert not (tmp_path / "tuningfork.db").exists()  # refused before the store opened
 
 
+class TestWhereAServerIs:
+    """On the internet or not, read from every address the server's host resolves to: what a
+    reminder that tuningfork is built for a model run oneself goes by, never a provider's name."""
+
+    @staticmethod
+    def resolving(*addresses):
+        def resolve(host, port, type=0):
+            if not addresses:
+                raise OSError("no such host")
+            return [(2, 1, 6, "", (address, port)) for address in addresses]
+
+        return resolve
+
+    @pytest.mark.parametrize(("addresses", "internet"), [
+        (("127.0.0.1",), False),  # this machine
+        (("192.168.1.20",), False),  # a box on the network
+        (("10.0.0.7",), False),
+        (("100.101.102.103",), False),  # a GPU of one's own on Tailscale
+        (("fd7a:115c:a1e0::1",), False),
+        (("8.8.8.8",), True),
+        (("2001:4860:4860::8888",), True),
+        (("8.8.8.8", "10.0.0.7"), False),  # a name that reaches a private address too
+        ((), None),  # it does not resolve
+    ])
+    def test_on_the_internet_only_where_every_address_is_public(self, addresses, internet):
+        from tuningfork.endpoints import on_internet
+
+        assert on_internet("https://api.example.com/v1", resolve=self.resolving(*addresses)) is internet
+
+
 def test_the_home_config_is_written_atomically_and_read_leniently(tmp_path):
     from tuningfork.config import read_home_config
 

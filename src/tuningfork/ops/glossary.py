@@ -48,8 +48,17 @@ TERMS: tuple[Term, ...] = (
          "recording", aka=("agent",), see=("launch", "skill"), where="Connections page"),
     Term("server", "The inference server that answers model calls (llama-server, LM Studio). Each step records which "
          "one answered, and pass rates are kept apart per server.",
-         "recording", aka=("inference server", "upstream"), see=("proxy", "sliding-window cache"),
+         "recording", aka=("inference server", "upstream"), see=("proxy", "sliding-window cache", "local model"),
          where="Connections page; tuningfork servers"),
+    Term("local model", "What tuningfork is built for: a model you run yourself, with llama.cpp's server — on this "
+         "machine, on your network, or on a GPU you rent. tuningfork records an agent's calls through any server, the "
+         "agent's own key passed on. But what tuningfork runs itself — resamples, A/Bs, forks, batches, the server "
+         "check — sends no API key, so a hosted model's API refuses it; scoring and forking tokens need llama.cpp's "
+         "own endpoints; and a server of your own shows the settings it samples with and costs nothing per call, "
+         "where an experiment makes many. Where the proxy's server is on the internet and asks for a key, or is not "
+         "llama.cpp's, tuningfork says so wherever it shows the server.",
+         "recording", aka=("cloud model", "cloud API", "hosted model", "API key"), see=("server", "proxy"),
+         where="Connections page; tuningfork serve's first lines; tuningfork connections show"),
     Term("sliding-window cache", "Strongly recommended: start llama-server with --ctx-checkpoints 0, or with "
          "--swa-full, for any model with sliding-window attention layers, Gemma 2, 3 and 4 among them. Without one of "
          "them the server takes rollback checkpoints of those layers' cache, which cut a prompt into batches at "

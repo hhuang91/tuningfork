@@ -54,6 +54,7 @@ class LocalProxy:
             "launches": True,
             "server": getattr(state, "server", None),
             "server_problem": getattr(state, "server_problem", None),
+            "server_read": getattr(state, "server_read", None),
         }
         return ProxyStatus(url=self.url, home=self.home, max_inflight=state.gate.max_inflight, raw=raw)
 

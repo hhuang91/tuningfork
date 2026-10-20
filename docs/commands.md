@@ -534,7 +534,9 @@ evidence it is sent holds recorded prompts, answers and your skill. Its key is r
 
 The recording proxy: point a harness at `http://127.0.0.1:8787/v1`. It forwards to the inference
 server, records every call, serves the web UI and the MCP route, and runs the jobs the web UI and
-agents start. [Setup](setup.md#start-tuningfork) lists its options.
+agents start. [Setup](setup.md#start-tuningfork) lists its options. Pointed at a hosted model's
+API, it says in its first lines that tuningfork is built for a model you run yourself, and what
+works there ([cloud models](setup.md#cloud-models)).
 
 ### `ui`
 
@@ -548,8 +550,10 @@ token alone; `--mcp` prints the MCP token, and `--header-json` the header an MCP
 
 ### `connections show`, `connections switch`, `connections harness`, `connections check`
 
-- `show` — the server the proxy forwards to, what was measured of it, and the harnesses found.
+- `show` — the server the proxy forwards to, what was measured of it, and the harnesses found;
+  for a hosted model's API, that tuningfork is built for a model you run yourself.
 - `switch <url>` — points the proxy at another server, while nothing is using it (`--dry-run`).
+  A hosted API that asks for a key can be switched to, for recording; the plan says what it is.
 - `harness <name> --executable <path>` — names the program a harness runs as, kept in the
   recordings folder and never in the harness's own configuration (`--reset`: the one on `PATH`).
 - `check` — measures what the harnesses and the experiments need of the server: tool calls in a

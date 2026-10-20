@@ -150,6 +150,39 @@ def address(url: str) -> tuple[str, int]:
     return host, port
 
 
+def on_internet(url: str, *, resolve: Any = None) -> bool | None:
+    """Whether the server at `url` is out on the internet: every address its host resolves to
+    is a public one — not this machine, a private network, or a VPN's shared range (a GPU of
+    one's own reached over Tailscale is not). None when the host does not resolve."""
+    import socket
+
+    host, port = address(url)
+    try:
+        found = {info[4][0] for info in (resolve or socket.getaddrinfo)(host, port, type=socket.SOCK_STREAM)}
+    except (OSError, UnicodeError, ValueError):
+        return None
+    addresses = []
+    for text in found:
+        try:
+            ip = ipaddress.ip_address(str(text).split("%", 1)[0])
+        except ValueError:
+            return None
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        addresses.append(ip)
+    return all(ip.is_global for ip in addresses) if addresses else None
+
+
+async def find_on_internet(url: str, *, timeout: float = 5.0) -> bool | None:
+    """`on_internet` off the event loop, given up on after `timeout` seconds."""
+    import asyncio
+
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(on_internet, url), timeout)
+    except asyncio.TimeoutError:
+        return None
+
+
 def check_endpoint(url: str, *, home: Path | None = None, purpose: str = "tuningfork") -> str:
     """`url`, unless it would reach a protected endpoint — then a refusal saying how the
     list is changed."""

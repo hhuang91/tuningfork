@@ -18,7 +18,7 @@ from tuningfork.harness import ClaudeCodeAdapter, HermesAdapter
 from tuningfork.ops import OperationError
 from tuningfork.ops.connections import adapter_for, detect_harnesses, preflight, set_override
 from tuningfork.proxy.app import create_app
-from tests.helpers import PROPS, until
+from tests.helpers import PROPS, as_response, until
 from tests.mock_server import MockServer, MockTurn
 
 API = "/_tuningfork/api"
@@ -404,6 +404,154 @@ def test_what_a_check_never_measured_rules_out_nothing():
         "the chat template is not one tuningfork reads raw output of)"
     )
     assert both["logprobs"] is None
+
+
+# --- a server on the internet --------------------------------------------------------------------
+
+
+def keyless(request: httpx.Request) -> httpx.Response:
+    """A hosted model API asked without a key: refused under /v1, and nothing of llama.cpp's."""
+    if request.url.path.startswith("/v1/"):
+        return httpx.Response(401, json={"type": "error", "error": {"type": "authentication_error",
+                                                                    "message": "x-api-key header is required"}})
+    return httpx.Response(404, json={"type": "error", "error": {"type": "not_found_error", "message": "Not Found"}})
+
+
+def test_a_read_of_the_server_says_whether_it_wants_a_key_and_has_props(mock_server):
+    from tuningfork.proxy.recorder import read_upstream
+
+    async def read(transport):
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await read_upstream(client, "http://upstream.test")
+
+    hosted = asyncio.run(read(httpx.MockTransport(keyless)))
+    assert (hosted.asks_key, hosted.props) == (True, False)
+    assert hosted.problem == "it answered 401: x-api-key header is required"
+    # Loading is no answer to whether it has /props: nothing is greyed for it meanwhile.
+    loading = asyncio.run(read(httpx.MockTransport(
+        lambda request: httpx.Response(503, json={"error": {"code": 503, "message": "Loading model"}}))))
+    assert (loading.asks_key, loading.props) == (False, None)
+    mock_server.props = PROPS
+    llama = asyncio.run(read(httpx.ASGITransport(app=mock_server.app)))
+    assert (llama.asks_key, llama.props, llama.problem) == (False, True, None)
+
+
+@pytest.mark.parametrize(("read", "headline"), [
+    ({"internet": True, "asks_key": True, "props": False}, "This server is on the internet and asks for an API key."),
+    ({"internet": True, "asks_key": False, "props": False}, "This server is on the internet, and is not llama.cpp's."),
+    ({"internet": True, "asks_key": False, "props": True}, None),  # llama.cpp on a GPU one rents
+    ({"internet": False, "asks_key": True, "props": False}, None),  # a server nearby that wants a key
+    ({"internet": None, "asks_key": True, "props": False}, None),  # where it is, unknown
+    (None, None),
+])
+def test_the_reminder_is_for_a_hosted_model_api(read, headline):
+    from tuningfork.ops.connections import reminder
+
+    found = reminder(read)
+    assert (found or {}).get("headline") == headline
+    if found:
+        assert "built for a model you run yourself" in found["body"] and "sends its own key" in found["body"]
+
+
+def test_a_hosted_model_api_is_said_to_be_one_and_records_all_the_same(tmp_path, monkeypatch):
+    """Asked for (2026-10-20): most agents run on a cloud model's API, and tuningfork is built for
+    a model run oneself. Pointed at one, it says so where the server is shown — refusing nothing a
+    harness sends through it, its own key passed on — and greys what cannot run there."""
+    from tuningfork import endpoints
+    from tuningfork.control import ControlClient, ControlError
+    from tests.helpers import serving
+
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    monkeypatch.setattr(endpoints, "on_internet", lambda url, **_: True)
+    seen = []
+    refused_without_key = {"type": "error", "error": {"type": "authentication_error", "message": "x-api-key header is required"}}
+
+    async def chat(request):
+        if request.headers.get("x-api-key") != "the agent's":
+            return JSONResponse(refused_without_key, status_code=401)
+        seen.append(request.headers["x-api-key"])
+        return JSONResponse(as_response({"role": "assistant", "content": "hi"}))
+
+    async def models(request):
+        return JSONResponse(refused_without_key, status_code=401)
+
+    # A real app, not a mock transport: the proxy streams what it forwards. Anything else is a 404.
+    hosted = Starlette(routes=[Route("/v1/chat/completions", chat, methods=["POST"]), Route("/v1/models", models)])
+    upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=hosted))
+    app = create_app(Settings(upstream_base_url="https://api.example.com", home=tmp_path / "home"), client=upstream)
+    try:
+        with serving(app) as url, ControlClient(url) as client:
+            with pytest.raises(ControlError) as refused:
+                client.submit("server-check", {})  # which reads the server first
+            shown = client.connections()["server"]
+            status = httpx.get(f"{url}/_tuningfork/health", timeout=5).json()
+            answered = httpx.post(f"{url}/v1/chat/completions", headers={"x-api-key": "the agent's"}, timeout=10,
+                                  json={"model": "m", "messages": [{"role": "user", "content": "hi"}]})
+            elsewhere = client.switch_upstream("https://api.other.example.com", dry_run=True)
+    finally:
+        app.state.recorder.store.close()
+        asyncio.run(upstream.aclose())
+
+    assert shown["reminder"]["headline"] == "This server is on the internet and asks for an API key."
+    assert shown["read"] == {"asks_key": True, "props": False, "internet": True}
+    assert status["server_read"] == shown["read"]
+    # Up and refusing tuningfork: not "start it".
+    assert refused.value.error["code"] == "asks_key" and "asks for an API key" in refused.value.error["message"]
+    # No /props, checked or not: scoring and forking are greyed; nothing measured the logprobs.
+    assert shown["token_work"] == {"score": "Scoring an answer needs llama.cpp's server: this one has no /props",
+                                   "forking": "Forking tokens needs llama.cpp's server: this one has no /props",
+                                   "logprobs": None}
+    # The agent's calls go through, with the agent's own key.
+    assert answered.status_code == 200 and seen == ["the agent's"]
+    # Another such server can be switched to, as `serve --upstream` takes one, and the plan says what it is.
+    assert elsewhere["reminder"]["headline"] == shown["reminder"]["headline"]
+
+
+def test_a_server_nearby_or_a_rented_llama_cpp_is_said_nothing_of(tmp_path, monkeypatch, mock_server):
+    from tuningfork import endpoints
+    from tuningfork.control import ControlClient
+    from tests.helpers import serving
+
+    mock_server.props = PROPS
+    upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_server.app))
+    for internet in (False, True):
+        monkeypatch.setattr(endpoints, "on_internet", lambda url, internet=internet, **_: internet)
+        app = create_app(Settings(upstream_base_url="http://upstream.test", home=tmp_path / f"home-{internet}"),
+                         client=upstream)
+        try:
+            with serving(app) as url, ControlClient(url) as client:
+                job = client.submit("server-check", {})
+                client.wait_for_job(job["id"], timeout=30, poll=0.1)
+                shown = client.connections()["server"]
+        finally:
+            app.state.recorder.store.close()
+        assert shown["read"]["internet"] is internet and shown["reminder"] is None
+        # Its /props answered: what greys scoring here is what the check measured, not that.
+        assert "no /props" not in (shown["token_work"]["score"] or "")
+    asyncio.run(upstream.aclose())
+
+
+def test_the_server_is_read_before_serve_starts_only_on_the_internet(monkeypatch):
+    from tuningfork import endpoints
+    from tuningfork.ops.connections import read_reminder
+
+    asked = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.path)
+        return keyless(request)
+
+    async def read(internet):
+        monkeypatch.setattr(endpoints, "on_internet", lambda url, **_: internet)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(answer)) as client:
+            return await read_reminder("https://api.example.com", client=client)
+
+    assert asyncio.run(read(False)) is None and asked == []
+    assert asyncio.run(read(True))["headline"] == "This server is on the internet and asks for an API key."
+    assert asked == ["/v1/models", "/props"]
 
 
 def test_the_restart_command_keeps_what_the_proxy_was_started_with(tmp_path):

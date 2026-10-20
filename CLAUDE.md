@@ -302,6 +302,14 @@ chat endpoint's own logprobs, which a resample's kept tokens need — and token 
 server without is refused before anything is sent (`ops.connections.token_work`, in the job
 kinds' prepare: the web UI, MCP), greyed in the web UI with the same words; what was never
 measured refuses nothing, and a resample that asked for tokens and got none says so in a note.
+The proxy's own read of its server, every half minute, notes what its identity leaves out
+(`recorder.ServerRead`: a key asked for — 401/403 — and llama.cpp's `/props`) and where it is
+(`endpoints.on_internet`: every address public), in `server_read`. A server without `/props`
+has scoring and forking greyed checked or not; one on the internet that asks for a key, or is
+not llama.cpp's, is said to be a hosted model's API (`ops.connections.reminder`) wherever the
+server is shown — serve's first lines, Connections and its switch, the status strip, the Guide,
+`connections show`, MCP's `server_status` — and nothing is refused for it: tuningfork is built
+for a model run oneself, and records a harness's calls through any server, its own key passed on.
 `tests/test_real_server.py` re-measures what all this stands
 on against a real server: `TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run pytest -m
 real_server tests/test_real_server.py`; skipped otherwise.
