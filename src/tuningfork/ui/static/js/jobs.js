@@ -16,15 +16,15 @@ export const KIND_LABEL = {
   fork: "Fork",
   batch: "Batch",
   chain: "Chain",
-  "server-check": "Server check",
+  "server-check": "Server test",
   "check-trial": "Check tried",
   "hold-sample": "Held call sampled",
   "hold-console": "Question at a held call",
   tokens: "Tokens scored",
   "forking-tokens": "Forking tokens",
   propose: "Edits proposed",
-  screen: "Proposals screened",
-  validate: "Edit validated",
+  screen: "Proposals tested at a step",
+  validate: "Full test runs of an edit",
 };
 
 const STATE_TONE = { queued: "muted", running: "accent", done: "muted", failed: "warn", cancelled: "muted", interrupted: "warn" };
@@ -134,7 +134,7 @@ export function logLine(entry) {
   const at = h("span", { class: "faint mono small" }, `#${entry.seq}`);
   switch (kind) {
     case "experiment":
-      return h("div", { class: "log-line" }, at, chip(data.arm && data.arm !== "original" ? `${data.arm} arm` : "experiment", "muted"),
+      return h("div", { class: "log-line" }, at, chip(data.arm && data.arm !== "original" ? `${data.arm} wording` : "experiment", "muted"),
         h("a", { class: "mono", href: `#/experiments/${data.id}` }, short(data.id)),
         h("span", { class: "muted" }, `${data.n} sample${data.n === 1 ? "" : "s"}${data.reach === "end" ? ", each run to the end" : ""}`));
     case "sample":

@@ -48,6 +48,9 @@ export const short = (id) => (id ? String(id).slice(0, 8) : "—");
 export const count = (n) => Number(n || 0).toLocaleString();
 export const percent = (x) => `${Math.round(x * 100)}%`;
 export const plural = (n, word) => `${count(n)} ${word}${n === 1 ? "" : "s"}`;
+
+/** A phrase begun with a capital, for where it opens a label or a sentence. */
+export const capital = (text) => (text ? `${text[0].toUpperCase()}${text.slice(1)}` : text);
 export const pretty = (value) => JSON.stringify(value, null, 2);
 
 export function when(seconds) {
@@ -262,11 +265,11 @@ export function outcome(o) {
 
 /** A run recorded live, marked as what it is where a label would name it. */
 export const recordedLive = () =>
-  chip("recorded live", "muted", "Recorded through the proxy as it happened: no batch launched it, and it was not imported");
+  chip("recorded live", "muted", "Recorded through the proxy as it happened: tuningfork did not start it, and it was not imported");
 
 /** A run imported from a conversation had elsewhere, marked as a live one is. */
 export const importedRun = () =>
-  chip("imported", "muted", "Imported from a conversation an agent had elsewhere: each step rebuilt from the chat, nothing launched");
+  chip("imported", "muted", "Imported from a conversation an agent had elsewhere: each step rebuilt from the chat, no harness started");
 
 export function verdict(result) {
   if (!result) return null;

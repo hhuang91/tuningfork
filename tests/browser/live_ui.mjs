@@ -91,7 +91,7 @@ try {
   await until(() => page.eval(`document.querySelector(".hold-head .chip")?.textContent === "before the model"`), "the request hold to render");
   await page.eval(`(() => { for (const d of document.querySelectorAll(".editor details.msg")) d.open = true; return true; })()`);
   await page.type(`document.querySelector(".editor details.msg textarea")`, `e2e-marker ${nonce}: say hello instead`);
-  await page.click("Step");
+  await page.click("Step to the answer");
   await until(() => page.eval(`document.querySelector(".hold-head .chip")?.textContent === "after the model"`), "the stepped response hold");
   check((await page.text(".hold-head .reason")) === "stepped here from before the call", "stepping stops again after the model");
   await page.click("Continue");

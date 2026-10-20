@@ -35,10 +35,10 @@ export async function homeView(root, _, scope) {
       panel("How the pieces fit", [
         mapView(terms),
         h("div", { class: "map-notes" },
-          h("p", null, h("strong", null, "Record. "), "A scenario holds a skill's tasks and a check. A batch job launches the harness once per run, each in a fresh workspace; the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way, and a chat it already had can be imported as a run. Any run can be made a scenario: its runs continue its conversation."),
-          h("p", null, h("strong", null, "Measure. "), "At any step, an experiment sends the step's exact request again, with everything before it held fixed: the model's behaviours there, counted. Run to the end, each sample is a fork of the run, judged by the task's check."),
-          h("p", null, h("strong", null, "Improve. "), "A refinement declares what should happen at a step, then screens small edits against the original wording. A survivor is validated with full runs — held-out tasks included — and written back only when a person approves it: a new version of the skill, measured again from the top."),
-          h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a screen, a validation, each run inside `tuningfork serve`. A job is a record of the work; what it made — runs, experiments — is kept on its own."),
+          h("p", null, h("strong", null, "Record. "), "A scenario is a task file kept here: a skill's tasks, each with its check. A batch starts the harness once for each run, in a fresh folder, and the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way, and a chat it already had can be imported as a run. Any run can become a scenario, whose runs continue its conversation."),
+          h("p", null, h("strong", null, "Measure. "), "At any step, an experiment sends the step's exact request again, with everything before it held fixed, and counts what the model does there. To judge each try by whether the whole run then passes, each sample is a fork of the run: replayed to the step, live after it, and judged by the task's check."),
+          h("p", null, h("strong", null, "Improve. "), "A refinement declares what to count at a step, then tests small edits there against the original wording. An edit that beats the original gets full test runs, held-out tasks included, and is written back only when a person approves it: a new version of the skill, measured again from the top."),
+          h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a test at a step, full test runs, each run inside `tuningfork serve`. A job is a record of the work. What it made, runs and experiments, is kept on its own."),
           colours()),
       ]),
       panel("What do you want to find out?", h("div", { class: "workflows" }, WORKFLOWS.map(workflowCard))),
@@ -131,24 +131,24 @@ function setup(runs, scenarios, connections) {
         : server.problem
         ? [h("span", { class: "warn-text" }, server.problem), " — ", h("a", { href: "#/connections" }, "Connections")]
         : identity.id ? ["answering at ", h("span", { class: "mono" }, server.url || ""), models ? [", with ", h("span", { class: "mono" }, models)] : null]
-          : ["model calls go to ", h("span", { class: "mono" }, server.url || "the upstream"), ", not read yet — ", h("a", { href: "#/connections" }, "check it")],
+          : ["model calls go to ", h("span", { class: "mono" }, server.url || "the upstream"), ", not read yet — ", h("a", { href: "#/connections" }, "test it")],
     },
     {
       done: harnesses.length > 0,
-      title: "A harness to launch",
+      title: "A harness tuningfork can start",
       body: harnesses.length
         ? ["found: ", harnesses.map((each) => each.name).join(", ")]
         : ["none found on PATH — ", h("a", { href: "#/connections" }, "name its executable"), ", or point your own harness at ", h("code", null, `${location.origin}/v1`)],
     },
     {
-      // A scenario, or a spec on disk whose task has been run.
+      // A scenario, or a task file on disk whose task has been run.
       done: Boolean(scenarios?.length || tasks.length),
       title: "A task to run",
       body: scenarios?.length
         ? [plural(scenarios.length, "scenario"), " — ", h("a", { href: "#/scenarios" }, "Scenarios")]
         : tasks.length
-          ? ["run from a spec on disk: ", h("span", { class: "mono" }, tasks.join(", ")), " — import it on ", h("a", { href: "#/scenarios" }, "Scenarios"), " to edit it here"]
-          : ["write one — its prompt, input files and check — as a ", h("a", { href: "#/scenarios/new" }, "new scenario"), ", or import an evals.json on ", h("a", { href: "#/scenarios" }, "Scenarios")],
+          ? ["run from a task file on disk: ", h("span", { class: "mono" }, tasks.join(", ")), " — add it on ", h("a", { href: "#/scenarios" }, "Scenarios"), " to edit it here"]
+          : ["write one — its prompt, input files and check — as a ", h("a", { href: "#/scenarios/new" }, "new scenario"), ", or add a task file you have on ", h("a", { href: "#/scenarios" }, "Scenarios")],
     },
     {
       done: Boolean(runs?.length),
@@ -180,11 +180,11 @@ function serverNote() {
   return h("div", { class: "banner banner-warn" }, h("strong", null, "Strongly recommended: "), "start llama-server with ",
     h("code", null, "--no-cache-prompt"), " and, for a model with sliding-window layers (Gemma 2, 3, 4), ",
     h("code", null, "--ctx-checkpoints 0"), " or ", h("code", null, "--swa-full"),
-    ". Without the first, a step's behaviour can depend on what the server ran before: Claude Code's samples and every fork share one cached state, and a screen favours its proposals (",
+    ". Without the first, a step's behaviour can depend on what the server ran before: Claude Code's samples and every fork share one cached state, and a test at a step favours its proposals (",
     h("a", { href: "#/words?term=prompt%20cache" }, "why"),
     "). Without the second, an answer scores differently on the raw endpoint than on the chat one it was sampled on (",
     h("a", { href: "#/words?term=sliding-window" }, "why"),
-    "). The server check measures prompt reuse; llama-server reports neither --ctx-checkpoints nor --swa-full.");
+    "). The server test measures prompt reuse; llama-server reports neither --ctx-checkpoints nor --swa-full.");
 }
 
 // --- the map --------------------------------------------------------------------------------------
@@ -211,16 +211,16 @@ const NODES = [
   ["skill", "Skill", "its SKILL.md, versioned", 0, 0, "#/skills"],
   ["scenario", "Scenario", "tasks and a check", 1, 0, "#/scenarios"],
   ["job", "Job", "a batch, run in serve", 2, 0, "#/jobs"],
-  ["launch", "Launch", "the harness, started fresh", 3, 0, "#/runs"],
+  ["launch", "Harness", "started fresh for each run", 3, 0, "#/runs"],
   ["run", "Run", "its steps, recorded", 4, 0, "#/runs"],
   ["step", "Step", "one model call", 4, 1, "#/runs"],
   ["experiment", "Experiment", "resample · A/B · tokens", 3, 1, "#/experiments"],
   ["sample", "Samples", "behaviours, counted", 2, 1, "#/experiments"],
   ["fork", "Forks", "samples run to the end", 1, 1, "#/experiments"],
-  ["refinement", "Refinement", "a target, declared first", 4, 2, "#/refine"],
+  ["refinement", "Refinement", "what to count, declared first", 4, 2, "#/refine"],
   ["proposal", "Proposals", "small, exact edits", 3, 2, "#/refine"],
-  ["screen", "Screen", "each against the original", 2, 2, "#/refine"],
-  ["validation", "Validation", "full runs and held-out tasks", 1, 2, "#/refine"],
+  ["screen", "Test at a step", "each against the original", 2, 2, "#/refine"],
+  ["validation", "Full test runs", "held-out tasks included", 1, 2, "#/refine"],
   ["approval", "Approval", "a person writes it back", 0, 2, "#/refine"],
 ];
 const EDGES = [
@@ -253,9 +253,11 @@ function mapView(terms) {
   });
   const nodes = NODES.map(([id, label, sub, , row, href]) => {
     const { x, y } = at.get(id);
-    const term = terms.get(label.toLowerCase()) || terms.get(id);
+    const term = terms.get(id) || terms.get(label.toLowerCase());
+    // The plain label first, the glossary's word after it where the two differ.
+    const named = term && !label.toLowerCase().startsWith(term.term.toLowerCase()) ? `${label} (${term.term})` : label;
     return s("a", { href, class: `map-node lane-${row}` },
-      s("title", null, term ? `${label}: ${term.means}` : label),
+      s("title", null, term ? `${named}: ${term.means}` : label),
       s("rect", { x, y, width: W, height: H, rx: 8 }),
       s("text", { class: "map-label", x: x + 12, y: y + 24 }, label),
       s("text", { class: "map-sub", x: x + 12, y: y + 43 }, sub));
@@ -298,14 +300,14 @@ const WORKFLOWS = [
   },
   {
     question: "Would other wording change what the model does here?",
-    answer: "An A/B at the step: your edit of the skill against the original, toward a target declared before anything is sampled.",
-    steps: ["At the step: A/B a wording…", "Edit the text; declare the target — a behaviour's letter, a pattern, or conditions in words", "Read the shift with its p-value; without a target it is only exploratory"],
+    answer: "An A/B at the step: your edit of the skill against the original wording, counting what you chose before anything is sampled.",
+    steps: ["At the step: A/B a wording…", "Edit the text, and choose what to count: a behaviour's letter, a pattern, or conditions in words", "Read the shift, and whether it is beyond chance; with nothing declared, every behaviour is compared"],
     cli: "tuningfork ab <run> <step> --variant SKILL.v2.md --target A", href: "#/runs", go: "Choose a run",
   },
   {
     question: "Does a change at the step carry through to the end?",
     answer: "Each sample a fork of the run — replayed up to the step, live after it — and judged by the task's check.",
-    steps: ["In Resample… or A/B a wording…: Reach → Each to the end", "Or Fork from here… to follow one fork, breakpoints on"],
+    steps: ["In Resample… or A/B a wording…: Judge each try by → whether the whole run then passes", "Or Fork from here… to follow one fork, breakpoints on"],
     cli: "tuningfork ab <run> <step> --variant SKILL.v2.md --to-end", href: "#/runs", go: "Choose a run",
   },
   {
@@ -316,14 +318,14 @@ const WORKFLOWS = [
   },
   {
     question: "How do I fix the skill?",
-    answer: "A refinement: the target declared first, small edits proposed, each screened against the original, a survivor validated with full runs — and approved by you.",
-    steps: ["At the step: Refine the skill here… — declare the target", "Propose edits: your own, an agent's over MCP, or the built-in proposer's", "Screen them, validate a survivor, approve it once the gate is met"],
+    answer: "A refinement: what to count declared first, small edits proposed and each tested at the step against the original, an edit that beats it given full test runs — and approved by you.",
+    steps: ["At the step: Refine the skill here… — choose what to count", "Propose edits: your own, an agent's over MCP, or the proposing model's", "Test them at the step, give the one that beats the original full test runs, and approve it once the approval checks pass"],
     cli: "tuningfork refine start <run> <step> --target-rules '[…]'", href: "#/refine", go: "Refine",
   },
   {
     question: "What does my own agent do as I use it?",
     answer: "Point it at the proxy and use it as usual: each call it makes is recorded as a step of a run — and a breakpoint holds any call, before the model sees it or after it answers, for you to look at or change.",
-    steps: ["Live: set your agent's base URL to the proxy, and use it", "Its runs appear on Runs, recorded live: work from any step", "Live → Add a breakpoint; what it holds, edit, continue, step or drop"],
+    steps: ["Live: set your agent's base URL to the proxy, and use it", "Its runs appear on Runs, recorded live: work from any step", "Live → Add a breakpoint; what it holds, edit, then continue, step on or drop"],
     cli: "tuningfork break add --tool write_file", href: "#/live", go: "Live",
   },
 ];
@@ -348,7 +350,8 @@ function glossaryPanel(words, initial) {
   const draw = () => {
     const wanted = filter.value.trim().toLowerCase();
     const matches = (term) => !wanted || term.term.toLowerCase().includes(wanted)
-      || term.aka.some((aka) => aka.toLowerCase().includes(wanted)) || term.means.toLowerCase().includes(wanted);
+      || term.aka.some((aka) => aka.toLowerCase().includes(wanted)) || term.means.toLowerCase().includes(wanted)
+      || (term.ui || "").toLowerCase().includes(wanted);
     rows.clear();
     const groups = words.groups.map((group) => {
       const found = words.terms.filter((term) => term.group === group.id && matches(term));
@@ -356,7 +359,9 @@ function glossaryPanel(words, initial) {
       return [h("tr", { class: "group-row" }, h("th", { colspan: "2" }, group.title)),
         found.map((term) => {
           const row = h("tr", { class: "term-row" },
+            // The precise word first, as the terminal and the docs say it; then what these pages call it.
             h("td", { class: "term" }, h("strong", null, term.term),
+              term.ui ? h("div", { class: "small" }, "on these pages: ", h("em", null, term.ui)) : null,
               term.aka.length ? h("div", { class: "faint small" }, term.aka.join(", ")) : null),
             h("td", null, term.means,
               term.where ? h("div", { class: "muted small" }, "Where: ", term.where) : null,

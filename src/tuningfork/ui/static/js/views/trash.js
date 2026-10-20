@@ -6,6 +6,7 @@ import { guard } from "../auth.js";
 import { ago, chip, h, loading, panel, plural, replace, short, when } from "../dom.js";
 import { live } from "../live.js";
 import { citedText, goesText, purgeButton, restoreButton } from "../trash.js";
+import { kindName } from "./experiments.js";
 
 export async function trashView(root) {
   replace(root, loading());
@@ -35,7 +36,7 @@ export async function trashView(root) {
         `#/runs/${run.id}`, run.trashed_at, run.goes)))) : null,
     found.experiments.length ? panel(`Experiments · ${found.experiments.length}`, table(found.experiments.map((experiment) =>
       row("experiment", experiment.id,
-        `${experiment.arms > 1 ? "A/B" : experiment.kind} at run ${short(experiment.run_id || "")} step ${experiment.step_idx ?? "?"}, ${plural(experiment.samples, "sample")}`,
+        `${experiment.arms > 1 ? "A/B" : kindName(experiment)} at run ${short(experiment.run_id || "")} step ${experiment.step_idx ?? "?"}, ${plural(experiment.samples, "sample")}`,
         experiment.arms > 1 ? null : `#/experiments/${experiment.id}`, experiment.trashed_at, experiment.goes)))) : null,
     found.jobs.length ? panel(`Jobs · ${found.jobs.length}`, table(found.jobs.map((job) =>
       row("job", job.id, `${job.kind}, ${job.status}`, `#/jobs/${job.id}`, job.trashed_at, null)))) : null,
@@ -51,7 +52,7 @@ export async function trashView(root) {
   replace(root,
     h("div", { class: "page-head" },
       h("div", null, h("h1", null, "Trash"),
-        h("p", { class: "sub" }, "Set aside, out of every list and pass rate, and back as it went when restored. Deleting from here is for good: a run goes with what is tied to it — the experiments at its steps, their samples, the forks that replayed it — and a refinement with what it made: its screens, its validations' runs, its proposals' saved texts.")),
+        h("p", { class: "sub" }, "Set aside, out of every list and pass rate, and back as it went when restored. Deleting from here is for good: a run goes with what is tied to it — the experiments at its steps, their samples, the forks that replayed it — and a refinement with what it made: its tests at a step, its full test runs, its proposals' saved texts.")),
       total && live.mode === "live" ? h("div", { class: "actions" }, emptyButton(total, reload)) : null),
     total ? h("div", { class: "stack" }, sections) : h("div", { class: "panel empty" }, h("h2", null, "The trash is empty"),
       h("p", { class: "muted" }, "Runs, experiments, jobs, scenarios and refinements moved to the trash wait here until restored or deleted for good.")));

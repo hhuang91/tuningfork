@@ -75,14 +75,14 @@ export async function runsView(root, _params, scope) {
   }
 
   function taskSection(summary, members) {
-    const title = summary.task_id ? h("span", { class: "mono" }, summary.task_id) : h("span", { class: "muted" }, "No task — recorded ad hoc");
+    const title = summary.task_id ? h("span", { class: "mono" }, summary.task_id) : h("span", { class: "muted" }, "No task");
     const conditions = summary.conditions || [];
     // Runs under another wording, model or harness are another sample: each gets its own
     // rate, and the task as a whole none.
     const split = summary.task_id && conditions.length > 1;
     const meta = [h("span", { class: "muted" }, plural(summary.runs, "run"))];
     if (split) {
-      meta.push(chip(`${conditions.length} conditions`, "accent", "Different wordings, models or harnesses. Each has its own pass rate below; pooling them would measure none of them."));
+      meta.push(chip(`${conditions.length} set-ups`, "accent", "Different wordings, models or harnesses. Each has its own pass rate below; pooling them would measure none of them."));
     } else {
       meta.push(...rateMeta(summary));
     }
@@ -133,8 +133,8 @@ export async function runsView(root, _params, scope) {
     const label = [
       condition.harness ? chip(condition.harness, "muted") : null,
       condition.model ? h("span", { class: "mono small" }, condition.model) : null,
-      h("span", { class: "mono small", title: "A fingerprint of the skill files these runs were given" },
-        condition.skill_version ? `skill ${condition.skill_version}` : "skill not recorded"),
+      h("span", { class: "mono small", title: "The skill version these runs were given: a fingerprint of its files" },
+        condition.skill_version ? `skill version ${condition.skill_version}` : "skill not recorded"),
       file ? chip(`SKILL.md from ${file}`, "skill", condition.skill_file) : null,
     ];
     return h(
@@ -193,7 +193,7 @@ export async function runsView(root, _params, scope) {
         // Nothing launched it, and it was not imported: a harness's calls through the proxy.
         run.recorded === "live" ? recordedLive() : run.recorded === "imported" ? importedRun() : null,
         run.forked_from_run
-          ? chip(`fork @ ${run.forked_at_depth}`, "skill",
+          ? chip(`branch @ ${run.forked_at_depth}`, "skill",
             `Branched from run ${short(run.forked_from_run)}: the two share their first ${plural(run.forked_at_depth, "message")}, and part there`)
           : null),
       h("span", { class: "muted" }, plural(run.step_count, "step")),
@@ -256,8 +256,8 @@ function emptyState() {
       ? h("ol", { class: "setup" },
           h("li", null, "Point your harness's OpenAI-compatible base URL at this proxy: ", h("code", { class: "mono" }, base),
             ". Every model call it makes is recorded as a step."),
-          h("li", null, "Or let tuningfork launch it: ", h("a", { href: "#/batch" }, "run a task"),
-            " from its evals.json, each run in a fresh workspace and home."),
+          h("li", null, "Or let tuningfork start it: ", h("a", { href: "#/batch" }, "run a task"),
+            " from its task file, each run in a fresh workspace and home."),
           h("li", null, "Then find where runs diverge, and resample or A/B a wording at that step."))
       : h("p", null, "This store has no recordings. Start `tuningfork serve` and run a harness through it."),
   );

@@ -47,7 +47,7 @@ export function whereForm(task, { condition = null, screen = null } = {}) {
   }
 
   const form = h("form", { class: "stack", onsubmit: ask },
-    h("fieldset", { class: "target-picker" }, h("legend", null, screen ? "The question, asked of every fork, arm by arm" : "The question, asked of every run"),
+    h("fieldset", { class: "target-picker" }, h("legend", null, screen ? "The question, asked of every fork, wording by wording" : "The question, asked of every run"),
       h("label", { class: "target-choice" },
         h("input", { type: "radio", name: "where_kind", value: "file", checked: true }),
         h("span", null, h("strong", null, `Of what the ${of}s wrote`),
@@ -76,7 +76,7 @@ export function whereResult(found, { only = null, of = "run" } = {}) {
     h("p", null, h("strong", null, found.probe?.description || ""), h("span", { class: "muted small" }, `  asked of ${plural(asked, of)}`)),
     groups.length ? groups.map((group) => groupView(group, kind)) : h("p", { class: "muted" }, `No ${of} was asked.`),
     found.skipped?.length ? h("p", { class: "faint small" }, `Passed over: ${found.skipped.slice(0, 3).join("; ")}`) : null,
-    h("p", { class: "hint" }, "A lead to read, never a verdict: a split is said to go one way under p 0.2. Intervals are Wilson 95%."));
+    h("p", { class: "hint" }, "A lead to read, never a verdict. A split is said to go one way when chance would make one that large less than one time in five (p under 0.2). Intervals are 95%."));
 }
 
 function groupView(group, kind) {
@@ -100,8 +100,8 @@ function groupView(group, kind) {
 function splitWords(split) {
   if (split.p === null || split.p === undefined) return "Nothing to compare: that needs passing and failing runs.";
   return split.goes_with
-    ? `It goes with ${split.goes_with} (Fisher p = ${formatP(split.p)}).`
-    : `No split (Fisher p = ${formatP(split.p)}).`;
+    ? `It goes with ${split.goes_with} (p = ${formatP(split.p)}).`
+    : `No split (p = ${formatP(split.p)}).`;
 }
 
 function seenWords(group, kind) {

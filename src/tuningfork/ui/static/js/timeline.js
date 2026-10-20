@@ -17,7 +17,7 @@ import { startForm, startPanel } from "./start.js";
 import { banners, detailsPanel, skillsSummary, summaryStrip, toolsOffered, workspacePanel } from "./stepinfo.js";
 import { tokensPanel } from "./tokens.js";
 
-const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking tokens" };
+const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking tokens", screen: "Test at this step" };
 // With this many of the person's turns or more — a long session — the rail starts with all
 // but the last folded to their turn's line.
 const FOLD_FROM = 3;
@@ -120,7 +120,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return h("div", { class: "tl-tools" }, h("details", { class: "fold no-tools" },
       h("summary", null, "No tools recorded"),
       h("p", { class: "tl-note" }, imported.format === "hermes-export"
-        ? "Hermes's export keeps none, so each step was rebuilt without the ones the model was offered. Imported again with Tools from naming a run recorded through the same harness, its steps take that run's."
+        ? "Hermes's export keeps none, so each step was rebuilt without the ones the model was offered. Imported again, taking its tools from a run recorded through the same harness, its steps offer that run's."
         : "The file named none, so each step was rebuilt without any.")));
   }
 
@@ -663,7 +663,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       ["experiments here", step.experiments.length
         ? h("div", { class: "tl-experiments" }, step.experiments.map((experiment) =>
             h("a", { href: `#/experiments/${experiment.id}` },
-              chip(`${EXPERIMENT[experiment.kind] || experiment.kind}${experiment.reach === "end" ? " to the end" : ""} · ${experiment.samples}${experiment.n ? ` of ${experiment.n}` : ""}`,
+              chip(`${EXPERIMENT[experiment.kind] || experiment.kind}${experiment.reach === "end" ? `${experiment.kind === "screen" ? "," : ""} to the end` : ""} · ${experiment.samples}${experiment.n ? ` of ${experiment.n}` : ""}`,
                 experiment.status === "done" ? "accent" : "muted", experiment.target || ""))))
         : null],
     ]));
@@ -787,7 +787,7 @@ function verdictOf(run, launch, ended) {
     }
     if (!launch) {
       // How it came — recorded live, imported — its title's chip says.
-      return { headline: "No verdict", rail: "No verdict", detail: "No check ran: tuningfork did not launch this run." };
+      return { headline: "No verdict", rail: "No verdict", detail: "No check ran: tuningfork did not start this run." };
     }
     if (!launch.check) return { headline: "No verdict", rail: "No verdict", detail: "The task defines no check." };
     return ended

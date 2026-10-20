@@ -6,6 +6,14 @@ import { api, enc } from "./api.js";
 import { chip, count, firstLine, foldPanel, h, kv, millis, plural, pretty, replace, short } from "./dom.js";
 import { fileChip, skillAnchor } from "./payload.js";
 
+// How a call ended, by the finish reason a response gives (the terminal prints the reason).
+const ENDED = {
+  tool_calls: "with a tool call",
+  stop: "on its own",
+  length: "at the output limit",
+  content_filter: "at a content filter",
+};
+
 export function summaryStrip(step) {
   const usage = step.usage || {};
   const item = (label, value) =>
@@ -14,8 +22,10 @@ export function summaryStrip(step) {
     "div",
     { class: "summary-strip" },
     item("model", step.model ? h("span", { class: "mono" }, step.model) : null),
-    item("wire", step.wire && step.wire !== "openai-chat" ? h("span", { class: "mono" }, step.wire) : null),
-    item("finish", step.finish_reason),
+    item("API format", step.wire && step.wire !== "openai-chat" ? h("span", { class: "mono" }, step.wire) : null),
+    item("ended", step.finish_reason
+      ? h("span", { title: `finish reason: ${step.finish_reason}` }, ENDED[step.finish_reason] || step.finish_reason)
+      : null),
     item("tokens", usage.prompt_tokens !== undefined ? `${count(usage.prompt_tokens)} in → ${count(usage.completion_tokens)} out` : null),
     item("first token", step.timings?.ttft_ms != null ? millis(step.timings.ttft_ms) : null),
     item("total", step.timings?.total_ms != null ? millis(step.timings.total_ms) : null),
@@ -55,12 +65,13 @@ export function banners(step, { original = null } = {}) {
   const request = step.edits?.request;
   if (request) {
     const positions = step.edited_messages ?? request.messages ?? [];
+    // Which messages, by number, on hover: the context below marks each one edited.
     const what = [
-      positions.length ? `message${positions.length === 1 ? "" : "s"} ${positions.map((i) => `#${i}`).join(", ")}` : null,
+      positions.length ? h("span", { title: positions.map((i) => `message #${i}`).join(", ") }, plural(positions.length, "message")) : null,
       ...(request.fields || []).filter((field) => field !== "messages"),
-    ].filter(Boolean).join("; ");
+    ].filter(Boolean).flatMap((part, index) => (index ? ["; ", part] : [part]));
     out.push(h("div", { class: "banner banner-edit" }, h("strong", null, "The context was edited before the model saw it"),
-      ` (${what}). This step records what the model saw — `, compare("switch to “What the harness sent” to compare.")));
+      " (", what, "). This step records what the model saw — ", compare("switch to “What the harness sent” to compare.")));
   }
   const response = step.edits?.response;
   const undelivered = step.error && step.error.startsWith("tuningfork could not deliver");
@@ -93,7 +104,7 @@ export function skillsSummary(spans, recorded, { anchor = skillAnchor } = {}) {
       h("div", { class: "skill-ref" },
         chip("skill", "skill"),
         h("a", { href: `#${anchor(span)}`, onclick: (event) => { event.preventDefault(); jumpTo(anchor(span)); } }, span.name),
-        h("span", { class: "muted small" }, span.source === "preloaded" ? `preloaded in message #${span.message_index}` : `loaded by a tool, message #${span.message_index}`),
+        h("span", { class: "muted small", title: `message #${span.message_index}` }, span.source === "preloaded" ? "preloaded" : "loaded by a tool call"),
         fileChip(span, recorded),
         h("span", { class: "faint small" }, plural(span.lines, "line")))),
   );

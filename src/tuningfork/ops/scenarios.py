@@ -172,13 +172,13 @@ def check_spec(data: Any, *, home: Path | str | None = None, name: str | None = 
         options = item.get("tuningfork") if isinstance(item.get("tuningfork"), dict) else {}
         if isinstance(options.get("check"), str) and options["check"].strip():
             checked.warnings.append(
-                f"eval {item.get('id', index)}: its check runs as a shell command in each run's "
+                f"task {item.get('id', index)}: its check runs as a shell command in each run's "
                 "workspace, as you — read it as you would a script"
             )
         for preloaded in options.get("skills") or []:
             if skill is not None and isinstance(preloaded, str) and preloaded != skill.name:
                 checked.warnings.append(
-                    f"eval {item.get('id', index)} preloads a skill called {preloaded!r}, and the "
+                    f"task {item.get('id', index)} preloads a skill called {preloaded!r}, and the "
                     f"skill folder is {skill.name!r}: the harness finds skills by folder name"
                 )
         context = options.get("context")
@@ -202,7 +202,7 @@ def check_spec(data: Any, *, home: Path | str | None = None, name: str | None = 
                         # Not a problem yet: a new scenario is saved before files go in.
                         # A batch refuses to start while an input is missing.
                         checked.warnings.append(
-                            f"eval {item.get('id', index)}: {source} has not been uploaded yet"
+                            f"task {item.get('id', index)}: {source} has not been uploaded yet"
                         )
     return checked
 

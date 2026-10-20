@@ -29,7 +29,7 @@ export async function jobsView(root, _, scope) {
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Jobs"),
       h("p", { class: "sub" }, live.mode === "live"
-        ? "Work the proxy is doing: started here or from a step, or with `tuningfork jobs` from a terminal. One background job runs at a time unless the proxy was started with --jobs."
+        ? "Work the proxy is doing: started here or from a step, or with `tuningfork jobs` from a terminal. One background job runs at a time, unless the proxy was started to run more."
         : "Work a proxy did, as it recorded it. Starting work needs a running proxy.")),
       startButton ? h("div", { class: "actions" }, startButton) : null),
     start,
@@ -248,7 +248,7 @@ function proposedView(result) {
     accepted.length
       ? h("ul", { class: "small" }, accepted.map((proposal) =>
           h("li", null, h("span", { class: "mono" }, short(proposal.id)),
-            ` — ${plural(proposal.changed, "line")} changed${proposal.duplicate ? " (proposed before: this proposer is added to it)" : ""}: `,
+            ` — ${plural(proposal.changed, "line")} changed${proposal.duplicate ? " (proposed before: whoever asked now is added to it)" : ""}: `,
             h("span", { class: "muted" }, proposal.proposers[proposal.proposers.length - 1]?.rationale || ""))))
       : h("p", { class: "muted" }, "Nothing it proposed could be kept."),
     rejected.length
@@ -269,13 +269,13 @@ function validatedView(result) {
     : h("span", { class: "muted" }, "not run");
   return panel("What it found", h("div", { class: "stack", style: { gap: "8px" } },
     kv([
-      ["forward", arms(result.forward)],
-      ["training", arms(result.training)],
+      ["forks", arms(result.forward)],
+      ["the task", arms(result.training)],
       ["held out", result.held_out.length ? `${result.held_out.join(", ")} — their verdicts are on the refinement's page` : "none"],
     ]),
     h("div", { class: "made" },
-      h("a", { class: "btn btn-primary", href: `#/refine/${enc(result.refinement)}` }, "The gate, in the refinement"))),
-    { meta: h("span", { class: "muted" }, `validation ${short(result.validation)}`) });
+      h("a", { class: "btn btn-primary", href: `#/refine/${enc(result.refinement)}` }, "The approval checks, in the refinement"))),
+    { meta: h("span", { class: "muted" }, `full test runs ${short(result.validation)}`) });
 }
 
 function madeView(job) {

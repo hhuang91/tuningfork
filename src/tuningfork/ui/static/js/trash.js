@@ -9,14 +9,14 @@ import { live } from "./live.js";
 
 const NAMES = [
   ["refinements", "refinement"], ["runs", "run"], ["steps", "step"], ["experiments", "experiment"],
-  ["samples", "sample"], ["token_streams", "token stream"], ["launches", "launch"], ["jobs", "job"],
+  ["samples", "sample"], ["token_streams", "token stream"], ["launches", "started harness"], ["jobs", "job"],
   ["scenarios", "scenario"], ["variants", "saved variant"],
 ];
 
 /** What a permanent deletion removes, as a person reads it. */
 export function goesText(counts) {
   const parts = NAMES.filter(([key]) => counts?.[key]).map(([key, name]) =>
-    name === "launch" && counts[key] !== 1 ? `${counts[key]} launches` : plural(counts[key], name));
+    name === "started harness" && counts[key] !== 1 ? `${counts[key]} started harnesses` : plural(counts[key], name));
   return parts.length ? parts.join(", ") : "nothing";
 }
 
@@ -106,7 +106,7 @@ export function trashedBanner({ kind, id, trashedAt, what, onRestored, onPurged 
   return h("div", { class: "banner banner-warn trashed-banner" },
     h("strong", null, `This ${what || kind} is in the trash`), ` since ${when(trashedAt)}. `,
     kind === "run" ? "It is left out of every list and pass rate; what is tied to it stays until it is deleted for good. " : "",
-    kind === "refinement" ? "It is left out of the list and takes no new work; its screens and validations stay until it is deleted for good, and then go with it. " : "",
+    kind === "refinement" ? "It is left out of the list and takes no new work. Its tests at a step and its full test runs stay until it is deleted for good, and then go with it. " : "",
     h("span", { class: "controls" },
       restoreButton({ kind, id, onDone: onRestored }),
       purgeButton({ kind, id, onDone: onPurged })));
