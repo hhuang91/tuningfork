@@ -1067,6 +1067,21 @@ try {
   check(await page.eval(`document.querySelector('.start-panel [name="target_kind"][value="describe"]').checked`), "describing the behaviour chooses that way of declaring it");
   await page.click("Start refining", `document.querySelector(".start-panel")`);
   const refinementId = await until(async () => /^#\/refine\/([0-9a-f]{32})$/.exec(await page.eval("location.hash"))?.[1], "the refinement's page");
+  // Where it stands, its four stages in a line: each done, current or to come, with what it holds.
+  const stages = () => page.eval(`[...document.querySelectorAll(".stepper .stage")].map((stage) => [
+    stage.querySelector(".stage-name").textContent, stage.querySelector(".stage-state").textContent,
+    stage.classList.contains("done") ? "done" : stage.getAttribute("aria-current") === "step" ? "current" : "to come"].join(": ")).join(" | ")`);
+  const opened = (panel) => page.eval(`document.querySelector(${JSON.stringify(panel)})?.open ?? null`);
+  await until(() => page.eval(`!!document.querySelector(".stepper")`), "the refinement's stages");
+  const atStart = await stages();
+  check(atStart === "Propose: none yet: current | Test at this step: waits for a proposal: to come"
+    + " | Full test runs: wait for a proposal that beat the original: to come | Approve: waits for full test runs that pass the approval checks: to come",
+    `a new refinement stands at its first stage, proposing (${atStart})`);
+  check(await opened(".propose-panel") === true && !(await page.eval(`!!document.querySelector(".screen-panel")`)),
+    "its form is the one open: there is nothing to test yet");
+  // What the proposing model is shown, folded in the proposing stage: gathered once opened.
+  check(await opened(".packet-panel") === false, "what the proposing model is shown waits folded");
+  await page.eval(`document.querySelector(".packet-panel > summary").click()`);
   await until(() => page.eval(`[...document.querySelectorAll(".packet-panel dt")].some((dt) => dt.textContent === "the original wording")`), "what a proposer is shown");
   check(await page.eval(`!document.querySelector(".evidence-panel")`), "no evidence panel before there is a proposal to weigh");
   check(await page.eval(`document.querySelector(".page-head").textContent.includes('a behaviour that calls write_file, and mentions "row_count"')`), "the refinement states its target, declared before anything was proposed");
@@ -1086,6 +1101,13 @@ try {
   await until(() => page.eval(`document.querySelectorAll(".proposal").length === 2`), "the two proposals");
   check(await page.eval(`[...document.querySelectorAll(".proposal")].every((card) => [...card.querySelectorAll(".chip")].some((c) => c.textContent === "untested"))`), "each untested until a test at the step tries it");
   check(await page.eval(`[...document.querySelectorAll(".proposal .diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))`), "each shown as a line diff");
+  const proposedStages = await stages();
+  check(proposedStages.startsWith("Propose: 2 proposals: done | Test at this step: none yet: current | "),
+    `proposals made, the refinement moves on to testing them (${proposedStages})`);
+  check(await opened(".screen-panel") === true && await opened(".propose-panel") === false, "the test's form is the one open now; proposing waits folded");
+  // A stage's link opens its form: proposing once more, by hand.
+  await page.eval(`[...document.querySelectorAll(".stepper a.stage-name")].find((a) => a.textContent === "Propose").click()`);
+  check(await opened(".propose-panel") === true, "the stage's link opens its form again");
   await page.eval(`document.querySelector(".propose-own > summary").click()`);
   const baseline = await page.eval(`document.querySelector('[name="proposal_text"]').value`);
   await page.type(`document.querySelector('[name="proposal_text"]')`, baseline.replace("Write the totals to report.json.", "Write the totals to report.json, as JSON."));
@@ -1149,12 +1171,22 @@ try {
       unscreened: rows.filter((row) => row.textContent.includes("untested")).length,
       chosen: rows.some((row) => row.classList.contains("is-chosen")),
       about: !document.querySelector("details.about-refinement").open,
+      // Each proposal named by the line it changes, its id beneath, its edit in full a link away.
+      edits: rows.map((row) => row.querySelector(".edit-cell a")?.textContent || ""),
+      ids: rows.every((row) => /^[0-9a-f]{8}/.test(row.querySelector(".edit-cell .faint .mono")?.textContent || "")),
     };
   })()`);
   check(evidence.order && evidence.headline === "1 of 3 proposals beat the original in a test at this step" && evidence.accent,
     `the refinement leads with the evidence: where it stands, in the accent for a step screen (${evidence.headline})`);
   check(evidence.survivor && evidence.unscreened === 1 && !evidence.chosen, "each proposal's screen in a line, nothing chosen before a validation");
+  check(evidence.edits.some((line) => line.startsWith("+ ") && line.includes("row_count and amount_total")) && evidence.edits.every((line) => /^[+-] /.test(line)) && evidence.ids,
+    `each proposal named by the line it changes, its id beneath (${evidence.edits.join(" / ")})`);
   check(evidence.about, "the skill's paths wait in About this refinement, closed");
+  const testedStages = await stages();
+  check(testedStages.startsWith("Propose: 3 proposals: done | Test at this step: 1 of 3 proposals beat the original: done | Full test runs: none yet: current | "),
+    `a proposal beat the original: full test runs are next (${testedStages})`);
+  check(await opened(".validate-panel") === true && await opened(".screen-panel") === false, "and their form is the one open");
+  await page.eval(`document.querySelector(".packet-panel > summary").click()`);
   await until(() => page.eval(`(document.querySelector(".packet-panel")?.textContent || "").includes("the original wording")`),
     "what a proposer is shown, below them: the original wording's answers, the problem and not the result");
 
@@ -1204,7 +1236,15 @@ try {
   check(ready.lines.includes("Beat the original in its test at this step: 6/6 against the original's 0/6") && ready.lines.includes("on held-out task 2") && ready.lines.includes("approval checks met"),
     `with its screen and its validation in a line each, the held-out task's included (${ready.lines})`);
   check(ready.row === "ready to approve,beat the original,passes the approval checks", `its row picked out (${ready.row})`);
+  const readyStages = await stages();
+  check(readyStages.endsWith(`Full test runs: pass the approval checks: done | Approve: proposal ${keysFix.id.slice(0, 8)} is ready: current`),
+    `full test runs that pass the approval checks: approving is next (${readyStages})`);
   const hash = await page.eval("location.hash");
+  await page.eval(`window.scrollTo(0, 0)`);
+  await page.eval(`[...document.querySelectorAll(".stepper a.stage-name")].find((a) => a.textContent === "Approve").click()`);
+  check(await page.eval(`location.hash === ${JSON.stringify(hash)} && document.querySelector(".validation").getBoundingClientRect().top < innerHeight / 2`),
+    "the stage's link leads to the full test runs with their Approve…, the address as it was");
+  await page.eval(`window.scrollTo(0, 0)`);
   await page.eval(`[...document.querySelectorAll(".evidence-panel .verdict-lines a")].find((a) => a.textContent.startsWith("full test runs ")).click()`);
   check(await page.eval(`location.hash === ${JSON.stringify(hash)} && document.querySelector(".validation").getBoundingClientRect().top < innerHeight`),
     "its link leads down the page to the validation, the address as it was");
@@ -1239,6 +1279,10 @@ try {
     `and the page says so first, with the evidence it stood on (${writtenView.headline})`);
   check(writtenView.row === "approved,beat the original,passed the approval checks" && writtenView.card, `the approved proposal picked out, in the evidence and its card (${writtenView.row})`);
   check(writtenView.about.includes(`${health.home}/lab-task/tally-report/SKILL.md`), "About this refinement says where it wrote");
+  const writtenStages = await stages();
+  check(writtenStages.endsWith("Approve: written to the skill's own file: done") && !writtenStages.includes(": current")
+    && !(await page.eval(`!!document.querySelector('.stepper [aria-current="step"]')`)),
+    `written, every stage is done and none is current (${writtenStages})`);
 
   console.log("the proposer's key: set, never shown, cleared");
   await page.eval(`location.hash = "#/connections"`);

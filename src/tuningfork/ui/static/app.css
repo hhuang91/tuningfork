@@ -1576,6 +1576,39 @@ details.panel[open] > summary:hover { border-radius: var(--radius) var(--radius)
 
 /* --- refining a skill (views/refine.js) ------------------------------------------------------ */
 
+/* Where a refinement stands, its four stages in a line: done grey with a tick, the current one
+   the accent's, what is still to come muted. */
+.stepper { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.stage { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+/* A stage's link covers its box: the whole of it leads to the stage's part of the page. */
+.stage a.stage-name::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.stage:has(a.stage-name):hover { border-color: var(--accent); }
+.stage a.stage-name:focus-visible { outline: none; }
+.stage:has(a.stage-name:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.stage-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stage-name { font-weight: 600; color: var(--muted); }
+.stage.done .stage-name, .stage.current .stage-name { color: var(--text); }
+a.stage-name:hover { color: var(--accent); text-decoration: none; }
+.stage-state { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.stage.current { border-color: var(--accent); background: var(--accent-soft); }
+.stage.current .stage-num { border-color: var(--accent); background: var(--accent); color: var(--panel); }
+/* The evidence names each proposal by the line it changes. */
+.edit-cell { min-width: 180px; }
+.edit-line .mono { overflow-wrap: anywhere; }
+
 .proposal-list { display: flex; flex-direction: column; gap: 12px; }
 .proposal { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }
 .proposal.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
