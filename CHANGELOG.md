@@ -1,5 +1,82 @@
 # Changelog
 
+## 0.4.0 — the web UI, redesigned
+
+The web UI, page by page, after a review of it: a sidebar in the loop's order, plainer words, one
+meaning a colour, each page leading with its take-away, and the work on a step beside the run.
+The CLI, MCP and the docs keep tuningfork's precise words.
+
+- **A sidebar in the loop's order**, where the top bar's ten tabs were: the Guide and its Words,
+  Connections; then Start (Scenarios, Run a task…, Import a chat, Live, Skills, Jobs), Record
+  (Runs, Chains), Measure (Experiments), Improve (Refine) and the Trash. Its foot says how the
+  proxy, the server and the harnesses are. What needs a running proxy stays in it, greyed, saying
+  why.
+- **Plain words on the pages**: an arm is a *wording*, a target *what to count* (a refinement's,
+  *what the model should do*), a screen a *test at this step*, a validation *full test runs*, the
+  gate the *approval checks*, a spec a *task file*. The CLI, MCP, the docs and every sentence the
+  server writes keep the precise words. The glossary holds both: the Words page shows them side
+  by side, and `tuningfork glossary` finds a term by either.
+- **One meaning a colour**: green and red only for a check's verdict — a run's, a fork's, a
+  gate's, a significant change in how often a task's check passes; amber a caution; the accent
+  what can be acted on, what is current or significant, and every rate, a pass rate included;
+  purple a skill's own words; teal, with ✎, what a person or tuningfork changed; grey everything
+  else. The Guide shows the legend in a line.
+- **Each page leads with its take-away**: a run's verdict in a strip under its title, with the
+  call that made the check's complaint where the check was run along the run; on the divergence
+  page, the step whose behaviour best predicts a pass; Connections' setup at a glance; a
+  refinement's four stages in a line.
+- **A run's page reads top to bottom, its work beside it.** Every step's row has *Show details*
+  and *Work from here*. One step's details are open at a time. A step's actions, and the forms
+  they open, sit in a column beside the run, each step's kept as it was left, and the address
+  names that work, so a reload brings it back. The rail's lines move you through the run and open
+  nothing. On an imported or live run, *Fork from here…* is greyed, and points to a scenario of
+  the run instead.
+- **A refinement's page has a section for each stage**, numbered as the stepper numbers it: the
+  two ways to propose side by side, the proposals with the test of the ticked ones under them,
+  full test runs, approval. The current stage's form is open as the page opens, and no form opens
+  by itself after.
+- **A finished job hands off to what it made**: its page says what it found in a line and leads
+  there, its log folded. The Jobs list is in three parts — running and queued, each queued job
+  saying its place in its line; finished; stopped or failed — and names each job by the section
+  of its work, links what it made, and says who started it: you, from which page, or an agent
+  over MCP. A job's link to the step it worked at opens that step.
+- **Add a skill** (`tuningfork add-skill`, `forget-skill`, the Skills page's *Add a skill…*): a
+  folder on this machine, remembered where it is, or an uploaded folder or a run's skill, kept as
+  tuningfork's own copy. An approved edit is written to the folder, or to the copy.
+- **Token work is held to the server check.** Scoring an answer and finding forking tokens are
+  greyed on the page, and refused before anything is sent, where the check found the server
+  without what they need. The check now measures the chat endpoint's logprobs too, which a
+  resample's kept tokens need (*Keep each sample's tokens*, new on its form). A server on the
+  internet that asks for a key, or is not llama.cpp's, is said to be a hosted model's API:
+  tuningfork records your agent's calls through it, its own key passed on.
+- **The forking-token probe says what reached each behaviour**: whether the target counts it,
+  and which tokens led to it — its page, `tuningfork experiment`, MCP. A flip is the accent's
+  colour, its direction said in words. Where the step's answer is a tool call, the form offers
+  that tool, with any arguments, as the target first.
+- **Forms**: one nobody has touched says what it needs as a note, not in red. *Make a scenario…*
+  shows what it will make first, and chooses its check as a new scenario's editor does. *Run a
+  task…* takes a task file's path beside the scenario, greyed while a scenario is chosen.
+- **The README's pictures**, retaken in the redesigned pages, with a new one: a chat had
+  elsewhere, made a scenario. `docs/images/shots.mjs` takes them all, the GIF included, in one
+  command, and keeps back any picture that shows a path naming a person or a place.
+
+Changed:
+
+- **An A/B is judged at the α it was declared with** wherever it is reported again — its page,
+  `tuningfork experiment`, MCP's `show_experiment` — where 0.05 was used whatever was declared.
+  One run before its α was kept takes its job's, else 0.05; `--alpha` judges at another level,
+  and says so.
+- **Letters agree with the resample a target came from**: an A/B, a screen or a probe of a letter
+  target letters its behaviours as that resample did, so its B is the resample's B.
+- **A dry run's refusal is an answer**: asked `quiet`, as the web UI's forms ask, `POST /jobs`
+  and the scenario endpoint refuse with `200 {refused}`, not an HTTP error. Without `quiet`,
+  nothing changes.
+- **Every job under way is listed** by `GET /jobs`, `tuningfork jobs list` and MCP's `list_jobs`:
+  the list was cut at the newest 50, so a running job with 50 newer ones after it dropped out.
+  Over MCP's stdio transport it is still at most the 50 newest.
+- **A launch is refused where the server asks for a key**: a harness tuningfork launches carries
+  none, and each harness's card on Connections says so.
+
 ## 0.3.0 — chats your agent already had, and any run as a scenario
 
 A conversation your agent had elsewhere comes in as a run, and any run becomes a scenario: a task
