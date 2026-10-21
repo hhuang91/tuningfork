@@ -51,14 +51,14 @@ export async function batchView(root, _, scope) {
   const anotherSpec = () => replace(task, h("option", { value: "" }, "its first task"));
   // A task file by its path is the scenario's alternative, on the same line: open only while no
   // scenario is chosen, greyed while one is.
-  const scenario = h("select", { class: "field", name: "scenario" },
-    h("option", { value: "" }, "— a task file by its path instead —"),
+  const scenarioSelect = h("select", { class: "field", name: "scenario", id: "batch-scenario" },
+    h("option", { value: "" }, "— no scenario —"),
     scenarios.map((each) => h("option", { value: each.name, selected: each.name === prefill.scenario }, each.name)));
-  const spec = input("spec", { value: prefill.spec, placeholder: "/path/to/evals.json", oninput: anotherSpec, "aria-label": "Task file, by its path" });
+  const specInput = input("spec", { value: prefill.spec, placeholder: "/path/to/evals.json", oninput: anotherSpec, "aria-label": "Task file, by its path" });
   const choose = () => {
-    spec.disabled = scenario.value !== "";
+    specInput.disabled = scenarioSelect.value !== "";
   };
-  scenario.addEventListener("change", () => {
+  scenarioSelect.addEventListener("change", () => {
     choose();
     anotherSpec();
   });
@@ -76,8 +76,11 @@ export async function batchView(root, _, scope) {
   const fields = [
     prefill.from ? h("p", { class: "hint" }, "Filled in as ", h("a", { class: "mono", href: `#/runs/${prefill.from.id}` }, `run ${prefill.from.id.slice(0, 8)}`), " was started.") : null,
     h("div", { class: "form-grid" },
-      field("Scenario", h("div", { class: "field-or" }, scenario, h("span", { class: "or" }, "or"), spec),
-        { help: "A scenario is a task file kept in the recordings folder. With none chosen, name a task file (an evals.json) on the proxy's machine by its path.", wide: true }),
+      // Two controls in one field: a div, its label the scenario's — a <label> holds one control.
+      h("div", { class: "form-field wide" },
+        h("label", { class: "form-label", for: "batch-scenario" }, "Scenario"),
+        h("div", { class: "field-or" }, scenarioSelect, h("span", { class: "or" }, "or"), specInput),
+        h("span", { class: "form-help" }, "A scenario is a task file kept in the recordings folder. With none chosen, name a task file (an evals.json) on the proxy's machine by its path.")),
       field("Task in the file", task, { help: "A task file can hold several tasks. Each run does this one.", wide: true }),
       field("Run as", h("select", { class: "field", name: "mode" },
         h("option", { value: "batch" }, "a batch: every run given the skill fresh"),
@@ -105,7 +108,8 @@ export async function batchView(root, _, scope) {
     read: (form) => {
       const scenario = textOf(form, "scenario");
       const spec = textOf(form, "spec").trim();
-      if (!scenario && !spec) throw Object.assign(new Error("Choose a scenario, or name a task file."), { field: "scenario" });
+      // With no scenario chosen, the task file's path is the field open to fill in.
+      if (!scenario && !spec) throw Object.assign(new Error("Choose a scenario, or name a task file."), { field: "spec" });
       const chain = modeOf(form) === "chain";
       const params = {
         ...(scenario ? { scenario } : { spec }),
