@@ -104,12 +104,15 @@ the one open and what a proposer is shown folded; that the lab's built-in propos
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have, the refinement then moving on to testing them, that form open; that
 a person's own wording joins them, proposing opened again from its stage's link, the focus
-going where the page went; that a refusal answered again leaves a form folded by hand folded;
+going where the page went, the two ways to propose side by side, what a proposer is shown under
+the one that sends it; that a refusal answered again leaves a form folded by hand folded;
 that a screen of
 two, Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
 behaviours badged by whether they match what is counted — and each proposal then carries its
 verdict, the refinement's page leading with that evidence — where it stands, each proposal named
-by the line it changes, its screen in a line — above what a proposer is shown, the original
+by the line it changes, its screen in a line — then a section for each stage, numbered as the
+stepper numbers them, in the order the work goes: the proposals in the testing stage, its test
+right under them and the tests' results under that; what a proposer is shown, the original
 wording's answers, with the skill's paths closed away in About, and full test runs next, their
 form open; that a proposal kept by one test and not by a later one stands where the later left it,
 with no full test runs offered — the stage moving on, and back, on the page as each test ends, no

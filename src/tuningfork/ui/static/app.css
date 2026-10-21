@@ -1657,7 +1657,22 @@ a.stage-name:hover { color: var(--accent); text-decoration: none; }
 .diff-line.add .diff-op, .diff-line.add .diff-text { color: var(--ok); }
 .evidence-json { max-height: 420px; overflow: auto; }
 .inline-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
-.propose-builtin > summary, .propose-own > summary { padding: 4px 0; }
+/* A refinement's stages, each a section numbered as the stepper numbers it, the current one
+   marked in the accent: what to do there first, then what it made. */
+.stage-panel > .panel-head h2 { display: flex; align-items: center; gap: 10px; }
+.stage-panel.current { border-left: 3px solid var(--accent); }
+.stage-panel.current .stage-num { border-color: var(--accent); background: var(--accent); color: var(--panel); }
+.stage-part { margin: 0; font-size: 13.5px; font-weight: 600; }
+.stage-panel .slot > p { margin: 0; }
+.stage-part .muted { font-weight: 400; }
+.stage-form > summary { padding: 2px 0; font-size: 14px; color: var(--text); }
+.stage-form-body { margin-top: 10px; }
+/* Two ways to the same end, side by side: either one makes proposals. */
+.propose-ways { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.propose-way { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); }
+@media (max-width: 900px) {
+  .propose-ways { grid-template-columns: minmax(0, 1fr); }
+}
 .gate-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .gate-list li { padding-left: 2px; }
 .gate-list li .muted { margin: 2px 0 0 0; }

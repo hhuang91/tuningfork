@@ -1160,7 +1160,14 @@ try {
     const box = summary.getBoundingClientRect();
     return document.activeElement === summary && box.top >= 0 && box.top < innerHeight;
   })()`), "and moves the focus there, in sight");
-  await page.eval(`document.querySelector(".propose-own > summary").click()`);
+  // The two ways to propose are alternatives, side by side in the proposing stage: asking the
+  // proposing model, with what it is shown under it, and writing one yourself.
+  check(await page.eval(`(() => {
+    const ways = document.querySelector(".propose-panel .propose-ways");
+    const ask = ways?.querySelector(".propose-builtin"), own = ways?.querySelector(".propose-own");
+    return !!ask && !!own && ask.getBoundingClientRect().top === own.getBoundingClientRect().top
+      && ask.getBoundingClientRect().right <= own.getBoundingClientRect().left && !!ask.querySelector(".packet-panel");
+  })()`), "the two ways to propose sit side by side, what the proposing model is shown under the way that sends it");
   const baseline = await page.eval(`document.querySelector('[name="proposal_text"]').value`);
   await page.type(`document.querySelector('[name="proposal_text"]')`, baseline.replace("Write the totals to report.json.", "Write the totals to report.json, as JSON."));
   check((await page.text(".own-proposal .editor-head .muted")).startsWith("1 line changed"), "a person's own wording: the editor counts the changed line");
@@ -1228,13 +1235,22 @@ try {
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Back to the refinement").click()`);
   await until(() => page.eval(`location.hash === "#/refine/${refinementId}" && [...document.querySelectorAll(".proposal .chip")].some((c) => c.textContent === "beat the original")`), "the verdicts on the refinement's proposals");
   check(await page.eval(`[...document.querySelectorAll(".proposal .chip")].filter((c) => c.textContent === "untested").length === 1`), "the tested carry their verdicts; the one not tested is still untested");
-  // The page leads with the evidence: where it stands, each proposal's screen, a step screen's survivor in the accent.
+  // The page leads with the evidence: where it stands, each proposal's screen, a step screen's
+  // survivor in the accent. Then a section for each stage, numbered as the stepper numbers them,
+  // in the order the work goes: the proposals in the testing stage, its test right under them,
+  // the tests' results under that.
   const evidence = await page.eval(`(() => {
-    const titles = [...document.querySelectorAll(".panel-head h2")].map((h2) => h2.textContent);
     const block = document.querySelector(".evidence-panel .verdict-block");
     const rows = [...document.querySelectorAll(".evidence-panel tbody tr")];
+    const stagePanels = [...document.querySelectorAll(".stage-panel")];
+    const test = document.querySelector('.stage-panel[data-stage="test"]');
+    const follows = (a, b) => !!a && !!b && Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     return {
-      order: titles.indexOf("The evidence") < titles.indexOf("Proposals (3)") && titles.indexOf("Proposals (3)") < titles.indexOf("What the proposing model is shown"),
+      order: stagePanels.map((panel) => panel.dataset.stage + ":" + panel.querySelector(".stage-num").textContent).join(",") === "propose:✓,test:✓,validate:3,approve:4"
+        && follows(document.querySelector(".evidence-panel"), stagePanels[0])
+        && follows(test.querySelector(".proposal-list"), test.querySelector(".screen-panel"))
+        && follows(test.querySelector(".screen-panel"), test.querySelector(".table-wrap"))
+        && !!document.querySelector('.stage-panel[data-stage="propose"] .packet-panel'),
       headline: block?.querySelector(".verdict-big")?.textContent,
       accent: block?.classList.contains("significant") && !block.classList.contains("tone-ok"),
       survivor: rows.some((row) => row.querySelector(".chip.tone-accent")?.textContent === "beat the original"),
@@ -1337,8 +1353,12 @@ try {
   const hash = await page.eval("location.hash");
   await page.eval(`window.scrollTo(0, 0)`);
   await page.eval(`[...document.querySelectorAll(".stepper a.stage-name")].find((a) => a.textContent === "Approve").click()`);
-  check(await page.eval(`location.hash === ${JSON.stringify(hash)} && document.querySelector(".validation").getBoundingClientRect().top < innerHeight / 2`),
-    "the stage's link leads to the full test runs with their Approve…, the address as it was");
+  // The last section, on a page that ends below it: in sight whole, if not at the top.
+  check(await page.eval(`(() => {
+    const box = document.querySelector('.stage-panel[data-stage="approve"]').getBoundingClientRect();
+    return location.hash === ${JSON.stringify(hash)} && box.top >= 0 && box.bottom <= innerHeight
+      && document.activeElement?.textContent === ${JSON.stringify(`Approve proposal ${keysFix.id.slice(0, 8)}…`)};
+  })()`), "the stage's link leads to approving, its way to approve the proposal ready for a key, the address as it was");
   await page.eval(`window.scrollTo(0, 0)`);
   await page.eval(`[...document.querySelectorAll(".evidence-panel .verdict-lines a")].find((a) => a.textContent.startsWith("full test runs ")).click()`);
   check(await page.eval(`location.hash === ${JSON.stringify(hash)} && document.querySelector(".validation").getBoundingClientRect().top < innerHeight`),
@@ -1356,7 +1376,7 @@ try {
   check((await api(`/refinements/${made.id}`)).approval === null, "a wrong code writes nothing");
   await page.type(`document.querySelector('.approve-panel [name="confirm"]')`, code);
   await page.click("Write it", `document.querySelector(".approve-panel")`);
-  await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "Written")`), "the edit, written");
+  await until(() => page.eval(`document.querySelector(".approve-panel h3")?.textContent === "Written"`), "the edit, written");
   const approved = await api(`/refinements/${made.id}`);
   check(approved.approval?.state === "applied" && approved.refinement.status === "approved",
     "the typed code writes it: the skill's own file, its old text and a changelog beside its folder");
