@@ -777,6 +777,8 @@ try {
       // More than three to say: the sentence beside the strip's "not tested yet" is kept.
       crowded: whatItMeans({ server: { identity: { id: "s" }, token_work: {} }, harnesses: [hermes, { name: "claude-code", path: null }],
         sandbox: { available: false }, proposer: { url: "https://api.example.test", remote: true, allow_remote: true, key: { set: true } } }),
+      // Untested, scoring and forking already greyed (no /props): the test is not said to tell them.
+      noProps: whatItMeans({ ...fine, server: { identity: { id: "s" }, token_work: { score: "no /props", forking: "no /props" } } }),
     };
   })()`);
   check(meant.fine.join(" / ") === "Nothing here needs a look." && meant.words.join() === "on the internet,asks for a key,not answering,answering",
@@ -790,6 +792,8 @@ try {
     "a server down, a harness missing, a proposing model elsewhere: each amber part has its sentence");
   check(meant.crowded.length === 3 && meant.crowded[1].startsWith("Test the server to measure"),
     `with more to say than three sentences, the server test's is among them (${meant.crowded.join(" / ")})`);
+  check(meant.noProps.join(" / ") === "Test the server to measure what each harness needs of it. / “Score this answer” and “Find forking tokens…” are greyed out on this server.",
+    `the test is not said to tell what is greyed already (${meant.noProps.join(" / ")})`);
   await page.click("Test the server");
   await until(() => page.eval(`[...document.querySelectorAll(".measured td .mono")].some((name) => name.textContent === "anthropic_messages")`), "the check's results", 60000);
   const serverJob = (await api("/jobs")).find((job) => job.kind === "server-check");

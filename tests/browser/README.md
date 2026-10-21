@@ -80,9 +80,10 @@ the run got, and passes on a report written with the right keys; that at a held 
 sampled behaviours and is filed under the step once the call is recorded, while a question
 to the model comes back marked a hypothesis; on the Connections page, that it leads with the
 setup at a glance — the server, the harnesses, the sandbox and the proposing model, the server
-test there, and what it means before the test and after, worked out too for a server that asks
-for a key (never said to be down), one down, a harness missing and a proposing model on another
-machine — that a server
+test there, and what it means before the test and after (a server that reuses its prompts says
+so), worked out too for a server that asks for a key (never said to be down), one down, a harness
+missing, a proposing model on another machine, more to say than three sentences, and scoring
+greyed before any test — that a server
 check measures what the harnesses need, a protected endpoint is refused, and an idle proxy
 switches its server after a dry run; that Start… on the Jobs page leads to a step's form;
 that a run reads as one conversation — each message once, the final reply marked (and not
@@ -102,7 +103,8 @@ target first, offering no exploratory choice, and stands at its first stage, pro
 the one open and what a proposer is shown folded; that the lab's built-in proposer, asked through
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have, the refinement then moving on to testing them, that form open; that
-a person's own wording joins them, proposing opened again from its stage's link; that a screen of
+a person's own wording joins them, proposing opened again from its stage's link, the focus
+going where the page went; that a screen of
 two, Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
 behaviours badged by whether they match what is counted — and each proposal then carries its
 verdict, the refinement's page leading with that evidence — where it stands, each proposal named

@@ -80,13 +80,18 @@ export function whatItMeans({ server = {}, harnesses = [], sandbox = null, propo
       blocked.length ? `${listed(blocked)} cannot run against this server.` : null,
     ].filter(Boolean).join(" "));
   }
-  // Before what the test would tell: the sentence beside the strip's own "not tested yet".
+  // Before what the test would tell: the sentence beside the strip's own "not tested yet". Where
+  // scoring and forking tokens are greyed already — a server without llama.cpp's /props, read
+  // untested — the sentence below says so, and this one does not ask it again.
   if (!server.checks?.checked_at && !server.problem && !asksKey) {
-    lines.push("Test the server to measure what each harness needs of it, and whether it can score answers and find forking tokens.");
+    lines.push(server.token_work?.score || server.token_work?.forking
+      ? "Test the server to measure what each harness needs of it."
+      : "Test the server to measure what each harness needs of it, and whether it can score answers and find forking tokens.");
   }
-  // What a batch's or a fork's plan warns of (`ops.connections.cached_prompts_warning`).
+  // What a batch's or a fork's plan warns of (`ops.connections.cached_prompts_warning`). The
+  // finding stays until the server is tested again: a restart keeps its identity.
   if (reusesPrompts(server)) {
-    lines.push("The server reuses the prompts it processes, so each run's calls, and every fork's, depend on what it ran before: start llama-server with --no-cache-prompt.");
+    lines.push("The server reuses the prompts it processes, so each run's calls, and every fork's, depend on what it ran before: start llama-server with --no-cache-prompt, then test the server again.");
   }
   const greyed = Object.entries(server.token_work || {}).filter(([, reason]) => reason).map(([work]) => TOKEN_CONTROLS[work] || work);
   if (greyed.length) lines.push(`${listed(greyed)} ${greyed.length === 1 ? "is" : "are"} greyed out on this server.`);
