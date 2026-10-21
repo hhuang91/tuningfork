@@ -80,7 +80,9 @@ the run got, and passes on a report written with the right keys; that at a held 
 sampled behaviours and is filed under the step once the call is recorded, while a question
 to the model comes back marked a hypothesis; on the Connections page, that it leads with the
 setup at a glance — the server, the harnesses, the sandbox and the proposing model, the server
-test there, and what it means before the test and after — that a server
+test there, and what it means before the test and after, worked out too for a server that asks
+for a key (never said to be down), one down, a harness missing and a proposing model on another
+machine — that a server
 check measures what the harnesses need, a protected endpoint is refused, and an idle proxy
 switches its server after a dry run; that Start… on the Jobs page leads to a step's form;
 that a run reads as one conversation — each message once, the final reply marked (and not
@@ -106,7 +108,9 @@ behaviours badged by whether they match what is counted — and each proposal th
 verdict, the refinement's page leading with that evidence — where it stands, each proposal named
 by the line it changes, its screen in a line — above what a proposer is shown, the original
 wording's answers, with the skill's paths closed away in About, and full test runs next, their
-form open; that a survivor, validated from its refinement's page, runs forks to the end, the
+form open; that a proposal kept by one test and not by a later one stands where the later left it,
+with no full test runs offered — the stage moving on, and back, on the page as each test ends; that
+a survivor, validated from its refinement's page, runs forks to the end, the
 training task and the lab's held-out task — named only by its id in the plan and the job,
 its text nowhere — and meets the gate, each part and check shown to the person, the evidence
 then naming it ready to approve, its screen and its full runs in a line each and a link down
@@ -120,7 +124,8 @@ more typed, and that the Runs page says how a task passes; and that a pass rate 
 accent, never a verdict's green — on Runs, on Skills and on a batch's page. Last, it moves a run to the trash
 from its page — out of the Runs list, on the Trash page with what deleting it would remove —
 restores it, and deletes it for good, the first click saying what goes; and two finished jobs
-ticked on the Jobs page go to the trash together. And a job started as an agent would over
+ticked on the Jobs page go to the trash together; and a refinement moved to the trash shows no
+current stage, and once restored, its current stage is back with its form open. And a job started as an agent would over
 MCP — `started_by` naming its client — says so on the Jobs list and on its own page.
 
 The resample's job page, once done, says what it found in a line with its rate, leaves the whole

@@ -394,6 +394,20 @@ main { padding: 20px 24px 64px; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 /* A slot a page fills later — an import's preview, what was made, a job's summary — takes no gap while empty. */
 .slot:empty { display: none; }
+/* A part of a page a link leads to: it stops below the drawer's bar, when narrow. */
+.slot, .proposal { scroll-margin-top: calc(var(--topbar) + 12px); }
+/* Words for a screen reader alone: what the page shows by a mark. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 
 .panel {
   background: var(--panel);

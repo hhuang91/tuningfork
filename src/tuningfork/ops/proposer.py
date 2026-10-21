@@ -82,10 +82,17 @@ def config(home: Path | str) -> dict[str, Any]:
 def is_remote(url: str | None) -> bool:
     """Whether the proposer's address is another machine, where what it is sent — recorded
     prompts, answers, the skill — leaves this one. None, the proxy's own server asked through
-    the proxy, is not."""
+    the proxy, is not. One that cannot be read — a port out of range, in a settings file written
+    before `set_config` refused one — is taken for another machine: never said to stay here."""
     from tuningfork.endpoints import address, is_loopback
 
-    return url is not None and not is_loopback(address(url)[0])
+    if url is None:
+        return False
+    try:
+        host, _ = address(url)
+    except ValueError:
+        return True
+    return not is_loopback(host)
 
 
 def set_config(home: Path | str, **changes: Any) -> dict[str, Any]:
@@ -99,6 +106,13 @@ def set_config(home: Path | str, **changes: Any) -> dict[str, Any]:
     url = merged["url"]
     if url is not None and (not isinstance(url, str) or not re.match(r"https?://[^/\s]+", url)):
         raise OperationError("url is an http(s) address, or none for the proxy's own server", code="bad_params", field="url")
+    if url is not None:
+        from tuningfork.endpoints import address
+
+        try:
+            address(url)
+        except ValueError as error:
+            raise OperationError(f"url cannot be read as an address: {error}", code="bad_params", field="url") from None
     if merged["wire"] not in WIRES:
         raise OperationError(f"wire is {' or '.join(WIRES)}", code="bad_params", field="wire")
     if not isinstance(merged["max_tokens"], int) or not 256 <= merged["max_tokens"] <= 131072:

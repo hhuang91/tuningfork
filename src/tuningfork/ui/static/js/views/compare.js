@@ -117,6 +117,9 @@ export async function divergenceView(root, [task, conditionId]) {
   const tally = await api.get(`/tally${query({ task })}`).catch(() => null);
   const at = report.divergence_index;
   const split = at === null ? null : report.steps[at];
+  // The lead above offers to resample its step: the split's panel does not offer it again.
+  const best = report.verdict_split?.best;
+  const resampledAbove = Boolean(best?.run_id) && best.kind !== "ended" && best.index === at;
 
   replace(
     root,
@@ -131,7 +134,7 @@ export async function divergenceView(root, [task, conditionId]) {
     h("div", { class: "stack" },
       // The take-away first: which step's behaviour goes with passing, and the way to it.
       predictorsView(report),
-      split ? panel(`At step ${at}`, [groupsView(split, at, report.verdicts || {}), nextStep(split, at)], {
+      split ? panel(`At step ${at}`, [groupsView(split, at, report.verdicts || {}), nextStep(split, at, { resampledAbove })], {
         meta: h("span", { class: "muted", title: "Wilson score intervals" }, "Intervals are 95%. With few runs, they are wide."),
       }) : null,
       tallyView(tally, { only: chosen?.id || null }),
@@ -196,7 +199,8 @@ function predictorsView(report) {
   });
 }
 
-const pOf = (p) => h("span", { class: "muted", title: "Fisher's exact test over the judged runs" }, `(p = ${formatP(p)})`);
+// The split's p, kept to four places (`ops.inspect`): one that rounds to nothing was below them.
+const pOf = (p) => h("span", { class: "muted", title: "Fisher's exact test over the judged runs" }, p === 0 ? "(p < 0.0001)" : `(p = ${formatP(p)})`);
 
 /** The step whose behaviour best predicts the verdict, in the accent: the numbers it stands on,
  *  then the ways to it — a run that took the behaviour, at the step, and a resample there. For
@@ -271,14 +275,17 @@ function groupsView(step, index, verdicts) {
       : null);
 }
 
-function nextStep(step, index) {
+function nextStep(step, index, { resampledAbove = false } = {}) {
   const example = step.groups[0].run_ids[0];
   return h("div", null,
-    h("p", { class: "hint", style: { marginBottom: "6px" } }, "A handful of runs cannot tell you how often each happens. Resample the step to measure it:"),
-    live.mode === "live"
-      ? h("a", { class: "btn btn-primary", href: `#/runs/${example}/${index}?start=resample`, "data-control": true }, `Resample step ${index}…`)
-      : command(`tuningfork resample ${short(example)} ${index} -n 20`),
-    h("p", { class: "hint", style: { margin: "10px 0 6px" } }, "Or look inside the step: how sure each run's model was of each token, and which token split them."),
+    resampledAbove ? null : [
+      h("p", { class: "hint", style: { marginBottom: "6px" } }, "A handful of runs cannot tell you how often each happens. Resample the step to measure it:"),
+      live.mode === "live"
+        ? h("a", { class: "btn btn-primary", href: `#/runs/${example}/${index}?start=resample`, "data-control": true }, `Resample step ${index}…`)
+        : command(`tuningfork resample ${short(example)} ${index} -n 20`),
+    ],
+    h("p", { class: "hint", style: { margin: resampledAbove ? "0 0 6px" : "10px 0 6px" } },
+      `${resampledAbove ? "Look" : "Or look"} inside the step: how sure each run's model was of each token, and which token split them.`),
     h("div", { class: "run-chips" }, step.groups.map((group, position) =>
       h("a", { class: "btn btn-small", href: `#/runs/${group.run_ids[0]}/${index}?view=tokens` },
         `${LETTERS[position % LETTERS.length]}: run ${short(group.run_ids[0])}'s tokens`))));

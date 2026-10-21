@@ -105,7 +105,10 @@ class TestOverHttp:
     def test_the_proposers_key_is_set_and_never_read_back(self, stack):
         with client(stack) as http:
             own = http.get(PROPOSER).json()
-            local = http.put(PROPOSER, json={"url": "http://127.0.0.1:8088"}).json()
+            local = http.put(PROPOSER, json={"url": "http://127.0.0.1:18080"}).json()
+            # A port mistyped is refused, and the settings — and the page that reads them — stay whole.
+            mistyped = http.put(PROPOSER, json={"url": "http://192.168.1.20:80800"})
+            kept = http.get(PROPOSER)
             changed = http.put(PROPOSER, json={"url": "https://api.example.test", "model": "big", "allow_remote": True})
             assert changed.status_code == 200, changed.text
             stored = http.put(f"{PROPOSER}/key", json={"key": KEY})
@@ -117,6 +120,8 @@ class TestOverHttp:
         # Where what it is sent goes, for the Connections page: another machine, or this one.
         assert shown.json()["remote"] is True and changed.json()["remote"] is True
         assert own["url"] is None and own["remote"] is False and local["remote"] is False
+        assert mistyped.status_code == 400 and mistyped.json()["error"]["field"] == "url"
+        assert kept.status_code == 200 and kept.json()["url"] == "http://127.0.0.1:18080"
         assert all(KEY not in response.text for response in (changed, stored, shown))
         assert bad.status_code == 400 and bad.json()["error"]["field"] == "wire"
         assert cleared.json() == {"set": False, "from": None}
@@ -251,6 +256,16 @@ class TestTheCli:
         assert all(KEY not in output for output in (allowed.output, planned.output, shown.output))
         cleared = self.invoke(stack, "connections", "proposer", "set", "--clear-key", "--url", "none")
         assert "key          not set" in cleared.output and "the proxy's own server" in cleared.output
+
+
+def test_a_proposer_address_that_cannot_be_read_is_taken_for_another_machine():
+    """`remote` says where what the proposer is sent goes: an address no one can read — a port
+    out of range, in settings written before `set_config` refused one — is never said to stay on
+    this machine, and reading it never fails the page."""
+    from tuningfork.ops.proposer import is_remote
+
+    assert is_remote(None) is False and is_remote("http://localhost:18080/v1") is False
+    assert is_remote("https://api.example.test") is True and is_remote("http://192.168.1.20:80800") is True
 
 
 def test_a_validation_says_a_timed_out_run_counts_as_a_failure():

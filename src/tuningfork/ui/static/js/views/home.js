@@ -82,7 +82,7 @@ function colours() {
     chip("not counted", "warn"), " Amber is a caution. ",
     chip("edited", "change"), " Teal is what a person or tuningfork changed. ",
     chip("skill", "skill"), " Purple is a skill's own words. ",
-    chip("tool call", "accent"), " Indigo is what you can act on, what is current or significant, and the model's own answer. "
+    chip("tool call", "accent"), " Indigo is what you can act on, what is current or significant, every rate, and the model's own answer. "
       + "Everything else is grey.");
 }
 

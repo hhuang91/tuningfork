@@ -474,11 +474,13 @@ loop and the ways in — and its words have a page of their own, `#/words`, each
 page the step whose behaviour best predicts the verdict, in a callout with the ways to it;
 Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model,
 a word and a colour each, the server in the status strip's words (`serverWord`), and what that
-means in at most three sentences; a refinement its four stages in a line (`stagesOf` in
-`views/refine.js`: propose, test at this step, full test runs, approve), the current one's form
-the one open, then its evidence, each proposal named by the line it changes. The Skills page (`ops/skills.py`) names a skill by its folder, as variants
-and refinements do, and runs it again from the scenarios that name it; it is the person's view,
-never offered over MCP: the changelog an approval writes carries held-out verdicts. A person adds
+means in at most three sentences (`whatItMeans`); a refinement its four stages in a line
+(`stagesOf` in `views/refine.js`: propose, test at this step, full test runs, approve — where each
+proposal stands is its latest finished test, as the gate's G0 reads it), the current one's form
+the one open, then its evidence, each proposal named by the line it changes. The Skills page
+(`ops/skills.py`) names a skill by its folder, as variants and refinements do, and runs it again
+from the scenarios that name it; it is the person's view, never offered over MCP: the changelog
+an approval writes carries held-out verdicts. A person adds
 a skill there too (`ops/addskill.py`; `tuningfork add-skill`, Add a skill…, `POST
 /skills/add`), planned before anything is written, as a record in `<home>/skills/<name>.json`:
 a folder on this machine, remembered where it is, so an approval writes to it; or a copy of

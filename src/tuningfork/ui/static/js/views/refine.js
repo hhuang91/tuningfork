@@ -181,6 +181,9 @@ export async function refinementView(root, [id], scope) {
   let validateForm = null;
   // The stage the stepper last drew as current: its form is opened when it becomes so.
   let current;
+  // What the stepper last drew: drawn again only when that changes, so a job's every event — a
+  // validation sends dozens — leaves it, and a focus on one of its links, as they are.
+  let stepperDrawn = null;
   // The evidence asked for most recently: an older answer arriving late is not drawn.
   let asked = 0;
   let timer = null;
@@ -188,8 +191,9 @@ export async function refinementView(root, [id], scope) {
     h("div", { class: "stack" }, banners, stepperEl, evidenceEl, proposalsEl, packetEl, proposeEl, screenEl, screensEl,
       validateEl, validationsEl, approveEl, facts));
 
-  // Nothing new starts on a refinement closed, approved, or in the trash.
-  const acting = () => live.mode === "live" && shown.refinement.status === "open" && !shown.refinement.trashed_at;
+  // Nothing new starts on a refinement closed, approved, or in the trash: it has no current stage.
+  const settled = () => shown.refinement.status !== "open" || Boolean(shown.refinement.trashed_at);
+  const acting = () => live.mode === "live" && !settled();
   const mine = (job) => {
     const ref = job?.params?.refinement || "";
     return ref !== "" && shown.refinement.id.startsWith(ref);
@@ -203,7 +207,7 @@ export async function refinementView(root, [id], scope) {
 
   function drawAll() {
     const stages = stagesOf();
-    const now = currentOf(stages);
+    const now = settled() ? null : currentOf(stages);
     drawHead();
     drawBanners();
     drawFacts();
@@ -333,12 +337,15 @@ export async function refinementView(root, [id], scope) {
     let proposed = items.length ? plural(items.length, "proposal") : "none yet";
     if (doing("propose")) proposed = "asking the proposing model…";
 
+    // Where each proposal stands is its latest finished test (`standingOf`): a quick look gives
+    // rates only, and a test stopped part way gives none.
     let tested;
     if (doing("screen", "screen-to-end")) tested = "a test under way";
     else if (!screens.length) tested = items.length ? "none yet" : "waits for a proposal";
     else if (won.length) tested = items.length === 1 ? "the proposal beat the original" : `${won.length} of ${plural(items.length, "proposal")} beat the original`;
-    else if (screens.some((screen) => screen.report.complete && !screen.report.quick)) tested = "none beat the original";
-    else tested = "no verdict yet";
+    else if (items.some(standingOf)) tested = "none beat the original";
+    else if (screens.some((screen) => !screen.report.quick)) tested = "unfinished: no verdict";
+    else tested = screens.length === 1 ? "a quick look: rates, no verdict" : "quick looks: rates, no verdict";
 
     let validated;
     if (doing("validate")) validated = "under way";
@@ -378,10 +385,13 @@ export async function refinementView(root, [id], scope) {
   }
 
   function drawStepper(stages, now) {
+    const linked = stages.map((stage) => Boolean(stageParts(stage.key).to));
+    const drawing = JSON.stringify([stages, now, linked]);
+    if (drawing === stepperDrawn) return;
+    stepperDrawn = drawing;
     replace(stepperEl, h("ol", { class: "stepper", "aria-label": "Where this refinement stands" },
       stages.map((stage, index) => {
-        const parts = stageParts(stage.key);
-        const name = parts.to
+        const name = linked[index]
           ? h("a", {
               class: "stage-name", href: `#/refine/${shown.refinement.id}`,
               onclick: (event) => {
@@ -389,6 +399,10 @@ export async function refinementView(root, [id], scope) {
                 const { to, form } = stageParts(stage.key);
                 if (form && !form.open) form.open = true;
                 to?.scrollIntoView({ block: "start" });
+                // The focus goes where the stage is: its form's own line, else its part.
+                const focus = form?.querySelector(":scope > summary") || to;
+                if (focus && !focus.matches("a, button, summary, input, select, textarea, [tabindex]")) focus.tabIndex = -1;
+                focus?.focus({ preventScroll: true });
               },
             }, stage.name)
           : h("span", { class: "stage-name" }, stage.name);
@@ -397,7 +411,10 @@ export async function refinementView(root, [id], scope) {
           "aria-current": stage.key === now ? "step" : null,
         },
         h("span", { class: "stage-num", "aria-hidden": "true" }, stage.done ? "✓" : String(index + 1)),
-        h("span", { class: "stage-body" }, name, h("span", { class: "stage-state" }, stage.state)));
+        h("span", { class: "stage-body" },
+          // The tick, in words, for a screen reader; the current stage is `aria-current`.
+          stage.done ? h("span", { class: "visually-hidden" }, "Done: ") : null,
+          name, h("span", { class: "stage-state" }, stage.state)));
       })));
   }
 
@@ -487,9 +504,9 @@ export async function refinementView(root, [id], scope) {
     if (pick) return verdictBox("tone-ok", `Proposal ${short(pick)} passes the approval checks, and is ready to approve`, behind(pick));
     const judged = (shown.validations || []).find((record) => record.complete);
     if (judged) return verdictBox("tone-bad", `Proposal ${short(judged.proposal)} does not pass the approval checks`, behind(judged.proposal));
-    const survived = items.filter((item) => item.screens.some((verdict) => verdict.complete && verdict.survives));
+    const survived = items.filter((item) => standingOf(item)?.survives);
     if (survived.length) {
-      const toEnd = survived.some((item) => item.screens.some((verdict) => verdict.complete && verdict.survives && verdict.reach === "end"));
+      const toEnd = survived.some((item) => standingOf(item).reach === "end");
       return verdictBox(toEnd ? "significant tone-ok" : "significant",
         items.length === 1 ? `Proposal ${short(survived[0].id)} beat the original in a test at this step`
           : `${survived.length} of ${plural(items.length, "proposal")} beat the original in a test at this step`,
@@ -497,8 +514,8 @@ export async function refinementView(root, [id], scope) {
           ? "Before approving one, give it full test runs: the task's own runs, and the tasks held out from it."
           : "A test at one step is a lead, not proof. Before approving an edit that beat the original, give it full test runs."));
     }
-    const worse = items.filter((item) => item.screens.some((verdict) => verdict.complete && verdict.worse));
-    if (items.some((item) => item.screens.some((verdict) => verdict.complete && !verdict.quick))) {
+    const worse = items.filter((item) => standingOf(item)?.worse);
+    if (items.some(standingOf)) {
       return verdictBox("not-significant", "No proposal has beaten the original in a test at this step",
         worse.length ? h("p", { class: "verdict-lines" }, `${worse.map((item) => short(item.id)).join(", ")} made it worse.`) : null);
     }
@@ -635,9 +652,10 @@ export async function refinementView(root, [id], scope) {
     if (fold) fold.open = true;
   }
 
-  /** Proposals a finished screen found to shift the target: what may be validated. */
+  /** Proposals whose latest finished screen kept them (`standingOf`): what may be validated, as the
+   *  approval checks' G0 reads it. */
   function survivors() {
-    return shown.proposals.filter((each) => each.screens.some((verdict) => verdict.complete && verdict.survives));
+    return shown.proposals.filter((each) => standingOf(each)?.survives);
   }
 
   function proposePanel() {
@@ -1067,9 +1085,16 @@ function verdictChip(verdict) {
   return chip("within chance", "muted");
 }
 
-/** A proposal's screen to show. Screens come newest first: one it survived, else the newest. */
+/** A proposal's verdict where it stands, as the approval checks read it (`validate.latest_screen`):
+ *  its newest test at this step that finished and is not a quick look. A later test that did not
+ *  keep it undoes an earlier one that did. Screens come newest first. */
+function standingOf(item) {
+  return item.screens.find((verdict) => verdict.complete && !verdict.quick) || null;
+}
+
+/** A proposal's screen to show: where it stands, else its newest — a quick look, or unfinished. */
 function screenedOf(item) {
-  return item.screens.find((verdict) => verdict.complete && verdict.survives) || item.screens[0] || null;
+  return standingOf(item) || item.screens[0] || null;
 }
 
 /** A validation's verdict in a chip: the gate is a check, so green or red. */
@@ -1121,8 +1146,10 @@ export function diffView(hunks) {
 /** A proposal's edit in a line: the first line it adds — or, where it only removes, the first it
  *  removes — and how many more lines it changes. */
 function editLine(item) {
-  const first = (item.diff || []).flatMap((hunk) => hunk.lines).filter((line) => line.op !== " ")
-    .sort((a, b) => (a.op === "+" ? 0 : 1) - (b.op === "+" ? 0 : 1))[0];
+  const changed = (item.diff || []).flatMap((hunk) => hunk.lines).filter((line) => line.op !== " ");
+  // A line with words in it names the edit: a blank one added before a paragraph does not.
+  const first = changed.find((line) => line.op === "+" && line.text.trim())
+    || changed.find((line) => line.text.trim()) || changed[0];
   if (!first) return h("span", { class: "faint" }, "no change");
   const text = first.text.trim();
   const more = (item.changed || 1) - 1;

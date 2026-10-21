@@ -26,19 +26,74 @@ export function cloudNote(reminder) {
     h("a", { href: "#/words?term=local%20model" }, "Why a model you run yourself"));
 }
 
+/** A server that asks for a key and is not on the internet — one of your own given a key — said
+ *  as the reminder says it of a hosted API: recorded, and what tuningfork runs itself refused. */
+const keyNote = () => h("div", { class: "banner banner-warn" }, h("strong", null, "It asks for an API key. "),
+  "Your agent's calls are recorded through it, with the key your agent sends. What tuningfork runs itself sends none, and is refused.");
+
 /** The server in a word, as the strip here and the status strip at the sidebar's foot say it:
- *  on the internet, or whether it answers. `warn` where it needs a look. */
+ *  on the internet, asking for a key, or whether it answers. `warn` where it needs a look. A
+ *  server that asks for a key answered — the proxy's read of it notes a problem too, the refusal
+ *  it got — so that is said first: never that it is down. */
 export function serverWord(server = {}) {
   if (server.reminder) return { word: "on the internet", warn: true, title: server.reminder.headline };
+  if (server.read?.asks_key) return { word: "asks for a key", warn: true, title: server.problem || undefined };
   if (server.problem) return { word: "not answering", warn: true, title: server.problem };
   if (server.identity?.id) return { word: "answering", warn: false };
   return { word: "not read yet", warn: false };
 }
 
-// The controls the server test can grey, by the token work each needs (`token_work`'s keys).
-const TOKEN_CONTROLS = { score: "“Score this answer”", forking: "“Find forking tokens”", logprobs: "“Keep each sample's tokens”" };
+// The controls the server test can grey, by the token work each needs (`token_work`'s keys),
+// named as each is labelled.
+const TOKEN_CONTROLS = { score: "“Score this answer”", forking: "“Find forking tokens…”", logprobs: "“Keep each sample's tokens”" };
 
 const listed = (items) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+
+/** What Connections' strip means for the person, the most pressing first: at most three
+ *  sentences, one for each part of it that is amber — or one saying nothing needs a look, only
+ *  when none is. `state` is `GET /connections` with the proposer's settings as `proposer`. */
+export function whatItMeans({ server = {}, harnesses = [], sandbox = null, proposer = {} }) {
+  const lines = [];
+  const asksKey = Boolean(server.read?.asks_key);
+  // A key asked for refuses every launch and every call tuningfork makes itself: said once here,
+  // and not again for each harness.
+  if (asksKey) {
+    lines.push("The server asks for an API key, so your agent's calls are recorded, but what tuningfork runs itself is refused: it sends no key.");
+  } else if (server.reminder) {
+    lines.push(server.reminder.headline);
+  } else if (server.problem) {
+    lines.push("The server is not answering, so nothing can be recorded or measured until it does.");
+  }
+  const found = harnesses.filter((harness) => harness.path);
+  const missing = harnesses.filter((harness) => !harness.path).map((harness) => harness.name);
+  const blocked = found.filter((harness) => (harness.preflight?.problems || []).length).map((harness) => harness.name);
+  if (!found.length) {
+    lines.push("No harness was found, so tuningfork can record your own agent but cannot start runs of its own.");
+  } else if (!asksKey && blocked.length === found.length) {
+    lines.push("No harness found here can run against this server, so tuningfork cannot start runs of its own.");
+  } else if (!asksKey && (missing.length || blocked.length)) {
+    lines.push([
+      missing.length ? `${listed(missing)} ${missing.length === 1 ? "was" : "were"} not found, so runs of ${missing.length === 1 ? "it" : "them"} cannot start.` : null,
+      blocked.length ? `${listed(blocked)} cannot run against this server.` : null,
+    ].filter(Boolean).join(" "));
+  }
+  const greyed = Object.entries(server.token_work || {}).filter(([, reason]) => reason).map(([work]) => TOKEN_CONTROLS[work] || work);
+  if (greyed.length) lines.push(`${listed(greyed)} ${greyed.length === 1 ? "is" : "are"} greyed out on this server.`);
+  if (sandbox && !sandbox.available) {
+    lines.push("Runs tuningfork starts are not sandboxed, so their folders' paths differ from run to run, and the model reads them.");
+  }
+  if (proposer.remote) {
+    lines.push(!proposer.allow_remote
+      ? "The proposing model is on another machine and not allowed yet, so asking it is refused."
+      : proposer.key?.set
+        ? "The proposing model is on another machine, so what it is sent — recorded prompts, answers and your skill — leaves this one."
+        : "The proposing model is on another machine and no key is set, so it may refuse the call.");
+  }
+  if (!server.checks?.checked_at && !server.problem && !asksKey) {
+    lines.push("Test the server to measure what each harness needs of it, and whether it can score answers and find forking tokens.");
+  }
+  return lines.length ? lines.slice(0, 3) : ["Nothing here needs a look."];
+}
 
 export async function connectionsView(root, _, scope) {
   if (live.mode !== "live") {
@@ -114,7 +169,7 @@ export async function connectionsView(root, _, scope) {
           settings.remote && !settings.key?.set ? h("span", { class: "warn-text" }, "no key set") : null,
         ])),
       h("div", { class: "health-means" }, h("div", { class: "label" }, "What this means for you"),
-        h("ul", null, meaning().map((line) => h("li", null, line)))))));
+        h("ul", null, whatItMeans(state).map((line) => h("li", null, line)))))));
   }
 
   /** One part of the strip: its name, its word, and a line or two beneath. */
@@ -138,30 +193,6 @@ export async function connectionsView(root, _, scope) {
     return chip("another machine", "warn", "What it is sent — recorded prompts, answers and your skill — leaves this machine");
   }
 
-  /** What the strip means for the person, the most pressing first: at most three sentences, or
-   *  one saying nothing needs a look. */
-  function meaning() {
-    const server = state.server;
-    const lines = [];
-    if (server.problem) lines.push("The server is not answering, so nothing can be recorded or measured until it does.");
-    else if (server.reminder) lines.push(server.reminder.headline);
-    const found = state.harnesses.filter((harness) => harness.path);
-    if (!found.length) {
-      lines.push("No harness was found, so tuningfork can record your own agent but cannot start runs of its own.");
-    } else if (found.every((harness) => (harness.preflight?.problems || []).length)) {
-      lines.push("No harness found here can run against this server, so tuningfork cannot start runs of its own.");
-    }
-    const greyed = Object.entries(server.token_work || {}).filter(([, reason]) => reason).map(([work]) => TOKEN_CONTROLS[work] || work);
-    if (greyed.length) lines.push(`${listed(greyed)} ${greyed.length === 1 ? "is" : "are"} greyed out on this server.`);
-    if (state.sandbox && !state.sandbox.available) {
-      lines.push("Runs tuningfork starts are not sandboxed, so their folders' paths differ from run to run, and the model reads them.");
-    }
-    if (!server.checks?.checked_at && !server.problem) {
-      lines.push("Test the server to measure what each harness and the token tools need of it.");
-    }
-    return lines.length ? lines.slice(0, 3) : ["Nothing here needs a look."];
-  }
-
   // --- the server -----------------------------------------------------------------------
 
   let switcher = null;
@@ -174,12 +205,10 @@ export async function connectionsView(root, _, scope) {
     switcher ??= switchForm();
     replace(serverEl, panel("Inference server", [
       // A server that asks for a key answered: it is no server to start again.
-      server.reminder
-        ? cloudNote(server.reminder)
-        : server.problem
-          ? h("div", { class: "banner banner-warn" }, h("strong", null, "Not answering: "), `${server.problem}. `,
-              "Start the server — or let it finish loading its model — then test it again.")
-          : null,
+      server.reminder ? cloudNote(server.reminder) : server.read?.asks_key ? keyNote() : server.problem
+        ? h("div", { class: "banner banner-warn" }, h("strong", null, "Not answering: "), `${server.problem}. `,
+            "Start the server — or let it finish loading its model — then test it again.")
+        : null,
       kv([
         ["forwarding to", h("span", { class: "mono" }, server.url)],
         ["started with", server.started_with !== server.url ? h("span", { class: "mono" }, server.started_with) : null],
@@ -430,7 +459,7 @@ export async function connectionsView(root, _, scope) {
     return h("div", { class: "harness-card" },
       h("div", { class: "harness-head" },
         h("strong", null, "sandbox"),
-        sandbox.available ? chip(`bubblewrap ${sandbox.version || ""}`.trim(), "muted") : chip("none", "warn")),
+        sandbox.available ? chip(`bubblewrap ${sandbox.version || ""}`.trim(), "muted") : chip("off", "warn")),
       sandbox.available
         ? kv([
             ["every run tuningfork starts sees", h("span", null, "its folder ", h("span", { class: "mono" }, sandbox.workspace), ", its home ", h("span", { class: "mono" }, sandbox.home))],

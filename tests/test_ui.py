@@ -224,8 +224,10 @@ class TestRefining:
     def test_a_refinement_goes_to_the_trash_and_its_page_says_so(self):
         refine = source("js/views/refine.js")
         assert 'trashButton({ kind: "refinement"' in refine and 'trashedBanner({\n            kind: "refinement"' in refine
-        # Nothing new starts on one in the trash: every form waits on `acting()`.
-        assert "!shown.refinement.trashed_at" in refine
+        # Nothing new starts on one in the trash: every form waits on `acting()`, which a
+        # refinement in the trash — `settled()` — never is; nor has it a current stage.
+        assert "Boolean(shown.refinement.trashed_at)" in refine and 'live.mode === "live" && !settled()' in refine
+        assert "settled() ? null : currentOf(stages)" in refine
         page = source("js/views/trash.js")
         assert "found.refinements" in page and 'row("refinement"' in page
         assert '["refinements", "refinement"]' in source("js/trash.js") and "goes?.notes" in source("js/trash.js")

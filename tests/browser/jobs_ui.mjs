@@ -752,8 +752,39 @@ try {
   const glanceBefore = await glance();
   check(glanceBefore.first && glanceBefore.names === "Server,Harnesses,Sandbox,Proposing model" && glanceBefore.server === "answering",
     `Connections leads with the server, the harnesses, the sandbox and the proposing model at a glance (${glanceBefore.names}; ${glanceBefore.server})`);
-  check(glanceBefore.tested === "not tested yet" && glanceBefore.button && glanceBefore.means.includes("Test the server to measure what each harness and the token tools need of it."),
+  check(glanceBefore.tested === "not tested yet" && glanceBefore.button
+    && glanceBefore.means.includes("Test the server to measure what each harness needs of it, and whether it can score answers and find forking tokens."),
     `the server test is there, and what it means that none has run (${glanceBefore.means.join(" / ")})`);
+  // What the strip means, worked out for the states the lab's server is never in: one that asks
+  // for a key (found in review: said to be "not answering", the refusal it got taken for none),
+  // one down, a harness missing, a proposing model on another machine, and all well.
+  const meant = await page.eval(`(async () => {
+    const { serverWord, whatItMeans } = await import(new URL("js/views/connections.js", location.href).href);
+    const hermes = { name: "hermes", path: "/bin/hermes", preflight: { problems: [] } };
+    const fine = { server: { identity: { id: "s" }, checks: { checked_at: 1 }, token_work: {} }, harnesses: [hermes],
+      sandbox: { available: true }, proposer: { url: null, remote: false } };
+    const keyed = { ...fine, server: { identity: {}, problem: "it answered 401", read: { asks_key: true, internet: true },
+      reminder: { headline: "This server is on the internet and asks for an API key." }, token_work: { score: "it has no /props" } },
+      harnesses: [{ ...hermes, preflight: { problems: ["this server asks for an API key"] } }] };
+    return {
+      fine: whatItMeans(fine),
+      keyed: whatItMeans(keyed),
+      words: [serverWord(keyed.server).word, serverWord({ problem: "it answered 401", read: { asks_key: true } }).word,
+        serverWord({ problem: "nothing is listening there" }).word, serverWord(fine.server).word],
+      down: whatItMeans({ ...fine, server: { problem: "nothing is listening there" } }),
+      missing: whatItMeans({ ...fine, harnesses: [hermes, { name: "claude-code", path: null }] }),
+      remote: whatItMeans({ ...fine, proposer: { url: "https://api.example.test", remote: true, allow_remote: false } }),
+    };
+  })()`);
+  check(meant.fine.join(" / ") === "Nothing here needs a look." && meant.words.join() === "on the internet,asks for a key,not answering,answering",
+    `all well, nothing needs a look; the server's word, as the status strip says it too (${meant.words.join(", ")})`);
+  check(meant.keyed[0] === "The server asks for an API key, so your agent's calls are recorded, but what tuningfork runs itself is refused: it sends no key."
+    && !meant.keyed.some((line) => /not answering|No harness/.test(line)) && meant.keyed.includes("“Score this answer” is greyed out on this server."),
+    `a server that asks for a key answered: never "not answering" (${meant.keyed.join(" / ")})`);
+  check(meant.down.join(" / ") === "The server is not answering, so nothing can be recorded or measured until it does."
+    && meant.missing.includes("claude-code was not found, so runs of it cannot start.")
+    && meant.remote.includes("The proposing model is on another machine and not allowed yet, so asking it is refused."),
+    "a server down, a harness missing, a proposing model elsewhere: each amber part has its sentence");
   await page.click("Test the server");
   await until(() => page.eval(`[...document.querySelectorAll(".measured td .mono")].some((name) => name.textContent === "anthropic_messages")`), "the check's results", 60000);
   const serverJob = (await api("/jobs")).find((job) => job.kind === "server-check");
@@ -1202,6 +1233,29 @@ try {
   });
   const labScreen = await finished((await post("/jobs", { kind: "screen", params: { refinement: made.id, proposals: [keysFix.id], n: 6 } })).id, 60000);
   check(labScreen.status === "done" && labScreen.result.screen.survivors.length === 1, "a refinement of the lab task: the keys fix survives its screen");
+  // Where a proposal stands is its latest finished test, as the approval checks read it (found in
+  // review: kept by one test and not by a later one, it was still said to have beaten the
+  // original, and full test runs were offered that the proxy then refused). Watched on the page as
+  // each test ends: the stage moving on opens its form, and moving back takes the form away.
+  const undone = await post("/refinements", { run: labRun, step: "1", target_match: "row_count" });
+  const undoneFix = await post(`/refinements/${undone.id}/proposals`, {
+    edits: [{ old: "Write the totals to report.json.", new: "Write the totals to report.json, using the keys row_count and amount_total." }],
+    rationale: "the check reads row_count",
+  });
+  await page.eval(`location.hash = "#/refine/${undone.id}"`);
+  await until(() => page.eval(`document.querySelector(".screen-panel")?.open === true`), "the test's form, open while its proposal is untested");
+  const undoneKept = await finished((await post("/jobs", { kind: "screen", params: { refinement: undone.id, proposals: [undoneFix.id], n: 6 } })).id, 60000);
+  check(undoneKept.result.screen.survivors.length === 1, "a test of six keeps the proposal");
+  await until(async () => (await stages()).includes("Full test runs: none yet: current"), "the stage moving on, on the page");
+  check(await opened(".validate-panel") === true, "on the page as the test ended: the stage moved on, and its form opened");
+  const undoneLost = await finished((await post("/jobs", { kind: "screen", params: { refinement: undone.id, proposals: [undoneFix.id], n: 2 } })).id, 60000);
+  check(undoneLost.result.screen.complete && !undoneLost.result.screen.survivors.length, "a later test of two does not keep it");
+  const undoneStages = await until(async () => { const now = await stages(); return now.includes("Test at this step: none beat the original: current") ? now : null; },
+    "the stage back to testing");
+  check(undoneStages.includes("Full test runs: wait for a proposal that beat the original: to come") && !(await page.eval(`!!document.querySelector(".validate-panel")`))
+    && await page.eval(`[...document.querySelectorAll(".proposal-head .chip")].some((c) => c.textContent === "within chance")
+      && document.querySelector(".evidence-panel .verdict-big")?.textContent === "No proposal has beaten the original in a test at this step"`),
+    `kept by an earlier test and not by the latest, it stands where the latest left it, and no full test runs are offered (${undoneStages})`);
   await page.eval(`location.hash = "#/refine/${made.id}"`);
   await until(() => page.eval(`(document.querySelector(".validate-panel .plan-preview")?.textContent || "").includes("30 in all")`), "the validation's plan");
   check(await page.eval(`document.querySelector(".validate-panel .plan-preview").textContent.includes("each of: 2 — only their verdicts are kept")`),
@@ -1361,6 +1415,8 @@ try {
   await until(() => page.eval(`(document.querySelector(".trashed-banner")?.textContent || "").includes("takes no new work")`), "the banner of a refinement in the trash");
   check(await page.eval(`!document.querySelector(".page-head button") && ![...document.querySelectorAll("button")].some((b) => b.textContent === "Start the test")`),
     "in the trash, it offers no new work");
+  check(await page.eval(`!!document.querySelector(".stepper") && !document.querySelector('.stepper [aria-current="step"]')`),
+    "and no stage of it is current: where it stands is shown, with nothing next");
   check(!(await api("/refinements")).some((each) => each.id === refinementId), "and leaves the list of refinements");
   await page.eval(`location.hash = "#/trash"`);
   await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent.startsWith("Refinements"))`), "the Trash page's refinements");
@@ -1370,6 +1426,9 @@ try {
   await page.click("Restore", `document.querySelector(".trashed-banner")`);
   await until(() => page.eval(`!document.querySelector(".trashed-banner") && [...document.querySelectorAll(".page-head button")].some((b) => b.textContent === "Move to trash")`), "the refinement, restored");
   check((await api("/refinements")).some((each) => each.id === refinementId), "restored, it is back in the list as it went");
+  await until(() => page.eval(`document.querySelector('.stepper [aria-current="step"] .stage-name')?.textContent === "Full test runs"
+    && document.querySelector(".validate-panel")?.open === true`), "its current stage back, that stage's form open");
+  check(true, "restored, its current stage is back, and that stage's form opens");
 
   // --- 15. The front page, and the Skills page ---------------------------------------------------
   console.log("the front page: setup, the map, ways in, words");
