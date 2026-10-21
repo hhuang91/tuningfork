@@ -58,8 +58,10 @@ TUNINGFORK_PROTECTED=127.0.0.1:18099 uv run python tests/browser/demo.py lab /tm
 node tests/browser/jobs_ui.mjs
 ```
 
-It checks that a resample started from a step on the run's conversation runs through the
-proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter
+It checks that a step's work opens beside the run, never inside it — its actions and the form
+they open, in a column where the rail was, its row pressed — each step's kept as it was left
+when another's takes its place, and Hide giving the rail back; that a resample started there runs
+through the proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter
 as its target, starts at one press of Start with the mouse, the name just typed still focused (the change
 event as the focus leaves it once lost that click) — a form asking for its plan again when the page
 refreshes it, and not for an event that changes nothing — shows the known shift, saves the variant only
@@ -88,7 +90,9 @@ check measures what the harnesses need, a protected endpoint is refused, and an 
 switches its server after a dry run; that Start… on the Jobs page leads to a step's form;
 that a run reads as one conversation — each message once, the final reply marked (and not
 green), its verdict closing the page and the step rail, coloured by it with what the check
-printed, a step opening in place with its form in it, and its exact context on a page of its own;
+printed, a step opening in place, one at a time, kept as it was when opened again, the rail
+bringing a step into sight and opening nothing, a form opening beside the step and its Close
+leaving the step's work there, and its exact context on a page of its own;
 that the divergence page leads with the step whose behaviour best predicts a pass, in a callout
 with the ways to it, colours each run by its own verdict, draws "then passed", the tally's counts
 and where a question held as rates — the accent's, never green or red — and says plainly how it

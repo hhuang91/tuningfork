@@ -1374,6 +1374,30 @@ pre.code { color: var(--muted); }
 /* --- a run as one conversation (js/timeline.js) ------------------------------------------ */
 
 .tl-layout { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 18px; align-items: start; margin-top: 14px; }
+/* The work on a step beside the run, never inside it: its actions and the form they open, in a
+   column where the rail is while it is open. Narrow, it slides over the run from the right. */
+.tl-layout.working { grid-template-columns: minmax(0, 1fr) clamp(320px, 38%, 480px); }
+.tl-side { min-width: 0; align-self: stretch; }
+.tl-workcol {
+  position: sticky;
+  top: calc(var(--topbar) + 16px);
+  /* Short enough to fit above the page's foot (main's 64px): a sticky column taller than what is
+     left of the run below it is pushed up, its heading out of sight, at the end of the page. */
+  max-height: calc(100vh - var(--topbar) - 96px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* Its heading stays in sight as the column scrolls: which step, and the way to close it. */
+.tl-workcol-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; padding: 4px 0 8px; background: var(--bg); }
+.tl-workcol-title { flex: none; margin: 0; font-size: 15px; }
+.tl-workcol-what { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.tl-workcol-head .btn { flex: none; margin-left: auto; }
+.tl-workcol-step { display: flex; flex-direction: column; gap: 12px; }
+.tl-workcol .start-actions { flex-wrap: wrap; }
+/* A row whose step's work is the one beside the run. */
+.tl-work[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .tl { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .tl-entry .msg { margin: 0; }
 .tl-tag { color: var(--faint); font-size: 11.5px; white-space: nowrap; }
@@ -1501,8 +1525,22 @@ details.panel[open] > summary:hover { border-radius: var(--radius) var(--radius)
 .tool-params li + li { margin-top: 3px; }
 .skills-list { margin-bottom: 12px; }
 @media (max-width: 1000px) {
-  .tl-layout { grid-template-columns: minmax(0, 1fr); }
-  .tl-rail { position: static; order: -1; flex-direction: row; flex-wrap: wrap; max-height: none; padding-left: 0; border-left: none; }
+  .tl-layout, .tl-layout.working { grid-template-columns: minmax(0, 1fr); }
+  .tl-side { order: -1; }
+  .tl-rail { position: static; flex-direction: row; flex-wrap: wrap; max-height: none; padding-left: 0; border-left: none; }
+  .tl-workcol {
+    position: fixed;
+    top: var(--topbar);
+    right: 0;
+    bottom: 0;
+    z-index: 18;
+    width: min(480px, 100%);
+    max-height: none;
+    padding: 14px 16px;
+    background: var(--bg);
+    border-left: 1px solid var(--border-strong);
+    box-shadow: 0 8px 30px rgb(0 0 0 / 0.18);
+  }
   /* A row of steps above the conversation: their results would crowd it, and so would the
      answers of a conversation the run continued. */
   .tl-rail-result, .tl-rail-turn, .tl-rail-earlier, .tl-rail-foldall { display: none; }

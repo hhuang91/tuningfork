@@ -66,7 +66,7 @@ export async function runView(root, [reference, focus], scope) {
     changedBanner(data),
     aboutRun(data),
     data.steps.length
-      ? h("div", { class: "tl-layout" }, view.element, view.rail)
+      ? view.layout
       : h("div", { class: "panel empty" }, h("h2", null, "No steps recorded")),
   );
   view.start();

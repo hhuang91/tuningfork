@@ -1410,9 +1410,9 @@ proxy runs. Open the address `tuningfork serve` printed — the one with `?token
    recorded run of the task, beside the verdict that run got, or on a reply and files you
    write. Nothing is recorded.)
 3. Open a run, and on its conversation click the `Write` step's **Work from here** →
-   *Resample…* opens the form right there — so does **Jobs** → *Start…*, from a list of
-   runs. The plan says what will be sent, through the proxy, and how long it may take. The
-   finished job links the experiment.
+   *Resample…* opens the form beside the run, the conversation still in sight — so does
+   **Jobs** → *Start…*, from a list of runs. The plan says what will be sent, through the
+   proxy, and how long it may take. The finished job links the experiment.
 4. *A/B a wording…* opens an editor holding the skill as that run was given it. Make the
    change `SKILL.v2.md` makes — or paste the file — name it, and choose what to count:
    *What the model does matches a pattern*, `row_count`. Nothing is chosen for you. The

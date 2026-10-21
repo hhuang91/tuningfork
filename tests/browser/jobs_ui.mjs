@@ -12,10 +12,15 @@ if (!run) throw new Error("no seeded run: start `demo.py lab` on a fresh home");
 
 const jobIdIn = (hash) => /#\/jobs\/([0-9a-f]{32})/.exec(hash)?.[1];
 
+// The work beside the run, on the step it shows: its actions, and a form there.
+const WORK = `.tl-workcol:not([hidden]) .tl-workcol-step:not([hidden])`;
+
 async function openStep(page, start) {
   await page.eval(`location.hash = "#/runs/${run.id}/1${start ? `?start=${start}` : ""}"`);
-  // A step's address opens the run's timeline with that step open, a form in it if asked.
-  await until(() => page.eval(`!!document.querySelector("#s1.tl-open .start-actions")`), "the step, open on the run's timeline");
+  // A step's address opens the run's timeline with that step's details open; one naming a form,
+  // the step's work beside the run, the form in it.
+  await until(() => page.eval(start ? `!!document.querySelector("${WORK} .start-actions")` : `!!document.querySelector("#s1.tl-open .tl-facts")`),
+    start ? "the step's work, beside the run" : "the step, open on the run's timeline");
 }
 
 async function openStepOf(page, runId, k, start) {
@@ -56,32 +61,57 @@ try {
   // --- 1. Resample from the step page -----------------------------------------------------
   console.log("resample a step from its page");
   await openStep(page);
-  check(await page.eval(`[...document.querySelectorAll(".start-actions a")].map((a) => a.textContent).join("|") === "Resample…|A/B a wording…|Find forking tokens…|Fork from here…|Refine the skill here…"`), "the step offers a resample, an A/B, the forking-token probe, a fork and a refinement");
   // The lab's runs were launched by a batch, as their check's verdicts say (found in review: since
   // runs nothing launched read "recorded live", every seeded run did).
   check(await page.eval(`!document.querySelector(".page-head h1 .chip") && document.querySelector(".about-run summary").textContent.includes("started by tuningfork, batch")`),
     "a seeded run reads as a batch's, not as one recorded live");
-  // A step opens at its actions; what it was is one block of lines, in one style; its record is
-  // folded, its timings already in its call's line (the review's §7 and §3.6).
+  // A step opens to what it was, in one block of lines, in one style; its record folded, its
+  // timings already in its call's line (the review's §7 and §3.6). The work from it is beside the
+  // run, never inside it.
   check(await page.eval(`(() => {
     const block = document.querySelector("#s1 .tl-block");
     const record = block.querySelector("details.record-panel");
-    return block.firstElementChild.classList.contains("work-panel")
-      && block.firstElementChild.querySelector(".panel-head h2").textContent === "Work from here"
+    return !block.querySelector(".work-panel, .start-actions")
       && [...block.querySelectorAll(".tl-facts dt")].map((dt) => dt.textContent).join("|").startsWith("the call|")
       && block.querySelector(".tl-facts").textContent.includes("total")
       && !!record && !record.open && record.querySelector("summary h2").textContent === "Details for the record";
-  })()`), "a step opens at its actions, what it was in one block of lines, its record folded");
-  // Every step's row says how to work from it, open or not, and the button opens it there.
+  })()`), "a step opens to what it was, in one block of lines, its record folded, and no work inside the run");
+  // Every step's row says how to work from it, open or not, and the button opens its work beside
+  // the run: the column where the rail was, the step's actions in it, the first ready for a key.
   check(await page.eval(`[...document.querySelectorAll(".tl-step")].every((s) => s.querySelector(".tl-head > .tl-work")?.textContent === "Work from here")`),
     "every step's row has its Work from here, in sight");
-  await page.eval(`document.querySelector("#s0 .tl-work").click()`);
-  await until(() => page.eval(`!!document.querySelector("#s0.tl-open .start-actions") && document.activeElement?.textContent === "Resample…"`),
-    "step 0, opened at its actions");
-  check(await page.eval(`location.hash === "#/runs/${run.id}/0"`), "Work from here opens its step at the actions, the first ready for a key");
+  await page.eval(`document.querySelector("#s1 .tl-work").click()`);
+  await until(() => page.eval(`!!document.querySelector("${WORK} .start-actions") && document.activeElement?.textContent === "Resample…"`),
+    "step 1's work, beside the run");
+  check(await page.eval(`[...document.querySelectorAll("${WORK} .start-actions a")].map((a) => a.textContent).join("|") === "Resample…|A/B a wording…|Find forking tokens…|Fork from here…|Refine the skill here…"`),
+    "the step offers a resample, an A/B, the forking-token probe, a fork and a refinement");
+  check(await page.eval(`document.querySelector(".tl-layout").classList.contains("working") && document.querySelector(".tl-rail").hidden
+    && document.querySelector(".tl-workcol-title").textContent === "Work from step 1"
+    && document.querySelector("#s1 .tl-work").getAttribute("aria-pressed") === "true" && document.querySelector("#s0 .tl-work").getAttribute("aria-pressed") === "false"
+    && location.hash === "#/runs/${run.id}/1" && document.querySelector("#s1").classList.contains("tl-open")`),
+    "Work from here opens the step's work beside the run, where the rail was, its row pressed; the step's details stay as they were");
   await openStep(page, "resample");
   await planShows(page, "20 samples");
   check(await page.eval(`(document.querySelector(".plan-preview").textContent).includes(${JSON.stringify(BASE)})`), "the plan says its calls go through this proxy");
+  check(await page.eval(`!!document.querySelector("${WORK} .start-slot .plan-form") && !document.querySelector(".tl-step .plan-form")`),
+    "a step's form opens in its work beside the run, never inside the run");
+  // Each step's work is kept beside the run as it was left: another step's work shows in its
+  // place, and this one comes back with what was typed in it. Hide gives the rail back, keeping it.
+  await page.type(`document.querySelector('${WORK} .plan-form [name="n"]')`, "7");
+  await page.eval(`document.querySelector("#s0 .tl-work").click()`);
+  await until(() => page.eval(`document.querySelector(".tl-workcol-title")?.textContent === "Work from step 0"
+    && !!document.querySelector("${WORK} .start-actions") && !document.querySelector("${WORK} .plan-form")`), "step 0's work, in step 1's place");
+  await page.eval(`document.querySelector("#s1 .tl-work").click()`);
+  await until(() => page.eval(`document.querySelector(".tl-workcol-title")?.textContent === "Work from step 1"`), "step 1's work back");
+  check(await page.eval(`document.querySelector('${WORK} .plan-form [name="n"]')?.value === "7"`),
+    "each step's work is kept as it was left: step 1's form comes back as typed");
+  await page.click("Hide", `document.querySelector(".tl-workcol-head")`);
+  check(await page.eval(`!document.querySelector(".tl-layout").classList.contains("working") && !document.querySelector(".tl-rail").hidden
+    && document.querySelector(".tl-workcol").hidden && ![...document.querySelectorAll(".tl-work")].some((b) => b.getAttribute("aria-pressed") === "true")`),
+    "Hide gives the rail back, no row pressed");
+  await page.eval(`document.querySelector("#s1 .tl-work").click()`);
+  await until(() => page.eval(`document.querySelector('${WORK} .plan-form [name="n"]')?.value === "7"`), "the form, as typed, after Hide");
+  check(true, "what the column held is still there once it opens again");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "6");
   check(await page.eval(`[...document.querySelectorAll(".plan-form button")].find((b) => b.textContent === "Start the resample").disabled`), "Start waits for the plan of what the form now says");
   await planShows(page, "6 samples");
@@ -931,20 +961,42 @@ try {
   // Opening a step happens in place: the page is not drawn again, and the address follows.
   await page.eval(`document.querySelector(".view").dataset.sentinel = "kept"`);
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
-  await until(() => page.eval(`!!document.querySelector("#s1.tl-open .start-actions")`), "step 1's details");
+  await until(() => page.eval(`!!document.querySelector("#s1.tl-open .tl-facts")`), "step 1's details");
   check(await page.eval(`location.hash === "#/runs/${run.id}/1" && document.querySelector(".view").dataset.sentinel === "kept"`),
     "a step opens in place, and the address names it");
   check(await page.eval(`getComputedStyle(document.querySelector("#s1")).borderLeftColor === ${colourOf("var(--accent)")}`),
     "open, it takes the accent");
+  // One step's details open at a time: opening another closes it, which keeps what it held.
+  await page.eval(`document.querySelector("#s1 .tl-block").dataset.kept = "yes"`);
+  await page.eval(`document.querySelector("#s2 .tl-marker").click()`);
+  await until(() => page.eval(`!!document.querySelector("#s2.tl-open .tl-facts")`), "step 2's details");
+  check(await page.eval(`document.querySelectorAll(".tl-step.tl-open").length === 1 && !document.querySelector("#s1").classList.contains("tl-open")`),
+    "opening a step closes the one open: one step's details at a time");
+  await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
+  check(await page.eval(`document.querySelector("#s1").classList.contains("tl-open") && document.querySelector("#s1 .tl-block").dataset.kept === "yes"
+    && document.querySelectorAll(".tl-step.tl-open").length === 1`), "and opened again, it is as it was: nothing drawn again");
+  // The rail moves through the run and opens nothing: a step opens from its own row.
+  await page.eval(`document.querySelector('.tl-rail-step[data-idx="0"]').click()`);
+  await until(() => page.eval(`(() => { const top = document.querySelector("#s0").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 3; })()`),
+    "step 0 in sight, from the rail");
+  check(await page.eval(`!document.querySelector("#s0").classList.contains("tl-open") && document.querySelector("#s1").classList.contains("tl-open")
+    && location.hash === "#/runs/${run.id}/1" && document.querySelector(".tl-workcol").hidden`),
+    "the rail brings a step into sight and opens nothing, the address as it was");
   // The rail offers the actions of the step being read, and marks the steps with experiments.
   await page.eval(`document.querySelector("#s1").scrollIntoView({ block: "start" })`);
   await until(() => page.eval(`document.querySelector(".tl-rail-work")?.textContent === "Work from step 1"`), "the rail's way to the step being read");
   check(await page.eval(`!!document.querySelector('.tl-rail-step[data-idx="1"] .tl-exp-dot') === ${shape.steps.find((step) => step.idx === 1).experiments.length > 0}`),
     "the rail offers to work from the step being read, and rings a step with experiments");
-  await page.eval(`[...document.querySelectorAll("#s1 .start-actions a")].find((a) => a.textContent === "Resample…").click()`);
-  await until(() => page.eval(`!!document.querySelector("#s1 .start-panel .plan-form")`), "the form in the step");
+  await page.click("Work from step 1", `document.querySelector(".tl-rail")`);
+  await until(() => page.eval(`!!document.querySelector("${WORK} .start-actions")`), "step 1's work, beside the run");
+  await page.eval(`[...document.querySelectorAll("${WORK} .start-actions a")].find((a) => a.textContent === "Resample…").click()`);
+  await until(() => page.eval(`!!document.querySelector("${WORK} .start-panel .plan-form")`), "the form beside the run");
   check(await page.eval(`location.hash === "#/runs/${run.id}/1?start=resample" && document.querySelector(".view").dataset.sentinel === "kept"`),
-    "a form opens inside the step, without leaving the conversation");
+    "a form opens beside the step, without leaving the conversation");
+  // Its Close takes the form away and leaves the step's work beside the run.
+  await page.eval(`[...document.querySelectorAll("${WORK} .start-panel a")].find((a) => a.textContent === "Close").click()`);
+  check(await page.eval(`!document.querySelector("${WORK} .start-panel") && !!document.querySelector("${WORK} .start-actions") && location.hash === "#/runs/${run.id}/1"`),
+    "the form's Close takes the form away, the step's work still beside the run");
   await page.eval(`[...document.querySelectorAll("#s1 a.btn")].find((a) => a.textContent.startsWith("Exact context")).click()`);
   await until(() => page.eval(`(document.querySelector(".page-head h1")?.textContent || "").startsWith("Step 1")`), "the exact context");
   check(await page.eval(`document.querySelector(".page-head h1").textContent.includes("exact context") && document.querySelectorAll(".msg").length >= 2`),
@@ -1019,7 +1071,7 @@ try {
   await page.click("Select to probe", `document.querySelector(".tk-detail")`);
   await until(() => page.eval(`!!document.querySelector(".tk-bar button")`), "the selection bar");
   await page.click("Find forking tokens at these", `document.querySelector(".tk-bar")`);
-  await until(() => page.eval(`!!document.querySelector('.start-panel .plan-form [name="positions"]')`), "the forking form, in the step");
+  await until(() => page.eval(`!!document.querySelector('.start-panel .plan-form [name="positions"]')`), "the forking form, beside the run");
   check(await page.eval(`document.querySelector('.plan-form [name="positions"]').value === "${forkSpot.position}"`), "the form holds the selected position");
   const choosers = `(() => {
     const form = document.querySelector(".plan-form");
@@ -1687,10 +1739,10 @@ try {
   })()`), "and the turn the run began with heads the rail, above its first step");
   // Nothing launched it, so nothing can fork it: the button stays, greyed, and says why (N14).
   await page.eval(`document.querySelector("#s1 .tl-work").click()`);
-  await until(() => page.eval(`!!document.querySelector("#s1.tl-open .start-actions")`), "the imported run's step, at its actions");
+  await until(() => page.eval(`!!document.querySelector("${WORK} .start-actions")`), "the imported run's step, its work beside the run");
   check(await page.eval(`(() => {
-    const fork = [...document.querySelectorAll("#s1 .start-actions .btn")].find((b) => b.textContent === "Fork from here…");
-    const note = document.querySelector("#s1 .start-note");
+    const fork = [...document.querySelectorAll("${WORK} .start-actions .btn")].find((b) => b.textContent === "Fork from here…");
+    const note = document.querySelector("${WORK} .start-note");
     return fork?.getAttribute("aria-disabled") === "true" && !fork.hasAttribute("href")
       && fork.title.endsWith("Make a scenario of this run, run it with tuningfork, and fork from one of its runs.")
       && note.textContent.includes("Forking needs a run tuningfork started. This one was imported. Make a scenario of it, run it, and fork from one of its runs.")
