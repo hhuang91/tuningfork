@@ -57,8 +57,11 @@ export class Page {
     this.problems = [];
     this.dialogs = [];
     this.dialogAnswer = true;
+    // An event the caller listens for, by its method (`on`): a screencast's frames, say.
+    this.listeners = new Map();
     socket.onmessage = ({ data }) => {
       const message = JSON.parse(data);
+      if (message.method) this.listeners.get(message.method)?.(message.params);
       if (message.id && this.waiting.has(message.id)) {
         const { resolve, reject } = this.waiting.get(message.id);
         this.waiting.delete(message.id);
@@ -76,6 +79,12 @@ export class Page {
         this.problems.push(`security: ${message.params.entry.text}`);
       }
     };
+  }
+
+  /** Call `handler` with the params of each `method` event the page sends, whatever else the
+   *  page does with it. */
+  on(method, handler) {
+    this.listeners.set(method, handler);
   }
 
   static async open(url) {

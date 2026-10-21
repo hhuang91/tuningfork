@@ -422,6 +422,15 @@ try {
   const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
     [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
   check(marked === "matches:6/6", `the behaviours table marks the one the target counts: the original's every sample (${marked})`);
+  // Beside the sidebar on a page 1200 px wide, a behaviour keeps the room to be read: each rate's
+  // numbers go under its bar (found taking the README's GIF: a call wrapped every few letters).
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 1, mobile: false });
+  const behaviourWidth = await until(() => page.eval(`(() => {
+    const cell = document.querySelector(".table tr.is-target")?.children[1];
+    return cell && innerWidth === 1200 ? Math.round(cell.getBoundingClientRect().width) : null;
+  })()`), "the A/B's table at 1200 px");
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  check(behaviourWidth >= 220, `on a page 1200 px wide, a behaviour's column keeps the room to be read (${behaviourWidth} px)`);
   // Declared as the resample's A, it is the table's A: the two arms tie, and lettered afresh the
   // other behaviour came first, the target row B (found in use).
   const targetLetter = await page.eval(`document.querySelector(".table tr.is-target .chip.tone-accent")?.textContent`);
@@ -1268,6 +1277,24 @@ try {
     return true;
   })()`);
   check(await page.eval(`document.querySelector('.start-panel [name="target_kind"][value="describe"]').checked`), "describing the behaviour chooses that way of declaring it");
+  // In the work beside the run, on a page 1200 px wide, a condition's value keeps the room to be
+  // read as it is typed, its × beside it (found taking the README's GIF: five letters of a tool's
+  // name showed), and the form keeps inside the column though the step's latest resample, offered
+  // as what to count, shows its rate (found in review: the × sat past the column's edge).
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 1, mobile: false });
+  const condition = await until(() => page.eval(`(() => {
+    const rule = document.querySelector(".start-panel .rule-builder .rule");
+    const value = rule.querySelector("input").getBoundingClientRect(), remove = rule.querySelector("button").getBoundingClientRect();
+    const column = document.querySelector(".tl-workcol");
+    return innerWidth === 1200 ? {
+      width: Math.round(value.width), beside: Math.abs((remove.top + remove.bottom) / 2 - (value.top + value.bottom) / 2) < 4,
+      inside: remove.right <= column.getBoundingClientRect().right && column.scrollWidth <= column.clientWidth,
+      rated: !!document.querySelector(".start-panel .target-picker .ci"),
+    } : null;
+  })()`), "the conditions at 1200 px");
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  check(condition.width >= 160 && condition.beside && condition.inside && condition.rated,
+    `a condition's value keeps the room to be read in the work beside the run, its × beside it, the form inside the column beside a resample's rate (${condition.width} px)`);
   await page.click("Start refining", `document.querySelector(".start-panel")`);
   const refinementId = await until(async () => /^#\/refine\/([0-9a-f]{32})$/.exec(await page.eval("location.hash"))?.[1], "the refinement's page");
   // Where it stands, its four stages in a line: each done, current or to come, with what it holds.
