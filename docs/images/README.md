@@ -75,10 +75,11 @@ picture whose source is not named is skipped. What it does for you:
   made a scenario 1000, the GIF 1200 by 800), at a device scale of one, in the light theme, its
   scrollbars hidden.
 - **Nothing of one machine.** A screenshot is a tracked file like any other. The script reads what
-  each page shows — its text and what its fields hold, on every page the GIF passes through too —
-  and reports a path naming a person or a drive (`/home/<name>`, `/Users/<name>`, `C:\…`), or a
-  word `TUNINGFORK_SHOTS_PRIVATE` lists, and exits non-zero. Serving copies under `/tmp` keeps the
-  paths a page shows, a skill's or a variant's, naming nobody.
+  each page shows — its text and what its fields hold, and on the GIF's every page, any text it
+  showed however briefly — and reports a path naming a person or a place (`/home/<name>`,
+  `/Users/<name>`, `C:\…`, `\\wsl.localhost\<distro>`), or a word `TUNINGFORK_SHOTS_PRIVATE` lists.
+  It then exits non-zero, and leaves that picture out of the folder: the report says where it is.
+  Serving copies under `/tmp` keeps the paths a page shows, a skill's or a variant's, naming nobody.
 - **Small files.** It reports a PNG over 500 KB and a GIF over 10 MB, GitHub's limit for an image.
   A GIF plays by itself; a video on GitHub waits for a click.
 

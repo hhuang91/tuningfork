@@ -1,6 +1,6 @@
 // The README's pictures of the web UI, taken again with one command. Each is a page of a
 // tuningfork serving the recordings it shows, opened in headless Chrome at one pixel to one in the
-// light theme, done to as the list below says, and saved under the name the README uses — with
+// light theme, made ready as the list below says, and saved under the name the README uses — with
 // no address bar on it, so no access token. The GIF is taken the same way: the page's own
 // screencast, frame by frame, while the list's clicks and keys go in, with a pointer drawn where
 // each click lands; ffmpeg puts the frames together. README.md beside this file says where each
@@ -21,7 +21,7 @@
 // whose source is not named is skipped.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,11 +35,12 @@ const PRIVATE = (process.env.TUNINGFORK_SHOTS_PRIVATE || "").split(",").map((wor
 // What a page shows a reader: its text, and what its fields hold, which its text leaves out.
 const SHOWN = `[document.body.innerText, ...[...document.querySelectorAll("input, textarea, select")].map((field) => field.value)].join("\\n")`;
 
-/** What of one machine `text` shows: a path naming a person or a drive, and the private words. */
+/** What of one machine `text` shows: a path naming a person or a place — a home on Linux or a
+ *  Mac, a drive, a WSL distro's share — and each private word, as a word of its own. */
 function exposed(text) {
   // A path's start only: the lab's seeded runs name /tmp/run/home/skills, which names nobody.
-  const paths = text.match(/(?<![\w.~-])\/(?:home\/(?!user\b)[\w.-]+|Users\/[\w.-]+|mnt\/\w+)|\b[A-Z]:\\[\w.-]+/g) || [];
-  const words = PRIVATE.filter((word) => text.toLowerCase().includes(word.toLowerCase()));
+  const paths = text.match(/(?<![\w.~-])\/(?:home\/(?!user\b)[\w.-]+|Users\/[\w.-]+|mnt\/\w+)|\b[A-Za-z]:[\\/][\w.-]+|\\\\wsl(?:\.localhost|\$)\\[\w.-]+/g) || [];
+  const words = PRIVATE.filter((word) => new RegExp(`(?<!\\w)${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?!\\w)`, "i").test(text));
   return [...new Set([...paths, ...words])];
 }
 const SKILL = readFileSync(new URL("../../examples/tally-report/SKILL.md", import.meta.url), "utf8");
@@ -286,13 +287,24 @@ async function pointerOn(page) {
 
 /** The page's screencast while `play` runs, as a GIF: each frame shown until the next one came,
  *  frames closer than a fifteenth of a second taken as one, the last held. With it, what every
- *  page it passed through showed, read every few tenths of a second: each is checked as a still is. */
+ *  page it passed through showed — its text and fields, read every few tenths of a second, and
+ *  any text it added, however briefly it stayed — to be checked as a still is. */
 async function recordGif(page, file, { width, height }, play) {
   const frames = [];
   page.on("Page.screencastFrame", ({ data, metadata, sessionId }) => {
     frames.push({ data: Buffer.from(data, "base64"), at: metadata.timestamp });
     page.send("Page.screencastFrameAck", { sessionId });
   });
+  await page.eval(`(() => {
+    window.shotsSeen = [];
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === "characterData") window.shotsSeen.push(record.target.data);
+        for (const node of record.addedNodes) window.shotsSeen.push(node.textContent || "");
+      }
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    return true;
+  })()`);
   const shown = new Set();
   let playing = true;
   const reading = (async () => {
@@ -307,6 +319,7 @@ async function recordGif(page, file, { width, height }, play) {
   playing = false;
   await reading;
   shown.add(await page.eval(SHOWN));
+  shown.add(await page.eval(`window.shotsSeen.join("\\n")`));
   const kept = [];
   for (const frame of frames) {
     const last = kept.at(-1);
@@ -324,9 +337,12 @@ async function recordGif(page, file, { width, height }, play) {
     // The concat demuxer takes the last file's duration from a file after it.
     list.push(`file '${kept.length - 1}.png'`);
     writeFileSync(join(folder, "frames.txt"), `${list.join("\n")}\n`);
-    execFileSync(FFMPEG, ["-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", join(folder, "frames.txt"),
-      "-vf", "split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle",
-      "-fps_mode", "vfr", "-loop", "0", file]);
+    // One palette for every frame, made first: the frames are read twice, never all held at once.
+    const frameList = ["-f", "concat", "-safe", "0", "-i", join(folder, "frames.txt")];
+    const palette = join(folder, "palette.png");
+    execFileSync(FFMPEG, ["-y", "-loglevel", "error", ...frameList, "-vf", "palettegen=stats_mode=full", palette]);
+    execFileSync(FFMPEG, ["-y", "-loglevel", "error", ...frameList, "-i", palette,
+      "-lavfi", "[0:v][1:v]paletteuse=dither=sierra2_4a:diff_mode=rectangle", "-fps_mode", "vfr", "-loop", "0", file]);
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
@@ -340,6 +356,8 @@ const outAt = args.indexOf("--out");
 const out = outAt >= 0 ? args[outAt + 1] : fileURLToPath(new URL(".", import.meta.url));
 const named = args.filter((arg, i) => !arg.startsWith("--") && args[i - 1] !== "--out");
 mkdirSync(out, { recursive: true });
+// Each picture is taken here first, and written beside the README only once nothing on it was found.
+const stage = mkdtempSync(join(tmpdir(), "tuningfork-shots-"));
 
 const sources = {};
 for (const key of ["findfile", "guide", "live", "lab"]) {
@@ -380,26 +398,33 @@ for (const shot of SHOTS) {
       && !document.querySelector(".loading, .waiting-inline")${shot.ready ? ` && !!document.querySelector(${JSON.stringify(shot.ready)})` : ""}`),
       `${shot.name}'s page`, 30000);
     await sleep(500);
-    const file = join(out, shot.name);
+    const staged = join(stage, shot.name);
     let shown;
     if (shot.play) {
-      const recorded = await recordGif(page, file, { width, height }, () => shot.play(page, source));
+      const recorded = await recordGif(page, staged, { width, height }, () => shot.play(page, source));
       console.log(`${shot.name}: ${recorded.frames} frames`);
       shown = recorded.shown;
     } else {
       if (shot.act) await shot.act(page, source);
       await sleep(400);
       const { data } = await page.send("Page.captureScreenshot", { format: "png" });
-      writeFileSync(file, Buffer.from(data, "base64"));
+      writeFileSync(staged, Buffer.from(data, "base64"));
       shown = await page.eval(SHOWN);
     }
     // Nothing of one machine: what a page shows that names a person, a drive or a private word.
     const paths = exposed(shown);
-    const size = statSync(file).size;
+    const size = statSync(staged).size;
     const limit = shot.name.endsWith(".gif") ? 10e6 : 500e3;
+    const clean = !paths.length && !page.problems.length;
+    if (clean) {
+      copyFileSync(staged, join(out, shot.name));
+      rmSync(staged);
+    } else {
+      failed += 1;
+    }
     console.log(`${shot.name}: ${width}×${height}, ${Math.round(size / 1024)} KB${size > limit ? ` — over ${limit / 1e3} KB` : ""}`
-      + `${paths.length ? ` — the page names ${paths.join(", ")}` : ""}${page.problems.length ? ` — page errors: ${page.problems.slice(0, 3).join(" | ")}` : ""}`);
-    if (paths.length || page.problems.length) failed += 1;
+      + `${paths.length ? ` — the page names ${paths.join(", ")}` : ""}${page.problems.length ? ` — page errors: ${page.problems.slice(0, 3).join(" | ")}` : ""}`
+      + `${clean ? "" : ` — not written; it is at ${staged}`}`);
   } catch (error) {
     failed += 1;
     console.log(`${shot.name}: FAILED ${error.message}`);
@@ -407,4 +432,5 @@ for (const shot of SHOTS) {
     await page.close();
   }
 }
+if (!readdirSync(stage).length) rmSync(stage, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);

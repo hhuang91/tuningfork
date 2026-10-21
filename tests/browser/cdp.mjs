@@ -61,6 +61,7 @@ export class Page {
     this.listeners = new Map();
     socket.onmessage = ({ data }) => {
       const message = JSON.parse(data);
+      if (message.method) this.listeners.get(message.method)?.(message.params);
       if (message.id && this.waiting.has(message.id)) {
         const { resolve, reject } = this.waiting.get(message.id);
         this.waiting.delete(message.id);
@@ -76,13 +77,12 @@ export class Page {
       } else if (message.method === "Log.entryAdded" && message.params.entry.source === "security") {
         // A content-security-policy violation: the page tried to run what it must not.
         this.problems.push(`security: ${message.params.entry.text}`);
-      } else if (this.listeners.has(message.method)) {
-        this.listeners.get(message.method)(message.params);
       }
     };
   }
 
-  /** Call `handler` with the params of each `method` event the page sends. */
+  /** Call `handler` with the params of each `method` event the page sends, whatever else the
+   *  page does with it. */
   on(method, handler) {
     this.listeners.set(method, handler);
   }

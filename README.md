@@ -349,7 +349,7 @@ start the work as well as show it: a batch of runs, a resample, an A/B, a fork, 
     <td colspan="2"><img src="docs/images/ui-scenario.png" alt="Making a scenario from a chat had elsewhere: its first message the starting prompt, and each step the chat took beside what each run of the scenario does there"></td>
   </tr>
   <tr>
-    <td colspan="2">A chat had elsewhere, imported and made a scenario: each run is sent the person's message with the conversation before it, the skill comes in live, and the check you write judges it</td>
+    <td colspan="2">A chat had elsewhere, imported and made a scenario: each run is sent the person's message with the conversation before it, and the skill comes in live</td>
   </tr>
 </table>
 

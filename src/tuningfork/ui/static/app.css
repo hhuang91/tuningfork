@@ -622,9 +622,11 @@ a.chip:hover { text-decoration: none; filter: brightness(0.97); }
 .ci-point { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; background: var(--accent); border-radius: 1px; }
 .ci-track.tone-change .ci-band, .ci-track.tone-change .ci-point { background: var(--change); }
 .ci-text { font-family: var(--mono); font-size: 12px; color: var(--muted); }
-/* In a table's narrow cell a rate's numbers go under its bar, so the row's other columns — a
-   behaviour's own words — keep their width (seen at 1200 px, beside the sidebar). */
-.table td .ci { flex-wrap: wrap; row-gap: 4px; }
+/* In a table's cell, or a form's choice, a rate's numbers may go under its bar: in a table the
+   row's other columns — a behaviour's own words — keep their width (seen at 1200 px, beside the
+   sidebar); in a form, the step's latest resample, offered as what to count, no longer widens
+   the form past the work beside a run. */
+.table td .ci, .target-picker .ci { flex-wrap: wrap; row-gap: 4px; }
 
 .kv {
   display: grid;

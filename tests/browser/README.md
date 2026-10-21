@@ -111,7 +111,8 @@ probe's page shows the answer it forked from with that token ringed, and leads t
 step's Tokens view and back; and that a target described in conditions is set against what
 the step has done, and declared in words; that a refinement started from a step declares its
 target first, offering no exploratory choice — a condition's value keeping the room to be read in
-the work beside the run, its × beside it — and stands at its first stage, proposing, its form
+the work beside the run, its × beside it, the form inside the column though the step's latest
+resample shows its rate there — and stands at its first stage, proposing, its form
 the one open and what a proposer is shown folded; that the lab's built-in proposer, asked through
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have, the refinement then moving on to testing them, that form open; that

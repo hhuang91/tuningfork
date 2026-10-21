@@ -1279,15 +1279,22 @@ try {
   check(await page.eval(`document.querySelector('.start-panel [name="target_kind"][value="describe"]').checked`), "describing the behaviour chooses that way of declaring it");
   // In the work beside the run, on a page 1200 px wide, a condition's value keeps the room to be
   // read as it is typed, its × beside it (found taking the README's GIF: five letters of a tool's
-  // name showed).
+  // name showed), and the form keeps inside the column though the step's latest resample, offered
+  // as what to count, shows its rate (found in review: the × sat past the column's edge).
   await page.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 1, mobile: false });
   const condition = await until(() => page.eval(`(() => {
     const rule = document.querySelector(".start-panel .rule-builder .rule");
     const value = rule.querySelector("input").getBoundingClientRect(), remove = rule.querySelector("button").getBoundingClientRect();
-    return innerWidth === 1200 ? { width: Math.round(value.width), beside: Math.abs((remove.top + remove.bottom) / 2 - (value.top + value.bottom) / 2) < 4 } : null;
+    const column = document.querySelector(".tl-workcol");
+    return innerWidth === 1200 ? {
+      width: Math.round(value.width), beside: Math.abs((remove.top + remove.bottom) / 2 - (value.top + value.bottom) / 2) < 4,
+      inside: remove.right <= column.getBoundingClientRect().right && column.scrollWidth <= column.clientWidth,
+      rated: !!document.querySelector(".start-panel .target-picker .ci"),
+    } : null;
   })()`), "the conditions at 1200 px");
   await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
-  check(condition.width >= 160 && condition.beside, `a condition's value keeps the room to be read in the work beside the run, its × beside it (${condition.width} px)`);
+  check(condition.width >= 160 && condition.beside && condition.inside && condition.rated,
+    `a condition's value keeps the room to be read in the work beside the run, its × beside it, the form inside the column beside a resample's rate (${condition.width} px)`);
   await page.click("Start refining", `document.querySelector(".start-panel")`);
   const refinementId = await until(async () => /^#\/refine\/([0-9a-f]{32})$/.exec(await page.eval("location.hash"))?.[1], "the refinement's page");
   // Where it stands, its four stages in a line: each done, current or to come, with what it holds.
