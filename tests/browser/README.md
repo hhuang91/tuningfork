@@ -104,7 +104,8 @@ the one open and what a proposer is shown folded; that the lab's built-in propos
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have, the refinement then moving on to testing them, that form open; that
 a person's own wording joins them, proposing opened again from its stage's link, the focus
-going where the page went; that a screen of
+going where the page went; that a refusal answered again leaves a form folded by hand folded;
+that a screen of
 two, Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
 behaviours badged by whether they match what is counted — and each proposal then carries its
 verdict, the refinement's page leading with that evidence — where it stands, each proposal named

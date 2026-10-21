@@ -1175,6 +1175,24 @@ try {
     }
     return true;
   })()`);
+  // A refused field is shown where it is in the form, and a form folded stays folded (found in
+  // review: the refusal, answered again as the form was asked for its plan once more, opened the
+  // fold the person had closed). Two samples cannot beat what the step already does.
+  await page.type(`document.querySelector('.screen-panel [name="n"]')`, "2");
+  await until(() => page.eval(`(document.querySelector(".screen-panel .form-error-box")?.textContent || "").includes("correction over 2")`), "two samples refused");
+  await page.eval(`document.querySelector(".screen-panel > summary").click()`);
+  // A box ticked on a card asks the folded form for its plan again: refused again, over three.
+  const tickCompactly = `(() => {
+    for (const card of document.querySelectorAll(".proposal")) {
+      if ([...card.querySelectorAll(".diff-line.add")].some((line) => line.textContent.includes("compactly"))) card.querySelector('input[type="checkbox"]').click();
+    }
+    return true;
+  })()`;
+  await page.eval(tickCompactly);
+  await until(() => page.eval(`(document.querySelector(".screen-panel .form-error-box")?.textContent || "").includes("correction over 3")`), "the refusal answered again");
+  check(await opened(".screen-panel") === false, "a refusal answered again leaves a form folded by hand folded: no form opens by itself");
+  await page.eval(tickCompactly);
+  await page.eval(`document.querySelector(".screen-panel > summary").click()`);
   await page.type(`document.querySelector('.screen-panel [name="n"]')`, "6");
   await until(() => page.eval(`(document.querySelector(".screen-panel .plan-preview")?.textContent || "").includes("6 for each wording, 18 in all")`), "the screen's plan");
   check(await page.eval(`document.querySelector(".screen-panel .plan-preview").textContent.includes("corrected for 2 proposals tested")`), "the screen's plan: the two ticked are the family the correction counts");
