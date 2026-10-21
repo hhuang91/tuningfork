@@ -106,12 +106,13 @@ export async function jobsView(root, _, scope) {
   scope.onLeave(() => clearTimeout(timer));
 }
 
-/** The jobs by part: what is running or waiting its turn — the running first, then the
- *  background line and then the quick line, each in its order — what finished, and what was
- *  stopped or failed, each newest first. */
+/** The jobs by part: what is running or waiting its turn — the running first, then the quick
+ *  line and then the background line, each in its order — what finished, and what was stopped
+ *  or failed, each newest first. */
 export function jobParts(jobs) {
-  // Each lane numbers its own line (`queue_position`): the two are kept apart, not interleaved.
-  const rank = (job) => (job.status === "running" ? 0 : job.lane === "interactive" ? 2 : 1);
+  // Each lane numbers its own line (`queue_position`): the two are kept apart, not interleaved,
+  // the quick line first, as quick work never waits behind a background job.
+  const rank = (job) => (job.status === "running" ? 0 : job.lane === "interactive" ? 1 : 2);
   const place = (job) => job.queue_position ?? Infinity;
   return [
     jobs.filter((job) => ACTIVE.has(job.status)).sort((a, b) => rank(a) - rank(b) || place(a) - place(b)),

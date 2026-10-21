@@ -219,10 +219,11 @@ try {
     words: ["you, from “Run a task”", "you, from “Where the runs diverge”"],
     // A queued job's place in its line, in words.
     places: ["next", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd"].map((place) => `queued, ${place} in line`),
-    // Quick work has a line of its own, numbered apart: the list keeps the two lines apart,
-    // the running first; finished, then stopped or failed, keep their order.
+    // Quick work has a line of its own, numbered apart: the list keeps the two lines apart — the
+    // running first, then the quick line, which waits behind no background job, then the
+    // background line; finished, then stopped or failed, keep their order.
     quick: ["queued, next in the quick line", "queued, 2nd in the quick line"],
-    parts: [["r1", "q1", "q2", "i0"], ["d1", "d2"], ["f1", "x1", "c1"]],
+    parts: [["r1", "i0", "q1", "q2"], ["d1", "d2"], ["f1", "x1", "c1"]],
     // The note when a job ends knows the page open: task x/1's runs are not x/10's.
     open: [false, true, true, true],
     // A probe that saw no flip says what it could have seen, as its own page does: no caution.

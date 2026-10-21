@@ -326,6 +326,21 @@ class TestJobs:
         assert sorted(bool(job.get("started_by")) for job in listed.structured_content["jobs"]) == [False, True]
 
 
+def test_over_stdio_the_jobs_list_keeps_the_work_under_way_too(tmp_path):
+    # As the runner lists them in the proxy's own MCP (tests/test_jobs.py): the newest, then every
+    # job still under way, however many came after it.
+    from types import SimpleNamespace
+
+    from tuningfork.mcp.backend import HttpJobs
+
+    jobs = HttpJobs("http://127.0.0.1:1", tmp_path)
+    jobs._client = SimpleNamespace(jobs=lambda: [
+        {"id": "a", "status": "done"}, {"id": "b", "status": "queued"}, {"id": "c", "status": "failed"},
+        {"id": "d", "status": "done"}, {"id": "e", "status": "running"},
+    ])
+    assert [job["id"] for job in jobs.list(limit=2)] == ["a", "b", "e"]
+
+
 async def test_a_legacy_client_names_itself_too(store):
     """A 2025 client (Hermes's, OpenJarvis's) gives its name at the handshake."""
     runner = JobRunner(store, Bus(), Proxy(), catalog=kinds())

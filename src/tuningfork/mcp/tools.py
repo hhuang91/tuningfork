@@ -292,7 +292,7 @@ class JobArgs:
 
 @dataclass
 class JobsArgs:
-    limit: int = field(default=20, metadata=_help("How many, newest first.", minimum=1, maximum=100))
+    limit: int = field(default=20, metadata=_help("How many, newest first, plus all under way.", minimum=1, maximum=100))
 
 
 @dataclass

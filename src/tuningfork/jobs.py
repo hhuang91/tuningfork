@@ -298,8 +298,8 @@ class JobRunner:
 
     def list(self, limit: int = 50) -> list[dict[str, Any]]:
         """Recent jobs, newest first: the ones held here as they are now, the rest as stored —
-        and after them every job still queued or running, however many came after it: a list
-        that left out work under way would say none is."""
+        and every job still queued or running, however many came after it: a list that left out
+        work under way would say none is."""
         stored = self.store.jobs(limit=limit)
         with self._lock:
             listed = [
@@ -309,11 +309,12 @@ class JobRunner:
                 for record in stored
             ]
             shown = {record.id for record in stored}
-            older = [
-                job for job in sorted(self._jobs.values(), key=lambda job: job.record.created_at, reverse=True)
+            under_way = [
+                job.to_json(position=self._position(job)) for job in self._jobs.values()
                 if job.record.status in ("queued", "running") and job.id not in shown
             ]
-            return listed + [job.to_json(position=self._position(job)) for job in older]
+        # Newest first, whole: a job submitted after the stored window was read joins it here.
+        return sorted(listed + under_way, key=lambda job: job["created_at"], reverse=True)
 
     def active(self) -> list[dict[str, Any]]:
         """Queued and running jobs, for a page's first snapshot. Memory only: safe on the

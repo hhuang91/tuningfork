@@ -146,7 +146,9 @@ class HttpJobs:
             raise refusal(error) from None
 
     def list(self, limit: int = 50) -> list[dict[str, Any]]:
-        return self._call(lambda client: client.jobs())[:limit]
+        # As the proxy's runner lists them in process: the newest, then every job still under way.
+        jobs = self._call(lambda client: client.jobs())
+        return jobs[:limit] + [job for job in jobs[limit:] if job.get("status") in ("queued", "running")]
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         return self._call(lambda client: client.cancel_job(job_id))
