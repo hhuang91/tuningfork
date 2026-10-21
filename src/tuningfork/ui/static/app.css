@@ -1374,7 +1374,31 @@ pre.code { color: var(--muted); }
 /* --- a run as one conversation (js/timeline.js) ------------------------------------------ */
 
 .tl-layout { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 18px; align-items: start; margin-top: 14px; }
-.tl { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* The work on a step beside the run, never inside it: its actions and the form they open, in a
+   column where the rail is while it is open. Narrow, it slides over the run from the right. */
+.tl-layout.working { grid-template-columns: minmax(0, 1fr) clamp(320px, 38%, 480px); }
+.tl-side { min-width: 0; align-self: stretch; }
+.tl-workcol {
+  position: sticky;
+  top: calc(var(--topbar) + 16px);
+  /* Short enough to fit above the page's foot (main's 64px): a sticky column taller than what is
+     left of the run below it is pushed up, its heading out of sight, at the end of the page. */
+  max-height: calc(100vh - var(--topbar) - 96px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* Its heading stays in sight as the column scrolls: which step, and the way to hide it. */
+.tl-workcol-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; padding: 4px 0 8px; background: var(--bg); }
+.tl-workcol-title { flex: none; margin: 0; font-size: 15px; }
+.tl-workcol-what { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.tl-workcol-head .btn { flex: none; margin-left: auto; }
+.tl-workcol-step { display: flex; flex-direction: column; gap: 12px; }
+.tl-workcol .start-actions { flex-wrap: wrap; }
+/* A row whose step's work is the one beside the run. */
+.tl-work[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.tl { display: flex; flex-direction: column; gap: 8px; min-width: 0; container-type: inline-size; }
 .tl-entry .msg { margin: 0; }
 .tl-tag { color: var(--faint); font-size: 11.5px; white-space: nowrap; }
 .tl-changed { text-decoration: none; }
@@ -1388,7 +1412,8 @@ pre.code { color: var(--muted); }
 }
 .tl-step.tl-open { box-shadow: var(--shadow); border-left-color: var(--accent); }
 .tl-step.tl-retried { opacity: 0.72; }
-/* A step's row: the line that opens it, and its way to work from it, always in sight. */
+/* A step's row: the line that opens it, a button that says so, and its way to work from it,
+   always in sight. */
 .tl-head { display: flex; align-items: center; gap: 8px; padding-right: 10px; border-radius: var(--radius) var(--radius) 0 0; }
 .tl-head:hover { background: var(--panel-2); }
 .tl-marker {
@@ -1396,7 +1421,16 @@ pre.code { color: var(--muted); }
   padding: 9px 12px; border: none; background: transparent; color: inherit; font: inherit;
   text-align: left; cursor: pointer;
 }
-.tl-work { flex: none; }
+.tl-details, .tl-work { flex: none; }
+/* A narrow conversation — a narrow page, or one beside the work on a step on a laptop's — keeps a
+   step's line whole, its two buttons under it, where its words begin: beside them, a long call
+   wrapped a few letters a line. By the conversation's width, not the page's (`.tl` is the
+   container): the work beside it narrows it on a page of any width. */
+@container (max-width: 560px) {
+  .tl-head { flex-wrap: wrap; padding-bottom: 8px; }
+  .tl-marker { flex-basis: 100%; }
+  .tl-details { margin-left: 12px; }
+}
 .tl-k { font-weight: 650; white-space: nowrap; }
 .tl-meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .tl-flags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
@@ -1501,8 +1535,22 @@ details.panel[open] > summary:hover { border-radius: var(--radius) var(--radius)
 .tool-params li + li { margin-top: 3px; }
 .skills-list { margin-bottom: 12px; }
 @media (max-width: 1000px) {
-  .tl-layout { grid-template-columns: minmax(0, 1fr); }
-  .tl-rail { position: static; order: -1; flex-direction: row; flex-wrap: wrap; max-height: none; padding-left: 0; border-left: none; }
+  .tl-layout, .tl-layout.working { grid-template-columns: minmax(0, 1fr); }
+  .tl-side { order: -1; }
+  .tl-rail { position: static; flex-direction: row; flex-wrap: wrap; max-height: none; padding-left: 0; border-left: none; }
+  .tl-workcol {
+    position: fixed;
+    top: var(--topbar);
+    right: 0;
+    bottom: 0;
+    z-index: 18;
+    width: min(480px, 100%);
+    max-height: none;
+    padding: 14px 16px;
+    background: var(--bg);
+    border-left: 1px solid var(--border-strong);
+    box-shadow: 0 8px 30px rgb(0 0 0 / 0.18);
+  }
   /* A row of steps above the conversation: their results would crowd it, and so would the
      answers of a conversation the run continued. */
   .tl-rail-result, .tl-rail-turn, .tl-rail-earlier, .tl-rail-foldall { display: none; }
@@ -1657,7 +1705,26 @@ a.stage-name:hover { color: var(--accent); text-decoration: none; }
 .diff-line.add .diff-op, .diff-line.add .diff-text { color: var(--ok); }
 .evidence-json { max-height: 420px; overflow: auto; }
 .inline-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
-.propose-builtin > summary, .propose-own > summary { padding: 4px 0; }
+/* A refinement's stages, each a section numbered as the stepper numbers it, the current one
+   marked in the accent: what to do there first, then what it made. */
+.stage-panel { scroll-margin-top: calc(var(--topbar) + 12px); }
+.stage-panel > .panel-head h2 { display: flex; align-items: center; gap: 10px; }
+/* A stage's parts are spaced by its stack alone: a part with nothing in it adds no space. */
+.stage-panel > .panel-body > * + * { margin-top: 0; }
+.stage-form > summary, .packet-panel > summary, .stage-panel > summary.panel-head { flex-wrap: wrap; }
+.stage-panel.current { border-left: 3px solid var(--accent); }
+.stage-panel.current .stage-num { border-color: var(--accent); background: var(--accent); color: var(--panel); }
+.stage-part { margin: 0; font-size: 13.5px; font-weight: 600; }
+.stage-panel .slot > p { margin: 0; }
+.stage-part .muted { font-weight: 400; }
+.stage-form > summary { padding: 2px 0; font-size: 14px; color: var(--text); }
+.stage-form-body { margin-top: 10px; }
+/* Two ways to the same end, side by side: either one makes proposals. */
+.propose-ways { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.propose-way { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); }
+@media (max-width: 900px) {
+  .propose-ways { grid-template-columns: minmax(0, 1fr); }
+}
 .gate-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .gate-list li { padding-left: 2px; }
 .gate-list li .muted { margin: 2px 0 0 0; }

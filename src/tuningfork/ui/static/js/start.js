@@ -29,17 +29,23 @@ function way(href, go, props, label) {
   }, label);
 }
 
-/** A step's way in, under the same title in either mode: buttons with a running proxy,
- *  commands without one. `work` is what the server's check rules out (`tokenWork`). */
+/** A box of a step's actions, with no title of its own: the work beside the run that holds it
+ *  is headed by its step. */
+export function workBox(body) {
+  return h("section", { class: "panel work-panel", "aria-label": "Work from here" }, h("div", { class: "panel-body" }, body));
+}
+
+/** A step's way in, in either mode: buttons with a running proxy, commands without one. `work`
+ *  is what the server's check rules out (`tokenWork`). */
 export function startPanel(step, { go = null, work = {} } = {}) {
   const run = step.run;
   const here = `#/runs/${run.id}/${step.idx}`;
   if (live.mode !== "live") {
-    return panel("Work from here", h("div", { class: "stack", style: { gap: "8px" } },
+    return workBox(h("div", { class: "stack", style: { gap: "8px" } },
       h("p", { class: "hint" }, "Starting work needs a running proxy (tuningfork serve). From a terminal:"),
       command(`tuningfork resample ${short(run.id)} ${step.idx} -n 20`),
       command(`tuningfork ab ${short(run.id)} ${step.idx} --variant SKILL.v2.md --target-match '<regex>'`),
-      command(`tuningfork refine start ${short(run.id)} ${step.idx} --target-match '<regex>'`)), { className: "work-panel" });
+      command(`tuningfork refine start ${short(run.id)} ${step.idx} --target-match '<regex>'`)));
   }
   // A fork replays the launch that made the run, up to the step: a run nothing launched has
   // none to replay. Its button stays, greyed, and says why — and the way to runs that fork: a
@@ -47,7 +53,7 @@ export function startPanel(step, { go = null, work = {} } = {}) {
   const why = run.launch_id ? null
     : `Forking needs a run tuningfork started. This one was ${run.recorded === "imported" ? "imported" : "recorded live"}.`;
   const scenario = why && !run.trashed_at && !["subagent", "side", "thread"].includes(run.role) ? `#/runs/${run.id}/scenario` : null;
-  return panel("Work from here", [
+  return workBox([
     h("div", { class: "start-actions" },
       way(`${here}?start=resample`, go, { class: "btn", "data-control": true, title: "Send this step again N times, and count what the model does" }, "Resample…"),
       way(`${here}?start=ab`, go, { class: "btn", "data-control": true }, "A/B a wording…"),
@@ -66,7 +72,7 @@ export function startPanel(step, { go = null, work = {} } = {}) {
       why ? ` ${why}` : null,
       scenario ? [" ", h("a", { href: scenario, "data-control": true }, "Make a scenario of it"), ", run it, and fork from one of its runs."] : null,
       work.forking ? [` ${work.forking}. `, h("a", { href: "#/connections" }, "Connections")] : null),
-  ], { className: "work-panel" });
+  ]);
 }
 
 /** The form a `?start=` names, in a panel that closes back to the step. `reach=end` runs

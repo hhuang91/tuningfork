@@ -3,17 +3,18 @@
 //
 // A step's answer comes from the recording, reasoning included: a harness can send an answer
 // back without its reasoning, so the next context is not where to read it. A step opens in
-// place — its settings, the skills in its context, the files its call found, the experiments
-// at it, and the work that can start from it — and the exact context it was sent is one link
-// away, on its own page: that is what a resample resends. The conversation ends with the run's
-// verdict: what its task's check said, coloured by it — the only green or red on the page.
+// place, one at a time — its settings, the skills in its context, the files its call found, the
+// experiments at it — and the exact context it was sent is one link away, on its own page: that
+// is what a resample resends. The work that can start from a step opens beside the run, never
+// inside it. The conversation ends with the run's verdict: what its task's check said, coloured
+// by it — the only green or red on the page.
 
 import { api, enc } from "./api.js";
 import { chip, count, failure, firstLine, h, kv, loading, longText, millis, outcome, panel, plural, replace, short, toggle } from "./dom.js";
 import { tokenWork } from "./live.js";
 import { settle } from "./nav.js";
 import { messageSize, messageText, messageView, noReasoning, outputView, toolNames } from "./payload.js";
-import { startForm, startPanel } from "./start.js";
+import { startForm, startPanel, workBox } from "./start.js";
 import { banners, detailsPanel, skillsSummary, summaryStrip, toolsOffered, workspacePanel } from "./stepinfo.js";
 import { tokensPanel } from "./tokens.js";
 import { LABELS } from "./words.js";
@@ -23,11 +24,12 @@ const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking
 // but the last folded to their turn's line.
 const FOLD_FROM = 3;
 
-/** The timeline for `data`, a run's `/timeline`. Returns its element, its step rail and its
- *  verdict strip — the verdict in a line, for the top of the page — and `start()` — to call
- *  once they are on the page — `update(data)` for a run still going, and `dispose()`. `focus`
- *  opens a step; `query` may name a form to open in it, or `view=tokens` its answer's tokens.
- *  `scope` is the page's, for following work started here. */
+/** The timeline for `data`, a run's `/timeline`. Returns its element, its step rail, its layout
+ *  (the run with the rail, or the work on a step, beside it) and its verdict strip — the verdict
+ *  in a line, for the top of the page — and `start()` — to call once they are on the page —
+ *  `update(data)` for a run still going, and `dispose()`. `focus` opens a step; `query` may name a
+ *  form to open in its work beside the run (`start`), that work with no form (`work`), or
+ *  `view=tokens` its answer's tokens. `scope` is the page's, for following work started here. */
 export function timeline(data, { focus = null, query = new URLSearchParams(), scope = null } = {}) {
   const run = data.run;
   const base = `#/runs/${run.id}`;
@@ -37,13 +39,29 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   // The steps not recorded whose rows are drawn: a live update draws only those it has not
   // (found in review: each one below a new step was drawn again, every update).
   const gapsShown = new Set();
-  // The form asked for last: one asked for before it that loads later is not shown (found in
-  // review: "A/B a wording…", then "Resample…" before the A/B form had loaded, left the A/B
-  // form open while the address asked for the other — and on two steps, both open).
-  let asking = 0;
   const element = h("div", { class: "tl" });
   const rail = h("nav", { class: "tl-rail", "aria-label": "Steps of the run" });
   const strip = h("div", { class: "verdict-strip", role: "status" });
+  // The work on a step beside the run, never inside it: its actions and the form they open, in
+  // a column where the rail is — the run read top to bottom, the work on one of its steps beside
+  // it. Each step's work is kept as it was left; the column shows one step's at a time.
+  const works = new Map();
+  let workIdx = null;
+  const workHead = h("div", { class: "tl-workcol-head" });
+  const workBody = h("div", { class: "tl-workcol-body" });
+  const workCol = h("aside", {
+    class: "tl-workcol", hidden: true, "aria-label": "Work from a step of the run",
+    // Escape hides it as its Hide does: on a narrow page it is a drawer over the run. Not an
+    // Escape that ends typing a character in parts, in a field.
+    onkeydown: (event) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      closeWork();
+    },
+  }, workHead, workBody);
+  const layout = h("div", { class: "tl-layout" }, element, h("div", { class: "tl-side" }, rail, workCol));
+  // Each step's call, read once: what both its details and its work are drawn from.
+  const details = new Map();
   // The rail's way to the actions of the step being read, following it as the page scrolls.
   let railStep = null;
   const railWork = h("button", {
@@ -76,9 +94,14 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   return {
     element,
     rail,
+    layout,
     strip,
     start() {
-      if (focus !== null && sections.has(focus)) reveal(focus, { start: query.get("start"), query });
+      if (focus === null || !sections.has(focus)) return;
+      // The address as the page left it: a form in the step's work beside the run, that work with
+      // no form, or the step's details.
+      if (!query.get("start") && query.has("work")) revealWork(focus);
+      else reveal(focus, { start: query.get("start"), query });
     },
     update,
     dispose() {
@@ -91,12 +114,16 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   function draw() {
     sections.clear();
     gapsShown.clear();
+    // Drawn anew, each step's call is read anew as it opens.
+    details.clear();
     seen.disconnect();
     verdictNode = verdictSection();
     toolsNode = toolsSection();
     replace(element, toolsNode, nodesFrom(0, () => true), verdictNode);
     drawStrip();
     drawRail();
+    // The work beside the run is the run's, not its rows': drawn again, its rows say whose it is.
+    markWork();
   }
 
   /** The tools the run's first call offered, before its system prompt: the model reads them as
@@ -280,18 +307,25 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return h("div", { class: "tl-gap" }, `step ${idx} · not recorded — a call refused while the proxy was paused`);
   }
 
-  /** A step's row: a line that opens it, and — always in sight — the way to work from it, which
-   *  opens it at its actions. */
+  /** A step's row: a line that opens its details under it, a button saying so in words, and —
+   *  always in sight — the way to work from it, which opens its actions beside the run. */
   function stepSection(step, spawned) {
     const marker = h("button", {
       class: "tl-marker", type: "button", "aria-expanded": "false",
       title: `The model was sent the ${plural(step.position, "message")} above. Open for this step's details.`,
       onclick: () => toggleOpen(step.idx),
     }, markerParts(step));
+    // What the line does, said: a step has more than its answer — its call, its record, its
+    // workspace, the exact context it was sent — and the line alone did not say so.
+    const detailsButton = h("button", {
+      class: "btn btn-small tl-details", type: "button",
+      title: "Its call, its record and workspace, and the exact context it was sent",
+      onclick: () => toggleOpen(step.idx),
+    }, "Show details");
     // A replayed step was answered from the recording: nothing starts there, and its button
-    // says so rather than leave.
-    const work = h("button", {
-      class: "btn btn-small tl-work", type: "button", disabled: Boolean(step.served),
+    // says so rather than leave. Marked current while its work is the one beside the run.
+    const workButton = h("button", {
+      class: "btn btn-small tl-work", type: "button", disabled: Boolean(step.served), "aria-current": workIdx === step.idx ? "true" : null,
       title: step.served ? "Answered from the recording: nothing starts from here"
         : `Resample, A/B a wording, fork or refine the skill from step ${step.idx}`,
       onclick: () => workFrom(step.idx),
@@ -300,8 +334,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const block = h("div", { class: "tl-block", hidden: true });
     const section = h("section", {
       class: ["tl-step", step.kept === "retried" && "tl-retried"], id: `s${step.idx}`, dataset: { idx: step.idx },
-    }, h("div", { class: "tl-head" }, marker, work), output, block, spawned.map(threadLink));
-    sections.set(step.idx, { step, section, marker, output, block, actions: null, slot: null, ready: null });
+    }, h("div", { class: "tl-head" }, marker, detailsButton, workButton), output, block, spawned.map(threadLink));
+    sections.set(step.idx, { step, section, marker, detailsButton, workButton, output, block, ready: null });
     seen.observe(section);
     return section;
   }
@@ -430,9 +464,10 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
         h("a", {
           class: ["tl-rail-step", step.outcome.kind === "error" && "tl-rail-error", step.kept === "retried" && "tl-rail-retried"],
           href: `${base}/${step.idx}`, dataset: { idx: step.idx },
+          // The rail's lines move through the run and open nothing: a step opens from its own row.
           onclick: (event) => {
             event.preventDefault();
-            reveal(step.idx);
+            goTo(step.idx);
           },
         }, h("span", { class: "mono" }, String(step.idx)), h("span", { class: "tl-rail-what" }, railLabel(step)),
         step.experiments.length
@@ -541,7 +576,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
    *  the conversation the run's first call continued. A tool's result goes under the answer that
    *  called it, by the tool's name, and so does a user message the harness wrote itself, by what
    *  it is; a person's turn starts a new exchange, unindented, in their words. Each leads to the
-   *  message in the conversation, opened. */
+   *  message in the conversation, as it was left. */
   function railEntry(entry, step, names) {
     const message = entry.message;
     const href = step ? `${base}/${step.idx}` : base;
@@ -552,7 +587,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       const words = entry.words ?? (firstLine(messageText(message), 80) || "(no text)");
       return h("div", { class: "tl-rail-turn", dataset: { entry: entry.index } },
         h("button", { class: "tl-rail-fold", type: "button", "aria-expanded": "true", "aria-label": "Fold this turn" }),
-        h("a", { class: "tl-rail-turn-link", href, title: `A person's turn, ${where}: ${words}`, onclick: openMessage(entry) },
+        h("a", { class: "tl-rail-turn-link", href, title: `A person's turn, ${where}: ${words}`, onclick: goToMessage(entry) },
           h("span", { class: "tl-rail-who" }, "user"), h("span", { class: "tl-rail-what" }, words)),
         h("span", { class: "tl-rail-folded" }));
     }
@@ -560,7 +595,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return h("a", {
       class: "tl-rail-result", href, dataset: { entry: entry.index },
       title: entry.note ? `Written by the harness itself ${where}, not by a person` : step ? `${what}, added by the harness ${where}` : `${what}, ${where}`,
-      onclick: openMessage(entry),
+      onclick: goToMessage(entry),
     }, h("span", { class: "tl-rail-arrow", "aria-hidden": "true" }, "↳"), h("span", { class: "tl-rail-what" }, what));
   }
 
@@ -571,18 +606,17 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return h("a", {
       class: "tl-rail-step tl-rail-earlier", href: base, dataset: { entry: entry.index },
       title: "An answer in the conversation the run's first call continued: not a call this run made",
-      onclick: openMessage(entry),
+      onclick: goToMessage(entry),
     }, h("span", { class: "mono", "aria-hidden": "true" }, "·"), h("span", { class: "tl-rail-what" }, calls.length ? calls.join(", ") : "reply"));
   }
 
-  /** What a rail line for a message does: opens the message in the conversation, there. */
-  function openMessage(entry) {
+  /** What a rail line for a message does: brings the message into sight in the conversation,
+   *  folded or open as it was. The rail's lines move through the run and open nothing, a step's
+   *  or a message's: each opens from its own place in the conversation. */
+  function goToMessage(entry) {
     return (event) => {
       event.preventDefault();
-      const shown = element.querySelector(`#tm${entry.index}`);
-      if (!shown) return;
-      shown.open = true;
-      shown.scrollIntoView({ block: "start" });
+      element.querySelector(`#tm${entry.index}`)?.scrollIntoView({ block: "start" });
     };
   }
 
@@ -613,35 +647,45 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const found = sections.get(idx);
     if (!found) return;
     const open = found.block.hidden;
+    // The row clicked stays where it was on the screen, though the step open above it closes.
+    const before = found.section.getBoundingClientRect().top;
     setOpen(found, open);
-    const stillOpen = [...sections.values()].find((other) => !other.block.hidden);
-    settle(open ? `${base}/${idx}` : stillOpen ? `${base}/${stillOpen.step.idx}` : base);
+    const moved = found.section.getBoundingClientRect().top - before;
+    if (moved) window.scrollBy(0, moved);
+    // The address names the step opened; one closed gives it back to the work beside the run.
+    settle(open ? `${base}/${idx}` : workAddress() ?? base);
   }
 
+  /** One step open at a time: opening one closes the one open, which keeps what it held. */
   function setOpen(found, open) {
+    if (open) for (const other of sections.values()) if (other !== found && !other.block.hidden) setOpen(other, false);
     found.block.hidden = !open;
     found.marker.setAttribute("aria-expanded", String(open));
+    replace(found.detailsButton, open ? "Hide details" : "Show details");
     found.section.classList.toggle("tl-open", open);
     if (open && !found.ready) found.ready = build(found);
+  }
+
+  /** A step's call and what the server's check rules out, read once for its details and its work. */
+  function detailOf(idx) {
+    if (!details.has(idx)) {
+      const asked = Promise.all([api.get(`/runs/${enc(run.id)}/steps/${idx}?context=0`), tokenWork()]);
+      asked.catch(() => details.delete(idx));
+      details.set(idx, asked);
+    }
+    return details.get(idx);
   }
 
   async function build(found) {
     const { step } = found;
     replace(found.block, loading("Loading the step…"));
     try {
-      const [detail, work] = await Promise.all([api.get(`/runs/${enc(run.id)}/steps/${step.idx}?context=0`), tokenWork()]);
+      const [detail] = await detailOf(step.idx);
       const exact = `${base}/${step.idx}/context`;
       const here = state.skills.filter((span) => span.message_index < step.position);
-      found.slot = h("div", { class: "start-slot" });
-      // The work first, a form opening under it; then what happened at the step, what it was,
-      // and the record, folded.
-      found.actions = step.served
-        // A replayed step was answered from the recording: there is no call to sample.
-        ? panel("Work from here", h("p", { class: "muted" }, "Answered from the recording: nothing starts from here."), { className: "work-panel" })
-        : startPanel(detail, { go, work });
+      // What happened at the step, what it was, and the record, folded. The work from it is
+      // beside the run (`openWork`).
       replace(found.block,
-        found.actions,
-        found.slot,
         banners(detail, { original: () => h("a", { href: exact }, "open the exact context to compare.") }),
         facts(detail, step, here),
         detailsPanel(detail),
@@ -670,49 +714,175 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     ]));
   }
 
-  /** Open step `idx` at its actions — what its "Work from here" and the rail offer — the first
-   *  of them ready for a key. */
+  /** The rail's way through the run: the step brought into sight, opened or not as it was. */
+  function goTo(idx) {
+    const found = sections.get(idx);
+    if (!found) return;
+    unfoldAround(rail.querySelector(`.tl-rail-step[data-idx="${idx}"]`));
+    found.section.scrollIntoView({ block: "start" });
+  }
+
+  // --- the work beside the run ----------------------------------------------------------------
+
+  /** Step `idx`'s work, built the first time it is asked for and kept: its actions, under them
+   *  the slot a form opens in, and its address as it was left — with the form open there, if
+   *  one is. */
+  function workOf(idx) {
+    if (works.has(idx)) return works.get(idx);
+    const step = sections.get(idx)?.step;
+    const slot = h("div", { class: "start-slot" });
+    const node = h("div", { class: "tl-workcol-step", dataset: { idx } }, loading("Loading the step…"));
+    // `asking` counts the forms asked for here: one asked for before the last that loads later
+    // is not shown (found in review: "A/B a wording…", then "Resample…" before the A/B form had
+    // loaded, left the A/B form open while the address asked for the other). Each step's work
+    // counts its own, so a form asked for in one is kept there while another step's is shown
+    // (found in review: dropped for a form asked for on another step, it left its step's
+    // address naming a form never shown).
+    const work = { idx, node, slot, ready: null, address: `${base}/${idx}?work`, asking: 0 };
+    work.ready = detailOf(idx).then(([detail, tokens]) => {
+      // A replayed step was answered from the recording: there is no call to sample.
+      replace(node, step?.served
+        ? workBox(h("p", { class: "muted" }, "Answered from the recording: nothing starts from here."))
+        : startPanel(detail, { go, work: tokens }), slot);
+    }, (error) => {
+      works.delete(idx);
+      replace(node, failure(error, "Could not load the step"));
+    });
+    works.set(idx, work);
+    return work;
+  }
+
+  /** The column beside the run on step `idx`'s work — the rail giving it its place — with a
+   *  form there as it was left, if one was. */
+  async function openWork(idx) {
+    const work = workOf(idx);
+    // Another step's work starts at its top.
+    if (workIdx !== idx) workCol.scrollTop = 0;
+    workIdx = idx;
+    if (work.node.parentNode !== workBody) workBody.append(work.node);
+    for (const other of workBody.children) other.hidden = other !== work.node;
+    const step = sections.get(idx)?.step;
+    replace(workHead,
+      h("h2", { class: "tl-workcol-title" }, `Work from step ${idx}`),
+      step ? h("span", { class: "tl-workcol-what mono" }, railLabel(step)) : null,
+      // "Hide", not "Close": what the column holds is kept, and a form in it has its own Close.
+      h("button", { class: "btn btn-quiet btn-small", type: "button", title: "The steps' list comes back; what this column holds is kept", onclick: closeWork }, "Hide"));
+    workCol.hidden = false;
+    rail.hidden = true;
+    layout.classList.add("working");
+    markWork();
+    await work.ready;
+    return work;
+  }
+
+  /** The rail back in its place; each step's work kept for when it is opened again. */
+  function closeWork() {
+    const found = sections.get(workIdx);
+    // The step worked from stays where it was on the screen, though the run widens again.
+    const before = found?.section.getBoundingClientRect().top;
+    // Hidden from inside — its Hide, or Escape — the keys go on from the row's Work from here,
+    // or from the step's own line where nothing starts from it.
+    const inside = workCol.contains(document.activeElement);
+    workIdx = null;
+    workCol.hidden = true;
+    rail.hidden = false;
+    layout.classList.remove("working");
+    markWork();
+    const moved = found ? found.section.getBoundingClientRect().top - before : 0;
+    if (moved) window.scrollBy(0, moved);
+    if (inside && found) (found.workButton.disabled ? found.marker : found.workButton).focus({ preventScroll: true });
+    const open = [...sections.values()].find((other) => !other.block.hidden);
+    settle(open ? `${base}/${open.step.idx}` : base);
+  }
+
+  /** Each row's "Work from here" marked current while its step's work is the one beside the run. */
+  function markWork() {
+    for (const [idx, found] of sections) {
+      if (idx === workIdx) found.workButton.setAttribute("aria-current", "true");
+      else found.workButton.removeAttribute("aria-current");
+    }
+  }
+
+  /** The address of the work beside the run, as it was left: `?work`, or the form open in it. */
+  function workAddress() {
+    return workIdx === null ? null : works.get(workIdx)?.address ?? `${base}/${workIdx}?work`;
+  }
+
+  /** Step `idx`'s work beside the run — what its "Work from here" and the rail offer — the first
+   *  of its actions ready for a key; with none — browsing, or a step answered from the recording —
+   *  the first thing there that takes one, Hide at least. */
   async function workFrom(idx) {
     const found = sections.get(idx);
     if (!found) return;
-    unfoldAround(rail.querySelector(`.tl-rail-step[data-idx="${idx}"]`));
-    setOpen(found, true);
-    settle(`${base}/${idx}`);
-    await found.ready;
-    if (!found.actions) return;
-    found.actions.scrollIntoView({ block: "nearest" });
-    found.actions.querySelector(".start-actions a")?.focus({ preventScroll: true });
+    // The row clicked stays where it was on the screen, though the run narrows beside the column.
+    const before = found.section.getBoundingClientRect().top;
+    const opening = openWork(idx);
+    const moved = found.section.getBoundingClientRect().top - before;
+    if (moved) window.scrollBy(0, moved);
+    settle(workAddress());
+    const work = await opening;
+    if (workIdx !== idx) return;
+    const takes = (part) => [...part.querySelectorAll("a[href], button, input, select, textarea, summary")]
+      .find((each) => !each.disabled && each.getClientRects().length);
+    (work.node.querySelector(".start-actions a") || takes(work.node) || takes(workHead))?.focus({ preventScroll: true });
   }
 
-  /** Open step `idx`, bring it into view, and — given `start` — open that form in it. */
-  async function reveal(idx, { start = null, query: asked = new URLSearchParams() } = {}) {
+  /** Step `idx` in sight — the run scrolled to it unless `scroll` is false — and, given `start`,
+   *  that form open in its work beside the run; with none, its details open under it. */
+  async function reveal(idx, { start = null, query: asked = new URLSearchParams(), scroll = true } = {}) {
     const found = sections.get(idx);
     if (!found) return;
     unfoldAround(rail.querySelector(`.tl-rail-step[data-idx="${idx}"]`));
-    setOpen(found, true);
-    found.section.scrollIntoView({ block: "start" });
     if (!start) {
+      setOpen(found, true);
+      found.section.scrollIntoView({ block: "start" });
       settle(`${base}/${idx}`);
       return;
     }
-    settle(`${base}/${idx}?${asked.toString()}`);
-    const mine = ++asking;
-    await found.ready;
-    if (!found.slot || mine !== asking) return;
-    // One form at a time: a second would be a second plan on screen.
-    for (const other of sections.values()) if (other !== found && other.slot) replace(other.slot);
-    replace(found.slot, loading("Preparing the form…"));
+    const work = workOf(idx);
+    const mine = ++work.asking;
+    work.address = `${base}/${idx}?${asked.toString()}`;
+    settle(work.address);
+    const opening = openWork(idx);
+    // The step worked from, in sight beside its form — once the column has taken its place, and
+    // the run, narrowed, has settled.
+    if (scroll) found.section.scrollIntoView({ block: "start" });
+    await opening;
+    // Asked for again since, or the step could not be read: the column says which.
+    if (mine !== work.asking || works.get(idx) !== work) return;
+    const waiting = loading("Preparing the form…");
+    replace(work.slot, waiting);
     try {
       const form = await startForm(start, { run, idx }, asked, { go });
-      if (mine !== asking) return;
-      replace(found.slot, form || failure(new Error(`There is no form called ${start}.`)));
-      found.slot.scrollIntoView({ block: "nearest" });
+      if (mine !== work.asking) {
+        // Asked for again since: this one never comes, and leaves no waiting behind.
+        if (work.slot.firstChild === waiting) replace(work.slot);
+        return;
+      }
+      replace(work.slot, form || failure(new Error(`There is no form called ${start}.`)));
+      // The form in sight under the column's heading, by the column's own scroll — while the
+      // column still shows this step — the run beside it staying where it is.
+      if (workIdx === idx) workCol.scrollTo({ top: Math.max(0, work.slot.offsetTop - workHead.offsetHeight - 8) });
     } catch (error) {
-      if (mine === asking) replace(found.slot, failure(error, "Could not open the form"));
+      if (mine === work.asking) replace(work.slot, failure(error, "Could not open the form"));
+      else if (work.slot.firstChild === waiting) replace(work.slot);
     }
   }
 
-  /** Where a form's links lead: a step of this run opens here; anywhere else, away. */
+  /** Step `idx` in sight, its work beside the run as an address with `?work` left it: no form
+   *  open in it. */
+  function revealWork(idx) {
+    const found = sections.get(idx);
+    if (!found) return;
+    unfoldAround(rail.querySelector(`.tl-rail-step[data-idx="${idx}"]`));
+    openWork(idx);
+    settle(workAddress());
+    found.section.scrollIntoView({ block: "start" });
+  }
+
+  /** Where a form's links lead: a step of this run opens here; anywhere else, away. A link here
+   *  is followed beside the run — from its work, or from the step's own answer — so the run
+   *  stays where it is. */
   function go(href) {
     const [path, text = ""] = href.replace(/^#/, "").split("?", 2);
     const match = /^\/runs\/([^/]+)\/(\d+)$/.exec(path);
@@ -724,14 +894,18 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const asked = new URLSearchParams(text);
     const start = asked.get("start");
     if (!start) {
-      // "Close": the form goes, the step stays open — and one still loading never comes.
-      asking += 1;
-      const found = sections.get(idx);
-      if (found?.slot) replace(found.slot);
-      settle(`${base}/${idx}`);
+      // "Close": the form goes, the step's work stays beside the run — and one still loading
+      // never comes.
+      const work = works.get(idx);
+      if (work) {
+        work.asking += 1;
+        replace(work.slot);
+        work.address = `${base}/${idx}?work`;
+      }
+      settle(`${base}/${idx}?work`);
       return;
     }
-    reveal(idx, { start, query: asked });
+    reveal(idx, { start, query: asked, scroll: false });
   }
 
   // --- a run still going ----------------------------------------------------------------------

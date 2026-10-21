@@ -255,8 +255,8 @@ Open <http://127.0.0.1:8788/_tuningfork/ui/>. **Runs** groups runs by task, with
 and its interval. Open run `…#demo.2`: its conversation, top to bottom, with each step's
 answer where it happened and the skill marked in the system prompt, mapped to its file line
 by line; above it, the tools the model was offered, and beside it the steps, each tool's result
-under the step that called it. Click step 1 for its details; *Exact context* shows everything
-that step was sent.
+under the step that called it. Click step 1, or its *Show details*, for its details; *Exact
+context* shows everything that step was sent.
 *Where do they diverge?* on the task, and the **Experiments** page, show the last two
 commands' results; the A/B's page starts with the line its variant changes, and **Skills** keeps
 that variant among the skill's saved ones. Stop it with Ctrl-C.
@@ -1410,9 +1410,9 @@ proxy runs. Open the address `tuningfork serve` printed — the one with `?token
    recorded run of the task, beside the verdict that run got, or on a reply and files you
    write. Nothing is recorded.)
 3. Open a run, and on its conversation click the `Write` step's **Work from here** →
-   *Resample…* opens the form right there — so does **Jobs** → *Start…*, from a list of
-   runs. The plan says what will be sent, through the proxy, and how long it may take. The
-   finished job links the experiment.
+   *Resample…* opens the form beside the run, the conversation still in sight — so does
+   **Jobs** → *Start…*, from a list of runs. The plan says what will be sent, through the
+   proxy, and how long it may take. The finished job links the experiment.
 4. *A/B a wording…* opens an editor holding the skill as that run was given it. Make the
    change `SKILL.v2.md` makes — or paste the file — name it, and choose what to count:
    *What the model does matches a pattern*, `row_count`. Nothing is chosen for you. The
@@ -1835,7 +1835,7 @@ On a run's conversation, each step's answer has **Answer | Tokens**. *Tokens* sh
 heatmap — by entropy, or by how close the top two were — with the reasoning folded, and how
 many of the likeliest forks are in it. An answer not scored yet offers *Score this answer*.
 Click a token for what else the model weighed there; *Select to probe*, then *Find forking
-tokens at these…*, opens the probe's form in the step, those positions filled in. The form
+tokens at these…*, opens the probe's form beside the run, those positions filled in. The form
 shows its plan before anything runs: the tokens it will force, what you count, what it can
 detect with that many continuations, and how long it may take.
 

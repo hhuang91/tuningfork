@@ -58,8 +58,13 @@ TUNINGFORK_PROTECTED=127.0.0.1:18099 uv run python tests/browser/demo.py lab /tm
 node tests/browser/jobs_ui.mjs
 ```
 
-It checks that a resample started from a step on the run's conversation runs through the
-proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter
+It sets its page 1440 px wide, whatever window the browser has. It checks that a step's work
+opens beside the run, never inside it — its actions and the form they open, in a column where the
+rail was, its row marked and the address naming it — each step's kept as it was left when
+another's takes its place, a form asked for in one kept there though another step's was asked
+for before it loaded, and Hide or Escape giving the rail back, the keys going on from the row;
+that a resample started there runs
+through the proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter
 as its target, starts at one press of Start with the mouse, the name just typed still focused (the change
 event as the focus leaves it once lost that click) — a form asking for its plan again when the page
 refreshes it, and not for an event that changes nothing — shows the known shift, saves the variant only
@@ -67,7 +72,9 @@ when it starts, and leads its page with the
 edit it tested, then the target and which way the variant moved it — in the accent's colour, never
 a check's green — with each behaviour badged by whether it matches what is counted; that no target is
 chosen for you; that a task runs again from its run's page, its check shown whole; that a
-fork stops at its step for a person and runs on when continued, and one cancelled as it waits
+fork stops at its step for a person and runs on when continued — a step it answered from the
+recording opening its work with the keys on Hide, and Escape giving them to the step's own line — and one
+cancelled as it waits
 keeps no verdict, its page saying it was stopped and why; that forks run to the end,
 for a resample and for an A/B, whose page names the task's check as its target; that a job's page, its event stream cut mid-job, catches up
 with every event shown once; that cancelling takes two clicks and keeps what was
@@ -88,7 +95,11 @@ check measures what the harnesses need, a protected endpoint is refused, and an 
 switches its server after a dry run; that Start… on the Jobs page leads to a step's form;
 that a run reads as one conversation — each message once, the final reply marked (and not
 green), its verdict closing the page and the step rail, coloured by it with what the check
-printed, a step opening in place with its form in it, and its exact context on a page of its own;
+printed, a step opening in place from its line or its Show details, one at a time, kept as it
+was when opened again, the rail's lines bringing a step or a message into sight from out of it
+and opening nothing, a form opening beside the step without moving the run, its Close leaving the
+step's work there, an address naming that work reloading to it, and its exact context on a page
+of its own;
 that the divergence page leads with the step whose behaviour best predicts a pass, in a callout
 with the ways to it, colours each run by its own verdict, draws "then passed", the tally's counts
 and where a question held as rates — the accent's, never green or red — and says plainly how it
@@ -104,12 +115,15 @@ the one open and what a proposer is shown folded; that the lab's built-in propos
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have, the refinement then moving on to testing them, that form open; that
 a person's own wording joins them, proposing opened again from its stage's link, the focus
-going where the page went; that a refusal answered again leaves a form folded by hand folded;
+going where the page went, the testing stage's link moving it to what is in sight there, the two
+ways to propose side by side, what a proposer is shown under the one that sends it; that a refusal answered again leaves a form folded by hand folded;
 that a screen of
 two, Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
 behaviours badged by whether they match what is counted — and each proposal then carries its
 verdict, the refinement's page leading with that evidence — where it stands, each proposal named
-by the line it changes, its screen in a line — above what a proposer is shown, the original
+by the line it changes, its screen in a line — then a section for each stage, numbered as the
+stepper numbers them, in the order the work goes: the proposals in the testing stage, its test
+right under them and the tests' results under that; what a proposer is shown, the original
 wording's answers, with the skill's paths closed away in About, and full test runs next, their
 form open; that a proposal kept by one test and not by a later one stands where the later left it,
 with no full test runs offered — the stage moving on, and back, on the page as each test ends, no
@@ -118,7 +132,8 @@ a survivor, validated from its refinement's page, runs forks to the end, the
 training task and the lab's held-out task — named only by its id in the plan and the job,
 its text nowhere — and meets the gate, each part and check shown to the person, the evidence
 then naming it ready to approve, its screen and its full runs in a line each and a link down
-to them, and approving the stage next, its link leading to those full runs; that
+to them, and approving the stage next, its link leading to the stage's own section, the way to
+approve the proposal ready for a key; that
 approving shows the file it writes and the edit, writes nothing for a wrong code, and writes
 the skill's own file once the code shown is typed, the page then saying so first, the
 approved proposal picked out in the evidence and in its card, every stage done; and that the proposer's key, set on
@@ -129,7 +144,8 @@ accent, never a verdict's green — on Runs, on Skills and on a batch's page. La
 from its page — out of the Runs list, on the Trash page with what deleting it would remove —
 restores it, and deletes it for good, the first click saying what goes; and two finished jobs
 ticked on the Jobs page go to the trash together; and a refinement moved to the trash shows no
-current stage, and once restored, its current stage is back, its form folded until opened. And a
+current stage, its proposing stage opening onto what a proposer is shown, and once restored, its
+current stage is back, its form folded until opened. And a
 job started as an agent would over
 MCP — `started_by` naming its client — says so on the Jobs list and on its own page.
 
