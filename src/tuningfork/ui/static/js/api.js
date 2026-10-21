@@ -54,7 +54,8 @@ async function call(method, path, body, { raw = false, contentType } = {}) {
 export function startedFrom(hash = location.hash) {
   const [section = "", id, step] = hash.replace(/^#\/?/, "").split("?")[0].split("/");
   if (section === "runs" && id && /^\d+$/.test(step ?? "")) return "step";
-  if (section === "runs" && id && step === "scenario") return "make-scenario";
+  // Make a scenario, at its address and the one it had before.
+  if ((section === "runs" || section === "import") && id && step === "scenario") return "make-scenario";
   const one = { runs: "run", refine: "refinement", scenarios: "scenario", experiments: "experiment", skills: "skill", live: "live" };
   return (id && one[section]) || section || "guide";
 }

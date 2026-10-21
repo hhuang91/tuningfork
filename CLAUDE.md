@@ -382,12 +382,15 @@ thread, its model calls sent through the proxy's own gate:
     tuningfork token [--raw | --mcp | --header-json]         # the UI address with its token; the MCP token
     tuningfork connections show | switch <url> | harness <name> --executable P | check
 
-A job keeps who asked for it (`started_by`, `jobs.asked_by`): an agent over MCP and its client, or
-the web UI and the page it was started from (`api.startedFrom`, sent with every job it starts).
-The Jobs list names each job by the sidebar section its result lives in (`KIND_SECTION`) and,
-finished, what it made, leading there (`jobs.madeLink`); a finished job that made an experiment
-hands off to it — its page says what it found in a line (`results.found`), the same words the
-experiment's page leads with, and the note when it ends leads to it.
+A job keeps who asked for it (`started_by`, `jobs.asked_by` in `jobs.py`): an agent over MCP and
+its client, or the web UI and the page it was started from (`startedFrom` in `ui/static/js/api.js`,
+sent with every job it starts). The Jobs list names each job by the sidebar section of the work it
+does (`KIND_SECTION` in `ui/static/js/jobs.js`) and, finished, what it made, leading there
+(`madeLink`, the same file); a finished job's page hands off to what it made — it says what it
+found in a line (`results.found`: the verdict the experiment's page leads with, from the same
+helpers, where that page has one), with what was counted, the rates, what was left out and the
+runs it made, its log folded below — and the note when it ends leads there. A question at a held
+call and a check tried keep their answers on the job's page, their only home once done.
 
 The same operations, as tools for an agent over MCP (`tuningfork.mcp`, the SDK an optional
 extra, `tuningfork[mcp]`; nothing else imports it):

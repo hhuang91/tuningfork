@@ -261,9 +261,10 @@ def test_the_cli_follows_a_job(proxy):
     from tuningfork.cli import app as cli
 
     with proxy.client() as client:
-        job = client.submit("resample", {"run": proxy.run_id, "step": "1", "n": 2})
+        # As the web UI starts work: saying from which page.
+        job = client.submit("resample", {"run": proxy.run_id, "step": "1", "n": 2}, started_by={"via": "web", "page": "step"})
     waited = CliRunner().invoke(cli, ["jobs", "wait", job["id"][:8], "--proxy", proxy.url])
     assert waited.exit_code == 0, waited.output
     assert f"job {job['id'][:8]}" in waited.output and "done" in waited.output
     listed = CliRunner().invoke(cli, ["jobs", "list", "--proxy", proxy.url])
-    assert job["id"][:8] in listed.output and "resample" in listed.output
+    assert job["id"][:8] in listed.output and "resample" in listed.output and "web · step" in listed.output

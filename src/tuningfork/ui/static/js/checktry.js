@@ -236,7 +236,7 @@ function verdictText(result) {
   return result.passed ? "passed" : "failed";
 }
 
-function verdictView(trial) {
+export function verdictView(trial) {
   const recorded = trial.recorded?.passed;
   const compared = trial.agrees === null || trial.agrees === undefined
     ? null

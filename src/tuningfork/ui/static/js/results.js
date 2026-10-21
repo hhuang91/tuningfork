@@ -1,5 +1,5 @@
-// What experiments found: behaviour distributions and comparisons, shown the same on an
-// experiment's page and on the page of the job that ran it.
+// What experiments found: behaviour distributions and comparisons, drawn on an experiment's
+// page — and, in a line, on the page of the job that made it (`found`), from the same headlines.
 
 import { capital, chip, h, loading, outcome, panel, plural, rateBar, short } from "./dom.js";
 import { heatmap, probeMarks } from "./tokens.js";
@@ -135,19 +135,12 @@ export function forkingView(report, context = {}) {
   const onStep = (position) => experiment?.run_id
     ? h("a", { class: "btn btn-quiet btn-small", href: `#/runs/${experiment.run_id}/${experiment.step_idx}?view=tokens&at=${position}`, title: "This token on the step's own Tokens view" }, "On the step")
     : null;
-  const flips = report.positions.reduce((total, position) => total + position.alternatives.filter((alt) => alt.flips).length, 0);
+  const [headline, tone, seen] = forkingHeadline(report);
   const parts = [
-    h("div", { class: ["verdict-block", flips ? "significant" : "not-significant"] },
+    h("div", { class: ["verdict-block", tone] },
       targetLine(report.target),
-      h("div", { class: "verdict-big" }, flips
-        ? `${plural(flips, "forced token")} changed what the model did`
-        : "No forced token decided what the model did"),
-      // A null is what the probe could see, never that nothing changed.
-      !flips && report.per_arm
-        ? h("p", { class: "verdict-lines" }, report.detectable
-            ? `With ${report.per_arm} continuations a token, only a token that changes about ${report.detectable} of its ${report.per_arm} would show. A smaller shift can be real and go unseen.`
-            : `With ${report.per_arm} continuations a token, no change could be told from chance. Draw more.`)
-        : null,
+      h("div", { class: "verdict-big" }, headline),
+      seen ? h("p", { class: "verdict-lines" }, seen) : null,
       report.reproduced
         ? h("div", { class: "stack", style: { gap: "4px" } },
             h("span", null, h("span", { class: "muted" }, "the run's own tokens led to it  "), rateBar(report.reproduced)))
@@ -263,9 +256,20 @@ export function screenTones(reach) {
   return reach === "end" ? ["ok", "bad"] : ["accent", "warn"];
 }
 
-/** A screen: each proposal against a fresh arm of the original, Holm-corrected over the
- *  proposals planned before sampling. `arms` names each arm's experiment, to link to it; an
- *  unfinished screen shows its rates and no verdict. */
+/** A forking-token probe in a line, its block's tone, and — where no forced token changed what the
+ *  model did — what the probe could have seen: a null is what it could see, never that nothing
+ *  changed. */
+export function forkingHeadline(report) {
+  const flips = report.positions.reduce((total, position) => total + position.alternatives.filter((alt) => alt.flips).length, 0);
+  const seen = !flips && report.per_arm
+    ? report.detectable
+      ? `With ${report.per_arm} continuations a token, only a token that changes about ${report.detectable} of its ${report.per_arm} would show. A smaller shift can be real and go unseen.`
+      : `With ${report.per_arm} continuations a token, no change could be told from chance. Draw more.`
+    : null;
+  return [flips ? `${plural(flips, "forced token")} changed what the model did` : "No forced token decided what the model did",
+    flips ? "significant" : "not-significant", seen];
+}
+
 /** A test at a step in a line, and its block's tone: a test run to the end is judged by the
  *  task's check, so what beat the original there is green, as a check that passed is. */
 export function screenHeadline(screen) {
@@ -294,9 +298,14 @@ export function endHeadline(result) {
   return [headline, significant ? `significant ${up ? "tone-ok" : "tone-bad"}` : "not-significant"];
 }
 
-/** What a finished job found, as the page of what it made leads with it: the headline, the
- *  tone of its block, and the rates it rests on, each with its interval. Null for a job whose
- *  result is told elsewhere, or not at all. An A/B with nothing declared is judged at its own α. */
+/** What a finished job found, in a line, for its page: the verdict the page of what it made
+ *  leads with, from the same helpers, where that page has one (a test at a step, an A/B, a
+ *  probe); else the result in a line (a resample, a resample to the end). With what was counted
+ *  (`target`: its label, what it is, when it was chosen), what the verdict could see (`seen`, as
+ *  that page says it), the rates it rests on — each with its interval, and the behaviour where one
+ *  is named — and what was left out, as cautions (`notes`; `caution` where nothing could be
+ *  counted at all). Null for a job whose result is told elsewhere, or not at all. An A/B with
+ *  nothing declared is judged at its own α. */
 export function found(job) {
   const result = job.result || {};
   switch (job.kind) {
@@ -307,41 +316,51 @@ export function found(job) {
       return result.comparison ? abFinding(result.comparison, job.params?.alpha ?? 0.05) : null;
     case "forking-tokens": {
       if (!result.forking) return null;
-      const flips = result.forking.positions.reduce((total, position) => total + position.alternatives.filter((alt) => alt.flips).length, 0);
-      return {
-        text: flips ? `${plural(flips, "forced token")} changed what the model did` : "No forced token decided what the model did",
-        tone: flips ? "significant" : "not-significant", bars: [],
-      };
+      const [text, tone, seen] = forkingHeadline(result.forking);
+      return { text, tone, target: ["What you count", result.forking.target], seen, bars: [], notes: [] };
     }
     case "screen":
     case "screen-to-end": {
-      if (!result.screen) return null;
-      const [text, tone] = screenHeadline(result.screen);
-      return { text, tone, bars: [] };
+      const screen = result.screen;
+      if (!screen) return null;
+      const [text, tone] = screenHeadline(screen);
+      // Run to the end, the task's check decides, whatever the refinement said should happen.
+      return {
+        text, tone,
+        target: screen.reach === "end"
+          ? ["What you count", screen.target, "set by the task, before any fork ran"]
+          : ["What the model should do", screen.target],
+        bars: [["original", screen.baseline?.target], ...screen.arms.map((arm) => [arm.name, arm.target, "change"])],
+        notes: [],
+      };
     }
     case "resample-to-end":
-      return result.counted === undefined ? null : {
-        text: `${result.passed} of ${plural(result.counted, "fork")} passed the task's check.`,
-        tone: "not-significant", bars: [["passed", result.rate]],
-      };
+      return result.counted === undefined ? null : endArmFinding(result);
     case "ab-to-end": {
       if (!result.original || !result.variant) return null;
       const [text, tone] = endHeadline(result);
-      return { text, tone, bars: [["original", result.original.rate], ["variant", result.variant.rate, "change"]] };
+      return {
+        text, tone, target: CHECK_TARGET,
+        bars: [["original", result.original.rate], ["variant", result.variant.rate, "change"]],
+        notes: [...leftOut(result.original, "the original"), ...leftOut(result.variant, "the variant")],
+      };
     }
     default:
       return null;
   }
 }
 
+const CHECK_TARGET = ["What you count", "the task's check passes", "set by the task, before any fork ran"];
+
 function distributionFinding(distribution) {
   const [first] = distribution.clusters;
-  if (!first) return { text: "No sample came back to count.", tone: "not-significant", bars: [] };
+  const notes = distribution.errors ? [notCounted(distribution.errors, "sample")] : [];
+  if (!first) return { text: "No sample came back to count.", caution: true, tone: "not-significant", bars: [], notes };
   const total = distribution.total;
   const text = distribution.clusters.length === 1
-    ? `One behaviour, in every one of the ${plural(total, "sample")}.`
+    ? (total === 1 ? "One behaviour, in the one sample drawn." : `One behaviour, in all ${total} samples.`)
     : `${plural(distribution.clusters.length, "behaviour")} in ${plural(total, "sample")}; the most common, ${first.letter}, in ${first.rate.successes} of them.`;
-  return { text, tone: "not-significant", bars: [[first.letter, first.rate]] };
+  return { text, tone: "not-significant", bars: [[first.letter, first.rate, undefined, first.outcome]], notes };
 }
 
 function abFinding(comparison, alpha) {
@@ -349,18 +368,45 @@ function abFinding(comparison, alpha) {
   if (target) {
     return {
       text: shiftWords(target), tone: target.significant ? "significant" : "not-significant",
-      bars: [["original", target.original], ["variant", target.variant, "change"]],
+      target: ["What you count", target.description],
+      bars: [["original", target.original], ["variant", target.variant, "change"]], notes: [],
     };
   }
   const moved = comparison.shifts.filter((shift) => shift.adjusted_p < alpha).length;
   return {
     text: moved
-      ? `Nothing declared: ${moved} of ${plural(comparison.shifts.length, "behaviour")} moved by ${LABELS.beyondChance}, each p adjusted for comparing them all.`
-      : `Nothing declared: no behaviour moved by ${LABELS.beyondChance}, each p adjusted for comparing them all.`,
+      ? `${moved} of ${plural(comparison.shifts.length, "behaviour")} moved between the wordings by ${LABELS.beyondChance}.`
+      : `No behaviour moved between the wordings by ${LABELS.beyondChance}.`,
     tone: moved ? "significant" : "not-significant", bars: [],
+    notes: ["Nothing was declared before sampling, so every behaviour was compared, each p adjusted for comparing them all."],
   };
 }
 
+/** One arm of forks run to the end, in a line: how many passed the task's check, and what was
+ *  left out of the count. */
+function endArmFinding(arm) {
+  if (!arm.counted) {
+    return { text: "No fork counts: each was left out of the count, or none ran.", caution: true, tone: "not-significant", bars: [], notes: leftOut(arm) };
+  }
+  return {
+    text: `${arm.passed} of ${plural(arm.counted, "fork")} passed the task's check.`, tone: "not-significant",
+    target: CHECK_TARGET, bars: [["passed", arm.rate]], notes: leftOut(arm),
+  };
+}
+
+/** What an arm of forks left out of its count, or counted as failures, in words. */
+function leftOut(arm, whose = null) {
+  const of = whose ? ` of ${whose}` : "";
+  const excluded = (arm.exclusions || []).length;
+  return [
+    excluded ? `${plural(excluded, "fork")}${of} ${excluded === 1 ? "is" : "are"} not counted; the experiment's page says why.` : null,
+    arm.timeouts ? `${plural(arm.timeouts, "fork")}${of} timed out, counted as failures.` : null,
+  ].filter(Boolean);
+}
+
+/** A screen: each proposal against a fresh arm of the original, Holm-corrected over the
+ *  proposals planned before sampling. `arms` names each arm's experiment, to link to it; an
+ *  unfinished screen shows its rates and no verdict. */
 export function screenView(screen, { arms = {} } = {}) {
   // Run to the end, the target is the task's check: green and red, as for a run.
   const [up, down] = screenTones(screen.reach);

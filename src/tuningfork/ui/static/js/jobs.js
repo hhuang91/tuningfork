@@ -29,14 +29,14 @@ export const KIND_LABEL = {
   "check-along": "Check run along the runs",
 };
 
-// The sidebar's section each kind's result lives in: a job reads as the work it is.
+// The sidebar's section of the work each kind does: the loop's stage it serves (Record, Measure,
+// Improve), or the page it serves (Connections, Scenarios, Live). A job reads as the work it is.
 export const KIND_SECTION = {
   resample: "Measure", ab: "Measure", "resample-to-end": "Measure", "ab-to-end": "Measure",
-  tokens: "Measure", "forking-tokens": "Measure",
+  tokens: "Measure", "forking-tokens": "Measure", "hold-sample": "Measure",
   propose: "Improve", screen: "Improve", "screen-to-end": "Improve", validate: "Improve",
   batch: "Record", chain: "Record", fork: "Record", "check-along": "Record",
-  "server-check": "Connections", "check-trial": "Scenarios",
-  "hold-sample": "Live", "hold-console": "Live",
+  "server-check": "Connections", "check-trial": "Scenarios", "hold-console": "Live",
 };
 
 const STATE_TONE = { queued: "muted", running: "accent", done: "muted", failed: "warn", cancelled: "muted", interrupted: "warn" };
@@ -44,13 +44,14 @@ export const ACTIVE = new Set(["queued", "running"]);
 
 export const kindLabel = (job) => KIND_LABEL[job.kind] || job.kind;
 
-// The pages a person starts work from, as a job records them (`api.startedFrom`), in words.
+// The pages a person starts work from, as a job records them (`api.startedFrom`), in words: a
+// page named by what it does is quoted, so it does not read as an instruction.
 const FROM = {
   step: "a step's page", run: "a run's page", refinement: "a refinement's page", scenario: "a scenario's page",
   experiment: "an experiment's page", skill: "a skill's page", live: "Live", connections: "Connections",
-  jobs: "Jobs", batch: "Run a task", scenarios: "Scenarios", refine: "Refine", runs: "Runs",
-  experiments: "Experiments", skills: "Skills", import: "Import a chat", guide: "the Guide", "add-skill": "Add a skill",
-  "make-scenario": "Make a scenario", divergence: "Where do they diverge?",
+  jobs: "Jobs", batch: "“Run a task”", scenarios: "Scenarios", refine: "Refine", runs: "Runs",
+  experiments: "Experiments", skills: "Skills", import: "“Import a chat”", guide: "the Guide", "add-skill": "“Add a skill”",
+  "make-scenario": "“Make a scenario”", divergence: "where a task's runs diverge",
 };
 
 /** Who started a job, and from where, as its front end said: a person on one of the web UI's
@@ -78,8 +79,9 @@ export function madeLink(job) {
     case "server-check":
       return { href: "#/connections", text: "results on Connections" };
     case "propose":
-      return result.refinement
-        ? { href: `#/refine/${enc(result.refinement)}`, text: `${plural((result.accepted || []).length, "proposal")} in refinement ${short(result.refinement)}` }
+      // Nothing kept: the reasons why are on the job's page alone.
+      return result.refinement && (result.accepted || []).length
+        ? { href: `#/refine/${enc(result.refinement)}`, text: `${plural(result.accepted.length, "proposal")} in refinement ${short(result.refinement)}` }
         : null;
     case "validate":
       return result.refinement ? { href: `#/refine/${enc(result.refinement)}`, text: `full test runs ${short(result.validation || "")}` } : null;
@@ -88,7 +90,11 @@ export function madeLink(job) {
     case "tokens":
       return result.run_id ? { href: `#/runs/${enc(result.run_id)}/${result.step}?view=tokens`, text: `tokens at step ${result.step}` } : null;
     case "batch":
-      return result.task_id && runs.length ? { href: `#/divergence/${enc(result.task_id)}`, text: `${plural(runs.length, "run")} of ${result.task_id}` } : null;
+      // Its runs are among the task's, where they split and what their checks said.
+      return result.task_id && runs.length ? { href: `#/divergence/${enc(result.task_id)}`, text: `${result.task_id}'s runs` } : null;
+    case "check-along":
+      // What the check found along each run, on the task's runs, each finding with the call that made it.
+      return result.task_id ? { href: `#/divergence/${enc(result.task_id)}`, text: `the check along ${result.task_id}'s runs` } : null;
     case "screen":
     case "screen-to-end":
       // One experiment a wording, the first the test's own report.
@@ -207,6 +213,11 @@ export function logLine(entry) {
     case "launch":
       return h("div", { class: "log-line" }, at, chip("started", "muted"), h("span", { class: "mono small" }, data.label || short(data.launch_id)));
     case "run": {
+      // The check run along a run (`check-along`): which of how many, no verdict of its own.
+      if (data.done !== undefined) {
+        return h("div", { class: "log-line" }, at, h("span", { class: "muted" }, `run ${data.done} of ${data.total}, checked along`),
+          data.run ? h("a", { class: "mono", href: `#/runs/${data.run}` }, short(data.run)) : null);
+      }
       const verdict = data.exclusion
         ? chip("not counted", "warn", data.exclusion)
         : data.passed === true ? chip("pass", "ok") : data.passed === false ? chip("fail", "bad") : chip("no check", "muted");

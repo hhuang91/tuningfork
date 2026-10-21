@@ -335,8 +335,10 @@ function noteJobEnd(job) {
   // A kind without a short subject of its own is named by its label, quoted: the verbs are singular.
   const label = { resample: "A resample", ab: "An A/B", propose: "The proposing model", screen: "A test at a step" }[job.kind]
     || `The job “${kindLabel(job)}”`;
-  // Done, it leads to what it made; otherwise to the job, where what went wrong is said.
-  const href = (job.status === "done" && madeLink(job)?.href) || `#/jobs/${job.id}`;
+  // Done, it leads to what it made — unless that is the page already open; otherwise to the job,
+  // where what went wrong is said.
+  const made = job.status === "done" ? madeLink(job)?.href : null;
+  const href = made && !location.hash.startsWith(made) ? made : `#/jobs/${job.id}`;
   toast(`${label} ${verb}`, { tone, href, action: "Show", timeout: job.status === "done" ? 8000 : 0 });
 }
 

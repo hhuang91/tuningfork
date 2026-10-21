@@ -13,7 +13,7 @@ The pictures in the top-level README.
 
 | File | What it shows | Taken from |
 |---|---|---|
-| `ui-demo.gif` | A run opened, its write step chosen, an edited wording A/B-tested there, and the result on its job page: the original arm against the edit, with intervals and Fisher's test. About 30 seconds, no sound | `demo.py lab`, [step by step](#the-gif-step-by-step) |
+| `ui-demo.gif` | A run opened, its write step chosen, an edited wording A/B-tested there, what its job's page says it found, and the A/B's own page: the original arm against the edit, with intervals and Fisher's test. About 30 seconds, no sound | `demo.py lab`, [step by step](#the-gif-step-by-step) |
 | `ui-guide.png` | The front page from its title down: where you left off, what is set up, and the loop from a skill to its next version | real recordings |
 | `ui-run.png` | A step's exact context: every message as the model saw it, the skill marked in it, and the call it made | real recordings |
 | `ui-divergence.png` | A task's divergence page: where the runs split, how each behaviour fared, and the step that best predicts the verdict | real recordings |
@@ -80,6 +80,7 @@ randomness either: every sample of an arm is the same answer.
 4. Under *What to count*, choose *A behaviour I describe*: *Calls the tool* `write_file`, then
    *+ Add a condition* twice, for *Mentions* `row_count` and *Mentions* `amount_total`. Keep the
    suggested name and 20 samples for each wording, and start it.
-5. Its job's page shows the result as it ends: the original's 0/20 against the variant's 20/20,
-   more than chance would explain (p = 1.5e-11). *See the result* opens the A/B's own page, which
-   leads with the edit as a diff. Equal arms mean the sentence differs from the one above.
+5. Its job's page says what it found as it ends: the original's 0/20 against the variant's 20/20,
+   more than chance would explain. *See the result* opens the A/B's own page, which leads with the
+   edit as a diff, then the test (p = 1.5e-11). Equal arms mean the sentence differs from the one
+   above.
