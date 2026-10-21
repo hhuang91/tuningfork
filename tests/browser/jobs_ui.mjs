@@ -374,6 +374,8 @@ try {
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Run this task again…").click()`);
   await until(() => page.eval(`document.querySelector('.plan-form [name="harness"]')?.value === "fake"`), "the batch form, as the run was launched");
   await planShows(page, "tally-lab/1");
+  check(await page.eval(`document.querySelector('.plan-form [name="scenario"]').value === "" && !document.querySelector('.plan-form [name="spec"]').disabled`),
+    "a run's task file is named by its path, no scenario chosen, the path open to edit");
   check(await page.eval(`document.querySelector(".check-command pre")?.textContent.includes("row_count")`), "the check is shown whole, as the shell command it is");
   check(await page.eval(`document.querySelector(".plan-preview > .stack > :first-child")?.classList.contains("check-command")`), "how a run passes comes first in the plan");
   check(await page.eval(`[...document.querySelector('.plan-form [name="eval"]').options].some((option) => option.textContent.includes(" — "))`),
@@ -601,6 +603,19 @@ try {
   await until(() => page.eval(`location.hash.startsWith("#/batch?scenario=")`), "the batch form for the scenario");
   await page.eval(`location.hash = "#/batch?scenario=${scenarioName}&harness=fake&model=m"`);
   await until(() => page.eval(`document.querySelector('.plan-form [name="scenario"]')?.value === ${JSON.stringify(scenarioName)}`), "the scenario chosen");
+  // A task file by its path is the scenario's alternative, on its line: greyed while a scenario
+  // is chosen, open once none is (found in use: below it, it read as one more field to fill in).
+  check(await page.eval(`(() => {
+    const scenario = document.querySelector('.plan-form [name="scenario"]'), spec = document.querySelector('.plan-form [name="spec"]');
+    const beside = !!scenario.closest(".field-or") && scenario.closest(".field-or") === spec.closest(".field-or");
+    const greyed = spec.disabled;
+    scenario.value = "";
+    scenario.dispatchEvent(new Event("change", { bubbles: true }));
+    const open = !spec.disabled;
+    scenario.value = ${JSON.stringify(scenarioName)};
+    scenario.dispatchEvent(new Event("change", { bubbles: true }));
+    return beside && greyed && open && spec.disabled;
+  })()`), "a scenario chosen, the task file's path beside it is greyed out; with none, it opens");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "1");
   await planShows(page, "tally-scenario/1");
   await startButtonReady(page, "Start the runs");

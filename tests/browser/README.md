@@ -74,7 +74,8 @@ with every event shown once; that cancelling takes two clicks and keeps what was
 sampled, and a running job's time moves while nothing is sent; that a scenario made in the
 page — its skill folder shown where it resolves, its check flagged as the shell command it
 is, leaving it unsaved asking first, a file uploaded through its picker — runs as a batch
-and shows its pass rate, and that its check, tried on the run it judged, gives the verdict
+(chosen on Run a task, where a task file's path, on the same line, is greyed out while a scenario
+is chosen) and shows its pass rate, and that its check, tried on the run it judged, gives the verdict
 the run got, and passes on a report written with the right keys; that at a held call, sampling places the held answer among the
 sampled behaviours and is filed under the step once the call is recorded, while a question
 to the model comes back marked a hypothesis; on the Connections page, that a server

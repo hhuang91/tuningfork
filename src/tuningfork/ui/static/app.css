@@ -997,6 +997,12 @@ pre.code { color: var(--muted); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
 .form-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
 .form-field.wide { grid-column: 1 / -1; }
+/* A choice and the one field that stands in for it, on one line: a scenario, or a task file by its
+   path — open only while nothing is chosen. On a narrow page the field wraps under the choice. */
+.field-or { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.field-or > select.field { flex: 1 1 200px; min-width: 0; }
+.field-or > input.field { flex: 2 1 260px; min-width: 0; }
+.field-or > .or { flex: none; }
 .form-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .form-row > label:first-child { color: var(--muted); }
 .check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--text) !important; }
