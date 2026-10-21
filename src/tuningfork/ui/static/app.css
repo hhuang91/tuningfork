@@ -622,6 +622,9 @@ a.chip:hover { text-decoration: none; filter: brightness(0.97); }
 .ci-point { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; background: var(--accent); border-radius: 1px; }
 .ci-track.tone-change .ci-band, .ci-track.tone-change .ci-point { background: var(--change); }
 .ci-text { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+/* In a table's narrow cell a rate's numbers go under its bar, so the row's other columns — a
+   behaviour's own words — keep their width (seen at 1200 px, beside the sidebar). */
+.table td .ci { flex-wrap: wrap; row-gap: 4px; }
 
 .kv {
   display: grid;
@@ -1291,7 +1294,14 @@ pre.code { color: var(--muted); }
 .trashed-banner .controls { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: 4px; }
 .rule-builder { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 8px 26px; }
 .rule-builder .rules { display: flex; flex-direction: column; gap: 6px; }
-.rule { display: grid; grid-template-columns: minmax(150px, max-content) minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+/* A condition on a line — its kind, its value, its × — and where the line is too short for the
+   value to be read as it is typed (the work beside a run, on a laptop's page), the value and its
+   × on a line of their own. */
+.rule { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rule > select { flex: 0 1 auto; width: auto; min-width: 150px; }
+.rule-value { display: flex; flex: 1 1 13em; gap: 6px; align-items: center; min-width: 13em; }
+.rule-value > input { flex: 1 1 auto; width: auto; min-width: 0; }
+.rule-value > button { flex: none; }
 .rule-builder > .btn { align-self: flex-start; }
 .seen-preview { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .seen-preview:empty { display: none; }

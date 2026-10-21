@@ -36,7 +36,8 @@ export function describeBuilder({ onUse = () => {} } = {}) {
     const value = h("input", { class: "field", type: "text", "aria-label": "Value" });
     const which = h("select", { class: "field", "aria-label": "Condition", onchange: () => shape() },
       KINDS.map(([key, label]) => h("option", { value: key, selected: key === kind }, label)));
-    const row = h("div", { class: "rule" }, which, value,
+    // The value and its × go to a line of their own together where the row is narrow.
+    const row = h("div", { class: "rule" }, which, h("span", { class: "rule-value" }, value,
       h("button", {
         class: "btn btn-quiet btn-small", type: "button", title: "Remove this condition", "aria-label": "Remove this condition",
         onclick: () => {
@@ -44,7 +45,7 @@ export function describeBuilder({ onUse = () => {} } = {}) {
           if (!rows.children.length) add("calls");
           changed();
         },
-      }, "×"));
+      }, "×")));
     function shape() {
       const tool = which.value === "calls" || which.value === "not_calls";
       if (tool) value.setAttribute("list", listId);

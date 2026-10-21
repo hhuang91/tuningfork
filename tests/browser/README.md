@@ -70,8 +70,8 @@ event as the focus leaves it once lost that click) — a form asking for its pla
 refreshes it, and not for an event that changes nothing — shows the known shift, saves the variant only
 when it starts, and leads its page with the
 edit it tested, then the target and which way the variant moved it — in the accent's colour, never
-a check's green — with each behaviour badged by whether it matches what is counted; that no target is
-chosen for you; that a task runs again from its run's page, its check shown whole; that a
+a check's green — with each behaviour badged by whether it matches what is counted, and keeping
+the room to be read on a page 1200 px wide; that no target is chosen for you; that a task runs again from its run's page, its check shown whole; that a
 fork stops at its step for a person and runs on when continued — a step it answered from the
 recording opening its work with the keys on Hide, and Escape giving them to the step's own line — and one
 cancelled as it waits
@@ -110,7 +110,8 @@ opens the forking-token form, whose probe finds that token decides the answer; t
 probe's page shows the answer it forked from with that token ringed, and leads to it on the
 step's Tokens view and back; and that a target described in conditions is set against what
 the step has done, and declared in words; that a refinement started from a step declares its
-target first, offering no exploratory choice, and stands at its first stage, proposing, its form
+target first, offering no exploratory choice — a condition's value keeping the room to be read in
+the work beside the run, its × beside it — and stands at its first stage, proposing, its form
 the one open and what a proposer is shown folded; that the lab's built-in proposer, asked through
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have, the refinement then moving on to testing them, that form open; that
