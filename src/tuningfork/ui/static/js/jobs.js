@@ -131,12 +131,18 @@ export function subject(job) {
   return null;
 }
 
+/** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th … 21st: a place in line. */
+function ordinal(n) {
+  const tens = n % 100;
+  return `${n}${tens >= 11 && tens <= 13 ? "th" : { 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th"}`;
+}
+
 export function stateText(job) {
   const progress = job.progress || {};
   if (job.status === "queued") {
-    return job.queue_position !== null && job.queue_position !== undefined
-      ? `queued, ${job.queue_position === 0 ? "next" : `#${job.queue_position + 1}`}`
-      : "queued";
+    // Its place in its lane's line (`queue_position`, from 0): the next to start is first.
+    const place = job.queue_position;
+    return place !== null && place !== undefined ? `queued, ${place === 0 ? "next" : ordinal(place + 1)} in line` : "queued";
   }
   if (job.status === "running") {
     if (progress.waiting) return `waiting: ${progress.waiting === "paused" ? "the proxy is paused" : progress.waiting}`;

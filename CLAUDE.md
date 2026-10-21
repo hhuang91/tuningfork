@@ -384,9 +384,11 @@ thread, its model calls sent through the proxy's own gate:
 
 A job keeps who asked for it (`started_by`, `jobs.asked_by` in `jobs.py`): an agent over MCP and
 its client, or the web UI and the page it was started from (`startedFrom` in `ui/static/js/api.js`,
-sent with every job it starts). The Jobs list names each job by the sidebar section of the work it
-does (`KIND_SECTION` in `ui/static/js/jobs.js`) and, finished, what it made, leading there
-(`madeLink`, the same file); a finished job's page hands off to what it made — it says what it
+sent with every job it starts). The Jobs list is in three parts — running and queued (the running
+first, then each queued job at its place in its lane's line, saying it), finished, and stopped or
+failed — and names each job by the sidebar section of the work it does (`KIND_SECTION` in
+`ui/static/js/jobs.js`) and, finished, what it made, leading there (`madeLink`, the same file); a
+finished job's page hands off to what it made — it says what it
 found in a line (`found` in `ui/static/js/results.js`: the verdict the experiment's page leads
 with, from the same helpers, where that page has one), with what was counted, the rates, what was
 left out or is still open in that page's words, and the runs it made, its log folded below — and

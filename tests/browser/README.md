@@ -117,7 +117,9 @@ MCP — `started_by` naming its client — says so on the Jobs list and on its o
 The resample's job page, once done, says what it found in a line with its rate, leaves the whole
 to the experiment's page and folds its log, links the step it worked at, and says it was started
 from a step's page; the Jobs list names it "Measure · Resample", leads to its experiment and says
-who started it. The job pages of a probe, an A/B, a test at a step and forks run to the end each
+who started it. The list is in parts: running and queued first — saying so when nothing is, and
+with two jobs queued behind a paused one, the running job first, then each queued job at its place
+in line — then finished, then stopped or failed, where a job cancelled in line goes. The job pages of a probe, an A/B, a test at a step and forks run to the end each
 say what they found in a line, without the experiment's own views, and lead to them; a cancelled
 job keeps its log open. The note when a job ends leads to what it made — a held call's samples to
 their experiment — or to the job, where what it made is the page already open: a server test
