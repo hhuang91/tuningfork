@@ -527,6 +527,10 @@ try {
   await page.click("Sample it", `document.querySelector(".hold-tools .evidence")`);
   await until(() => page.eval(`(document.querySelector(".hold-tools .evidence")?.textContent || "").includes("The answer held here is behaviour A")`), "the samples, with the held answer placed", 60000);
   check(true, "sampling at a held call places the held answer among the sampled behaviours");
+  const sampledJob = (await api("/jobs")).find((job) => job.kind === "hold-sample");
+  const sampledNote = await until(() => page.eval(`[...document.querySelectorAll(".toast")]
+    .find((t) => t.textContent.startsWith("The job “Held call sampled” finished"))?.querySelector("a")?.getAttribute("href") || null`), "the note when the sampling ends");
+  check(sampledNote === `#/experiments/${sampledJob.links.experiments[0]}`, `the note when a job ends leads to what it made (${sampledNote})`);
   await page.type(`document.querySelector('.hold-tools .hypotheses [name="question"]')`, "Why did you choose those keys?");
   await until(() => page.eval(`[...document.querySelectorAll(".hold-tools .hypotheses button")].some((b) => b.textContent === "Ask" && !b.disabled)`), "Ask enabled");
   await page.click("Ask", `document.querySelector(".hold-tools .hypotheses")`);
@@ -547,6 +551,10 @@ try {
   const startedOn = (await api("/connections")).server.url;
   await page.click("Test the server");
   await until(() => page.eval(`[...document.querySelectorAll(".measured td .mono")].some((name) => name.textContent === "anthropic_messages")`), "the check's results", 60000);
+  const serverJob = (await api("/jobs")).find((job) => job.kind === "server-check");
+  const serverNote = await until(() => page.eval(`[...document.querySelectorAll(".toast")]
+    .find((t) => t.textContent.startsWith("The job “Server test” finished"))?.querySelector("a")?.getAttribute("href") || null`), "the note when the server test ends");
+  check(serverNote === `#/jobs/${serverJob.id}`, `what it found is the page already open: its note leads to the job (${serverNote})`);
   const checked = (await api("/connections")).server.checks.results;
   check(checked.streaming_tool_calls.support === "yes" && checked.anthropic_messages.support === "yes", "the server check measured both, and the page shows them");
   check(await page.eval(`(() => {
