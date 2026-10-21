@@ -42,8 +42,8 @@ The CLI, MCP and the docs keep tuningfork's precise words.
   there, its log folded. The Jobs list is in three parts — running and queued, each queued job
   saying its place in its line; finished; stopped or failed — and names each job by the section
   of its work, links what it made, and says who started it: you, from which page, or an agent
-  over MCP; `tuningfork jobs list` and `jobs show` say so too. A job's link to the step it worked
-  at opens that step.
+  over MCP. `tuningfork jobs list` and `jobs show` say who started it too. A job's link to the
+  step it worked at opens that step.
 - **Add a skill** (`tuningfork add-skill`, `forget-skill`, the Skills page's *Add a skill…*, a
   run's *Keep its skill…*): a folder on this machine, remembered where it is, or an uploaded
   folder or a run's skill, kept as tuningfork's own copy. An approved edit is written to the
@@ -55,8 +55,8 @@ The CLI, MCP and the docs keep tuningfork's precise words.
   without what they need. The check now measures the chat endpoint's logprobs too, which a
   resample's kept tokens need (*Keep each sample's tokens*, new on its form), in one more short
   call. A server on the internet that asks for a key, or is not llama.cpp's, is said to be a
-  hosted model's API: tuningfork records your agent's calls through it, its own key passed on, and
-  the switch on Connections takes one that asks for a key, where it refused it before.
+  hosted model's API: tuningfork records your agent's calls through it, its own key passed on.
+  The switch on Connections takes one that asks for a key, where it refused it before.
 - **The forking-token probe says what reached each behaviour**: whether the target counts it,
   and which tokens led to it — its page, `tuningfork experiment`, MCP. A flip is the accent's
   colour, its direction said in words. Where the step's answer is a tool call, the form offers
@@ -73,20 +73,21 @@ Changed:
 
 - **An A/B is judged at the α it was declared with** wherever it is reported again — its page,
   `tuningfork experiment`, MCP's `show_experiment` — where 0.05 was used whatever was declared.
-  One run before its α was kept takes its job's, else 0.05; `--alpha` judges at another level,
-  and says so.
+  An A/B made before its α was kept takes its job's, else 0.05; `--alpha` judges at another
+  level, and says so.
 - **Letters agree with the resample a target came from**: an A/B, a screen or a probe of a letter
   target letters its behaviours as that resample did, so its B is the resample's B. One stored
   before finds its resample by its target's description, so read again, its behaviours may take
   new letters.
-- **A resample that asked for each sample's tokens and got none says so**, and counts as having
-  kept them only the samples that did: its page said every sample had kept them.
+- **A resample that asked for each sample's tokens and got none says so**: its page said every
+  sample had kept them. The page now counts only the samples that did.
 - **A dry run's refusal is an answer**: asked `quiet`, as the web UI's forms ask, `POST /jobs`
   and the scenario endpoint refuse with `200 {refused}`, not an HTTP error. Without `quiet`,
   nothing changes.
 - **A plan gives its notes apart from its warnings**: an import's and a scenario's (`notes` in
-  the API, `note` lines in the terminal). A batch or chain of a scenario, refused for the task
-  file the scenario keeps, names the field `scenario`, never `spec`.
+  the API, `note` lines in the terminal).
+- **A scenario's batch or chain names the scenario when refused** for the task file the scenario
+  keeps: the field is `scenario`, the one filled in, never `spec`, which nobody typed.
 - **Every job under way is listed** by `GET /jobs`, `tuningfork jobs list` and MCP's `list_jobs`,
   however many came after it: the list was cut at the newest 50 (`list_jobs`: 20, or as many as
   it asked for), so a running job with that many newer ones dropped out. Over MCP's stdio
