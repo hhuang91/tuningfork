@@ -247,7 +247,7 @@ tuningfork ui
 ```
 
 ```
-tuningfork 0.3.0 — browsing /home/you/tuningfork-demo
+tuningfork 0.4.0 — browsing /home/you/tuningfork-demo
   open http://127.0.0.1:8788/_tuningfork/ui/
 ```
 
@@ -460,7 +460,7 @@ tuningfork serve --upstream http://127.0.0.1:8081
 ```
 
 ```
-tuningfork 0.3.0
+tuningfork 0.4.0
   listening on  http://127.0.0.1:8787/v1
   forwarding to http://127.0.0.1:8081
   recording to  /home/you/tuningfork-guide
