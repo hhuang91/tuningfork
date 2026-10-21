@@ -226,7 +226,7 @@ The web UI has the same, from a run's page (**Make a scenario…**) or from the 
 a run yet). Its form sets each run beside the chat, for the skill chosen: first what each run is
 given — its harness's own system prompt and tools (the chat's shown, never sent), the
 conversation before the starting prompt, and the prompt, which can be rewritten there — then the
-conversation's steps from there on: given as done, where each run starts, where it stops. Claude Code's calls cannot yet carry a conversation before the prompt, so a
+conversation's steps from there on: already done, where each run starts, where it stops. Claude Code's calls cannot yet carry a conversation before the prompt, so a
 scenario of a Claude Code run starts at its first turn.
 
 ## Where do the runs go wrong?

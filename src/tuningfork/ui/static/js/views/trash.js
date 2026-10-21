@@ -6,6 +6,7 @@ import { guard } from "../auth.js";
 import { ago, chip, h, loading, panel, plural, replace, short, when } from "../dom.js";
 import { live } from "../live.js";
 import { citedText, goesText, purgeButton, restoreButton } from "../trash.js";
+import { kindLabel } from "../jobs.js";
 import { kindName } from "./experiments.js";
 
 export async function trashView(root) {
@@ -36,10 +37,10 @@ export async function trashView(root) {
         `#/runs/${run.id}`, run.trashed_at, run.goes)))) : null,
     found.experiments.length ? panel(`Experiments · ${found.experiments.length}`, table(found.experiments.map((experiment) =>
       row("experiment", experiment.id,
-        `${experiment.arms > 1 ? "A/B" : kindName(experiment)} at run ${short(experiment.run_id || "")} step ${experiment.step_idx ?? "?"}, ${plural(experiment.samples, "sample")}`,
+        `${experiment.arms > 1 ? "A/B" : kindName(experiment)} · run ${short(experiment.run_id || "")}, step ${experiment.step_idx ?? "?"} · ${plural(experiment.samples, "sample")}`,
         experiment.arms > 1 ? null : `#/experiments/${experiment.id}`, experiment.trashed_at, experiment.goes)))) : null,
     found.jobs.length ? panel(`Jobs · ${found.jobs.length}`, table(found.jobs.map((job) =>
-      row("job", job.id, `${job.kind}, ${job.status}`, `#/jobs/${job.id}`, job.trashed_at, null)))) : null,
+      row("job", job.id, `${kindLabel(job)}, ${job.status}`, `#/jobs/${job.id}`, job.trashed_at, null)))) : null,
     found.scenarios.length ? panel(`Scenarios · ${found.scenarios.length}`, table(found.scenarios.map((scenario) =>
       row("scenario", scenario.id, scenario.name, null, scenario.trashed_at, null)))) : null,
     refinements.length ? panel(`Refinements · ${refinements.length}`, table(refinements.map((refinement) =>

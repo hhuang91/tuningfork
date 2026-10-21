@@ -5,7 +5,9 @@
 
 import { api } from "../api.js";
 import { ago, chip, command, h, loading, panel, plural, replace, short, verdict, when } from "../dom.js";
+import { kindLabel } from "../jobs.js";
 import { live } from "../live.js";
+import { LABELS } from "../words.js";
 
 export async function homeView(root, _, scope) {
   // A word asked for here before the words had a page of their own: there now.
@@ -37,7 +39,7 @@ export async function homeView(root, _, scope) {
         h("div", { class: "map-notes" },
           h("p", null, h("strong", null, "Record. "), "A scenario is a task file kept here: a skill's tasks, each with its check. A batch starts the harness once for each run, in a fresh folder, and the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way, and a chat it already had can be imported as a run. Any run can become a scenario, whose runs continue its conversation."),
           h("p", null, h("strong", null, "Measure. "), "At any step, an experiment sends the step's exact request again, with everything before it held fixed, and counts what the model does there. To judge each try by whether the whole run then passes, each sample is a fork of the run: replayed to the step, live after it, and judged by the task's check."),
-          h("p", null, h("strong", null, "Improve. "), "A refinement declares what to count at a step, then tests small edits there against the original wording. An edit that beats the original gets full test runs, held-out tasks included, and is written back only when a person approves it: a new version of the skill, measured again from the top."),
+          h("p", null, h("strong", null, "Improve. "), "A refinement declares what the model should do at a step, then tests small edits there against the original wording. An edit that beats the original gets full test runs, held-out tasks included, and is written back only when a person approves it: a new version of the skill, measured again from the top."),
           h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a test at a step, full test runs, each run inside `tuningfork serve`. A job is a record of the work. What it made, runs and experiments, is kept on its own."),
           colours()),
       ]),
@@ -96,7 +98,7 @@ function leftOff(runs, refinements) {
   return panel("Where you left off", h("div", { class: "left-off" },
     held ? card("Held now", "#/live", h("p", null, h("a", { href: "#/live" }, plural(held, "model call")), " waiting at a breakpoint.")) : null,
     jobs.length ? card("Running", "#/jobs", h("ul", { class: "plain-list" }, jobs.slice(0, 4).map((job) =>
-      h("li", null, h("a", { href: `#/jobs/${job.id}` }, job.kind), " ", chip(job.status, "accent"))))) : null,
+      h("li", null, h("a", { href: `#/jobs/${job.id}` }, kindLabel(job)), " ", chip(job.status, "accent"))))) : null,
     runs?.length ? card("Latest runs", "#/runs", h("ul", { class: "plain-list" }, runs.slice(0, 4).map((run) =>
       h("li", null, h("a", { class: "mono", href: `#/runs/${run.id}` }, run.label || short(run.id)), " ",
         run.task_id && !(run.label || "").startsWith(run.task_id) ? h("span", { class: "muted small" }, run.task_id) : null, " ", verdict(run.result),
@@ -217,10 +219,10 @@ const NODES = [
   ["experiment", "Experiment", "resample · A/B · tokens", 3, 1, "#/experiments"],
   ["sample", "Samples", "behaviours, counted", 2, 1, "#/experiments"],
   ["fork", "Forks", "samples run to the end", 1, 1, "#/experiments"],
-  ["refinement", "Refinement", "what to count, declared first", 4, 2, "#/refine"],
+  ["refinement", "Refinement", "what it should do, first", 4, 2, "#/refine"],
   ["proposal", "Proposals", "small, exact edits", 3, 2, "#/refine"],
   ["screen", "Test at a step", "each against the original", 2, 2, "#/refine"],
-  ["validation", "Full test runs", "held-out tasks included", 1, 2, "#/refine"],
+  ["validation", LABELS.validate, "held-out tasks included", 1, 2, "#/refine"],
   ["approval", "Approval", "a person writes it back", 0, 2, "#/refine"],
 ];
 const EDGES = [
@@ -318,8 +320,8 @@ const WORKFLOWS = [
   },
   {
     question: "How do I fix the skill?",
-    answer: "A refinement: what to count declared first, small edits proposed and each tested at the step against the original, an edit that beats it given full test runs — and approved by you.",
-    steps: ["At the step: Refine the skill here… — choose what to count", "Propose edits: your own, an agent's over MCP, or the proposing model's", "Test them at the step, give the one that beats the original full test runs, and approve it once the approval checks pass"],
+    answer: "A refinement: what the model should do there declared first, small edits proposed and each tested at the step against the original, an edit that beats it given full test runs — and approved by you.",
+    steps: ["At the step: Refine the skill here… — choose what the model should do there", "Propose edits: your own, an agent's over MCP, or the proposing model's", "Test them at the step, give full test runs to the one that beats the original, and approve it once the approval checks pass"],
     cli: "tuningfork refine start <run> <step> --target-rules '[…]'", href: "#/refine", go: "Refine",
   },
   {

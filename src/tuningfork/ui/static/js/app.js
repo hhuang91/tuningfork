@@ -6,6 +6,7 @@
 import { api } from "./api.js";
 import { auth, guard, keep, onAuthChange, pickUpToken, setAuth } from "./auth.js";
 import { failure, h, replace, toast } from "./dom.js";
+import { kindLabel } from "./jobs.js";
 import { live, start, subscribe } from "./live.js";
 import { leaving, place, unsaved } from "./nav.js";
 import { batchView } from "./views/batch.js";
@@ -331,7 +332,7 @@ function noteJobEnd(job) {
   // A check tried in the scenario editor is quick, and its verdict is shown where it began.
   if (job.kind === "check-trial") return;
   const [verb, tone] = ENDINGS[job.status] || [job.status, "accent"];
-  const label = { resample: "A resample", ab: "An A/B", propose: "The proposing model", screen: "A test at a step" }[job.kind] || `A ${job.kind} job`;
+  const label = { resample: "A resample", ab: "An A/B", propose: "The proposing model", screen: "A test at a step" }[job.kind] || `The job “${kindLabel(job)}”`;
   toast(`${label} ${verb}`, { tone, href: `#/jobs/${job.id}`, action: "Show", timeout: job.status === "done" ? 8000 : 0 });
 }
 

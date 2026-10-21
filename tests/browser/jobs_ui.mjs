@@ -740,7 +740,7 @@ try {
   check(await page.eval(`document.querySelector("main").textContent.includes("Not kept")`), "the job's page says what was not kept, and why");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See them in the refinement").click()`);
   await until(() => page.eval(`document.querySelectorAll(".proposal").length === 2`), "the two proposals");
-  check(await page.eval(`[...document.querySelectorAll(".proposal")].every((card) => card.textContent.includes("untested"))`), "each untested until a test at the step tries it");
+  check(await page.eval(`[...document.querySelectorAll(".proposal")].every((card) => [...card.querySelectorAll(".chip")].some((c) => c.textContent === "untested"))`), "each untested until a test at the step tries it");
   check(await page.eval(`[...document.querySelectorAll(".proposal .diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))`), "each shown as a line diff");
   await page.eval(`document.querySelector(".propose-own > summary").click()`);
   const baseline = await page.eval(`document.querySelector('[name="proposal_text"]').value`);
@@ -769,7 +769,7 @@ try {
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal beat the original by more than chance would explain."`), "the verdict on the job's page");
   // At the step, a survivor is a shift of a behaviour, not a check passed: the accent's, never green.
   check(await page.eval(`!document.querySelector(".verdict-block.tone-ok") && [...document.querySelectorAll(".screen-table .chip")]
-    .find((chip) => chip.textContent === "beats the original")?.classList.contains("tone-accent")`), "a step screen's survivor is the accent's colour, not a check's green");
+    .find((chip) => chip.textContent === "beat the original")?.classList.contains("tone-accent")`), "a step screen's survivor is the accent's colour, not a check's green");
   // What the model did, by arm: the right keys are the target ("calls write_file and mentions row_count").
   const byArm = await page.eval(`(() => {
     const panel = [...document.querySelectorAll(".panel")].find((found) => found.querySelector("h2")?.textContent === "What the model did, by wording");
@@ -779,7 +779,7 @@ try {
   check(byArm.split(",").sort().join(",") === "matches:true,no match:false", `the screen's behaviours are badged as matching what is counted or not (${byArm})`);
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
-  check(await page.eval(`[...document.querySelectorAll(".screen-table .chip")].map((c) => c.textContent).sort().join(",") === "beats the original,within chance"`), "the screen's page gives each proposal its verdict");
+  check(await page.eval(`[...document.querySelectorAll(".screen-table .chip")].map((c) => c.textContent).sort().join(",") === "beat the original,within chance"`), "the screen's page gives each proposal its verdict");
   check(await page.eval(`document.querySelector(".page-head").textContent.includes("refinement ${refinementId.slice(0, 8)}")`), "and names the refinement it belongs to");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Back to the refinement").click()`);
   await until(() => page.eval(`location.hash === "#/refine/${refinementId}" && [...document.querySelectorAll(".proposal .chip")].some((c) => c.textContent === "beat the original")`), "the verdicts on the refinement's proposals");

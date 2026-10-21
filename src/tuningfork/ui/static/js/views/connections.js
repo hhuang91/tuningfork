@@ -259,7 +259,7 @@ export async function connectionsView(root, _, scope) {
       kv([
         ["asks", settings.url
           ? h("span", { class: "mono" }, settings.url)
-          : h("span", null, "the server above, ", h("span", { class: "muted" }, "through the proxy: gated, never recorded"))],
+          : h("span", null, "the server above, ", h("span", { class: "muted" }, "through the proxy: it waits its turn with other calls, and is never recorded"))],
         ["model", settings.model ? h("span", { class: "mono" }, settings.model) : h("span", { class: "muted" }, "the server's default")],
         ["API format", h("span", { class: "mono" }, settings.wire)],
         ["max tokens", String(settings.max_tokens)],
@@ -267,7 +267,7 @@ export async function connectionsView(root, _, scope) {
         ["another machine", settings.allow_remote ? chip("allowed", "warn") : chip("not allowed", "muted")],
         ["key", key.set ? chip(key.from === "environment" ? "set, from TUNINGFORK_PROPOSER_KEY" : "set, in the recordings folder", "muted") : chip("not set", "muted")],
       ]),
-      h("p", { class: "hint" }, "The model asked for edits of a skill, on a refinement's page. What it is sent — the skill, recorded prompts and answers — goes to this address."),
+      h("p", { class: "hint" }, "The model tuningfork asks for edits of a skill, from a refinement's page. What it is sent — the skill, recorded prompts and answers — goes to this address."),
       error,
       h("details", { class: "fold" }, h("summary", null, "Change the proposing model"),
         h("form", {
@@ -299,7 +299,7 @@ export async function connectionsView(root, _, scope) {
             if (given) await save("/proposer/key", { key: given });
           }),
         },
-        h("p", { class: "hint" }, "Kept in the recordings folder, readable only by this user, and sent only in the proposing model's own calls; never shown again. TUNINGFORK_PROPOSER_KEY in the proxy's environment wins over it."),
+        h("p", { class: "hint" }, "Kept in the recordings folder, readable only by this user, and sent only in the calls to the proposing model; never shown again. TUNINGFORK_PROPOSER_KEY in the proxy's environment wins over it."),
         secret,
         h("div", { class: "form-actions" },
           h("button", { class: "btn btn-small", type: "submit", "data-control": true }, "Save the key"),

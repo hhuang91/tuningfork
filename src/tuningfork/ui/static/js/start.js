@@ -271,7 +271,7 @@ function forkingPreview(plan) {
       ["step", checkpointLine(plan)],
       ["forks from", h("span", null, h("span", { class: "mono" }, `stream ${short(plan.base.id)}`),
         ` — ${plan.base.source === "scored" ? "the answer the run gave, scored" : plan.base.source}, ${plural(plan.base.tokens, "token")}`)],
-      ["counts", plan.target],
+      ["what you count", plan.target],
       ["draws", `${plural(plan.arms.length, "forced token")} × ${plan.per_arm} = ${plural(plan.planned, "continuation")}`],
       ["can detect", power.detectable
         ? `a forced token that changes the outcome in about ${power.detectable} of its ${power.of} continuations, or more, corrected for ${plural(plan.family, "test")}`
@@ -510,7 +510,7 @@ function toEndPreview(plan) {
     kv([
       ...forkLines(arm),
       ["forks", `${plural(plan.forks, "fork")}${plan.variant ? ` (${plan.n} for each wording)` : ""}, ${plan.concurrency} at a time`],
-      ["counts", "the task's check passes"],
+      ["what you count", "the task's check passes"],
       plan.variant ? ["swaps", `the original for your variant, from step ${arm.checkpoint.step} on`] : null,
     ].filter(Boolean)),
     [...(arm.warnings || []), ...((plan.variant && plan.variant.warnings) || [])].map((warning) => h("div", { class: "banner banner-warn" }, warning)),
@@ -572,7 +572,7 @@ function abPreview(plan) {
     kv([
       ["step", checkpointLine(plan)],
       ["swaps", h("span", null, `the original, found in ${plural(spans.length, "place")} in this step's context, for your variant`)],
-      ["counts", plan.target ? h("span", null, plan.target) : chip("nothing declared: every behaviour compared, each p adjusted", "warn")],
+      ["what you count", plan.target ? h("span", null, plan.target) : chip("nothing declared: every behaviour compared, each p adjusted", "warn")],
       ["samples", `${plural(plan.sampling.n, "sample")} for each wording, ${plan.sampling.concurrency} at a time, α = ${plan.alpha}`],
       ["takes", estimateText(plan.estimate)],
       ["saved as", h("span", { class: "mono" }, plan.variant)],

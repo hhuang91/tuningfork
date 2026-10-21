@@ -30,3 +30,9 @@ def test_the_pages_words_are_the_glossarys():
 def test_the_words_page_is_given_both():
     found = glossary.lookup("arm")[0].to_json()
     assert (found["term"], found["ui"]) == ("arm", "wording")
+
+
+def test_a_page_phrase_finds_its_term():
+    # `tuningfork glossary "full test runs"`: a word read on a page leads to the precise one.
+    assert glossary.lookup("full test runs")[0].term == "validation"
+    assert glossary.lookup("Wording")[0].term == "arm"

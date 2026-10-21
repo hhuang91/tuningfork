@@ -202,7 +202,7 @@ function predictorsView(report) {
   }
   return panel("What goes with passing", lines, {
     meta: h("span", { class: "muted", title: "Fisher's exact test over the judged runs" },
-      "A lead, never a verdict: each split shown would happen by chance less than one time in five."),
+      "A lead, never a verdict: each split shown has p under 0.2, and with so many compared, chance alone can make one."),
   });
 }
 

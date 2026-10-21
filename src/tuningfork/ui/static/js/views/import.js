@@ -127,7 +127,7 @@ export async function importView(root, _params, scope) {
     const skills = plan.skills.length
       ? h("div", { class: "stack import-skills" },
           plan.skills.map((found) => {
-            const where = found.step === null ? "not in the conversation" : `the model reads it from step ${found.step}`;
+            const where = found.step === null ? "it came in after the last answer, so no step reads it" : `the model reads it from step ${found.step}`;
             const how = found.source ? `${SOURCES[found.source] || found.source}; ` : "";
             return h("div", { class: "import-skill" },
               h("div", null, h("strong", null, found.name), h("span", { class: "muted small" }, ` — ${how}${where}; `

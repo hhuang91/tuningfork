@@ -1,7 +1,7 @@
 // What experiments found: behaviour distributions and comparisons, shown the same on an
 // experiment's page and on the page of the job that ran it.
 
-import { chip, h, loading, outcome, panel, plural, rateBar, short } from "./dom.js";
+import { capital, chip, h, loading, outcome, panel, plural, rateBar, short } from "./dom.js";
 import { heatmap, probeMarks } from "./tokens.js";
 import { LABELS } from "./words.js";
 
@@ -35,10 +35,11 @@ function reasonedText(reasoned, of) {
   return h("div", { class: "small warn-text" }, `${reasoned} of ${of} reasoned`);
 }
 
-/** What an experiment counted, said first and plainly: every number below it is of this. */
-export function targetLine(description, declared = "chosen before sampling") {
+/** What an experiment counted, said first and plainly: every number below it is of this. A
+ *  refinement's tests name it as the refinement does: what the model should do. */
+export function targetLine(description, declared = "chosen before sampling", label = "What you count") {
   return h("div", { class: "verdict-target" },
-    h("span", { class: "label" }, "What you count"),
+    h("span", { class: "label" }, label),
     h("span", { class: "verdict-target-text" }, description),
     h("span", { class: "muted small" }, declared));
 }
@@ -50,7 +51,7 @@ const ofTotal = (rate) => `${rate.successes} of ${rate.total}`;
  *  is never told: a shift is the accent's colour, never the green of a check that passed. */
 function shiftWords(target) {
   if (!target.significant) {
-    return `No difference beyond chance: what you count happened in ${ofTotal(target.variant)} samples with the variant, and ${ofTotal(target.original)} with the original.`;
+    return `${capital(LABELS.withinChance)}: what you count happened in ${ofTotal(target.variant)} samples with the variant, and ${ofTotal(target.original)} with the original.`;
   }
   const way = target.direction === "down" ? "less" : "more";
   return `What you count happened ${way} often with the variant: ${ofTotal(target.variant)} samples, against ${ofTotal(target.original)} with the original. That is ${LABELS.beyondChance}.`;
@@ -280,7 +281,7 @@ export function screenView(screen, { arms = {} } = {}) {
   const verdict = (arm) => {
     if (screen.quick) return chip("quick look", "muted");
     if (!screen.complete) return chip("no verdict", "warn");
-    if (arm.survives) return chip("beats the original", up);
+    if (arm.survives) return chip("beat the original", up);
     if (arm.worse) return chip("worse", down);
     return chip("within chance", "muted");
   };
@@ -314,16 +315,16 @@ export function screenView(screen, { arms = {} } = {}) {
   return h("div", { class: "stack" },
     panel(screen.quick ? "Each proposal's forks" : "Each proposal against the original", [
       h("div", { class: ["verdict-block", tone] },
-        targetLine(screen.target),
+        targetLine(screen.target, undefined, "What the model should do"),
         h("div", { class: "verdict-big" }, headline),
         screen.quick
-          ? h("div", { class: "mono small" }, "A lead for the next edit, not a test. Only a full test at this step can keep one.")
+          ? h("div", { class: "mono small" }, "A lead for the next edit. Only a test at this step that is not a quick look can keep a proposal.")
           : h("div", { class: "mono small", title: "Fisher's exact test, Holm-corrected" },
               `Each against the original, corrected for the ${plural(screen.family, "proposal")} planned; α = ${screen.alpha}`)),
       screen.complete ? null : h("div", { class: "banner banner-warn" }, h("strong", null, "Not every wording drew what was planned. "),
         "Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made."),
       h("div", { class: "table-wrap" }, h("table", { class: "table screen-table" },
-        h("thead", null, h("tr", null, h("th", null, "wording"), h("th", null, "did what you count"), h("th", { class: "num" }, "p"),
+        h("thead", null, h("tr", null, h("th", null, "wording"), h("th", null, "did what it should"), h("th", { class: "num" }, "p"),
           h("th", { class: "num", title: "Holm-corrected" }, "p, corrected"), h("th", null, ""))),
         h("tbody", null,
           h("tr", null, h("td", null, name({ name: "original" })),
@@ -367,7 +368,9 @@ function checkpointsView(screen, names) {
           return h("td", { class: "num mono" }, counts ? `${counts.passed}/${counts.of}` : "—");
         })))))),
     Object.entries(across).map(([arm, tally]) => h("p", { class: "small" },
-      h("span", { class: "mono" }, arm), `: above the original in ${tally.above} of the ${tally.of} runs forked from`,
+      h("span", { class: "mono" }, arm), tally.of === 1
+        ? `: ${tally.above ? "above" : "not above"} the original in the one run forked from`
+        : `: above the original in ${tally.above} of the ${tally.of} runs forked from`,
       tally.of > 1 && tally.above === tally.of ? ", an effect that holds whatever each run did before the step"
         : tally.above === 1 ? ", in one alone: the effect may have lived in what that run did before the step" : "")),
   ]);

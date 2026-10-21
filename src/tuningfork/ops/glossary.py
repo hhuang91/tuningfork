@@ -97,7 +97,7 @@ TERMS: tuple[Term, ...] = (
     Term("skill version", "A fingerprint of the skill files a run was given. Runs with one fingerprint read the same "
          "skill byte for byte; their pass rate is never pooled with another version's.",
          "recording", aka=("fingerprint",), see=("skill", "pass rate"), where="Skills page; tuningfork skill <name>",
-         ui="version 1, 2, … in order of first run"),
+         ui="version 1, 2, … in order of first run, on the Skills page"),
     Term("run", "One conversation of a harness with the model, from its first model call to its last: its steps, "
          "in order, and — when tuningfork launched it — the check's verdict.",
          "recording", see=("step", "thread", "launch"), where="Runs page; tuningfork runs"),
@@ -118,8 +118,9 @@ TERMS: tuple[Term, ...] = (
          "sent it, so the step tools work on it. Nothing launched it, so it forks nowhere; made a scenario, its "
          "runs do.",
          "recording", see=("run", "recorded live", "scenario"), where="Import a chat page; tuningfork import"),
-    Term("branch", "A run whose history parts from another run's at one message: the Runs page marks it where the two "
-         "part. A mark that groups nothing, and no fork: nothing was replayed.",
+    Term("branch", "A run whose history parts from another run's at one message: the Runs page lists it under that "
+         "run, marked where the two part. A mark only — no call of one is ever joined to the other — and no fork: "
+         "nothing was replayed.",
          "recording", see=("recorded live", "fork"), where="Runs page: branch @ k"),
     Term("behaviour", "What the model did at a step, read so that equal actions compare equal: which tool with which "
          "arguments, or which text. Experiments count behaviours, lettered A, B, C by how often they happen.",
@@ -137,9 +138,10 @@ TERMS: tuple[Term, ...] = (
          "the Scenarios page instead of by hand.",
          "tasks", see=("spec",), where="Scenarios page"),
     Term("starting prompt", "The user turn a scenario's runs start from: the turn after which its skill first came "
-         "into the chat it was made from, in the person's own words, or in words of your own.",
+         "into the chat it was made from, or another of the person's turns the skill can still come in after; in "
+         "the person's own words, or in words of your own.",
          "tasks", see=("scenario", "continued conversation"),
-         where="a run's page: Make a scenario…; tuningfork scenario <run> <name> --prompt"),
+         where="a run's page: Make a scenario…; tuningfork scenario <run> <name> --prompt, --cut"),
     Term("continued conversation", "The chat before a scenario's starting prompt, which each of its runs carries "
          "on from: put after the harness's instructions in every call of the run's main thread. Never an edit, so "
          "each run still counts.",
@@ -209,7 +211,8 @@ TERMS: tuple[Term, ...] = (
          "experiments", see=("A/B", "proposal"), where="Skills page"),
     Term("target", "What should happen at the step, declared before anything is sampled: a behaviour's letter, a "
          "pattern, or conditions in words. Run to the end, the target is the task's check.",
-         "experiments", see=("A/B", "refinement"), ui="what you count"),
+         "experiments", see=("A/B", "refinement"),
+         ui="what you count; in a refinement, what the model should do"),
     Term("to the end", "Each sample a fork run to the end of the task and judged by its check, instead of the one "
          "answer at the step: whether a change at the step carries through.",
          "experiments", aka=("each to the end", "--to-end"), see=("fork", "sample"),
@@ -241,7 +244,7 @@ TERMS: tuple[Term, ...] = (
     Term("proposer", "Who proposes edits: a person, an agent over MCP, or the built-in proposer — the proxy's own "
          "model, or an endpoint you name.",
          "refining", see=("proposal", "packet"), where="Connections page; tuningfork connections proposer",
-         ui="proposing model"),
+         ui="proposing model (the built-in one)"),
     Term("packet", "The evidence a proposer is shown — from the run's own task only — kept by its digest.",
          "refining", see=("proposer",), where="tuningfork refine show <id> --packet",
          ui="what the proposing model is shown"),
@@ -291,7 +294,7 @@ TERMS: tuple[Term, ...] = (
     Term("condition", "What a run was given besides its task: the harness, the model, the skill version and the "
          "server. Pass rates are kept apart per condition: runs under two are never pooled.",
          "statistics", see=("pass rate", "skill version"), where="Runs page; tuningfork tasks", ui="set-up"),
-    Term("pass rate","The share of a skill version's runs whose check passed, always with its interval; runs that "
+    Term("pass rate", "The share of a skill version's runs whose check passed, always with its interval; runs that "
          "timed out or were edited at a breakpoint are left out and counted apart.",
          "statistics", see=("Wilson interval", "check")),
     Term("Wilson interval", "The 95% interval given with every rate: where the true rate plausibly lies, given how "
@@ -305,25 +308,32 @@ TERMS: tuple[Term, ...] = (
          "statistics", aka=("Holm",), see=("screen", "Bonferroni correction"), ui="corrected for the tests planned"),
     Term("Bonferroni correction", "The stricter correction an A/B gets with no target declared before sampling: "
          "every behaviour is tested, and the result is exploratory.",
-         "statistics", aka=("Bonferroni", "exploratory"), see=("target",), ui="nothing declared"),
+         "statistics", aka=("Bonferroni", "exploratory"), see=("target",),
+         ui="adjusted for comparing them all, with nothing declared"),
     Term("low-powered", "Too few runs to tell a small difference from none. \"Not significantly worse\" then means "
          "\"not measured\", and is labelled so, with how many runs would detect a difference.",
          "statistics", see=("gate", "Wilson interval")),
 )
 
 
+def _names(term: Term) -> tuple[str, ...]:
+    """A term's names as a query may give one: the term, its other names, the web UI's phrase."""
+    return (term.term.lower(), *(aka.lower() for aka in term.aka), *((term.ui.lower(),) if term.ui else ()))
+
+
 def lookup(query: str | None = None) -> list[Term]:
-    """Every term — or those a word names: its term or another name exactly first, then any
-    whose term or other names contain it, or whose definition has a word starting with it."""
+    """Every term — or those a word names: its term, another name or the web UI's phrase exactly
+    first, then any whose term, other names or page phrase contain it, or whose definition has a
+    word starting with it."""
     if not query or not query.strip():
         return list(TERMS)
     wanted = query.strip().lower()
     # A word's start: "fork" finds a fork, not every mention of tuningfork.
     in_words = re.compile(rf"(?<![\w-]){re.escape(wanted)}", re.IGNORECASE)
-    exact = [term for term in TERMS if wanted in (term.term.lower(), *(aka.lower() for aka in term.aka))]
+    exact = [term for term in TERMS if wanted in _names(term)]
     partial = [
         term for term in TERMS if term not in exact
-        and (wanted in term.term.lower() or any(wanted in aka.lower() for aka in term.aka) or in_words.search(term.means))
+        and (any(wanted in name for name in _names(term)) or in_words.search(term.means))
     ]
     found = exact + partial
     if not found:

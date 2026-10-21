@@ -76,7 +76,7 @@ export function whereResult(found, { only = null, of = "run" } = {}) {
     h("p", null, h("strong", null, found.probe?.description || ""), h("span", { class: "muted small" }, `  asked of ${plural(asked, of)}`)),
     groups.length ? groups.map((group) => groupView(group, kind)) : h("p", { class: "muted" }, `No ${of} was asked.`),
     found.skipped?.length ? h("p", { class: "faint small" }, `Passed over: ${found.skipped.slice(0, 3).join("; ")}`) : null,
-    h("p", { class: "hint" }, "A lead to read, never a verdict. A split is said to go one way when chance would make one that large less than one time in five (p under 0.2). Intervals are 95%."));
+    h("p", { class: "hint", title: "Fisher's exact test; Wilson score intervals" }, "A lead to read, never a verdict. A split is said to go one way when chance would make one that large less than one time in five (p under 0.2). Intervals are 95%."));
 }
 
 function groupView(group, kind) {

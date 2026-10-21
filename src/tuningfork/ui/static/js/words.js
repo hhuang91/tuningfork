@@ -12,12 +12,12 @@ export const UI_WORDS = {
   "normalizer": "how behaviours are grouped",
   "spec": "task file",
   "launch": "a run tuningfork started",
-  "skill version": "version 1, 2, … in order of first run",
+  "skill version": "version 1, 2, … in order of first run, on the Skills page",
   "arm": "wording",
-  "target": "what you count",
+  "target": "what you count; in a refinement, what the model should do",
   "to the end": "whether the whole run then passes",
   "checkpoint": "this step",
-  "proposer": "proposing model",
+  "proposer": "proposing model (the built-in one)",
   "packet": "what the proposing model is shown",
   "screen": "test at this step",
   "validation": "full test runs",
@@ -27,7 +27,7 @@ export const UI_WORDS = {
   "Wilson interval": "95% interval",
   "Fisher's exact test": "beyond chance",
   "Holm correction": "corrected for the tests planned",
-  "Bonferroni correction": "nothing declared",
+  "Bonferroni correction": "adjusted for comparing them all, with nothing declared",
 };
 
 /** Labels more than one page shows, spelled once. */

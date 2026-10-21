@@ -30,7 +30,7 @@ export function who(entry = {}) {
 const whoChip = (entry) => chip(entry.via === "builtin" ? `proposing model · ${who(entry)}` : who(entry),
   entry.via === "builtin" ? "skill" : entry.via === "mcp" ? "accent" : "muted",
   entry.via === "builtin"
-    ? `The built-in proposing model${entry.wire ? `, API format ${entry.wire}` : ""}${entry.packet ? `; what it was shown is kept as ${entry.packet}` : ""}.`
+    ? `The proposing model tuningfork asks${entry.wire ? `, API format ${entry.wire}` : ""}${entry.packet ? `; what it was shown is kept as ${entry.packet}` : ""}.`
     : undefined);
 
 // --- the list -------------------------------------------------------------------------------
@@ -252,7 +252,7 @@ export async function refinementView(root, [id], scope) {
       found.status === "closed" ? h("div", { class: "banner" }, h("strong", null, "Closed. "), "It takes no more proposals or tests, and what it holds is kept.") : null,
       approvalBanner(),
       running.map((job) => h("div", { class: "banner" },
-        h("strong", null, { propose: "Asking the proposing model… ", validate: "Running full tests… " }[job.kind] || "Testing at this step… "),
+        h("strong", null, { propose: "Asking the proposing model… ", validate: "Full test runs under way… " }[job.kind] || "Testing at this step… "),
         h("a", { href: `#/jobs/${job.id}` }, "Its job"), " shows its progress; what it makes appears here when it ends.")));
   }
 
@@ -387,8 +387,8 @@ export async function refinementView(root, [id], scope) {
         items.length === 1 ? `Proposal ${short(survived[0].id)} beat the original in a test at this step`
           : `${survived.length} of ${plural(items.length, "proposal")} beat the original in a test at this step`,
         h("p", { class: "verdict-lines" }, toEnd
-          ? "Before approving one, run its full tests: the task's own runs, and the tasks held out from it."
-          : "A test at one step is a lead, not proof. Before approving an edit that beat the original, run its full tests."));
+          ? "Before approving one, give it full test runs: the task's own runs, and the tasks held out from it."
+          : "A test at one step is a lead, not proof. Before approving an edit that beat the original, give it full test runs."));
     }
     const worse = items.filter((item) => item.screens.some((verdict) => verdict.complete && verdict.worse));
     if (items.some((item) => item.screens.some((verdict) => verdict.complete && !verdict.quick))) {
@@ -428,7 +428,7 @@ export async function refinementView(root, [id], scope) {
       ]),
       !answers.reached
         ? h("p", { class: "hint" },
-            answers.of ? "With the original wording, no answer here did what the model should do. The proposing model has only that description, and the task's own criteria, to show it what is wanted. " : "",
+            answers.of ? "With the original wording, no answer here did what the model should do. The proposing model learns what is wanted only from what you said it should do, and from the task's own criteria. " : "",
             "More answers here make better evidence: ",
             h("a", { href: `#/runs/${found.run}/${found.step}?start=resample` }, "resample this step"), ".")
         : null,
@@ -545,7 +545,7 @@ export async function refinementView(root, [id], scope) {
           h("label", { class: "form-field" }, h("span", { class: "form-label" }, "The task's criteria"),
             h("span", { class: "inline-check" }, include, " show them to the proposing model"),
             h("span", { class: "form-help" }, "Its expected output and check: often the only place the fix shows."))),
-        h("p", { class: "form-help" }, "Which model it asks, and its key, are set on ", h("a", { href: "#/connections" }, "Connections"), "."),
+        h("p", { class: "form-help" }, "The proposing model, and its key, are set on ", h("a", { href: "#/connections" }, "Connections"), "."),
       ],
       read: (form) => ({
         refinement: shown.refinement.id,
@@ -583,7 +583,7 @@ export async function refinementView(root, [id], scope) {
           why.value = "";
           count();
           replace(note, h("p", { class: "hint" }, made.duplicate
-            ? `The same text was proposed before, as ${short(made.id)}. You are added to who proposed it.`
+            ? `The same text was proposed before, as ${short(made.id)}. You are added to its proposers.`
             : `Added as ${short(made.id)}. It stays untested until a test at this step tries it.`));
           await reload();
         } catch (failed) {
@@ -714,7 +714,7 @@ export async function refinementView(root, [id], scope) {
       onStarted: opened,
     });
     return {
-      element: panel("Run full tests of an edit that beat the original", form.element,
+      element: panel("Full test runs of an edit that beat the original", form.element,
         { meta: h("span", { class: "muted" }, "the task, and the tasks held out from it, each against the original"), className: "validate-panel" }),
     };
   }
@@ -927,7 +927,7 @@ function validatePreview(plan) {
       ["runs", `${plan.total} in all`],
     ]),
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-    h("p", { class: "hint" }, "Each wording is drawn fresh, the original's included. Held-out runs are recorded in a temporary folder outside the recordings folder, and deleted after. Their verdicts are shown on this page, and to no agent."));
+    h("p", { class: "hint" }, "Every wording's runs are drawn fresh, the original's included. Held-out runs are recorded in a temporary folder outside the recordings folder, and deleted after. Their verdicts are shown on this page, and to no agent."));
 }
 
 /** A screen's numbers for one proposal: against the original's arm, or — a quick look, which
@@ -1023,7 +1023,7 @@ function proposePreview(plan) {
       : null,
     kv([
       ["asks", h("span", null, h("span", { class: "mono" }, plan.sends_to),
-        plan.through_the_proxy ? h("span", { class: "muted" }, " — through this proxy: gated, never recorded") : null)],
+        plan.through_the_proxy ? h("span", { class: "muted" }, " — through this proxy: it waits its turn with other calls, and is never recorded") : null)],
       ["model", plan.model ? h("span", { class: "mono" }, plan.model) : h("span", { class: "muted" }, "the server's default")],
       ["for", plural(plan.proposals, "proposal")],
       ["sends", `${Math.round(plan.size / 1024) || 1} KB: the skill, and what the proposing model is shown, above (kept as ${plan.packet})`],
@@ -1056,12 +1056,12 @@ function screenToEndPreview(plan) {
   return h("div", { class: "stack", style: { gap: "8px" } },
     kv([
       ["forks from", from],
-      ["counts", plan.target],
+      ["what it should do", plan.target],
       ["wordings", plan.quick ? h("span", null, "each proposal alone: ", names) : h("span", null, "the original, then ", names)],
       ["the original", theOriginal],
       ["forks", `${plan.forks} in all, each the harness run from its step to the end`],
       ["verdict", plan.quick
-        ? "none: a quick look gives rates, a lead for the next edit. Only a full test can keep one."
+        ? "none: a quick look gives rates only, a lead for the next edit. Only a test at this step that is not a quick look can keep a proposal."
         : h("span", { title: "Fisher's exact test, Holm-corrected" },
             `each against the original, corrected for ${plural(plan.family, "proposal")} tested, α = ${plan.alpha}`)],
     ]),
@@ -1077,7 +1077,7 @@ function screenPreview(plan) {
   return h("div", { class: "stack", style: { gap: "8px" } },
     kv([
       ["step", h("span", { class: "mono" }, `run ${short(plan.checkpoint.run_id)}, step ${plan.checkpoint.step}`)],
-      ["counts", plan.target],
+      ["what it should do", plan.target],
       ["wordings", h("span", null, "the original, then ", plan.arms.map((arm, index) => [index ? ", " : "", h("span", { class: "mono" }, arm.name)]))],
       ["samples", `${plan.n} for each wording, ${plan.total} in all`],
       ["beats the original with", power.needed

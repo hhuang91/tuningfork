@@ -1836,14 +1836,14 @@ heatmap — by entropy, or by how close the top two were — with the reasoning 
 many of the likeliest forks are in it. An answer not scored yet offers *Score this answer*.
 Click a token for what else the model weighed there; *Select to probe*, then *Find forking
 tokens at these…*, opens the probe's form in the step, those positions filled in. The form
-shows its plan before anything runs: the tokens it will force, what counts as the same
-behaviour, what it can detect with that many continuations, and how long it may take.
+shows its plan before anything runs: the tokens it will force, what you count, what it can
+detect with that many continuations, and how long it may take.
 
-What counts as the same behaviour can be the answer's own, a regular expression, or a
-behaviour you describe: *Calls the tool* `search_files`, *Mentions* `data.csv`, every
-condition holding. Whichever you choose, the form sets it against every behaviour already
-seen at the step — the run's own, other runs of the task there, the samples drawn there —
-and marks which would count, before anything is sampled.
+*What to count* can be the answer's own behaviour, a regular expression, or a behaviour you
+describe: *Calls the tool* `search_files`, *Mentions* `data.csv`, every condition holding.
+Whichever you choose, the form sets it against every behaviour already seen at the step — the
+run's own, other runs of the task there, the samples drawn there — and marks which would
+count, before anything is sampled.
 
 The result is on the experiment's page: the answer it forked from, with the probed tokens
 ringed — solid where a forced token changed what the model did — then each position, the

@@ -2,7 +2,7 @@
 
 import { api, enc, query } from "../api.js";
 import {
-  ago, chip, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
+  ago, capital, chip, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
 } from "../dom.js";
 import { costOf } from "../cost.js";
 import { live } from "../live.js";
@@ -47,11 +47,11 @@ export async function experimentsView(root) {
   replace(
     root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Experiments"),
-      h("p", { class: "sub" }, "Resamples, wording A/B tests, and proposed edits tested at a step, all from a recorded step. Start one from a step's page, or from a terminal: `tuningfork resample`, `tuningfork ab`, `tuningfork refine screen`."))),
+      h("p", { class: "sub" }, "Resamples, wording A/B tests and tests of proposed edits, each made at a recorded step. Start one from a step's page, or from a terminal: `tuningfork resample`, `tuningfork ab`, `tuningfork refine screen`."))),
     rows.length
       ? h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
           h("thead", null, h("tr", null, h("th", null, "experiment"), h("th", null, "kind"), h("th", null, "step"),
-            h("th", { class: "num" }, "samples"), h("th", null, "what it counts"), h("th", null, "when"))),
+            h("th", { class: "num" }, "samples"), h("th", null, "what you count"), h("th", null, "when"))),
           h("tbody", null, rows.map((experiment) =>
             h("tr", { class: "clickable", onclick: () => (location.hash = `#/experiments/${experiment.id}`) },
               h("td", null, h("a", { class: "mono", href: `#/experiments/${experiment.id}` }, short(experiment.id))),
@@ -229,7 +229,7 @@ function originBanner(experiment) {
   if (!origin?.hold) return null;
   if (origin.matches_step === false) {
     return h("div", { class: "banner banner-warn" }, h("strong", null, "Sampled at a held call, then edited. "),
-      "These samples are of the request as it was held, and the model then saw an edited one. They are not this step's behaviour, and no A/B counts them.");
+      "These samples are of the request as it was held, and the model then saw an edited one. They are not this step's behaviour, and an A/B never takes what to count from them.");
   }
   return h("div", { class: "banner" }, h("strong", null, "Sampled at a held call. "),
     experiment.run_id ? "Filed under the step the call became." : "Filed under its step once the call is recorded.");
@@ -301,7 +301,7 @@ function toEndView(experiment) {
     ? "No test: one wording has no fork that counts."
     : significant
       ? `The variant passed the check ${up ? "more" : "less"} often: ${passes(result.variant)} forks, against ${passes(result.original)} with the original. That is ${LABELS.beyondChance}.`
-      : `No difference beyond chance: the variant's forks passed the check in ${passes(result.variant)}, and the original's in ${passes(result.original)}.`;
+      : `${capital(LABELS.withinChance)}: the variant's forks passed the check in ${passes(result.variant)}, and the original's in ${passes(result.original)}.`;
   return h("div", { class: "stack" },
     panel("Original wording against the variant, to the end", [
       h("div", { class: ["verdict-block", significant ? "significant" : "not-significant", significant ? (up ? "tone-ok" : "tone-bad") : null] },

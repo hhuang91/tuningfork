@@ -31,7 +31,7 @@ export async function runsView(root, _params, scope) {
   replace(
     root,
     h("div", { class: "page-head" },
-      h("div", null, h("h1", null, "Runs"), h("p", { class: "sub" }, "Recorded runs by task. Forks sit under the run they branched from; tick two runs to diff them.")),
+      h("div", null, h("h1", null, "Runs"), h("p", { class: "sub" }, "Recorded runs by task. A run that branched from another sits under it; tick two runs to diff them.")),
       h("div", { class: "actions" }, search, chainsLink,
         live.mode === "live" ? h("a", { class: "btn", href: "#/import", "data-control": true }, "Import a chat…") : null,
         live.mode === "live" ? h("a", { class: "btn btn-primary", href: "#/batch", "data-control": true }, "Run a task…") : null)),
@@ -82,7 +82,7 @@ export async function runsView(root, _params, scope) {
     const split = summary.task_id && conditions.length > 1;
     const meta = [h("span", { class: "muted" }, plural(summary.runs, "run"))];
     if (split) {
-      meta.push(chip(`${conditions.length} set-ups`, "accent", "Different wordings, models or harnesses. Each has its own pass rate below; pooling them would measure none of them."));
+      meta.push(chip(`${conditions.length} set-ups`, "accent", "Different skill versions, models, harnesses or servers. Each has its own pass rate below; pooling them would measure none of them."));
     } else {
       meta.push(...rateMeta(summary));
     }

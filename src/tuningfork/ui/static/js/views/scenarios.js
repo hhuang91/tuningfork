@@ -232,7 +232,7 @@ export async function scenarioView(root, [name], scope) {
         panel("The task file", h("div", { class: "form-grid" },
           nameField ? field("Scenario name", nameField, { help: "lowercase letters, digits, - and _" }) : null,
           field("Skill name", bind(input("skill_name", { value: draft.skill_name, placeholder: "tally-report" }), (v) => (draft.skill_name = v)),
-            { help: "The skill these tasks exercise. A task's runs are filed as <skill name>/<task id>." }),
+            { help: "The skill these tasks exercise. A task's runs are filed under <skill name>/<its Id>." }),
           field("Skill folder", skillDirInput,
             {
               help: [
@@ -514,7 +514,7 @@ function contextPanel(name, context, editable) {
       ? `${plural(before.length, "message")} of the conversation it was made of, put after the harness's instructions in every `
         + "call of each run: the task's prompt is its next turn."
       : "Nothing comes before the task's prompt: it is the chat's first turn.")
-      + (inTurn.length ? ` Then ${plural(inTurn.length, "message")} of that turn, the model's earlier steps — done already, `
+      + (inTurn.length ? ` Then ${plural(inTurn.length, "message")} of that turn, the model's earlier steps — already done, `
         + "an earlier skill among them — follow the prompt, so the skill comes in live." : ""));
     replace(reading,
       h("div", null, h("div", { class: "label" }, "Before the prompt"), before.length ? h("ol", { class: "small" }, listOf(before))

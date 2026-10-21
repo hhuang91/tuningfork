@@ -16,8 +16,9 @@ import { messageSize, messageText, messageView, noReasoning, outputView, toolNam
 import { startForm, startPanel } from "./start.js";
 import { banners, detailsPanel, skillsSummary, summaryStrip, toolsOffered, workspacePanel } from "./stepinfo.js";
 import { tokensPanel } from "./tokens.js";
+import { LABELS } from "./words.js";
 
-const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking tokens", screen: "Test at this step" };
+const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking tokens", screen: LABELS.screen };
 // With this many of the person's turns or more — a long session — the rail starts with all
 // but the last folded to their turn's line.
 const FOLD_FROM = 3;
@@ -120,7 +121,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return h("div", { class: "tl-tools" }, h("details", { class: "fold no-tools" },
       h("summary", null, "No tools recorded"),
       h("p", { class: "tl-note" }, imported.format === "hermes-export"
-        ? "Hermes's export keeps none, so each step was rebuilt without the ones the model was offered. Imported again, taking its tools from a run recorded through the same harness, its steps offer that run's."
+        ? "Hermes's export keeps none, so each step was rebuilt without the ones the model was offered. Import it again with “Take its tools from” naming a run recorded through the same harness, and its steps offer that run's tools."
         : "The file named none, so each step was rebuilt without any.")));
   }
 

@@ -248,7 +248,7 @@ function proposedView(result) {
     accepted.length
       ? h("ul", { class: "small" }, accepted.map((proposal) =>
           h("li", null, h("span", { class: "mono" }, short(proposal.id)),
-            ` — ${plural(proposal.changed, "line")} changed${proposal.duplicate ? " (proposed before: whoever asked now is added to it)" : ""}: `,
+            ` — ${plural(proposal.changed, "line")} changed${proposal.duplicate ? " (proposed before: the proposing model is added to its proposers)" : ""}: `,
             h("span", { class: "muted" }, proposal.proposers[proposal.proposers.length - 1]?.rationale || ""))))
       : h("p", { class: "muted" }, "Nothing it proposed could be kept."),
     rejected.length
@@ -256,7 +256,7 @@ function proposedView(result) {
           h("ul", { class: "small" }, rejected.map((each) =>
             h("li", null, each.index ? `proposal ${each.index}: ` : "", each.reason, each.hint ? h("span", { class: "muted" }, ` — ${each.hint}`) : null))))
       : null,
-    h("p", { class: "hint" }, result.hypothesis ? `${result.hypothesis[0].toUpperCase()}${result.hypothesis.slice(1)}.` : "")),
+    h("p", { class: "hint" }, "Each stays untested until a test at this step tries it.")),
     { meta: h("span", { class: "muted" }, `kept in ${result.record}`) });
 }
 

@@ -435,7 +435,7 @@ def prepare_import(
     if not chat.tools:
         warnings.append("the file names no tools" + (" (Hermes's export keeps none)" if chat.format == "hermes-export" else "")
                         + ": each step is rebuilt without them; name a run recorded through the same harness to "
-                        "take its tools from (--tools-from, or the import page's Take its tools from)")
+                        "take its tools from (--tools-from, or the import page's “Take its tools from”)")
     if chat.model:
         notes.append(f"its answers are {chat.model}'s: an experiment here samples your server's model, given "
                      "this conversation")
@@ -1021,7 +1021,7 @@ def _studied(run: Any, chat: Chat, harness: str, skill: str | None = None, folde
         return Studied(_bare(shown[0].name), shown[0])
     if not shown:
         raise OperationError(f"no skill shows in run {run.id[:8]}'s conversation, and it kept none: a scenario studies "
-                             "one — name its folder", field="skill_dir")
+                             "one — name its folder (--skill-dir, or “Its folder” on the scenario's form)", field="skill_dir")
     raise OperationError(f"run {run.id[:8]}'s conversation shows {len(shown)} skills: name the one the scenario studies",
                          hint=f"the skills in it: {', '.join(found.name for found in shown)}", code="choose_skill",
                          field="skill")
@@ -1192,14 +1192,14 @@ def prepare_scenario(
         what = (f"the copy run {run.id[:8]} kept" if copy_from is not None
                 else "the SKILL.md the model read — the rest of its folder, scripts and references, the chat never showed")
         warnings.append(f"no folder of {studied.name}'s own was found: the scenario keeps {what}, in its own folder "
-                        f"({own}), where an approved edit is written; name the skill's folder (--skill-dir, or Its folder "
+                        f"({own}), where an approved edit is written; name the skill's folder (--skill-dir, or “Its folder” "
                         "on the scenario's form) to tune that one")
         if made_up:
             notes.append(f"the model read {studied.name} without its frontmatter: the scenario's SKILL.md is given "
                          "one, its name and a description, so that the harness lists it")
     else:
         raise OperationError(f"no copy of {studied.name} to give the scenario's runs: name its folder (--skill-dir, "
-                             "or Its folder on the scenario's form)",
+                             "or “Its folder” on the scenario's form)",
                              field="skill_dir")
 
     check_files: dict[str, Path] = {}

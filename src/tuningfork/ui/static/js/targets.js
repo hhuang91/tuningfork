@@ -119,7 +119,7 @@ export function seenPreview({ run, idx, onTools = () => {} }) {
     ];
     const judged = split(seen);
     if (judged) parts.push(judged);
-    parts.push(h("p", { class: "form-help" }, "These are earlier answers, shown so you can check what you count. They are not the samples the test will draw."));
+    parts.push(h("p", { class: "form-help" }, "These are earlier answers, shown so you can see what your choice would count. They are not the samples the test will draw."));
     return h("div", { class: "stack", style: { gap: "4px" } }, ...parts);
   }
 

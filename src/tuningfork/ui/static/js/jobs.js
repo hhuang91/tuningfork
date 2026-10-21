@@ -24,7 +24,9 @@ export const KIND_LABEL = {
   "forking-tokens": "Forking tokens",
   propose: "Edits proposed",
   screen: "Proposals tested at a step",
+  "screen-to-end": "Proposals tested at a step, to the end",
   validate: "Full test runs of an edit",
+  "check-along": "Check along the runs",
 };
 
 const STATE_TONE = { queued: "muted", running: "accent", done: "muted", failed: "warn", cancelled: "muted", interrupted: "warn" };
@@ -142,7 +144,7 @@ export function logLine(entry) {
         h("span", { class: "muted" }, `${data.arm && data.arm !== "original" ? `${data.arm} ` : ""}sample ${Number(data.index) + 1}`),
         data.error ? chip("failed", "warn", data.error) : data.outcome ? outcome(data.outcome) : null);
     case "launch":
-      return h("div", { class: "log-line" }, at, chip("launched", "muted"), h("span", { class: "mono small" }, data.label || short(data.launch_id)));
+      return h("div", { class: "log-line" }, at, chip("started", "muted"), h("span", { class: "mono small" }, data.label || short(data.launch_id)));
     case "run": {
       const verdict = data.exclusion
         ? chip("not counted", "warn", data.exclusion)

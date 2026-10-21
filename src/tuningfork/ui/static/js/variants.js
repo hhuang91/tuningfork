@@ -109,7 +109,7 @@ export function readVariant(form) {
  *  `exploratory: false` leaves that choice out. */
 export function targetPicker(targets, {
   run = null, idx = null, exploratory = true,
-  legend = `${LABELS.whatToCount} (chosen before any sample is drawn)`,
+  legend = `${LABELS.whatToCount} (chosen before sampling)`,
 } = {}) {
   const clusters = targets.behaviours?.clusters || [];
   const resample = targets.resample;
