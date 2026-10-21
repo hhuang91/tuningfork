@@ -39,7 +39,10 @@ export function subject(job) {
   const params = job.params || {};
   if (params.refinement) return h("a", { class: "mono", href: `#/refine/${enc(params.refinement)}` }, `refinement ${short(params.refinement)}`);
   if (params.run) {
-    return h("a", { class: "mono", href: `#/runs/${enc(params.run)}` }, `run ${short(params.run)}`,
+    // A step given by its number opens there; one named by what the run did there (`write_file`,
+    // `changed:<path>`) is found on the run's page.
+    const at = /^\d+$/.test(String(params.step ?? "")) ? `/${params.step}` : "";
+    return h("a", { class: "mono", href: `#/runs/${enc(params.run)}${at}` }, `run ${short(params.run)}`,
       params.step !== undefined ? ` @ step ${params.step}` : "");
   }
   if (params.scenario) return h("a", { class: "mono", href: `#/scenarios/${enc(params.scenario)}` }, `scenario ${params.scenario}`);
