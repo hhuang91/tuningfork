@@ -296,12 +296,20 @@ async function recordGif(page, file, { width, height }, play) {
     frames.push({ data: Buffer.from(data, "base64"), at: metadata.timestamp });
     page.send("Page.screencastFrameAck", { sessionId });
   });
+  // Text node by node, so that a label and the value beside it stay two words.
   await page.eval(`(() => {
     window.shotsSeen = [];
     new MutationObserver((records) => {
       for (const record of records) {
         if (record.type === "characterData") window.shotsSeen.push(record.target.data);
-        for (const node of record.addedNodes) window.shotsSeen.push(node.textContent || "");
+        for (const node of record.addedNodes) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            window.shotsSeen.push(node.data);
+            continue;
+          }
+          const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+          while (walker.nextNode()) window.shotsSeen.push(walker.currentNode.data);
+        }
       }
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
     return true;
