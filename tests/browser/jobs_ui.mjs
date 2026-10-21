@@ -1054,6 +1054,23 @@ try {
   check(await page.eval(`document.querySelector(".tl-rail").hidden && document.querySelector("#s1 .tl-work").getAttribute("aria-current") === "true"
     && !document.querySelector(".tl-step.tl-open") && location.hash === "#/runs/${run.id}/1?work"`),
     "an address naming a step's work reloads to it, beside the run, its details closed");
+  // Beside the work on a laptop's page the conversation is narrow: a step's line keeps the row's
+  // width, its buttons under it (found in review: beside them, a call wrapped a few letters a line,
+  // the rule keyed to the page's width). On a wide page they stay beside it.
+  const rowShape = `(() => {
+    const marker = document.querySelector("#s1 .tl-marker").getBoundingClientRect();
+    const row = document.querySelector("#s1 .tl-head");
+    const style = getComputedStyle(row);
+    const inside = row.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const button = document.querySelector("#s1 .tl-details").getBoundingClientRect();
+    return { whole: marker.width >= inside - 1, under: button.top >= marker.bottom - 1, marker: Math.round(marker.width), head: Math.round(inside) };
+  })()`;
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false });
+  const laptopRow = await until(async () => { const shape = await page.eval(rowShape); return shape.whole && shape.under ? shape : null; }, "the narrow conversation's rows");
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  const wideRow = await until(async () => { const shape = await page.eval(rowShape); return !shape.whole && !shape.under ? shape : null; }, "the wide conversation's rows");
+  check(await page.eval(`document.querySelector(".tl-layout").classList.contains("working")`) && laptopRow.marker > wideRow.marker / 2,
+    `beside the work, a step's line keeps the row's width on a page 1024 px wide (${laptopRow.marker} of ${laptopRow.head} px), its buttons under it, and on a wide page they sit beside it`);
   // A step's details take the address while open, and give it back to the work beside the run.
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
   await until(() => page.eval(`!!document.querySelector("#s1.tl-open .tl-facts")`), "step 1's details, beside its work");

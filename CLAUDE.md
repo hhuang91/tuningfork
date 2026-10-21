@@ -479,12 +479,12 @@ in at most three sentences (`whatItMeans`); a refinement its four stages in a li
 stands is its latest finished test, as the gate's G0 reads it), then its evidence, each proposal
 named by the line it changes. A run's page keeps the run to read and the work on one of its steps
 beside it (`openWork` in `timeline.js`: a step's actions and the form they open, in a column
-where the rail is — over the run, on a narrow page — each step's kept as it was left, the address
-naming it, `?work` or the form's), the rail's lines moving through the run and opening nothing, one
-step's details open at a time, from its line or its Show details. A refinement's page goes on with a section for each stage, numbered
-as the stepper numbers it (the two ways to propose side by side; the proposals with the test of
-the ticked ones), the current one's form the one open as the page opens — after, no form opens by
-itself. The Skills page
+where the rail is — over the run, on a narrow page — each step's kept as it was left, the
+address naming it, `?work` or the form's), the rail's lines moving through the run and opening
+nothing, one step's details open at a time, from its line or its Show details. A refinement's
+page goes on with a section for each stage, numbered as the stepper numbers it (the two ways to
+propose side by side; the proposals with the test of the ticked ones), the current one's form the
+one open as the page opens — after, no form opens by itself. The Skills page
 (`ops/skills.py`) names a skill by its folder, as variants and refinements do, and runs it again
 from the scenarios that name it; it is the person's view, never offered over MCP: the changelog
 an approval writes carries held-out verdicts. A person adds
