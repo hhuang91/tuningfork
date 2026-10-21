@@ -126,13 +126,32 @@ try {
   // What each kind of job made, what it found, why its log is empty, and each page's name, as the
   // list, the pages and the note when a job ends work them out: from the shapes the server gives them.
   const mapped = await page.eval(`(async () => {
-    const { madeLink, startedBy } = await import(new URL("js/jobs.js", location.href).href);
+    const { madeLink, onPage, startedBy } = await import(new URL("js/jobs.js", location.href).href);
     const { startedFrom } = await import(new URL("js/api.js", location.href).href);
     const { found } = await import(new URL("js/results.js", location.href).href);
-    const { emptyLog } = await import(new URL("js/views/jobs.js", location.href).href);
+    const { emptyLog, jobSummary } = await import(new URL("js/views/jobs.js", location.href).href);
     const done = (kind, result = {}, links = {}) => madeLink({ kind, status: "done", result, links });
-    const sampled = { distribution: { total: 1, clusters: [{ letter: "A", rate: { successes: 1, total: 1 } }] } };
+    const rate = (successes, total) => ({ successes, total, point: successes / total, low: 0, high: 1 });
+    const sampled = { distribution: { total: 1, clusters: [{ letter: "A", rate: rate(1, 1) }] } };
     const probeNull = found({ kind: "forking-tokens", result: { forking: { positions: [], per_arm: 8, detectable: 5, target: null } } });
+    const probeOpen = found({ kind: "forking-tokens", result: { forking: { positions: [], missed: { undecided: [12] }, target: null } } });
+    const unfinished = found({ kind: "screen-to-end", result: { screen: {
+      complete: false, reach: "end", target: null, survivors: [],
+      baseline: { target: rate(0, 3), timeouts: 1 }, arms: [{ name: "p1", target: rate(1, 3), timeouts: 2 }],
+    } } });
+    const twoCounted = found({ kind: "resample", result: { distribution: { total: 2, errors: 1, clusters: [{ letter: "A", rate: rate(2, 2) }] } } });
+    // A job's page, drawn from a job alone: its panels' titles, its buttons, and its text.
+    const drawn = (job) => {
+      const parts = jobSummary({ id: "j1", status: "done", params: {}, result: {}, links: {}, ...job });
+      return {
+        made: parts.filter((part) => part.querySelector("h2")?.textContent === "What it made").length,
+        buttons: parts.flatMap((part) => [...part.querySelectorAll("a.btn")].map((a) => a.textContent)),
+        text: parts.map((part) => part.textContent).join(" | "),
+      };
+    };
+    const chain = drawn({ kind: "chain", result: { id: "ch1", links: [{}, {}], rate: rate(1, 2) }, links: { runs: ["r1", "r2"] } });
+    const fork = drawn({ kind: "fork", links: { runs: ["r1"] } });
+    const batch = drawn({ kind: "batch", result: { task_id: "t/1", rate: rate(1, 3), not_counted: 2 }, links: { runs: Array.from({ length: 25 }, (_, i) => "run" + i) } });
     return JSON.stringify({
       proposedNothing: done("propose", { refinement: "r1", accepted: [] }),
       proposed: done("propose", { refinement: "r1", accepted: [{}, {}] })?.text,
@@ -144,8 +163,16 @@ try {
       question: done("hold-console", { reply: {} }),
       pages: ["#/runs/r/1?start=ab", "#/runs/r/scenario", "#/import/r/scenario", "#/connections", "#/batch", "#/divergence/t"].map((hash) => startedFrom(hash)),
       words: ["batch", "divergence"].map((where) => startedBy({ started_by: { via: "web", page: where } }).text),
+      open: [["#/divergence/x%2F1", "#/divergence/x%2F10"], ["#/divergence/x%2F1", "#/divergence/x%2F1@abcd1234"],
+        ["#/runs/r/1?view=tokens", "#/runs/r/1?view=tokens&at=5"], ["#/connections", "#/connections"]].map(([href, hash]) => onPage(href, hash)),
       probeNull: [probeNull.seen, probeNull.notes.length],
+      probeOpen: probeOpen.notes,
+      unfinished: unfinished.notes,
       oneSample: found({ kind: "resample", result: sampled }).text,
+      twoCounted: [twoCounted.text, ...twoCounted.notes],
+      chain: [chain.made, chain.buttons],
+      fork: [fork.buttons, fork.text.includes("1 run:")],
+      runs: [batch.text.includes("2 runs are not counted; each one's page says why."), batch.text.includes("and 5 more")],
       logs: [
         emptyLog({ kind: "resample", status: "done", seq: null, result: sampled, links: {} }),
         emptyLog({ kind: "fork", status: "failed", seq: 4, error: { message: "it broke" }, links: {} }),
@@ -158,15 +185,29 @@ try {
     proposedNothing: null, proposed: "2 proposals in refinement r1", batch: "t/1's runs", along: "#/divergence/t%2F1",
     server: "#/connections", test: "test e1", ab: "#/experiments/e1", question: null,
     pages: ["step", "make-scenario", "make-scenario", "connections", "batch", "divergence"],
-    words: ["you, from “Run a task”", "you, from where a task's runs diverge"],
+    words: ["you, from “Run a task”", "you, from “Where the runs diverge”"],
+    // The note when a job ends knows the page open: task x/1's runs are not x/10's.
+    open: [false, true, true, true],
     // A probe that saw no flip says what it could have seen, as its own page does: no caution.
     probeNull: ["With 8 continuations a token, only a token that changes about 5 of its 8 would show. A smaller shift can be real and go unseen.", 0],
-    oneSample: "One behaviour, in the one sample drawn.",
+    // What a probe or a test leaves open, in its own page's words; what to do about it is said there.
+    probeOpen: ["Still undecided there. At [12], the run's own token led elsewhere more often than to its own behaviour, so a later token decided it."],
+    unfinished: [
+      "Not every wording drew what was planned. Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made.",
+      "1 fork of the original timed out, counted as a failure.", "2 forks of p1 timed out, counted as failures.",
+    ],
+    oneSample: "One behaviour, in the one sample.",
+    twoCounted: ["One behaviour, in both samples counted.", "1 sample is not counted, because the call itself failed."],
+    // A chain's page leads to it once; a fork's names its run once; a batch says what its rate
+    // leaves out, and every run it made can be reached.
+    chain: [1, ["See the chain, link by link"]],
+    fork: [["See the result"], false],
+    runs: [true, true],
     // An ended job's empty log says why, and points to what the page shows above it.
     logs: [
-      "Its log is not kept here: a job's log lives only in the memory of the proxy that ran it. Its result is above.",
+      "Its log is not kept here: a proxy keeps only its latest jobs' logs, and only in memory. Its result is above.",
       "It logged nothing along the way. What went wrong is above.",
-      "Its log is not kept here: a job's log lives only in the memory of the proxy that ran it.",
+      "Its log is not kept here: a proxy keeps only its latest jobs' logs, and only in memory.",
       "Nothing yet.",
     ],
   }), `what each kind of job made, what it found, why its log is empty and each page's name are worked out as the pages say them (${mapped})`);

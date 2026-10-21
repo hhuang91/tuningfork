@@ -1,5 +1,6 @@
 // What experiments found: behaviour distributions and comparisons, drawn on an experiment's
-// page — and, in a line, on the page of the job that made it (`found`), from the same headlines.
+// page — and, in a line, on the page of the job that made it (`found`), with that page's own
+// verdict and cautions where it leads with them.
 
 import { capital, chip, h, loading, outcome, panel, plural, rateBar, short } from "./dom.js";
 import { heatmap, probeMarks } from "./tokens.js";
@@ -148,19 +149,8 @@ export function forkingView(report, context = {}) {
       h("div", { class: "mono small", title: "Fisher's exact test, Holm-corrected" },
         `Each p corrected for the ${plural(report.family, "test")} planned; α = ${report.alpha}`)),
   ];
-  const undecided = report.missed?.undecided || [];
-  const tooFine = report.missed?.too_fine || [];
-  if (undecided.length) {
-    parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, "Still undecided there. "),
-      `At ${positionList(undecided)}, the run's own token led elsewhere more often than to its own behaviour, so a later token decided it. On the answer's heatmap, select tokens after these and probe them.`));
-  }
-  if (tooFine.length) {
-    parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, "What you count is too fine. "),
-      `At ${positionList(tooFine)}, the run's own token led mostly to the same tools with other arguments, so what you count may be too fine to compare on. Grouping behaviours by tool name alone (tool_name), or a pattern, may say more.`));
-  }
-  if (!undecided.length && !tooFine.length && report.reproduced && report.reproduced.total && report.reproduced.point < 0.5) {
-    parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, "What you count is rarely reproduced. "),
-      "Even with the run's own tokens forced, the model did it less than half the time. What you count may be too fine to reproduce, or the step not yet decided at these positions."));
+  for (const [title, text, here] of forkingCautions(report)) {
+    parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, `${title} `), here ? `${text} ${here}` : text));
   }
   if (answer) parts.push(answer);
   // Where each token's continuations went, by behaviour: the behaviours' table, inverted.
@@ -270,6 +260,32 @@ export function forkingHeadline(report) {
     flips ? "significant" : "not-significant", seen];
 }
 
+/** What a probe leaves open, as cautions: each its title, what was seen, and — where the next
+ *  step is taken on the probe's own page — that step, which only that page shows. */
+export function forkingCautions(report) {
+  const undecided = report.missed?.undecided || [];
+  const tooFine = report.missed?.too_fine || [];
+  const cautions = [];
+  if (undecided.length) {
+    cautions.push(["Still undecided there.",
+      `At ${positionList(undecided)}, the run's own token led elsewhere more often than to its own behaviour, so a later token decided it.`,
+      "On the answer's heatmap, select tokens after these and probe them."]);
+  }
+  if (tooFine.length) {
+    cautions.push(["What you count is too fine.",
+      `At ${positionList(tooFine)}, the run's own token led mostly to the same tools with other arguments, so what you count may be too fine to compare on. Grouping behaviours by tool name alone (tool_name), or a pattern, may say more.`]);
+  }
+  if (!undecided.length && !tooFine.length && report.reproduced && report.reproduced.total && report.reproduced.point < 0.5) {
+    cautions.push(["What you count is rarely reproduced.",
+      "Even with the run's own tokens forced, the model did it less than half the time. What you count may be too fine to reproduce, or the step not yet decided at these positions."]);
+  }
+  return cautions;
+}
+
+/** A test at a step that did not draw all it planned: its rates, and no verdict. */
+const SCREEN_UNFINISHED = ["Not every wording drew what was planned.",
+  "Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made."];
+
 /** A test at a step in a line, and its block's tone: a test run to the end is judged by the
  *  task's check, so what beat the original there is green, as a check that passed is. */
 export function screenHeadline(screen) {
@@ -303,9 +319,9 @@ export function endHeadline(result) {
  *  probe); else the result in a line (a resample, a resample to the end). With what was counted
  *  (`target`: its label, what it is, when it was chosen), what the verdict could see (`seen`, as
  *  that page says it), the rates it rests on — each with its interval, and the behaviour where one
- *  is named — and what was left out, as cautions (`notes`; `caution` where nothing could be
- *  counted at all). Null for a job whose result is told elsewhere, or not at all. An A/B with
- *  nothing declared is judged at its own α. */
+ *  is named — and what was left out or is still open, as cautions in that page's words (`notes`;
+ *  `caution` where nothing could be counted at all). Null for a job whose result is told
+ *  elsewhere, or not at all. An A/B with nothing declared is judged at its own α. */
 export function found(job) {
   const result = job.result || {};
   switch (job.kind) {
@@ -317,7 +333,9 @@ export function found(job) {
     case "forking-tokens": {
       if (!result.forking) return null;
       const [text, tone, seen] = forkingHeadline(result.forking);
-      return { text, tone, target: ["What you count", result.forking.target], seen, bars: [], notes: [] };
+      // A next step taken on the answer's heatmap is the probe's page's to say.
+      const notes = forkingCautions(result.forking).map(([title, said]) => `${title} ${said}`);
+      return { text, tone, target: ["What you count", result.forking.target], seen, bars: [], notes };
     }
     case "screen":
     case "screen-to-end": {
@@ -331,7 +349,10 @@ export function found(job) {
           ? ["What you count", screen.target, "set by the task, before any fork ran"]
           : ["What the model should do", screen.target],
         bars: [["original", screen.baseline?.target], ...screen.arms.map((arm) => [arm.name, arm.target, "change"])],
-        notes: [],
+        notes: [
+          ...(screen.complete ? [] : [SCREEN_UNFINISHED.join(" ")]),
+          ...leftOut(screen.baseline || {}, "the original"), ...screen.arms.flatMap((arm) => leftOut(arm, arm.name)),
+        ],
       };
     }
     case "resample-to-end":
@@ -357,9 +378,11 @@ function distributionFinding(distribution) {
   const notes = distribution.errors ? [notCounted(distribution.errors, "sample")] : [];
   if (!first) return { text: "No sample came back to count.", caution: true, tone: "not-significant", bars: [], notes };
   const total = distribution.total;
+  // Where calls failed, the samples that came back are fewer than were drawn: said "counted".
+  const counted = distribution.errors ? " counted" : "";
   const text = distribution.clusters.length === 1
-    ? (total === 1 ? "One behaviour, in the one sample drawn." : `One behaviour, in all ${total} samples.`)
-    : `${plural(distribution.clusters.length, "behaviour")} in ${plural(total, "sample")}; the most common, ${first.letter}, in ${first.rate.successes} of them.`;
+    ? `One behaviour, in ${total === 1 ? "the one sample" : total === 2 ? "both samples" : `all ${total} samples`}${counted}.`
+    : `${plural(distribution.clusters.length, "behaviour")} in ${plural(total, "sample")}${counted}; the most common, ${first.letter}, in ${first.rate.successes} of them.`;
   return { text, tone: "not-significant", bars: [[first.letter, first.rate, undefined, first.outcome]], notes };
 }
 
@@ -400,7 +423,7 @@ function leftOut(arm, whose = null) {
   const excluded = (arm.exclusions || []).length;
   return [
     excluded ? `${plural(excluded, "fork")}${of} ${excluded === 1 ? "is" : "are"} not counted; the experiment's page says why.` : null,
-    arm.timeouts ? `${plural(arm.timeouts, "fork")}${of} timed out, counted as failures.` : null,
+    arm.timeouts ? `${plural(arm.timeouts, "fork")}${of} timed out, counted as ${arm.timeouts === 1 ? "a failure" : "failures"}.` : null,
   ].filter(Boolean);
 }
 
@@ -457,8 +480,7 @@ export function screenView(screen, { arms = {} } = {}) {
           ? h("div", { class: "mono small" }, "A lead for the next edit. Only a test at this step that is not a quick look can keep a proposal.")
           : h("div", { class: "mono small", title: "Fisher's exact test, Holm-corrected" },
               `Each against the original, corrected for the ${plural(screen.family, "proposal")} planned; α = ${screen.alpha}`)),
-      screen.complete ? null : h("div", { class: "banner banner-warn" }, h("strong", null, "Not every wording drew what was planned. "),
-        "Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made."),
+      screen.complete ? null : h("div", { class: "banner banner-warn" }, h("strong", null, `${SCREEN_UNFINISHED[0]} `), SCREEN_UNFINISHED[1]),
       h("div", { class: "table-wrap" }, h("table", { class: "table screen-table" },
         h("thead", null, h("tr", null, h("th", null, "wording"), h("th", null, screen.reach === "end" ? "passed the check" : "did what it should"), h("th", { class: "num" }, "p"),
           h("th", { class: "num", title: "Holm-corrected" }, "p, corrected"), h("th", null, ""))),

@@ -387,10 +387,11 @@ its client, or the web UI and the page it was started from (`startedFrom` in `ui
 sent with every job it starts). The Jobs list names each job by the sidebar section of the work it
 does (`KIND_SECTION` in `ui/static/js/jobs.js`) and, finished, what it made, leading there
 (`madeLink`, the same file); a finished job's page hands off to what it made — it says what it
-found in a line (`results.found`: the verdict the experiment's page leads with, from the same
-helpers, where that page has one), with what was counted, the rates, what was left out and the
-runs it made, its log folded below — and the note when it ends leads there. A question at a held
-call and a check tried keep their answers on the job's page, their only home once done.
+found in a line (`found` in `ui/static/js/results.js`: the verdict the experiment's page leads
+with, from the same helpers, where that page has one), with what was counted, the rates, what was
+left out or is still open in that page's words, and the runs it made, its log folded below — and
+the note when it ends leads there. A question at a held call and a check tried keep their answers
+on the job's page, their only home once the call is decided or the tester closed.
 
 The same operations, as tools for an agent over MCP (`tuningfork.mcp`, the SDK an optional
 extra, `tuningfork[mcp]`; nothing else imports it):

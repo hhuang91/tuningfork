@@ -275,7 +275,7 @@ function nextSteps(experiment) {
 function armView(arm, label, tone) {
   return h("div", { class: "stack", style: { gap: "4px" } },
     h("span", null, h("span", { class: "muted" }, `${label}  `), arm.rate ? rateBar(arm.rate, tone) : h("span", { class: "muted" }, "no fork counts")),
-    arm.timeouts ? h("span", { class: "small muted" }, `${plural(arm.timeouts, "fork")} timed out, counted as failures, as the approval checks count them`) : null,
+    arm.timeouts ? h("span", { class: "small muted" }, `${plural(arm.timeouts, "fork")} timed out, counted as ${arm.timeouts === 1 ? "a failure" : "failures"}, as the approval checks count them`) : null,
     arm.exclusions.length
       ? h("ul", { class: "small" }, arm.exclusions.map((left) =>
           h("li", null, h("span", { class: "mono" }, short(left.run_id || "")), ` not counted: ${left.why}`)))

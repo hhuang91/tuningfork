@@ -49,9 +49,9 @@ export const kindLabel = (job) => KIND_LABEL[job.kind] || job.kind;
 const FROM = {
   step: "a step's page", run: "a run's page", refinement: "a refinement's page", scenario: "a scenario's page",
   experiment: "an experiment's page", skill: "a skill's page", live: "Live", connections: "Connections",
-  jobs: "Jobs", batch: "“Run a task”", scenarios: "Scenarios", refine: "Refine", runs: "Runs",
+  jobs: "Jobs", batch: "“Run a task”", scenarios: "Scenarios", refine: "“Refine”", runs: "Runs",
   experiments: "Experiments", skills: "Skills", import: "“Import a chat”", guide: "the Guide", "add-skill": "“Add a skill”",
-  "make-scenario": "“Make a scenario”", divergence: "where a task's runs diverge",
+  "make-scenario": "“Make a scenario”", divergence: "“Where the runs diverge”",
 };
 
 /** Who started a job, and from where, as its front end said: a person on one of the web UI's
@@ -106,6 +106,12 @@ export function madeLink(job) {
   if (experiments.length) return { href: `#/experiments/${experiments[0]}`, text: `experiment ${short(experiments[0])}` };
   if (runs.length === 1) return { href: `#/runs/${enc(runs[0])}`, text: `run ${short(runs[0])}` };
   return null;
+}
+
+/** Whether the page open at `hash` is the one `href` leads to: the same address, or it with
+ *  more after it — a query, a condition (`@`), a deeper path. Task x/1's runs are not x/10's. */
+export function onPage(href, hash = location.hash) {
+  return hash === href || ["?", "&", "@", "/"].some((mark) => hash.startsWith(href + mark));
 }
 
 /** What the job is about, from what it was asked: a run and a step, or a task. */

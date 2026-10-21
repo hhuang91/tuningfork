@@ -136,12 +136,15 @@ function jobsTable(jobs, { selected, toggle }) {
         h("td", { class: "faint", title: when(job.created_at) }, ago(job.created_at), byLine(job))))))));
 }
 
-/** Running, how far it has got; done, what it made, leading there; stopped, how far it got. */
+/** Running, how far it has got; stopped, how far it got; done, what it made, leading there — or,
+ *  runs that no one page holds, how many: its own page lists them. */
 function resultCell(job) {
   if (ACTIVE.has(job.status)) return progressBar(job);
-  const made = job.status === "done" ? madeLink(job) : null;
+  if (job.status !== "done") return job.progress?.total ? progressBar(job) : null;
+  const made = madeLink(job);
   if (made) return h("a", { href: made.href, onclick: (event) => event.stopPropagation() }, `→ ${made.text}`);
-  return job.progress?.total ? progressBar(job) : null;
+  const runs = job.links?.runs || [];
+  return runs.length ? h("span", { class: "muted" }, plural(runs.length, "run")) : null;
 }
 
 /** Who started a job, and from where, under when. */
@@ -155,8 +158,8 @@ export async function jobView(root, [id], scope) {
   const head = h("div", { class: "page-head" });
   const summary = h("div", { class: "stack slot" });
   const logEl = h("div", { class: "job-log" });
-  // The log, open while the job runs or where it went wrong; folded once it is done, the page
-  // then leading with what it found.
+  // The log, open while the job runs or where it went wrong; folded once it is done and the page
+  // leads with what it found or made.
   const progressEl = h("div", { class: "slot" });
   replace(root, crumbs([["Jobs", "#/jobs"], [short(id)]]), head, h("div", { class: "stack" }, summary, progressEl));
 
@@ -205,20 +208,20 @@ export async function jobView(root, [id], scope) {
 }
 
 /** Why a job's log is empty: it has not begun, or has logged nothing yet — or, ended, its log
- *  was not kept here (a job's log lives in the memory of the proxy that runs it, and a job read
- *  from the recordings has none), or it logged nothing. Then, where the page shows one, its
- *  result or what went wrong. */
+ *  is not kept here (a proxy keeps the logs of its latest jobs, in memory: a job from before it
+ *  started, one long finished, or one read from the recordings has none), or it logged nothing.
+ *  Then, where the page shows one, its result or what went wrong. */
 export function emptyLog(job) {
   if (job.status === "queued") return "Waiting its turn.";
   if (ACTIVE.has(job.status)) return "Nothing yet.";
   const where = job.status === "done" && showsResult(job) ? " Its result is above." : job.error ? " What went wrong is above." : "";
   return job.seq === null || job.seq === undefined
-    ? `Its log is not kept here: a job's log lives only in the memory of the proxy that ran it.${where}`
+    ? `Its log is not kept here: a proxy keeps only its latest jobs' logs, and only in memory.${where}`
     : `It logged nothing along the way.${where}`;
 }
 
 // Kinds whose finished page says what they made in a panel of their own.
-const OWN_PANEL = new Set(["propose", "validate", "chain", "tokens", "hold-console", "check-trial"]);
+const OWN_PANEL = new Set(["propose", "validate", "tokens", "hold-console", "check-trial"]);
 
 /** Whether a finished job's page shows what it found or made, above its log. */
 function showsResult(job) {
@@ -234,7 +237,9 @@ function heldBanner(job) {
     held.map((hold) => h("a", { class: "btn btn-small", href: `#/live/${hold.id}` }, `Open it: step ${hold.step}`)));
 }
 
-function jobSummary(job) {
+/** A job's page under its head, from the job alone: how it is going or went, what it found or
+ *  made, and what it was asked. */
+export function jobSummary(job) {
   const parts = [];
   if (ACTIVE.has(job.status)) {
     parts.push(panel("Running", [progressBar(job), job.progress?.waiting === "paused"
@@ -259,12 +264,6 @@ function jobSummary(job) {
     // is decided or the tester closed.
     if (job.kind === "hold-console" && result.reply) parts.push(panel("What it answered", replyCard(job)));
     if (job.kind === "check-trial" && result.found) parts.push(panel("What the check said", verdictView(result)));
-    if (job.kind === "chain" && result.id) {
-      parts.push(panel("What it made", h("div", { class: "made" },
-        h("a", { class: "btn btn-primary", href: `#/chains/${enc(result.id)}` }, "See the chain, link by link"),
-        h("span", { class: "muted small" }, `${plural((result.links || []).length, "link")}`
-          + (result.rate ? `, ${result.rate.successes} of ${result.rate.total} counted passed` : "")))));
-    }
     if (job.kind === "propose") parts.push(proposedView(result));
     if (job.kind === "validate") parts.push(validatedView(result));
     if (job.kind === "tokens" && result.run_id) {
@@ -352,37 +351,58 @@ function foundPanel(job, finding) {
     kv([["cost", costOf({ job: job.id })]])));
 }
 
-/** The runs a job made — its forks, a batch's runs — each linked: forks are in no list of runs. */
+/** The runs a job made — its forks, a batch's runs — each linked, the first twenty in sight and
+ *  the rest folded under them: forks are in no list of runs. */
 function runsLine(job) {
   const runs = job.links?.runs || [];
-  return runs.length ? h("div", { class: "muted small" }, `${plural(runs.length, "run")}: `,
-    runs.slice(0, 20).map((run, index) => [index ? ", " : "", h("a", { class: "mono", href: `#/runs/${enc(run)}` }, short(run))])) : null;
+  if (!runs.length) return null;
+  const named = (some) => some.map((run, index) => [index ? ", " : "", h("a", { class: "mono", href: `#/runs/${enc(run)}` }, short(run))]);
+  return h("div", { class: "muted small" }, `${plural(runs.length, "run")}: `, named(runs.slice(0, 20)),
+    runs.length > 20 ? h("details", { class: "fold" }, h("summary", null, `and ${runs.length - 20} more`), named(runs.slice(20))) : null);
 }
 
 function madeView(job) {
   const links = job.links || {};
   const experiments = links.experiments || [];
   const runs = links.runs || [];
+  // Done, what it made and where that lives — unless a panel of its own below leads there.
+  const done = job.status === "done" && !OWN_PANEL.has(job.kind) ? madeLink(job) : null;
   if (!experiments.length && !runs.length) {
-    // Nothing of its own to list, but what it found lives on another page: the server test's results.
-    const made = job.status === "done" && !OWN_PANEL.has(job.kind) ? madeLink(job) : null;
-    return made
-      ? [panel("What it found", h("div", { class: "made" }, h("a", { class: "btn btn-primary", href: made.href }, "See the results"),
-          h("span", { class: "muted small" }, job.kind === "server-check" ? "on Connections" : made.text)))]
-      : [];
+    if (!done) return [];
+    // Nothing of its own to list: a chain whose links made no run, or what a server test or a
+    // check run along the runs found, which another page shows.
+    return job.kind === "chain"
+      ? [panel("What it made", madeRow(job, done))]
+      : [panel("What it found", h("div", { class: "made" }, h("a", { class: "btn btn-primary", href: done.href }, "See the results"),
+          h("span", { class: "muted small" }, job.kind === "server-check" ? "on Connections" : done.text)))];
   }
   // An A/B's two arms are one report: its first arm's page shows both.
   const report = experiments[0];
-  // Runs and nothing else, done — a batch's: where they are among the task's, and how many passed.
-  const made = !report && job.status === "done" ? madeLink(job) : null;
-  const rate = job.kind === "batch" && job.status === "done" ? job.result?.rate : null;
+  // Runs and nothing else, done — a batch's, a chain's, a fork's: where they are, how many passed,
+  // and how many the rate leaves out.
+  const made = report ? null : done;
+  const batch = job.kind === "batch" && job.status === "done" ? job.result || {} : {};
+  const left = batch.not_counted || 0;
   return [panel("What it made", h("div", { class: "stack", style: { gap: "8px" } },
     report ? h("div", { class: "made" },
       h("a", { class: "btn btn-primary", href: `#/experiments/${report}` }, job.status === "done" ? "See the result" : "Open the experiment"),
       h("span", { class: "muted small" }, experiments.length > 1 ? `experiments ${experiments.map(short).join(", ")}` : `experiment ${short(report)}`)) : null,
-    made ? h("div", { class: "made" }, h("a", { class: "btn btn-primary", href: made.href }, "See the result"), h("span", { class: "muted small" }, made.text)) : null,
-    rate ? h("div", null, h("span", { class: "muted" }, "passed  "), rateBar(rate, "ok")) : null,
-    runsLine(job),
+    made ? madeRow(job, made) : null,
+    batch.rate ? h("div", null, h("span", { class: "muted" }, "passed  "), rateBar(batch.rate, "ok")) : null,
+    left ? h("p", { class: "small warn-text" }, `${plural(left, "run")} ${left === 1 ? "is" : "are"} not counted; each one's page says why.`) : null,
+    // A fork's one run is what it made: named once.
+    made && runs.length === 1 && made.href === `#/runs/${enc(runs[0])}` ? null : runsLine(job),
     // Counted from the records of what it made: once nothing is still being added to them.
     job.status === "running" || job.status === "queued" ? null : kv([["cost", costOf({ job: job.id })]])))];
+}
+
+/** The way to what a finished job made, and its name — a chain's page, link by link, with how
+ *  its links went. */
+function madeRow(job, made) {
+  const chain = job.kind === "chain" ? job.result || {} : null;
+  return h("div", { class: "made" },
+    h("a", { class: "btn btn-primary", href: made.href }, chain ? "See the chain, link by link" : "See the result"),
+    h("span", { class: "muted small" }, chain
+      ? `${plural((chain.links || []).length, "link")}${chain.rate ? `, ${chain.rate.successes} of ${chain.rate.total} counted passed` : ""}`
+      : made.text));
 }
