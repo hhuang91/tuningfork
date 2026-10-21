@@ -470,15 +470,19 @@ Record, Measure, Improve, and the Trash; what needs a running proxy stays in it 
 greyed and saying why, and its foot is a status strip — the proxy, the server and the harnesses,
 from `GET /connections`. Its front page is `#/guide` — setup, where you left off, a map of the
 loop and the ways in — and its words have a page of their own, `#/words`, each living once in
-`ops/glossary.py`. Each page leads with its take-away: a run its verdict strip; the divergence
-page the step whose behaviour best predicts the verdict, in a callout with the ways to it;
-Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model,
-a word and a colour each, the server in the status strip's words (`serverWord`), and what that
-means in at most three sentences (`whatItMeans`); a refinement its four stages in a line
-(`stagesOf` in `views/refine.js`: propose, test at this step, full test runs, approve — where each
-proposal stands is its latest finished test, as the gate's G0 reads it), the current one's form
-the one open as the page opens — after, no form opens by itself — then its evidence, each
-proposal named by the line it changes. The Skills page
+`ops/glossary.py`. Each page leads with its take-away: a run its verdict strip, the work on a
+step beside the run (`openWork` in `timeline.js`: a step's actions and the form they open, in a
+column where the rail is, each step's kept as it was left), the rail moving through the run and
+opening nothing, one step's details open at a time; the divergence page the step whose behaviour
+best predicts the verdict, in a callout with the ways to it; Connections the setup at a glance —
+the server, the harnesses, the sandbox, the proposing model, a word and a colour each, the server
+in the status strip's words (`serverWord`), and what that means in at most three sentences
+(`whatItMeans`); a refinement its four stages in a line (`stagesOf` in `views/refine.js`:
+propose, test at this step, full test runs, approve — where each proposal stands is its latest
+finished test, as the gate's G0 reads it), then its evidence, each proposal named by the line it
+changes, then a section for each stage numbered as the stepper numbers it (the two ways to
+propose side by side; the proposals with the test of the ticked ones), the current one's form the
+one open as the page opens — after, no form opens by itself. The Skills page
 (`ops/skills.py`) names a skill by its folder, as variants and refinements do, and runs it again
 from the scenarios that name it; it is the person's view, never offered over MCP: the changelog
 an approval writes carries held-out verdicts. A person adds
@@ -648,6 +652,11 @@ than on a hardcoded assumption about which server is running.
   before what it is not ("a lead, not a verdict"); the plain phrase first, the precise term after
   it, muted or in a tooltip; help under a field says what to type, why it matters goes in a
   tooltip; buttons are verb phrases, with an ellipsis only where a form opens.
+- A page reads top to bottom in the order the work goes: what to do first, then what it made.
+  What are alternatives, or run beside what is read, sit side by side — the two ways to propose
+  an edit, the work on a run's step beside the run — and stack on a narrow page. One step of the
+  loop is one section, not several small ones. A form opens by itself only as its page opens;
+  after, only the person opens one, and none closes under them.
 - The UI keeps green and red for a check: a run's verdict (which closes its page), a fork's, a
   gate's, and a change in how often a task's check passes (an A/B or a screen run to the end).
   Any other significant result is the accent's colour, said in words with its direction —
