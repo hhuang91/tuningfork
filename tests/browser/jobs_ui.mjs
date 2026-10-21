@@ -1257,7 +1257,8 @@ try {
   // Where a proposal stands is its latest finished test, as the approval checks read it (found in
   // review: kept by one test and not by a later one, it was still said to have beaten the
   // original, and full test runs were offered that the proxy then refused). Watched on the page as
-  // each test ends: the stage moving on opens its form, and moving back takes the form away.
+  // each test ends: the stage moving on opens no form by itself — forms opening on their own, none
+  // closing, would pile up — and moving back takes the full test runs' form away.
   const undone = await post("/refinements", { run: labRun, step: "1", target_match: "row_count" });
   const undoneFix = await post(`/refinements/${undone.id}/proposals`, {
     edits: [{ old: "Write the totals to report.json.", new: "Write the totals to report.json, using the keys row_count and amount_total." }],
@@ -1268,7 +1269,8 @@ try {
   const undoneKept = await finished((await post("/jobs", { kind: "screen", params: { refinement: undone.id, proposals: [undoneFix.id], n: 6 } })).id, 60000);
   check(undoneKept.result.screen.survivors.length === 1, "a test of six keeps the proposal");
   await until(async () => (await stages()).includes("Full test runs: none yet: current"), "the stage moving on, on the page");
-  check(await opened(".validate-panel") === true, "on the page as the test ended: the stage moved on, and its form opened");
+  check(await opened(".validate-panel") === false && await opened(".screen-panel") === true,
+    "on the page as the test ended: the stage moved on, its form folded until opened, and the form that was open still open");
   const undoneLost = await finished((await post("/jobs", { kind: "screen", params: { refinement: undone.id, proposals: [undoneFix.id], n: 2 } })).id, 60000);
   check(undoneLost.result.screen.complete && !undoneLost.result.screen.survivors.length, "a later test of two does not keep it");
   const undoneStages = await until(async () => { const now = await stages(); return now.includes("Test at this step: none beat the original: current") ? now : null; },
@@ -1448,8 +1450,8 @@ try {
   await until(() => page.eval(`!document.querySelector(".trashed-banner") && [...document.querySelectorAll(".page-head button")].some((b) => b.textContent === "Move to trash")`), "the refinement, restored");
   check((await api("/refinements")).some((each) => each.id === refinementId), "restored, it is back in the list as it went");
   await until(() => page.eval(`document.querySelector('.stepper [aria-current="step"] .stage-name')?.textContent === "Full test runs"
-    && document.querySelector(".validate-panel")?.open === true`), "its current stage back, that stage's form open");
-  check(true, "restored, its current stage is back, and that stage's form opens");
+    && document.querySelector(".validate-panel")?.open === false`), "its current stage back, that stage's form folded");
+  check(true, "restored, its current stage is back, its form folded until opened: none opens by itself");
 
   // --- 15. The front page, and the Skills page ---------------------------------------------------
   console.log("the front page: setup, the map, ways in, words");

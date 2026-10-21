@@ -477,7 +477,8 @@ a word and a colour each, the server in the status strip's words (`serverWord`),
 means in at most three sentences (`whatItMeans`); a refinement its four stages in a line
 (`stagesOf` in `views/refine.js`: propose, test at this step, full test runs, approve — where each
 proposal stands is its latest finished test, as the gate's G0 reads it), the current one's form
-the one open, then its evidence, each proposal named by the line it changes. The Skills page
+the one open as the page opens — after, no form opens by itself — then its evidence, each
+proposal named by the line it changes. The Skills page
 (`ops/skills.py`) names a skill by its folder, as variants and refinements do, and runs it again
 from the scenarios that name it; it is the person's view, never offered over MCP: the changelog
 an approval writes carries held-out verdicts. A person adds

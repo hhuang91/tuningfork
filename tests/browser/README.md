@@ -111,7 +111,8 @@ verdict, the refinement's page leading with that evidence — where it stands, e
 by the line it changes, its screen in a line — above what a proposer is shown, the original
 wording's answers, with the skill's paths closed away in About, and full test runs next, their
 form open; that a proposal kept by one test and not by a later one stands where the later left it,
-with no full test runs offered — the stage moving on, and back, on the page as each test ends; that
+with no full test runs offered — the stage moving on, and back, on the page as each test ends, no
+form opening by itself; that
 a survivor, validated from its refinement's page, runs forks to the end, the
 training task and the lab's held-out task — named only by its id in the plan and the job,
 its text nowhere — and meets the gate, each part and check shown to the person, the evidence
@@ -127,7 +128,8 @@ accent, never a verdict's green — on Runs, on Skills and on a batch's page. La
 from its page — out of the Runs list, on the Trash page with what deleting it would remove —
 restores it, and deletes it for good, the first click saying what goes; and two finished jobs
 ticked on the Jobs page go to the trash together; and a refinement moved to the trash shows no
-current stage, and once restored, its current stage is back with its form open. And a job started as an agent would over
+current stage, and once restored, its current stage is back, its form folded until opened. And a
+job started as an agent would over
 MCP — `started_by` naming its client — says so on the Jobs list and on its own page.
 
 The resample's job page, once done, says what it found in a line with its rate, leaves the whole

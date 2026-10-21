@@ -179,7 +179,7 @@ export async function refinementView(root, [id], scope) {
   const approveEl = slot();
   let screenForm = null;
   let validateForm = null;
-  // The stage the stepper last drew as current: its form is opened when it becomes so.
+  // The stage the stepper last drew as current: undefined until the page is first drawn.
   let current;
   // What the stepper last drew: drawn again only when that changes, so a job's every event — a
   // validation sends dozens — leaves it, and a focus on one of its links, as they are.
@@ -214,9 +214,11 @@ export async function refinementView(root, [id], scope) {
     drawEvidence();
     drawProposals();
     drawPacket();
-    // The current stage's form opens when the stage becomes current — the page opening, or what
-    // a job made moving it on — and a form opened or closed by hand stays so.
-    drawForms(now === current ? null : now);
+    // The current stage's form is the one open as the page is first drawn. After, a form opens
+    // only when the person opens it: a stage a job moves the refinement on to is shown current,
+    // its form left folded. Forms opening on their own with none closing would clutter the page,
+    // and one closed under the person would confuse them.
+    drawForms(current === undefined ? now : null);
     current = now;
     drawScreens();
     drawValidations();
@@ -322,7 +324,7 @@ export async function refinementView(root, [id], scope) {
   //
   // Propose, test at this step, full test runs, approve: each stage done or not, what it holds,
   // and a link to its part of the page, which opens its form. The first not done is the
-  // current one: its form is the one open when the page opens.
+  // current one: its form is the one open when the page opens, and no form opens by itself after.
 
   function stagesOf() {
     const items = shown.proposals;
@@ -620,7 +622,7 @@ export async function refinementView(root, [id], scope) {
   // --- the forms: proposing, and screening --------------------------------------------------------
   //
   // Made once and kept: a proposal made, or a screen ended, leaves what is typed in them. Each
-  // folded but the current stage's; `opening` is a stage just become current, whose form opens.
+  // folded, but the current stage's as the page is first drawn (`opening`).
 
   function drawForms(opening) {
     if (!acting()) {
