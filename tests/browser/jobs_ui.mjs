@@ -92,6 +92,10 @@ try {
   check(resample.status === "done" && resample.result.distribution.total === 6, "the resample ran: 6 samples");
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "See the result")`), "the link to the result");
   check(await page.eval(`document.querySelectorAll(".job-log .log-line").length >= 7`), "the job's page logged the experiment and each sample");
+  // The job names the step it worked at, and its link opens that step, not the top of the run
+  // (found in use: it led to the run alone).
+  check(await page.eval(`[...document.querySelectorAll("main a")].some((a) => a.textContent === "run ${run.id.slice(0, 8)} @ step 1"
+    && a.getAttribute("href") === "#/runs/${run.id}/1")`), "the job's page links the step it worked at");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/")`), "the experiment page");
   await until(() => page.eval(`!!document.querySelector(".groups .letter")`), "the distribution");
