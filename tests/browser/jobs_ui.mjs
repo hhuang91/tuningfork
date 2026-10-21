@@ -135,7 +135,7 @@ try {
     const { madeLink, onPage, startedBy, stateText } = await import(new URL("js/jobs.js", location.href).href);
     const { startedFrom } = await import(new URL("js/api.js", location.href).href);
     const { found, screenView } = await import(new URL("js/results.js", location.href).href);
-    const { emptyLog, jobSummary } = await import(new URL("js/views/jobs.js", location.href).href);
+    const { emptyLog, jobParts, jobSummary } = await import(new URL("js/views/jobs.js", location.href).href);
     const done = (kind, result = {}, links = {}) => madeLink({ kind, status: "done", result, links });
     const rate = (successes, total) => ({ successes, total, point: successes / total, low: 0, high: 1 });
     const sampled = { distribution: { total: 1, clusters: [{ letter: "A", rate: rate(1, 1) }] } };
@@ -183,6 +183,13 @@ try {
       pages: ["#/runs/r/1?start=ab", "#/runs/r/scenario", "#/import/r/scenario", "#/connections", "#/batch", "#/divergence/t"].map((hash) => startedFrom(hash)),
       words: ["batch", "divergence"].map((where) => startedBy({ started_by: { via: "web", page: where } }).text),
       places: [0, 1, 2, 3, 10, 11, 12, 20, 21].map((place) => stateText({ status: "queued", queue_position: place })),
+      quick: [0, 1].map((place) => stateText({ status: "queued", lane: "interactive", queue_position: place })),
+      parts: jobParts([
+        { id: "q2", status: "queued", lane: "background", queue_position: 1 }, { id: "i0", status: "queued", lane: "interactive", queue_position: 0 },
+        { id: "f1", status: "failed" }, { id: "d1", status: "done" }, { id: "x1", status: "interrupted" },
+        { id: "r1", status: "running", lane: "background" }, { id: "q1", status: "queued", lane: "background", queue_position: 0 },
+        { id: "c1", status: "cancelled" }, { id: "d2", status: "done" },
+      ]).map((part) => part.map((job) => job.id)),
       open: [["#/divergence/x%2F1", "#/divergence/x%2F10"], ["#/divergence/x%2F1", "#/divergence/x%2F1@abcd1234"],
         ["#/runs/r/1?view=tokens", "#/runs/r/1?view=tokens&at=5"], ["#/connections", "#/connections"]].map(([href, hash]) => onPage(href, hash)),
       probeNull: [probeNull.seen, probeNull.notes.length],
@@ -212,6 +219,10 @@ try {
     words: ["you, from “Run a task”", "you, from “Where the runs diverge”"],
     // A queued job's place in its line, in words.
     places: ["next", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd"].map((place) => `queued, ${place} in line`),
+    // Quick work has a line of its own, numbered apart: the list keeps the two lines apart,
+    // the running first; finished, then stopped or failed, keep their order.
+    quick: ["queued, next in the quick line", "queued, 2nd in the quick line"],
+    parts: [["r1", "q1", "q2", "i0"], ["d1", "d2"], ["f1", "x1", "c1"]],
     // The note when a job ends knows the page open: task x/1's runs are not x/10's.
     open: [false, true, true, true],
     // A probe that saw no flip says what it could have seen, as its own page does: no caution.
@@ -485,9 +496,31 @@ try {
     .map((row) => [row.dataset.job, row.querySelector(".chip").textContent]))`);
   check(lined === JSON.stringify([[longId, "waiting: the proxy is paused"], [waiting[0], "queued, next in line"], [waiting[1], "queued, 2nd in line"]]),
     `the running job first, then the line in its order, each saying its place in it (${lined})`);
+  // A queued job's own page says it is queued, not running.
+  await page.eval(`location.hash = "#/jobs/${waiting[0]}"`);
+  await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "Queued")`), "the queued job's page");
+  check(await page.eval(`![...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "Running")
+    && document.querySelector(".page-head .chip").textContent === "queued, next in line"`), "a queued job's page heads its panel Queued, and says its place in line");
+  await page.eval(`location.hash = "#/jobs"`);
+  await until(() => page.eval(`!!document.querySelector('tr[data-job="${waiting[1]}"]')`), "the Jobs list again");
   for (const id of waiting) await post(`/jobs/${id}/cancel`);
   await until(() => page.eval(`${partOf(waiting[0])} === "Stopped or failed" && ${partOf(waiting[1])} === "Stopped or failed"`), "the cancelled jobs, in their own part");
   check(true, "a job cancelled in line goes to the part for what was stopped or failed");
+  // Each part has its own box for all of its jobs, and the bar counts what is ticked.
+  const partEl = (title) => `[...document.querySelectorAll("main .panel")].find((p) => p.querySelector(".panel-head h2").textContent === ${JSON.stringify(title)})`;
+  await page.eval(`${partEl("Stopped or failed")}.querySelector("th.pick input").click()`);
+  await until(() => page.eval(`!document.querySelector(".compare-bar").hidden`), "the bar, the part's jobs ticked");
+  const ticked = await page.eval(`JSON.stringify((() => {
+    const stopped = ${partEl("Stopped or failed")}, finished = ${partEl("Finished")};
+    const rows = stopped.querySelectorAll("tr[data-job]").length;
+    return [stopped.querySelectorAll("td.pick input:checked").length === rows,
+      finished.querySelector("th.pick input").checked || finished.querySelectorAll("td.pick input:checked").length > 0,
+      document.querySelector(".compare-bar span").textContent === rows + (rows === 1 ? " job" : " jobs") + " selected"];
+  })())`);
+  check(ticked === JSON.stringify([true, false, true]), `a part's own box ticks its jobs alone, and the bar counts them (${ticked})`);
+  await page.click("Clear", `document.querySelector(".compare-bar")`);
+  await until(() => page.eval(`document.querySelector(".compare-bar").hidden && !document.querySelector("td.pick input:checked")`), "nothing ticked");
+  check(true, "Clear unticks them all");
   await page.eval(`location.hash = "#/jobs/${longId}"`);
   await until(() => page.eval(`document.querySelectorAll(".job-log .log-line").length > 0`), "the long job's page again");
   await post("/resume");

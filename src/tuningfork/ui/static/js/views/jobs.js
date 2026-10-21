@@ -4,7 +4,8 @@ import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
 import { ago, crumbs, foldPanel, h, kv, loading, outcome, panel, plural, pretty, rateBar, replace, short, tick, when } from "../dom.js";
 import {
-  ACTIVE, KIND_SECTION, cancelButton, duration, kindLabel, logLine, madeLink, progressBar, startedBy, stateChip, subject, watchJob,
+  ACTIVE, KIND_SECTION, QUICK_LINE, cancelButton, duration, kindLabel, logLine, madeLink, progressBar, startedBy, stateChip, subject,
+  watchJob,
 } from "../jobs.js";
 import { costOf } from "../cost.js";
 import { launcher } from "../launcher.js";
@@ -31,7 +32,7 @@ export async function jobsView(root, _, scope) {
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Jobs"),
       h("p", { class: "sub" }, live.mode === "live"
-        ? "Work the proxy is doing: started here or from a step, or with `tuningfork jobs` from a terminal. One background job runs at a time, unless the proxy was started to run more."
+        ? `Work the proxy is doing: started here or from a step, or with \`tuningfork jobs\` from a terminal. One background job runs at a time, unless the proxy was started to run more. ${QUICK_LINE}`
         : "Work a proxy did, as it recorded it. Starting work needs a running proxy.")),
       startButton ? h("div", { class: "actions" }, startButton) : null),
     start,
@@ -105,15 +106,23 @@ export async function jobsView(root, _, scope) {
   scope.onLeave(() => clearTimeout(timer));
 }
 
-/** The list in three parts: what is running or waiting its turn — the running first, then the
- *  line in its order — what finished, and what was stopped or failed, each newest first. The
- *  first part is always there, and says when nothing is in it. */
+/** The jobs by part: what is running or waiting its turn — the running first, then the
+ *  background line and then the quick line, each in its order — what finished, and what was
+ *  stopped or failed, each newest first. */
+export function jobParts(jobs) {
+  // Each lane numbers its own line (`queue_position`): the two are kept apart, not interleaved.
+  const rank = (job) => (job.status === "running" ? 0 : job.lane === "interactive" ? 2 : 1);
+  const place = (job) => job.queue_position ?? Infinity;
+  return [
+    jobs.filter((job) => ACTIVE.has(job.status)).sort((a, b) => rank(a) - rank(b) || place(a) - place(b)),
+    jobs.filter((job) => job.status === "done"),
+    jobs.filter((job) => !ACTIVE.has(job.status) && job.status !== "done"),
+  ];
+}
+
+/** The list in its three parts. The first is always there, and says when nothing is in it. */
 function jobsSections(jobs, { selected, toggle }) {
-  // A running job is ahead of every queued one; a queued one stands at its place in line.
-  const line = (job) => (job.status === "running" ? -1 : job.queue_position ?? Infinity);
-  const active = jobs.filter((job) => ACTIVE.has(job.status)).sort((a, b) => line(a) - line(b));
-  const finished = jobs.filter((job) => job.status === "done");
-  const stopped = jobs.filter((job) => !ACTIVE.has(job.status) && job.status !== "done");
+  const [active, finished, stopped] = jobParts(jobs);
   return h("div", { class: "stack" },
     panel("Running and queued", active.length
       ? jobsTable(active, { selected, toggle })
@@ -261,7 +270,7 @@ function heldBanner(job) {
 export function jobSummary(job) {
   const parts = [];
   if (ACTIVE.has(job.status)) {
-    parts.push(panel("Running", [progressBar(job), job.progress?.waiting === "paused"
+    parts.push(panel(job.status === "queued" ? "Queued" : "Running", [progressBar(job), job.progress?.waiting === "paused"
       ? h("p", { class: "hint" }, "The proxy is paused: sampling goes on when it resumes.")
       : null], { meta: h("span", { class: "muted" }, duration(job)) }));
   }
