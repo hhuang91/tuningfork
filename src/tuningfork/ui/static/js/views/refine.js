@@ -203,6 +203,13 @@ export async function refinementView(root, [id], scope) {
   // Nothing new starts on a refinement closed, approved, or in the trash: it has no current stage.
   const settled = () => shown.refinement.status !== "open" || Boolean(shown.refinement.trashed_at);
   const acting = () => live.mode === "live" && !settled();
+  // With no form to propose with — browsing, or the refinement closed — the proposing stage holds
+  // only what the proposing model is shown: opening the stage opens that too, one fold, not two
+  // (found in review).
+  stagePanels.propose.element.addEventListener("toggle", () => {
+    const packet = packetEl.firstChild;
+    if (stagePanels.propose.element.open && !acting() && packet && !packet.open) packet.open = true;
+  });
   const mine = (job) => {
     const ref = job?.params?.refinement || "";
     return ref !== "" && shown.refinement.id.startsWith(ref);

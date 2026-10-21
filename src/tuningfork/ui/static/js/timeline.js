@@ -39,10 +39,6 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   // The steps not recorded whose rows are drawn: a live update draws only those it has not
   // (found in review: each one below a new step was drawn again, every update).
   const gapsShown = new Set();
-  // The form asked for last: one asked for before it that loads later is not shown (found in
-  // review: "A/B a wording…", then "Resample…" before the A/B form had loaded, left the A/B
-  // form open while the address asked for the other — and on two steps, both open).
-  let asking = 0;
   const element = h("div", { class: "tl" });
   const rail = h("nav", { class: "tl-rail", "aria-label": "Steps of the run" });
   const strip = h("div", { class: "verdict-strip", role: "status" });
@@ -55,9 +51,10 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   const workBody = h("div", { class: "tl-workcol-body" });
   const workCol = h("aside", {
     class: "tl-workcol", hidden: true, "aria-label": "Work from a step of the run",
-    // Escape hides it as its Hide does: on a narrow page it is a drawer over the run.
+    // Escape hides it as its Hide does: on a narrow page it is a drawer over the run. Not an
+    // Escape that ends typing a character in parts, in a field.
     onkeydown: (event) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
       event.preventDefault();
       closeWork();
     },
@@ -728,7 +725,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const step = sections.get(idx)?.step;
     const slot = h("div", { class: "start-slot" });
     const node = h("div", { class: "tl-workcol-step", dataset: { idx } }, loading("Loading the step…"));
-    const work = { idx, node, slot, ready: null, address: `${base}/${idx}?work` };
+    // `asking` counts the forms asked for here: one asked for before the last that loads later
+    // is not shown (found in review: "A/B a wording…", then "Resample…" before the A/B form had
+    // loaded, left the A/B form open while the address asked for the other). Each step's work
+    // counts its own, so a form asked for in one is kept there while another step's is shown
+    // (found in review: dropped for a form asked for on another step, it left its step's
+    // address naming a form never shown).
+    const work = { idx, node, slot, ready: null, address: `${base}/${idx}?work`, asking: 0 };
     work.ready = detailOf(idx).then(([detail, tokens]) => {
       // A replayed step was answered from the recording: there is no call to sample.
       replace(node, step?.served
@@ -770,7 +773,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const found = sections.get(workIdx);
     // The step worked from stays where it was on the screen, though the run widens again.
     const before = found?.section.getBoundingClientRect().top;
-    // Hidden from inside — its Hide, or Escape — the keys go on from the row's Work from here.
+    // Hidden from inside — its Hide, or Escape — the keys go on from the row's Work from here,
+    // or from the step's own line where nothing starts from it.
     const inside = workCol.contains(document.activeElement);
     workIdx = null;
     workCol.hidden = true;
@@ -779,7 +783,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     markWork();
     const moved = found ? found.section.getBoundingClientRect().top - before : 0;
     if (moved) window.scrollBy(0, moved);
-    if (inside) found?.workButton.focus({ preventScroll: true });
+    if (inside && found) (found.workButton.disabled ? found.marker : found.workButton).focus({ preventScroll: true });
     const open = [...sections.values()].find((other) => !other.block.hidden);
     settle(open ? `${base}/${open.step.idx}` : base);
   }
@@ -798,7 +802,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   }
 
   /** Step `idx`'s work beside the run — what its "Work from here" and the rail offer — the first
-   *  of its actions ready for a key. */
+   *  of its actions ready for a key; with none — browsing, or a step answered from the recording —
+   *  the first thing there that takes one, Hide at least. */
   async function workFrom(idx) {
     const found = sections.get(idx);
     if (!found) return;
@@ -809,7 +814,10 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     if (moved) window.scrollBy(0, moved);
     settle(workAddress());
     const work = await opening;
-    work.node.querySelector(".start-actions a")?.focus({ preventScroll: true });
+    if (workIdx !== idx) return;
+    const takes = (part) => [...part.querySelectorAll("a[href], button, input, select, textarea, summary")]
+      .find((each) => !each.disabled && each.getClientRects().length);
+    (work.node.querySelector(".start-actions a") || takes(work.node) || takes(workHead))?.focus({ preventScroll: true });
   }
 
   /** Step `idx` in sight — the run scrolled to it unless `scroll` is false — and, given `start`,
@@ -824,8 +832,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       settle(`${base}/${idx}`);
       return;
     }
-    const mine = ++asking;
     const work = workOf(idx);
+    const mine = ++work.asking;
     work.address = `${base}/${idx}?${asked.toString()}`;
     settle(work.address);
     const opening = openWork(idx);
@@ -834,13 +842,13 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     if (scroll) found.section.scrollIntoView({ block: "start" });
     await opening;
     // Asked for again since, or the step could not be read: the column says which.
-    if (mine !== asking || works.get(idx) !== work) return;
+    if (mine !== work.asking || works.get(idx) !== work) return;
     const waiting = loading("Preparing the form…");
     replace(work.slot, waiting);
     try {
       const form = await startForm(start, { run, idx }, asked, { go });
-      if (mine !== asking) {
-        // Asked for again since, elsewhere: this one never comes, and leaves no waiting behind.
+      if (mine !== work.asking) {
+        // Asked for again since: this one never comes, and leaves no waiting behind.
         if (work.slot.firstChild === waiting) replace(work.slot);
         return;
       }
@@ -849,7 +857,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       // column still shows this step — the run beside it staying where it is.
       if (workIdx === idx) workCol.scrollTo({ top: Math.max(0, work.slot.offsetTop - workHead.offsetHeight - 8) });
     } catch (error) {
-      if (mine === asking) replace(work.slot, failure(error, "Could not open the form"));
+      if (mine === work.asking) replace(work.slot, failure(error, "Could not open the form"));
       else if (work.slot.firstChild === waiting) replace(work.slot);
     }
   }
@@ -881,9 +889,9 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     if (!start) {
       // "Close": the form goes, the step's work stays beside the run — and one still loading
       // never comes.
-      asking += 1;
       const work = works.get(idx);
       if (work) {
+        work.asking += 1;
         replace(work.slot);
         work.address = `${base}/${idx}?work`;
       }

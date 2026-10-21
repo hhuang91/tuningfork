@@ -494,6 +494,19 @@ try {
   await page.click("Continue");
   const fork = await finished(forkId, 90000);
   check(fork.status === "done" && fork.result.length === 1 && fork.result[0].run_id, "a fork stopped at its step for a person, then ran on");
+  // A step the fork answered from the recording starts nothing: its work, opened from the rail,
+  // says so with the keys on Hide, and hidden, they go on from the step's own line, its Work from
+  // here disabled (found in review: the keys were lost both ways).
+  await page.eval(`location.hash = "#/runs/${fork.result[0].run_id}"`);
+  await until(() => page.eval(`document.querySelector("#s0 .tl-work")?.disabled === true`), "the fork's step answered from the recording");
+  await page.eval(`window.scrollTo(0, document.querySelector("#s0").getBoundingClientRect().top + scrollY - innerHeight * 0.35)`);
+  await until(() => page.eval(`document.querySelector(".tl-rail-work")?.textContent === "Work from step 0"`), "the rail's way to that step");
+  await page.click("Work from step 0", `document.querySelector(".tl-rail")`);
+  await until(() => page.eval(`(document.querySelector("${WORK}")?.textContent || "").includes("Answered from the recording")
+    && document.activeElement?.textContent === "Hide"`), "its work beside the run, the keys on Hide");
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await until(() => page.eval(`document.querySelector(".tl-workcol").hidden && document.activeElement === document.querySelector("#s0 .tl-marker")`), "the keys on the step's line");
+  check(true, "a replayed step's work opens with the keys on Hide; hidden, they go on from the step's own line");
 
   // A fork cancelled while it waits at its step keeps no verdict, and its page says it was
   // stopped, and why — never that the task defines no check (found in review).
@@ -1027,6 +1040,29 @@ try {
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
   check(await page.eval(`location.hash === "#/runs/${run.id}/1?work" && !document.querySelector(".tl-workcol").hidden`),
     "closed again, they give it back to the work beside the run");
+  // A form asked for in one step's work is kept there while another step's work is shown, its
+  // address with it (found in review: dropped for a form asked for on another step, it left its
+  // step's address naming a form never shown). The network slowed, both are asked for before
+  // either has loaded.
+  await page.eval(`document.querySelector("#s0 .tl-work").click()`);
+  await until(() => page.eval(`document.querySelector(".tl-workcol-title")?.textContent === "Work from step 0" && !!document.querySelector("${WORK} .start-actions")`), "step 0's work");
+  await page.eval(`document.querySelector("#s1 .tl-work").click()`);
+  await until(() => page.eval(`document.querySelector(".tl-workcol-title")?.textContent === "Work from step 1" && !!document.querySelector("${WORK} .start-actions")`), "step 1's work");
+  await page.send("Network.enable");
+  await page.send("Network.emulateNetworkConditions", { offline: false, latency: 2000, downloadThroughput: -1, uploadThroughput: -1 });
+  await page.eval(`[...document.querySelectorAll("${WORK} .start-actions a")].find((a) => a.textContent === "A/B a wording…").click()`);
+  await page.eval(`document.querySelector("#s0 .tl-work").click()`);
+  await until(() => page.eval(`document.querySelector(".tl-workcol-title")?.textContent === "Work from step 0"`), "step 0's work, in step 1's place");
+  await page.eval(`[...document.querySelectorAll("${WORK} .start-actions a")].find((a) => a.textContent === "Resample…").click()`);
+  const bothAsked = await page.eval(`(document.querySelector('.tl-workcol-step[data-idx="1"] .start-slot')?.textContent || "").includes("Preparing the form")`);
+  await page.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await page.send("Network.disable");
+  await until(() => page.eval(`!!document.querySelector("${WORK} .start-panel .plan-form")`), "step 0's form");
+  await page.eval(`document.querySelector("#s1 .tl-work").click()`);
+  await until(() => page.eval(`document.querySelector(".tl-workcol-title")?.textContent === "Work from step 1"
+    && (document.querySelector("${WORK} .start-panel h2")?.textContent || "").startsWith("A/B a wording at step 1")`), "step 1's form, kept in its work");
+  check(bothAsked && await page.eval(`location.hash === "#/runs/${run.id}/1?start=ab"`),
+    "two steps' forms asked for before either loaded: each is kept in its own step's work, the address naming it");
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
   await until(() => page.eval(`!!document.querySelector("#s1.tl-open .tl-facts")`), "step 1's details, again");
   await page.eval(`[...document.querySelectorAll("#s1 a.btn")].find((a) => a.textContent.startsWith("Exact context")).click()`);
@@ -1580,6 +1616,12 @@ try {
     "in the trash, it offers no new work");
   check(await page.eval(`!!document.querySelector(".stepper") && !document.querySelector('.stepper [aria-current="step"]')`),
     "and no stage of it is current: where it stands is shown, with nothing next");
+  // With no form to propose with, the proposing stage holds only what the proposing model is
+  // shown: opening the stage opens that too, one fold, not two (found in review).
+  await page.eval(`document.querySelector(".propose-panel > summary").click()`);
+  await until(() => page.eval(`document.querySelector(".propose-panel").open && document.querySelector(".propose-panel .packet-panel")?.open === true
+    && (document.querySelector(".propose-panel .packet-panel").textContent || "").includes("the original wording")`), "what the proposing model is shown, opened with its stage");
+  check(true, "with no form to propose with, opening the proposing stage opens what the proposing model is shown");
   check(!(await api("/refinements")).some((each) => each.id === refinementId), "and leaves the list of refinements");
   await page.eval(`location.hash = "#/trash"`);
   await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent.startsWith("Refinements"))`), "the Trash page's refinements");

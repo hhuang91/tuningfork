@@ -61,8 +61,9 @@ node tests/browser/jobs_ui.mjs
 It sets its page 1440 px wide, whatever window the browser has. It checks that a step's work
 opens beside the run, never inside it — its actions and the form they open, in a column where the
 rail was, its row marked and the address naming it — each step's kept as it was left when
-another's takes its place, and Hide or Escape giving the rail back, the keys going on from the
-row; that a resample started there runs
+another's takes its place, a form asked for in one kept there though another step's was asked
+for before it loaded, and Hide or Escape giving the rail back, the keys going on from the row;
+that a resample started there runs
 through the proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter
 as its target, starts at one press of Start with the mouse, the name just typed still focused (the change
 event as the focus leaves it once lost that click) — a form asking for its plan again when the page
@@ -71,7 +72,9 @@ when it starts, and leads its page with the
 edit it tested, then the target and which way the variant moved it — in the accent's colour, never
 a check's green — with each behaviour badged by whether it matches what is counted; that no target is
 chosen for you; that a task runs again from its run's page, its check shown whole; that a
-fork stops at its step for a person and runs on when continued, and one cancelled as it waits
+fork stops at its step for a person and runs on when continued — a step it answered from the
+recording opening its work with the keys on Hide, and Escape giving them to the step's own line — and one
+cancelled as it waits
 keeps no verdict, its page saying it was stopped and why; that forks run to the end,
 for a resample and for an A/B, whose page names the task's check as its target; that a job's page, its event stream cut mid-job, catches up
 with every event shown once; that cancelling takes two clicks and keeps what was
@@ -140,7 +143,8 @@ accent, never a verdict's green — on Runs, on Skills and on a batch's page. La
 from its page — out of the Runs list, on the Trash page with what deleting it would remove —
 restores it, and deletes it for good, the first click saying what goes; and two finished jobs
 ticked on the Jobs page go to the trash together; and a refinement moved to the trash shows no
-current stage, and once restored, its current stage is back, its form folded until opened. And a
+current stage, its proposing stage opening onto what a proposer is shown, and once restored, its
+current stage is back, its form folded until opened. And a
 job started as an agent would over
 MCP — `started_by` naming its client — says so on the Jobs list and on its own page.
 
