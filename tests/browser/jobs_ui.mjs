@@ -1005,6 +1005,22 @@ try {
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
   check(await page.eval(`document.querySelector("#s1").classList.contains("tl-open") && document.querySelector("#s1 .tl-facts")?.dataset.kept === "yes"
     && document.querySelectorAll(".tl-step.tl-open").length === 1`), "and opened again, it is as it was: nothing drawn again");
+  // Each row says in words that its step has details (the owner's ask: its line alone did not say
+  // there was more): its Show details opens them as the line does, one step's at a time, and says
+  // Hide details while they are open.
+  check(await page.eval(`[...document.querySelectorAll(".tl-step")].every((s) => [...s.querySelectorAll(".tl-head > .btn")].map((b) => b.textContent).join("|")
+    === (s.classList.contains("tl-open") ? "Hide details" : "Show details") + "|Work from here")`),
+    "every step's row offers its details in words, left of Work from here");
+  await page.eval(`document.querySelector("#s2 .tl-details").click()`);
+  await until(() => page.eval(`!!document.querySelector("#s2.tl-open .tl-facts")`), "step 2's details, from its button");
+  check(await page.eval(`document.querySelector("#s2 .tl-details").textContent === "Hide details" && document.querySelector("#s1 .tl-details").textContent === "Show details"
+    && document.querySelectorAll(".tl-step.tl-open").length === 1 && location.hash === "#/runs/${run.id}/2"`),
+    "Show details opens the step's details as its line does, one step's at a time, the address naming it");
+  await page.eval(`document.querySelector("#s2 .tl-details").click()`);
+  check(await page.eval(`!document.querySelector(".tl-step.tl-open") && document.querySelector("#s2 .tl-details").textContent === "Show details"`),
+    "and Hide details closes them");
+  await page.eval(`document.querySelector("#s1 .tl-details").click()`);
+  await until(() => page.eval(`!!document.querySelector("#s1.tl-open .tl-facts")`), "step 1's details, again");
   // The rail moves through the run and opens nothing: a step opens from its own row.
   await page.eval(`document.querySelector('.tl-rail-step[data-idx="0"]').click()`);
   await until(() => page.eval(`(() => { const top = document.querySelector("#s0").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 3; })()`),

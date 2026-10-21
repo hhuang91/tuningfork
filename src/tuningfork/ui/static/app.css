@@ -1412,7 +1412,8 @@ pre.code { color: var(--muted); }
 }
 .tl-step.tl-open { box-shadow: var(--shadow); border-left-color: var(--accent); }
 .tl-step.tl-retried { opacity: 0.72; }
-/* A step's row: the line that opens it, and its way to work from it, always in sight. */
+/* A step's row: the line that opens it, a button that says so, and its way to work from it,
+   always in sight. */
 .tl-head { display: flex; align-items: center; gap: 8px; padding-right: 10px; border-radius: var(--radius) var(--radius) 0 0; }
 .tl-head:hover { background: var(--panel-2); }
 .tl-marker {
@@ -1420,7 +1421,7 @@ pre.code { color: var(--muted); }
   padding: 9px 12px; border: none; background: transparent; color: inherit; font: inherit;
   text-align: left; cursor: pointer;
 }
-.tl-work { flex: none; }
+.tl-details, .tl-work { flex: none; }
 .tl-k { font-weight: 650; white-space: nowrap; }
 .tl-meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .tl-flags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
@@ -1546,6 +1547,12 @@ details.panel[open] > summary:hover { border-radius: var(--radius) var(--radius)
   .tl-rail-result, .tl-rail-turn, .tl-rail-earlier, .tl-rail-foldall { display: none; }
   /* With no turns to unfold them by, every step shows. */
   .tl-rail .tl-rail-step.tl-folded:not(.tl-rail-earlier) { display: flex; }
+}
+@media (max-width: 700px) {
+  /* A narrow step's row: its line whole, its two buttons under it, where its words begin. */
+  .tl-head { flex-wrap: wrap; padding-bottom: 8px; }
+  .tl-marker { flex-basis: 100%; }
+  .tl-details { margin-left: 12px; }
 }
 
 /* --- trying a check (js/checktry.js) ------------------------------------------------------ */

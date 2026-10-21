@@ -255,8 +255,8 @@ Open <http://127.0.0.1:8788/_tuningfork/ui/>. **Runs** groups runs by task, with
 and its interval. Open run `…#demo.2`: its conversation, top to bottom, with each step's
 answer where it happened and the skill marked in the system prompt, mapped to its file line
 by line; above it, the tools the model was offered, and beside it the steps, each tool's result
-under the step that called it. Click step 1 for its details; *Exact context* shows everything
-that step was sent.
+under the step that called it. Click step 1, or its *Show details*, for its details; *Exact
+context* shows everything that step was sent.
 *Where do they diverge?* on the task, and the **Experiments** page, show the last two
 commands' results; the A/B's page starts with the line its variant changes, and **Skills** keeps
 that variant among the skill's saved ones. Stop it with Ctrl-C.

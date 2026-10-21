@@ -307,14 +307,21 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return h("div", { class: "tl-gap" }, `step ${idx} · not recorded — a call refused while the proxy was paused`);
   }
 
-  /** A step's row: a line that opens its details under it, and — always in sight — the way to
-   *  work from it, which opens its actions beside the run. */
+  /** A step's row: a line that opens its details under it, a button saying so in words, and —
+   *  always in sight — the way to work from it, which opens its actions beside the run. */
   function stepSection(step, spawned) {
     const marker = h("button", {
       class: "tl-marker", type: "button", "aria-expanded": "false",
       title: `The model was sent the ${plural(step.position, "message")} above. Open for this step's details.`,
       onclick: () => toggleOpen(step.idx),
     }, markerParts(step));
+    // What the line does, said: a step has more than its answer — its call, its record, its
+    // workspace, the exact context it was sent — and the line alone did not say so.
+    const detailsButton = h("button", {
+      class: "btn btn-small tl-details", type: "button",
+      title: "Its call, its record and workspace, and the exact context it was sent",
+      onclick: () => toggleOpen(step.idx),
+    }, "Show details");
     // A replayed step was answered from the recording: nothing starts there, and its button
     // says so rather than leave. Marked current while its work is the one beside the run.
     const workButton = h("button", {
@@ -327,8 +334,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     const block = h("div", { class: "tl-block", hidden: true });
     const section = h("section", {
       class: ["tl-step", step.kept === "retried" && "tl-retried"], id: `s${step.idx}`, dataset: { idx: step.idx },
-    }, h("div", { class: "tl-head" }, marker, workButton), output, block, spawned.map(threadLink));
-    sections.set(step.idx, { step, section, marker, workButton, output, block, ready: null });
+    }, h("div", { class: "tl-head" }, marker, detailsButton, workButton), output, block, spawned.map(threadLink));
+    sections.set(step.idx, { step, section, marker, detailsButton, workButton, output, block, ready: null });
     seen.observe(section);
     return section;
   }
@@ -654,6 +661,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     if (open) for (const other of sections.values()) if (other !== found && !other.block.hidden) setOpen(other, false);
     found.block.hidden = !open;
     found.marker.setAttribute("aria-expanded", String(open));
+    replace(found.detailsButton, open ? "Hide details" : "Show details");
     found.section.classList.toggle("tl-open", open);
     if (open && !found.ready) found.ready = build(found);
   }

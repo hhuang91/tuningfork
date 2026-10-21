@@ -481,7 +481,7 @@ named by the line it changes. A run's page keeps the run to read and the work on
 beside it (`openWork` in `timeline.js`: a step's actions and the form they open, in a column
 where the rail is — over the run, on a narrow page — each step's kept as it was left, the address
 naming it, `?work` or the form's), the rail's lines moving through the run and opening nothing, one
-step's details open at a time. A refinement's page goes on with a section for each stage, numbered
+step's details open at a time, from its line or its Show details. A refinement's page goes on with a section for each stage, numbered
 as the stepper numbers it (the two ways to propose side by side; the proposals with the test of
 the ticked ones), the current one's form the one open as the page opens — after, no form opens by
 itself. The Skills page
