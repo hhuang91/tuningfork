@@ -156,6 +156,10 @@ The route on the proxy keeps the other defaults.
 The same work asked for twice is given back rather than started again, and an agent cancels only
 its own jobs.
 
+`list_jobs` gives the newest jobs — 20, or as many as it asks for, up to 100 — and then every job
+still queued or running, however old. Over stdio it gives at most the 50 newest, whatever it asks
+for: the proxy's jobs API returns no more.
+
 ## How the answers read
 
 Each answer is compact JSON led by sentences that say it, statistics first: every rate with its
