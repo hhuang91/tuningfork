@@ -64,12 +64,12 @@ function shiftWords(target) {
 function targetMark(counted, pooled) {
   if (counted === undefined || counted === null) return null;
   if (!counted) {
-    return chip(LABELS.noMatch, "not-target", "What you count does not include this behaviour: none of its samples are among the ones counted.");
+    return chip(LABELS.noMatch, "not-target", "This behaviour does not match what was chosen before sampling: none of its samples are among the ones counted.");
   }
   return counted >= pooled
-    ? chip(LABELS.matches, "target", "What you count includes this behaviour: its samples are the ones counted.")
+    ? chip(LABELS.matches, "target", "This behaviour matches what was chosen before sampling: its samples are the ones counted.")
     : chip(`${LABELS.matches} in ${counted} of ${pooled}`, "target",
-        "What you count includes some of this behaviour's samples: what some of them say meets it, and what others say does not.");
+        "Some of this behaviour's samples match what was chosen before sampling: what some of them say meets it, and what others say does not.");
 }
 
 export function comparisonView(experiment) {
@@ -315,7 +315,10 @@ export function screenView(screen, { arms = {} } = {}) {
   return h("div", { class: "stack" },
     panel(screen.quick ? "Each proposal's forks" : "Each proposal against the original", [
       h("div", { class: ["verdict-block", tone] },
-        targetLine(screen.target, undefined, "What the model should do"),
+        // Run to the end, the task's check decides, whatever the refinement said should happen.
+        screen.reach === "end"
+          ? targetLine(screen.target, "set by the task, before any fork ran")
+          : targetLine(screen.target, undefined, "What the model should do"),
         h("div", { class: "verdict-big" }, headline),
         screen.quick
           ? h("div", { class: "mono small" }, "A lead for the next edit. Only a test at this step that is not a quick look can keep a proposal.")
@@ -324,7 +327,7 @@ export function screenView(screen, { arms = {} } = {}) {
       screen.complete ? null : h("div", { class: "banner banner-warn" }, h("strong", null, "Not every wording drew what was planned. "),
         "Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made."),
       h("div", { class: "table-wrap" }, h("table", { class: "table screen-table" },
-        h("thead", null, h("tr", null, h("th", null, "wording"), h("th", null, "did what it should"), h("th", { class: "num" }, "p"),
+        h("thead", null, h("tr", null, h("th", null, "wording"), h("th", null, screen.reach === "end" ? "passed the check" : "did what it should"), h("th", { class: "num" }, "p"),
           h("th", { class: "num", title: "Holm-corrected" }, "p, corrected"), h("th", null, ""))),
         h("tbody", null,
           h("tr", null, h("td", null, name({ name: "original" })),
@@ -338,8 +341,8 @@ export function screenView(screen, { arms = {} } = {}) {
             h("td", { class: "num mono" }, formatP(arm.adjusted_p)),
             h("td", null, verdict(arm))))))),
       h("p", { class: "hint" }, screen.reach === "end"
-        ? "Each fork replays its run as recorded up to the step, the workspace included, then runs live to the end, where the task's check decides. Confirm an edit that beat the original with fresh runs."
-        : "This test changed only this step. Everything before it still comes from the original wording, so treat the result as a lead, and confirm it with full runs."),
+        ? "Each fork replays its run as recorded up to the step, the workspace included, then runs live to the end, where the task's check decides. Confirm an edit that beat the original with full test runs."
+        : "This test changed only this step. Everything before it still comes from the original wording, so treat the result as a lead, and confirm it with full test runs."),
     ]),
     checkpointsView(screen, names),
     !behaviours ? null : screen.reach === "end"
@@ -369,10 +372,12 @@ function checkpointsView(screen, names) {
         })))))),
     Object.entries(across).map(([arm, tally]) => h("p", { class: "small" },
       h("span", { class: "mono" }, arm), tally.of === 1
-        ? `: ${tally.above ? "above" : "not above"} the original in the one run forked from`
+        ? (tally.above
+            ? ": above the original in the one run forked from, so the effect may have lived in what that run did before the step"
+            : ": not above the original in the one run forked from")
         : `: above the original in ${tally.above} of the ${tally.of} runs forked from`,
       tally.of > 1 && tally.above === tally.of ? ", an effect that holds whatever each run did before the step"
-        : tally.above === 1 ? ", in one alone: the effect may have lived in what that run did before the step" : "")),
+        : tally.of > 1 && tally.above === 1 ? ", in one alone: the effect may have lived in what that run did before the step" : "")),
   ]);
 }
 

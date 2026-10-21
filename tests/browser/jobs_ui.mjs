@@ -767,6 +767,9 @@ try {
   check(screenJob.status === "done" && screenJob.result.screen.complete && screenJob.result.screen.survivors.length === 1,
     "the screen: the wording that names the keys survives the correction, the other does not");
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal beat the original by more than chance would explain."`), "the verdict on the job's page");
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do"
+    && [...document.querySelectorAll(".screen-table th")].some((th) => th.textContent === "did what it should")`),
+    "a refinement's test at its step names what it counts as the refinement does: what the model should do");
   // At the step, a survivor is a shift of a behaviour, not a check passed: the accent's, never green.
   check(await page.eval(`!document.querySelector(".verdict-block.tone-ok") && [...document.querySelectorAll(".screen-table .chip")]
     .find((chip) => chip.textContent === "beat the original")?.classList.contains("tone-accent")`), "a step screen's survivor is the accent's colour, not a check's green");

@@ -588,7 +588,8 @@ there. Neither can be undone.
 
 `glossary [word]` gives tuningfork's words, each defined once, as the web UI's Words page shows
 them: where the pages say a word more plainly ("wording" for an arm, "test at this step" for a
-screen), the word's entry says that too. `version` prints the version.
+screen), the word's entry says that too, and the plainer phrase finds the word
+(`tuningfork glossary "full test runs"`). `version` prints the version.
 
 ### `mcp`
 

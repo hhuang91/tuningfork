@@ -26,7 +26,7 @@ export const KIND_LABEL = {
   screen: "Proposals tested at a step",
   "screen-to-end": "Proposals tested at a step, to the end",
   validate: "Full test runs of an edit",
-  "check-along": "Check along the runs",
+  "check-along": "Check run along the runs",
 };
 
 const STATE_TONE = { queued: "muted", running: "accent", done: "muted", failed: "warn", cancelled: "muted", interrupted: "warn" };

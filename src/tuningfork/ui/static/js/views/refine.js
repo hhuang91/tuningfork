@@ -41,7 +41,7 @@ export async function refinementsView(root, _, scope) {
   const found = await api.get(`/refinements${closed ? "?closed=1" : ""}`);
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Refine"),
-      h("p", { class: "sub" }, "A skill refined at one step. First you choose what the model should do there. Then edits are proposed for it, by you, an agent over MCP or the proposing model, and each is tested at this step against the original wording.")),
+      h("p", { class: "sub" }, "A skill refined at one step of a run. First you choose what the model should do there. Then edits of the skill are proposed — by you, an agent over MCP or the proposing model — and each is tested at that step against the original wording.")),
       h("div", { class: "actions" },
         h("a", { class: "btn btn-quiet btn-small", href: closed ? "#/refine" : "#/refine?closed=1" }, closed ? "Open ones only" : "Closed ones too"))),
     found.length
@@ -428,7 +428,7 @@ export async function refinementView(root, [id], scope) {
       ]),
       !answers.reached
         ? h("p", { class: "hint" },
-            answers.of ? "With the original wording, no answer here did what the model should do. The proposing model learns what is wanted only from what you said it should do, and from the task's own criteria. " : "",
+            answers.of ? "With the original wording, no answer here did what the model should do. The proposing model learns what is wanted only from what you said it should do and, where you show them, from the task's own criteria. " : "",
             "More answers here make better evidence: ",
             h("a", { href: `#/runs/${found.run}/${found.step}?start=resample` }, "resample this step"), ".")
         : null,
@@ -630,7 +630,7 @@ export async function refinementView(root, [id], scope) {
           h("label", { class: "target-choice" },
             h("input", { type: "radio", name: "reach", value: "step", checked: !checkTarget, disabled: checkTarget, onchange: reachChanged }),
             h("span", null, h("strong", null, capital(LABELS.nextOnly)), h("span", { class: "muted small" }, checkTarget
-              ? " — not for this refinement: what it counts is the task's check, which only a run's end can show"
+              ? " — not for this refinement: what the model should do is pass the task's check, which only a run's end can show"
               : " — each sample an answer here, judged by what the model should do; each proposal against the original wording, sampled fresh"))),
           h("label", { class: "target-choice" },
             h("input", { type: "radio", name: "reach", value: "end", checked: checkTarget, onchange: reachChanged }),
@@ -745,7 +745,7 @@ export async function refinementView(root, [id], scope) {
         chip(record.complete ? record.status : `${record.status}: unfinished`, record.complete ? "muted" : "warn"),
         h("span", { class: "muted" }, "proposal ", h("span", { class: "mono" }, short(record.proposal))),
         !record.complete ? chip("unfinished: no verdict", "warn")
-          : record.approved ? chip("approved: the approval checks as they were met then", "ok")
+          : record.approved ? chip("approved: passed the approval checks then", "ok")
           : gate.passed ? chip("passes the approval checks", "ok") : chip(`fails the approval checks: ${failed.join(", ")}`, "bad")),
       h("div", { class: "table-wrap" }, h("table", { class: "table validation-table" },
         h("thead", null, h("tr", null, h("th", null, "part"), h("th", null, "with the edit"), h("th", null, "the original"))),
@@ -940,7 +940,7 @@ function screenLine(verdict) {
     return `${rate} forks passed${toEnd}: rates, never a verdict${base.total ? `; the original's ${base.successes}/${base.total} drawn before` : ""}`;
   }
   return `${rate} against the original's ${base.successes}/${base.total}${toEnd}`
-    + (verdict.adjusted_p !== null && verdict.adjusted_p !== undefined ? `, p ${formatP(verdict.adjusted_p)} corrected` : "");
+    + (verdict.adjusted_p !== null && verdict.adjusted_p !== undefined ? `, corrected p ${formatP(verdict.adjusted_p)}` : "");
 }
 
 function verdictChip(verdict) {
@@ -1056,7 +1056,7 @@ function screenToEndPreview(plan) {
   return h("div", { class: "stack", style: { gap: "8px" } },
     kv([
       ["forks from", from],
-      ["what it should do", plan.target],
+      ["what you count", plan.target],
       ["wordings", plan.quick ? h("span", null, "each proposal alone: ", names) : h("span", null, "the original, then ", names)],
       ["the original", theOriginal],
       ["forks", `${plan.forks} in all, each the harness run from its step to the end`],

@@ -309,7 +309,7 @@ TERMS: tuple[Term, ...] = (
     Term("Bonferroni correction", "The stricter correction an A/B gets with no target declared before sampling: "
          "every behaviour is tested, and the result is exploratory.",
          "statistics", aka=("Bonferroni", "exploratory"), see=("target",),
-         ui="adjusted for comparing them all, with nothing declared"),
+         ui="each p adjusted for comparing every behaviour, with nothing declared"),
     Term("low-powered", "Too few runs to tell a small difference from none. \"Not significantly worse\" then means "
          "\"not measured\", and is labelled so, with how many runs would detect a difference.",
          "statistics", see=("gate", "Wilson interval")),

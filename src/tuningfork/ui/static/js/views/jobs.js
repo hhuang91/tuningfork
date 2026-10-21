@@ -236,8 +236,8 @@ function jobSummary(job) {
   return parts;
 }
 
-/** What the built-in proposer made: each proposal kept, each one not and why — hypotheses,
- *  all of them, until a screen tests them. */
+/** What the built-in proposer made: each proposal kept, each one not and why — every one kept
+ *  untested until a screen tests it. */
 function proposedView(result) {
   const accepted = result.accepted || [];
   const rejected = result.rejected || [];
@@ -251,12 +251,12 @@ function proposedView(result) {
             ` — ${plural(proposal.changed, "line")} changed${proposal.duplicate ? " (proposed before: the proposing model is added to its proposers)" : ""}: `,
             h("span", { class: "muted" }, proposal.proposers[proposal.proposers.length - 1]?.rationale || ""))))
       : h("p", { class: "muted" }, "Nothing it proposed could be kept."),
+    accepted.length ? h("p", { class: "hint" }, "Each one kept stays untested until a test at the refinement's step tries it.") : null,
     rejected.length
       ? h("div", null, h("div", { class: "label" }, "Not kept"),
           h("ul", { class: "small" }, rejected.map((each) =>
             h("li", null, each.index ? `proposal ${each.index}: ` : "", each.reason, each.hint ? h("span", { class: "muted" }, ` — ${each.hint}`) : null))))
-      : null,
-    h("p", { class: "hint" }, "Each stays untested until a test at this step tries it.")),
+      : null),
     { meta: h("span", { class: "muted" }, `kept in ${result.record}`) });
 }
 

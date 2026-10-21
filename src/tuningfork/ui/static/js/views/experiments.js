@@ -51,7 +51,7 @@ export async function experimentsView(root) {
     rows.length
       ? h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
           h("thead", null, h("tr", null, h("th", null, "experiment"), h("th", null, "kind"), h("th", null, "step"),
-            h("th", { class: "num" }, "samples"), h("th", null, "what you count"), h("th", null, "when"))),
+            h("th", { class: "num" }, "samples"), h("th", null, "what is counted"), h("th", null, "when"))),
           h("tbody", null, rows.map((experiment) =>
             h("tr", { class: "clickable", onclick: () => (location.hash = `#/experiments/${experiment.id}`) },
               h("td", null, h("a", { class: "mono", href: `#/experiments/${experiment.id}` }, short(experiment.id))),
@@ -72,7 +72,7 @@ export async function experimentsView(root) {
 /** What kind of experiment it is, in the pages' words. */
 export function kindName(experiment) {
   const toEnd = experiment.reach === "end";
-  const kinds = { ab: toEnd ? "A/B to the end" : "A/B", "forking-tokens": "forking tokens", screen: "test at a step" };
+  const kinds = { ab: toEnd ? "A/B to the end" : "A/B", "forking-tokens": "forking tokens", screen: toEnd ? "test at a step, to the end" : "test at a step" };
   return kinds[experiment.kind] || (toEnd ? "resample to the end" : "resample");
 }
 

@@ -1846,7 +1846,7 @@ run's own, other runs of the task there, the samples drawn there — and marks w
 count, before anything is sampled.
 
 The result is on the experiment's page: the answer it forked from, with the probed tokens
-ringed — solid where a forced token changed what the model did — then each position, the
+ringed — doubled where a forced token changed what the model did — then each position, the
 run's own token and each forced one, with where it flips. *In the answer* opens a position's
 token there; *On the step* opens it on the step's own Tokens view, where every token a probe
 forced is ringed and says what each probe found.

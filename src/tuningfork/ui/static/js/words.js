@@ -27,7 +27,7 @@ export const UI_WORDS = {
   "Wilson interval": "95% interval",
   "Fisher's exact test": "beyond chance",
   "Holm correction": "corrected for the tests planned",
-  "Bonferroni correction": "adjusted for comparing them all, with nothing declared",
+  "Bonferroni correction": "each p adjusted for comparing every behaviour, with nothing declared",
 };
 
 /** Labels more than one page shows, spelled once. */

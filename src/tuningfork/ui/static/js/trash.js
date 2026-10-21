@@ -9,14 +9,14 @@ import { live } from "./live.js";
 
 const NAMES = [
   ["refinements", "refinement"], ["runs", "run"], ["steps", "step"], ["experiments", "experiment"],
-  ["samples", "sample"], ["token_streams", "token stream"], ["launches", "started harness"], ["jobs", "job"],
+  ["samples", "sample"], ["token_streams", "token stream"], ["launches", "harness tuningfork started"], ["jobs", "job"],
   ["scenarios", "scenario"], ["variants", "saved variant"],
 ];
 
 /** What a permanent deletion removes, as a person reads it. */
 export function goesText(counts) {
   const parts = NAMES.filter(([key]) => counts?.[key]).map(([key, name]) =>
-    name === "started harness" && counts[key] !== 1 ? `${counts[key]} started harnesses` : plural(counts[key], name));
+    name === "harness tuningfork started" && counts[key] !== 1 ? `${counts[key]} harnesses tuningfork started` : plural(counts[key], name));
   return parts.length ? parts.join(", ") : "nothing";
 }
 

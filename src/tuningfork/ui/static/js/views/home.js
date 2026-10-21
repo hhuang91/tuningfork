@@ -219,7 +219,7 @@ const NODES = [
   ["experiment", "Experiment", "resample · A/B · tokens", 3, 1, "#/experiments"],
   ["sample", "Samples", "behaviours, counted", 2, 1, "#/experiments"],
   ["fork", "Forks", "samples run to the end", 1, 1, "#/experiments"],
-  ["refinement", "Refinement", "what it should do, first", 4, 2, "#/refine"],
+  ["refinement", "Refinement", "what the model should do", 4, 2, "#/refine"],
   ["proposal", "Proposals", "small, exact edits", 3, 2, "#/refine"],
   ["screen", "Test at a step", "each against the original", 2, 2, "#/refine"],
   ["validation", LABELS.validate, "held-out tasks included", 1, 2, "#/refine"],
@@ -320,7 +320,7 @@ const WORKFLOWS = [
   },
   {
     question: "How do I fix the skill?",
-    answer: "A refinement: what the model should do there declared first, small edits proposed and each tested at the step against the original, an edit that beats it given full test runs — and approved by you.",
+    answer: "A refinement: first what the model should do at the step, then small edits proposed and each tested there against the original, an edit that beats it given full test runs — and approved by you.",
     steps: ["At the step: Refine the skill here… — choose what the model should do there", "Propose edits: your own, an agent's over MCP, or the proposing model's", "Test them at the step, give full test runs to the one that beats the original, and approve it once the approval checks pass"],
     cli: "tuningfork refine start <run> <step> --target-rules '[…]'", href: "#/refine", go: "Refine",
   },
