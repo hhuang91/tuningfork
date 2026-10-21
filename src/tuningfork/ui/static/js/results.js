@@ -286,6 +286,18 @@ export function forkingCautions(report) {
 const SCREEN_UNFINISHED = ["Not every wording drew what was planned.",
   "Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made."];
 
+/** What a test's wording left out of its count (`errors`), in words: at the step, samples whose
+ *  call failed; to the end, forks something kept from measuring the wording, or that no check
+ *  judged (`fork_counted`) — one that timed out counts, as a failure. */
+function screenLeftOut(arm, whose, reach) {
+  const count = arm.errors || 0;
+  if (!count) return [];
+  const are = count === 1 ? "is" : "are";
+  return [reach === "end"
+    ? `${plural(count, "fork")} of ${whose} ${are} not counted: something kept ${count === 1 ? "it" : "each"} from measuring the wording, or no check judged it.`
+    : `${plural(count, "sample")} of ${whose} ${are} not counted, because the call itself failed.`];
+}
+
 /** A test at a step in a line, and its block's tone: a test run to the end is judged by the
  *  task's check, so what beat the original there is green, as a check that passed is. */
 export function screenHeadline(screen) {
@@ -351,7 +363,8 @@ export function found(job) {
         bars: [["original", screen.baseline?.target], ...screen.arms.map((arm) => [arm.name, arm.target, "change"])],
         notes: [
           ...(screen.complete ? [] : [SCREEN_UNFINISHED.join(" ")]),
-          ...leftOut(screen.baseline || {}, "the original"), ...screen.arms.flatMap((arm) => leftOut(arm, arm.name)),
+          ...[[screen.baseline || {}, "the original"], ...screen.arms.map((arm) => [arm, arm.name])]
+            .flatMap(([arm, whose]) => [...screenLeftOut(arm, whose, screen.reach), ...leftOut(arm, whose)]),
         ],
       };
     }
@@ -442,6 +455,8 @@ export function screenView(screen, { arms = {} } = {}) {
     return chip("within chance", "muted");
   };
   const drawn = (arm) => (arm.drawn < arm.planned ? chip(`${arm.drawn} of ${arm.planned} drawn`, "warn") : null);
+  // What a wording left out of its count, and why: its rate is over the rest.
+  const leftOutChip = (arm, whose) => (arm.errors ? chip(`${arm.errors} not counted`, "warn", screenLeftOut(arm, whose, screen.reach)[0]) : null);
   // A fork run to the end that timed out failed, as the gate counts it: said, since it is not the check.
   const timedOut = (arm) => (arm.timeouts ? chip(`${arm.timeouts} timed out`, "warn", "Counted as failures, as the approval checks count them.") : null);
   const name = (arm) => (arms[arm.name]?.id
@@ -487,11 +502,11 @@ export function screenView(screen, { arms = {} } = {}) {
         h("tbody", null,
           h("tr", null, h("td", null, name({ name: "original" })),
             h("td", null, screen.baseline.target.total ? rateBar(screen.baseline.target) : h("span", { class: "muted" }, "none drawn"),
-              screen.quick ? null : drawn(screen.baseline), timedOut(screen.baseline)),
+              screen.quick ? null : drawn(screen.baseline), leftOutChip(screen.baseline, "the original"), timedOut(screen.baseline)),
             h("td", null, ""), h("td", null, ""), h("td", { class: "muted small" }, originalNote)),
           screen.arms.map((arm) => h("tr", null,
             h("td", null, name(arm)),
-            h("td", null, arm.target.total ? rateBar(arm.target, "change") : h("span", { class: "muted" }, "none drawn"), drawn(arm), timedOut(arm)),
+            h("td", null, arm.target.total ? rateBar(arm.target, "change") : h("span", { class: "muted" }, "none drawn"), drawn(arm), leftOutChip(arm, arm.name), timedOut(arm)),
             h("td", { class: "num mono" }, formatP(arm.p_value)),
             h("td", { class: "num mono" }, formatP(arm.adjusted_p)),
             h("td", null, verdict(arm))))))),

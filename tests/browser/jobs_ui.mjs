@@ -128,7 +128,7 @@ try {
   const mapped = await page.eval(`(async () => {
     const { madeLink, onPage, startedBy } = await import(new URL("js/jobs.js", location.href).href);
     const { startedFrom } = await import(new URL("js/api.js", location.href).href);
-    const { found } = await import(new URL("js/results.js", location.href).href);
+    const { found, screenView } = await import(new URL("js/results.js", location.href).href);
     const { emptyLog, jobSummary } = await import(new URL("js/views/jobs.js", location.href).href);
     const done = (kind, result = {}, links = {}) => madeLink({ kind, status: "done", result, links });
     const rate = (successes, total) => ({ successes, total, point: successes / total, low: 0, high: 1 });
@@ -137,19 +137,32 @@ try {
     const probeOpen = found({ kind: "forking-tokens", result: { forking: { positions: [], missed: { undecided: [12] }, target: null } } });
     const unfinished = found({ kind: "screen-to-end", result: { screen: {
       complete: false, reach: "end", target: null, survivors: [],
-      baseline: { target: rate(0, 3), timeouts: 1 }, arms: [{ name: "p1", target: rate(1, 3), timeouts: 2 }],
+      baseline: { target: rate(0, 3), timeouts: 1 }, arms: [{ name: "p1", target: rate(1, 3), errors: 1, timeouts: 2 }],
     } } });
+    const stepLeft = found({ kind: "screen", result: { screen: {
+      complete: true, reach: "step", target: null, survivors: [],
+      baseline: { target: rate(1, 3) }, arms: [{ name: "p1", target: rate(2, 3), errors: 2 }],
+    } } });
+    // The test's own page says it too: a chip on the wording's row, the same words in its tooltip.
+    const tested = screenView({ complete: true, reach: "end", target: null, survivors: [], family: 1, alpha: 0.05,
+      baseline: { target: rate(0, 3), drawn: 3, planned: 3 }, arms: [{ name: "p1", target: rate(1, 3), drawn: 3, planned: 3, errors: 1 }] });
+    const leftChip = [...tested.querySelectorAll(".chip.tone-warn")].find((c) => c.textContent === "1 not counted");
     const twoCounted = found({ kind: "resample", result: { distribution: { total: 2, errors: 1, clusters: [{ letter: "A", rate: rate(2, 2) }] } } });
     // A job's page, drawn from a job alone: its panels' titles, its buttons, and its text.
     const drawn = (job) => {
       const parts = jobSummary({ id: "j1", status: "done", params: {}, result: {}, links: {}, ...job });
       return {
         made: parts.filter((part) => part.querySelector("h2")?.textContent === "What it made").length,
+        titles: parts.map((part) => part.querySelector("h2")?.textContent).filter(Boolean),
         buttons: parts.flatMap((part) => [...part.querySelectorAll("a.btn")].map((a) => a.textContent)),
+        primary: parts.flatMap((part) => [...part.querySelectorAll("a.btn-primary")].map((a) => a.textContent)),
         text: parts.map((part) => part.textContent).join(" | "),
       };
     };
     const chain = drawn({ kind: "chain", result: { id: "ch1", links: [{}, {}], rate: rate(1, 2) }, links: { runs: ["r1", "r2"] } });
+    const stopped = drawn({ kind: "chain", status: "cancelled", result: { id: "ch1", links: [{}] }, links: { runs: ["r1"] } });
+    const validated = drawn({ kind: "validate", result: { refinement: "rf1", validation: "v1", forward: null, training: null, held_out: [] },
+      links: { experiments: ["e1"], runs: ["r1"] } });
     const fork = drawn({ kind: "fork", links: { runs: ["r1"] } });
     const batch = drawn({ kind: "batch", result: { task_id: "t/1", rate: rate(1, 3), not_counted: 2 }, links: { runs: Array.from({ length: 25 }, (_, i) => "run" + i) } });
     return JSON.stringify({
@@ -168,9 +181,13 @@ try {
       probeNull: [probeNull.seen, probeNull.notes.length],
       probeOpen: probeOpen.notes,
       unfinished: unfinished.notes,
+      stepLeft: stepLeft.notes,
+      leftChip: leftChip?.title || null,
       oneSample: found({ kind: "resample", result: sampled }).text,
       twoCounted: [twoCounted.text, ...twoCounted.notes],
       chain: [chain.made, chain.buttons],
+      stopped: stopped.buttons,
+      validated: [validated.titles, validated.primary, validated.buttons],
       fork: [fork.buttons, fork.text.includes("1 run:")],
       runs: [batch.text.includes("2 runs are not counted; each one's page says why."), batch.text.includes("and 5 more")],
       logs: [
@@ -194,13 +211,21 @@ try {
     probeOpen: ["Still undecided there. At [12], the run's own token led elsewhere more often than to its own behaviour, so a later token decided it."],
     unfinished: [
       "Not every wording drew what was planned. Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made.",
-      "1 fork of the original timed out, counted as a failure.", "2 forks of p1 timed out, counted as failures.",
+      "1 fork of the original timed out, counted as a failure.",
+      "1 fork of p1 is not counted: something kept it from measuring the wording, or no check judged it.",
+      "2 forks of p1 timed out, counted as failures.",
     ],
+    stepLeft: ["2 samples of p1 are not counted, because the call itself failed."],
+    leftChip: "1 fork of p1 is not counted: something kept it from measuring the wording, or no check judged it.",
     oneSample: "One behaviour, in the one sample.",
     twoCounted: ["One behaviour, in both samples counted.", "1 sample is not counted, because the call itself failed."],
-    // A chain's page leads to it once; a fork's names its run once; a batch says what its rate
-    // leaves out, and every run it made can be reached.
+    // A chain's page leads to it once, stopped too; a validation leads with its own result, its
+    // experiment only to open; a fork's names its run once; a batch says what its rate leaves
+    // out, and every run it made can be reached.
     chain: [1, ["See the chain, link by link"]],
+    stopped: ["See the chain, link by link"],
+    validated: [["What it found", "What it made", "What it was asked"], ["The approval checks, in the refinement"],
+      ["The approval checks, in the refinement", "Open the experiment"]],
     fork: [["See the result"], false],
     runs: [true, true],
     // An ended job's empty log says why, and points to what the page shows above it.

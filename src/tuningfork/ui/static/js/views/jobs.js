@@ -256,23 +256,9 @@ export function jobSummary(job) {
       "What finished before that is stored and counted; anything it cut off is not."));
   }
   // A job that made an experiment hands off to it, done: the page of what it made shows the whole.
+  // A kind whose result is told in a panel of its own leads with that, then what it made.
   const finding = job.status === "done" ? found(job) : null;
-  parts.push(...(finding ? [foundPanel(job, finding)] : madeView(job)));
-  const result = job.result;
-  if (result && job.status === "done" && !finding) {
-    // A question at a held call, and a check tried: this page is their only home once the call
-    // is decided or the tester closed.
-    if (job.kind === "hold-console" && result.reply) parts.push(panel("What it answered", replyCard(job)));
-    if (job.kind === "check-trial" && result.found) parts.push(panel("What the check said", verdictView(result)));
-    if (job.kind === "propose") parts.push(proposedView(result));
-    if (job.kind === "validate") parts.push(validatedView(result));
-    if (job.kind === "tokens" && result.run_id) {
-      const stream = result.view?.stream;
-      parts.push(panel("What it made", h("div", { class: "made" },
-        h("a", { class: "btn btn-primary", href: `#/runs/${enc(result.run_id)}/${result.step}?view=tokens` }, "See its tokens"),
-        h("span", { class: "muted small" }, stream ? `${plural(stream.tokens, "token")} scored${stream.exact === false ? ", rebuilt approximately" : ""}` : ""))));
-    }
-  }
+  parts.push(...(finding ? [foundPanel(job, finding)] : [...ownPanels(job), ...madeView(job)]));
   // What it was asked is kept for the record: folded, the page leading with what it did.
   parts.push(foldPanel("What it was asked", [
     kv(Object.entries(job.params || {})
@@ -282,6 +268,26 @@ export function jobSummary(job) {
     job.plan ? h("details", { class: "fold" }, h("summary", null, "The plan it ran"), h("pre", { class: "code" }, pretty(job.plan))) : null,
   ], { className: "record-panel", meta: h("span", { class: "muted" }, `queued ${when(job.created_at)}`) }));
   return parts;
+}
+
+/** A finished job's result in a panel of its own (`OWN_PANEL`): what it was its only home for, or
+ *  what the page of what it made does not lead with. */
+function ownPanels(job) {
+  const result = job.result;
+  if (!result || job.status !== "done") return [];
+  // A question at a held call, and a check tried: this page is their only home once the call
+  // is decided or the tester closed.
+  if (job.kind === "hold-console" && result.reply) return [panel("What it answered", replyCard(job))];
+  if (job.kind === "check-trial" && result.found) return [panel("What the check said", verdictView(result))];
+  if (job.kind === "propose") return [proposedView(result)];
+  if (job.kind === "validate") return [validatedView(result)];
+  if (job.kind === "tokens" && result.run_id) {
+    const stream = result.view?.stream;
+    return [panel("What it made", h("div", { class: "made" },
+      h("a", { class: "btn btn-primary", href: `#/runs/${enc(result.run_id)}/${result.step}?view=tokens` }, "See its tokens"),
+      h("span", { class: "muted small" }, stream ? `${plural(stream.tokens, "token")} scored${stream.exact === false ? ", rebuilt approximately" : ""}` : "")))];
+  }
+  return [];
 }
 
 /** What the built-in proposer made: each proposal kept, each one not and why — every one kept
@@ -365,27 +371,30 @@ function madeView(job) {
   const links = job.links || {};
   const experiments = links.experiments || [];
   const runs = links.runs || [];
-  // Done, what it made and where that lives — unless a panel of its own below leads there.
-  const done = job.status === "done" && !OWN_PANEL.has(job.kind) ? madeLink(job) : null;
+  // A panel of its own above holds the result: what it made here is only to open.
+  const own = OWN_PANEL.has(job.kind);
+  // Done, what it made and where that lives — and a chain's page, stopped too, holding the links
+  // it got through.
+  const lead = own ? null : job.status === "done" || (job.kind === "chain" && job.result?.id) ? madeLink(job) : null;
   if (!experiments.length && !runs.length) {
-    if (!done) return [];
+    if (!lead) return [];
     // Nothing of its own to list: a chain whose links made no run, or what a server test or a
     // check run along the runs found, which another page shows.
     return job.kind === "chain"
-      ? [panel("What it made", madeRow(job, done))]
-      : [panel("What it found", h("div", { class: "made" }, h("a", { class: "btn btn-primary", href: done.href }, "See the results"),
-          h("span", { class: "muted small" }, job.kind === "server-check" ? "on Connections" : done.text)))];
+      ? [panel("What it made", madeRow(job, lead))]
+      : [panel("What it found", h("div", { class: "made" }, h("a", { class: "btn btn-primary", href: lead.href }, "See the results"),
+          h("span", { class: "muted small" }, job.kind === "server-check" ? "on Connections" : lead.text)))];
   }
   // An A/B's two arms are one report: its first arm's page shows both.
   const report = experiments[0];
-  // Runs and nothing else, done — a batch's, a chain's, a fork's: where they are, how many passed,
-  // and how many the rate leaves out.
-  const made = report ? null : done;
+  // Runs and nothing else — a batch's, a chain's, a fork's: where they are, how many passed, and
+  // how many the rate leaves out.
+  const made = report ? null : lead;
   const batch = job.kind === "batch" && job.status === "done" ? job.result || {} : {};
   const left = batch.not_counted || 0;
   return [panel("What it made", h("div", { class: "stack", style: { gap: "8px" } },
     report ? h("div", { class: "made" },
-      h("a", { class: "btn btn-primary", href: `#/experiments/${report}` }, job.status === "done" ? "See the result" : "Open the experiment"),
+      h("a", { class: own ? "btn" : "btn btn-primary", href: `#/experiments/${report}` }, job.status === "done" && !own ? "See the result" : "Open the experiment"),
       h("span", { class: "muted small" }, experiments.length > 1 ? `experiments ${experiments.map(short).join(", ")}` : `experiment ${short(report)}`)) : null,
     made ? madeRow(job, made) : null,
     batch.rate ? h("div", null, h("span", { class: "muted" }, "passed  "), rateBar(batch.rate, "ok")) : null,
@@ -396,8 +405,8 @@ function madeView(job) {
     job.status === "running" || job.status === "queued" ? null : kv([["cost", costOf({ job: job.id })]])))];
 }
 
-/** The way to what a finished job made, and its name — a chain's page, link by link, with how
- *  its links went. */
+/** The way to what a job made, and its name — a chain's page, link by link, with how its links
+ *  went, whether it finished or was stopped. */
 function madeRow(job, made) {
   const chain = job.kind === "chain" ? job.result || {} : null;
   return h("div", { class: "made" },

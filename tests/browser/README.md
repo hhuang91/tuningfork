@@ -121,10 +121,10 @@ who started it. The job pages of a probe, an A/B, a test at a step and forks run
 say what they found in a line, without the experiment's own views, and lead to them; a cancelled
 job keeps its log open. The note when a job ends leads to what it made — a held call's samples to
 their experiment — or to the job, where what it made is the page already open: a server test
-started on Connections. And what each kind of job made and found, the cautions a probe or a test
-leaves open (a probe that saw no flip says what it could have seen, as its own page does), why an
-ended job's log is empty, the job pages of a chain, a fork and a batch, and each page's name are
-worked out as the list and the pages say them.
+started on Connections. And what each kind of job made and found (a probe that saw no flip says
+what it could have seen, as its own page does), the cautions a probe or a test leaves open (a
+test's own page says what it left out of its count too), why an ended job's log is empty, the job pages of a chain, a fork, a batch and a validation, and each
+page's name are worked out as the list and the pages say them.
 
 Set `TUNINGFORK_UPLOAD` to a small CSV on the browser's machine to upload it through the
 page's own file picker; without it, the test types the file in as text instead.
