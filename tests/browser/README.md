@@ -74,7 +74,8 @@ with every event shown once; that cancelling takes two clicks and keeps what was
 sampled, and a running job's time moves while nothing is sent; that a scenario made in the
 page — its skill folder shown where it resolves, its check flagged as the shell command it
 is, leaving it unsaved asking first, a file uploaded through its picker — runs as a batch
-and shows its pass rate, and that its check, tried on the run it judged, gives the verdict
+(chosen on Run a task, where a task file's path, on the same line and named apart, is greyed out
+while a scenario is chosen) and shows its pass rate, and that its check, tried on the run it judged, gives the verdict
 the run got, and passes on a report written with the right keys; that at a held call, sampling places the held answer among the
 sampled behaviours and is filed under the step once the call is recorded, while a question
 to the model comes back marked a hypothesis; on the Connections page, that a server
@@ -131,7 +132,8 @@ Connections. And what each kind of job made and found (a probe that saw no flip 
 have seen, as its own page does), the cautions a probe or a test leaves open (a test's own page
 says what it left out of its count too), why an ended job's log is empty, the job pages of a
 chain, a fork, a batch and a validation, the list's parts with both lines of queued work, and each
-page's name are worked out as the list and the pages say them.
+page's name are worked out as the list and the pages say them. A form's plan answered after the
+form changed again is dropped, the newer plan shown.
 
 Set `TUNINGFORK_UPLOAD` to a small CSV on the browser's machine to upload it through the
 page's own file picker; without it, the test types the file in as text instead.

@@ -257,6 +257,36 @@ try {
       "Nothing yet.",
     ],
   }), `what each kind of job made, what it found, why its log is empty and each page's name are worked out as the pages say them (${mapped})`);
+  // A plan answered after the form changed again is not shown: a newer one is coming (found in
+  // review: on Run a task, a scenario chosen while the task file's plan was on its way got that
+  // file's task back, and its own plan was refused). Each answer here comes when the test says.
+  const raced = await page.eval(`(async () => {
+    const { planForm } = await import(new URL("js/forms.js", location.href).href);
+    const pending = [], shown = [];
+    const x = document.createElement("input");
+    x.name = "x";
+    x.value = "1";
+    const { element } = planForm({
+      kind: "test", fields: [x], read: (form) => ({ x: form.querySelector('[name="x"]').value }),
+      render: (plan) => { shown.push(plan.x); return document.createTextNode(plan.x); },
+      send: (params) => new Promise((resolve) => pending.push(() => resolve({ plan: params }))),
+    });
+    document.body.append(element);
+    const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+    const typed = (value) => { x.value = value; x.dispatchEvent(new Event("input", { bubbles: true })); };
+    pending.shift()();   // the plan for x = 1, asked as the form opened
+    await wait(50);
+    typed("2");
+    await wait(450);     // x = 2's plan is asked for
+    typed("3");
+    pending.shift()();   // and answered while x = 3's is yet to be asked
+    await wait(450);
+    pending.shift()();   // x = 3's
+    await wait(50);
+    element.remove();
+    return JSON.stringify(shown);
+  })()`);
+  check(raced === JSON.stringify(["1", "3"]), `a plan answered after the form changed again is dropped, the newer one shown (${raced})`);
   await page.eval(`location.hash = "#/jobs/${resampleId}"`);
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "See the result")`), "the job's page again");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
@@ -374,6 +404,8 @@ try {
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Run this task again…").click()`);
   await until(() => page.eval(`document.querySelector('.plan-form [name="harness"]')?.value === "fake"`), "the batch form, as the run was launched");
   await planShows(page, "tally-lab/1");
+  check(await page.eval(`document.querySelector('.plan-form [name="scenario"]').value === "" && !document.querySelector('.plan-form [name="spec"]').disabled`),
+    "a run's task file is named by its path, no scenario chosen, the path open to edit");
   check(await page.eval(`document.querySelector(".check-command pre")?.textContent.includes("row_count")`), "the check is shown whole, as the shell command it is");
   check(await page.eval(`document.querySelector(".plan-preview > .stack > :first-child")?.classList.contains("check-command")`), "how a run passes comes first in the plan");
   check(await page.eval(`[...document.querySelector('.plan-form [name="eval"]').options].some((option) => option.textContent.includes(" — "))`),
@@ -601,6 +633,28 @@ try {
   await until(() => page.eval(`location.hash.startsWith("#/batch?scenario=")`), "the batch form for the scenario");
   await page.eval(`location.hash = "#/batch?scenario=${scenarioName}&harness=fake&model=m"`);
   await until(() => page.eval(`document.querySelector('.plan-form [name="scenario"]')?.value === ${JSON.stringify(scenarioName)}`), "the scenario chosen");
+  // A task file by its path is the scenario's alternative, on its line: greyed while a scenario
+  // is chosen, open once none is (found in use: below it, it read as one more field to fill in).
+  // Each control its own name — the field's label is the scenario's, the path has its own — and
+  // both read the field's help out with them, which says the two are alternatives.
+  check(await page.eval(`(() => {
+    const scenario = document.querySelector('.plan-form [name="scenario"]'), spec = document.querySelector('.plan-form [name="spec"]');
+    const help = document.getElementById(scenario.getAttribute("aria-describedby"));
+    return scenario.labels.length === 1 && scenario.labels[0].textContent === "Scenario"
+      && spec.labels.length === 0 && spec.getAttribute("aria-label") === "Task file, by its path"
+      && !!help && help.textContent.includes("With none chosen") && spec.getAttribute("aria-describedby") === help.id;
+  })()`), "the scenario and the task file's path are each named on their own, the field's help read with both");
+  check(await page.eval(`(() => {
+    const scenario = document.querySelector('.plan-form [name="scenario"]'), spec = document.querySelector('.plan-form [name="spec"]');
+    const beside = !!scenario.closest(".field-or") && scenario.closest(".field-or") === spec.closest(".field-or");
+    const greyed = spec.disabled && Number(getComputedStyle(spec).opacity) < 1;
+    scenario.value = "";
+    scenario.dispatchEvent(new Event("change", { bubbles: true }));
+    const open = !spec.disabled;
+    scenario.value = ${JSON.stringify(scenarioName)};
+    scenario.dispatchEvent(new Event("change", { bubbles: true }));
+    return beside && greyed && open && spec.disabled;
+  })()`), "a scenario chosen, the task file's path beside it is greyed out; with none, it opens");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "1");
   await planShows(page, "tally-scenario/1");
   await startButtonReady(page, "Start the runs");

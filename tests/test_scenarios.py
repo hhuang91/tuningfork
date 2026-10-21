@@ -259,3 +259,26 @@ def test_a_scenario_runs_as_a_batch(tmp_path, mock_server, monkeypatch):
         (summary,) = scenarios.list_scenarios(stack.store)
         (result,) = summary.results
         assert result["runs"] == 1 and result["passed"]["total"] == 1
+
+
+def test_a_refusal_of_a_scenarios_own_task_file_names_the_scenario(tmp_path, mock_server, monkeypatch):
+    # The web UI greys a task file's path out while a scenario is chosen: a fault in the file the
+    # scenario keeps points at the scenario, the field the person filled in.
+    import shutil
+
+    from tuningfork.control import ControlClient, ControlError
+    from tests.helpers import task_stack
+
+    with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+        kept = tmp_path / "kept-skill"
+        shutil.copytree(stack.spec.resolved_skill_dir(), kept)
+        data = stack.spec.to_dict()
+        data["tuningfork"]["skill_dir"] = str(kept)
+        scenarios.save_scenario(stack.store.home, "tally", data, etag=None)
+        shutil.rmtree(kept)
+        with ControlClient(stack.url) as client:
+            for kind in ("batch", "chain"):
+                with pytest.raises(ControlError) as refused:
+                    client.submit(kind, {"scenario": "tally", "n": 1, "harness": "fake", "model": "m"})
+                assert refused.value.error["field"] == "scenario", kind
+                assert "skill folder" in refused.value.error["message"], kind

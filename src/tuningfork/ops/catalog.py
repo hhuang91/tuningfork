@@ -496,6 +496,14 @@ def _spec_of(context: JobContext, params: Any) -> Any:
     return spec_path(context.home, params.scenario) if params.scenario else Path(params.spec)
 
 
+def _scenarios_own(params: Any, error: OperationError) -> OperationError:
+    """A refusal of the task file a scenario keeps is the scenario's: it names the field that was
+    filled in, not a path nobody typed (the web UI greys that path out while a scenario is chosen)."""
+    if params.scenario and error.field == "spec":
+        error.field = "scenario"
+    return error
+
+
 def prepare_batch_job(context: JobContext, params: BatchParams) -> Any:
     from pathlib import Path
 
@@ -503,13 +511,16 @@ def prepare_batch_job(context: JobContext, params: BatchParams) -> Any:
 
     spec = _spec_of(context, params)
     proxy = context.proxy.status()
-    return prepare_batch(
-        context.store, spec, eval_id=params.eval, n=params.n, model=params.model,
-        harness=params.harness, skill_file=Path(params.skill_file) if params.skill_file else None,
-        concurrency=params.concurrency, base_url=f"{proxy.url}/v1", proxy=proxy,
-        include_held_out=params.include_held_out, harness_options=params.harness_options or None,
-        skill_dir=Path(params.skill_dir) if params.skill_dir else None,
-    )
+    try:
+        return prepare_batch(
+            context.store, spec, eval_id=params.eval, n=params.n, model=params.model,
+            harness=params.harness, skill_file=Path(params.skill_file) if params.skill_file else None,
+            concurrency=params.concurrency, base_url=f"{proxy.url}/v1", proxy=proxy,
+            include_held_out=params.include_held_out, harness_options=params.harness_options or None,
+            skill_dir=Path(params.skill_dir) if params.skill_dir else None,
+        )
+    except OperationError as error:
+        raise _scenarios_own(params, error) from None
 
 
 def execute_batch_job(context: JobContext, prepared: Any, *, progress: Any, cancel: Any) -> Any:
@@ -539,12 +550,15 @@ def prepare_chain_job(context: JobContext, params: ChainParams) -> Any:
 
     spec = _spec_of(context, params)
     proxy = context.proxy.status()
-    return prepare_chain(
-        context.store, spec, eval_id=params.eval, n=params.n, model=params.model,
-        harness=params.harness, base_url=f"{proxy.url}/v1", proxy=proxy,
-        harness_options=params.harness_options or None, tell=params.tell,
-        budget_seconds=params.budget_seconds,
-    )
+    try:
+        return prepare_chain(
+            context.store, spec, eval_id=params.eval, n=params.n, model=params.model,
+            harness=params.harness, base_url=f"{proxy.url}/v1", proxy=proxy,
+            harness_options=params.harness_options or None, tell=params.tell,
+            budget_seconds=params.budget_seconds,
+        )
+    except OperationError as error:
+        raise _scenarios_own(params, error) from None
 
 
 def execute_chain_job(context: JobContext, prepared: Any, *, progress: Any, cancel: Any) -> Any:

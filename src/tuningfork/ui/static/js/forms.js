@@ -184,15 +184,19 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     checking = true;
     sync();
     replace(status, h("span", { class: "muted small waiting-inline" }, h("span", { class: "spinner" }), "checking…"));
+    // The form changed while this was asked: a newer plan was asked for, or is about to be, the
+    // timer running (found in review: on Run a task, a scenario chosen while the task file's plan
+    // was on its way got that file's task back, and its own plan was refused).
+    const stale = () => mine !== asked || timer !== null;
     try {
       const answer = await post(params, { dry_run: true });
-      if (mine !== asked) return; // the form changed while this was asked
+      if (stale()) return;
       shown = JSON.stringify(params);
       mark(null);
       replace(status);
       replace(preview, render(answer.plan));
     } catch (failure) {
-      if (mine !== asked) return;
+      if (stale()) return;
       shown = null;
       mark(touched ? failure.field : null);
       replace(status, formError(failure, { quiet: !touched }));
