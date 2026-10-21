@@ -635,13 +635,19 @@ try {
   await until(() => page.eval(`document.querySelector('.plan-form [name="scenario"]')?.value === ${JSON.stringify(scenarioName)}`), "the scenario chosen");
   // A task file by its path is the scenario's alternative, on its line: greyed while a scenario
   // is chosen, open once none is (found in use: below it, it read as one more field to fill in).
+  // Each control its own name — the field's label is the scenario's, the path has its own — and
+  // both read the field's help out with them, which says the two are alternatives.
+  check(await page.eval(`(() => {
+    const scenario = document.querySelector('.plan-form [name="scenario"]'), spec = document.querySelector('.plan-form [name="spec"]');
+    const help = document.getElementById(scenario.getAttribute("aria-describedby"));
+    return scenario.labels.length === 1 && scenario.labels[0].textContent === "Scenario"
+      && spec.labels.length === 0 && spec.getAttribute("aria-label") === "Task file, by its path"
+      && !!help && help.textContent.includes("With none chosen") && spec.getAttribute("aria-describedby") === help.id;
+  })()`), "the scenario and the task file's path are each named on their own, the field's help read with both");
   check(await page.eval(`(() => {
     const scenario = document.querySelector('.plan-form [name="scenario"]'), spec = document.querySelector('.plan-form [name="spec"]');
     const beside = !!scenario.closest(".field-or") && scenario.closest(".field-or") === spec.closest(".field-or");
-    // Each control its own name: the field's label is the scenario's, the path has its own.
-    const named = scenario.labels.length === 1 && scenario.labels[0].textContent === "Scenario"
-      && spec.labels.length === 0 && spec.getAttribute("aria-label") === "Task file, by its path";
-    const greyed = spec.disabled && Number(getComputedStyle(spec).opacity) < 1 && named;
+    const greyed = spec.disabled && Number(getComputedStyle(spec).opacity) < 1;
     scenario.value = "";
     scenario.dispatchEvent(new Event("change", { bubbles: true }));
     const open = !spec.disabled;

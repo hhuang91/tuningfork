@@ -51,10 +51,14 @@ export async function batchView(root, _, scope) {
   const anotherSpec = () => replace(task, h("option", { value: "" }, "its first task"));
   // A task file by its path is the scenario's alternative, on the same line: open only while no
   // scenario is chosen, greyed while one is.
-  const scenarioSelect = h("select", { class: "field", name: "scenario", id: "batch-scenario" },
+  // Both read the field's help out with them: it says the two are alternatives.
+  const scenarioSelect = h("select", { class: "field", name: "scenario", id: "batch-scenario", "aria-describedby": "batch-scenario-help" },
     h("option", { value: "" }, "— no scenario —"),
     scenarios.map((each) => h("option", { value: each.name, selected: each.name === prefill.scenario }, each.name)));
-  const specInput = input("spec", { value: prefill.spec, placeholder: "/path/to/evals.json", oninput: anotherSpec, "aria-label": "Task file, by its path" });
+  const specInput = input("spec", {
+    value: prefill.spec, placeholder: "/path/to/evals.json", oninput: anotherSpec,
+    "aria-label": "Task file, by its path", "aria-describedby": "batch-scenario-help",
+  });
   const choose = () => {
     specInput.disabled = scenarioSelect.value !== "";
   };
@@ -80,7 +84,7 @@ export async function batchView(root, _, scope) {
       h("div", { class: "form-field wide" },
         h("label", { class: "form-label", for: "batch-scenario" }, "Scenario"),
         h("div", { class: "field-or" }, scenarioSelect, h("span", { class: "or" }, "or"), specInput),
-        h("span", { class: "form-help" }, "A scenario is a task file kept in the recordings folder. With none chosen, name a task file (an evals.json) on the proxy's machine by its path.")),
+        h("span", { class: "form-help", id: "batch-scenario-help" }, "A scenario is a task file kept in the recordings folder. With none chosen, name a task file (an evals.json) on the proxy's machine by its path.")),
       field("Task in the file", task, { help: "A task file can hold several tasks. Each run does this one.", wide: true }),
       field("Run as", h("select", { class: "field", name: "mode" },
         h("option", { value: "batch" }, "a batch: every run given the skill fresh"),
