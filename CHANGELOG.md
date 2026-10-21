@@ -10,17 +10,19 @@ The CLI, MCP and the docs keep tuningfork's precise words.
   Connections; then Start (Scenarios, Run a task…, Import a chat, Live, Skills, Jobs), Record
   (Runs, Chains), Measure (Experiments), Improve (Refine) and the Trash. Its foot says how the
   proxy, the server and the harnesses are. What needs a running proxy stays in it, greyed, saying
-  why.
-- **Plain words on the pages**: an arm is a *wording*, a target *what to count* (a refinement's,
+  why. Narrower, it keeps its icons; on a phone, it opens from the top bar.
+- **Plain words on the pages**: an arm is a *wording*, a target *what you count* (a refinement's,
   *what the model should do*), a screen a *test at this step*, a validation *full test runs*, the
   gate the *approval checks*, a spec a *task file*. The CLI, MCP, the docs and every sentence the
-  server writes keep the precise words. The glossary holds both: the Words page shows them side
-  by side, and `tuningfork glossary` finds a term by either.
-- **One meaning a colour**: green and red only for a check's verdict — a run's, a fork's, a
-  gate's, a significant change in how often a task's check passes; amber a caution; the accent
-  what can be acted on, what is current or significant, and every rate, a pass rate included;
-  purple a skill's own words; teal, with ✎, what a person or tuningfork changed; grey everything
-  else. The Guide shows the legend in a line.
+  server writes keep the precise words. The glossary holds both: the Words page (`#/words`, where
+  older `#/guide?term=` links land) shows them side by side, and `tuningfork glossary` finds a
+  term by either and prints the page's phrase.
+- **One meaning a colour**: green and red for a check's verdict — a run's, a fork's, a gate's, a
+  significant change in how often a task's check passes; amber a caution; the accent what can be
+  acted on, what is current or significant, the model's own answer and every rate, a pass rate
+  included; purple a skill's own words; teal, with ✎, what a person or tuningfork changed; grey
+  everything else. Red keeps only what every page means by it besides: a diff's removed lines, a
+  button that deletes, a field to put right. The Guide shows the legend in a line.
 - **Each page leads with its take-away**: a run's verdict in a strip under its title, with the
   call that made the check's complaint where the check was run along the run; on the divergence
   page, the step whose behaviour best predicts a pass; Connections' setup at a glance; a
@@ -28,27 +30,32 @@ The CLI, MCP and the docs keep tuningfork's precise words.
 - **A run's page reads top to bottom, its work beside it.** Every step's row has *Show details*
   and *Work from here*. One step's details are open at a time. A step's actions, and the forms
   they open, sit in a column beside the run, each step's kept as it was left, and the address
-  names that work, so a reload brings it back. The rail's lines move you through the run and open
-  nothing. On an imported or live run, *Fork from here…* is greyed, and points to a scenario of
-  the run instead.
+  names that work, so a reload brings it back; Escape hides it. The rail's lines move you through
+  the run and open nothing. On an imported or live run, *Fork from here…* is greyed, and points to
+  a scenario of the run instead.
 - **A refinement's page has a section for each stage**, numbered as the stepper numbers it: the
-  two ways to propose side by side, the proposals with the test of the ticked ones under them,
-  full test runs, approval. The current stage's form is open as the page opens, and no form opens
-  by itself after.
+  two ways to propose side by side; the proposals, with the screen of the ticked ones (a *test at
+  this step*) under them; the validations (*full test runs*); approval. The current stage's form
+  is open as the page opens, and no form opens by itself after.
 - **A finished job hands off to what it made**: its page says what it found in a line and leads
   there, its log folded. The Jobs list is in three parts — running and queued, each queued job
   saying its place in its line; finished; stopped or failed — and names each job by the section
   of its work, links what it made, and says who started it: you, from which page, or an agent
-  over MCP. A job's link to the step it worked at opens that step.
-- **Add a skill** (`tuningfork add-skill`, `forget-skill`, the Skills page's *Add a skill…*): a
-  folder on this machine, remembered where it is, or an uploaded folder or a run's skill, kept as
-  tuningfork's own copy. An approved edit is written to the folder, or to the copy.
+  over MCP; `jobs list` and `jobs show` say so too. A job's link to the step it worked at opens
+  that step.
+- **Add a skill** (`tuningfork add-skill`, `forget-skill`, the Skills page's *Add a skill…*, a
+  run's *Keep its skill…*): a folder on this machine, remembered where it is, or an uploaded
+  folder or a run's skill, kept as tuningfork's own copy. An approved edit is written to the
+  folder, or to the copy. Forgetting one drops its record and never deletes: a copy is moved aside
+  to `<home>/skills/.forgotten/`. No MCP tool adds one. A skill's page and `tuningfork skill` say
+  how its folder was added, and its page runs it again from the scenarios that name it.
 - **Token work is held to the server check.** Scoring an answer and finding forking tokens are
   greyed on the page, and refused before anything is sent, where the check found the server
-  without what they need. The check now measures the chat endpoint's logprobs too, which a
-  resample's kept tokens need (*Keep each sample's tokens*, new on its form). A server on the
-  internet that asks for a key, or is not llama.cpp's, is said to be a hosted model's API:
-  tuningfork records your agent's calls through it, its own key passed on.
+  without what they need. The check now measures the chat endpoint's logprobs too, in one more
+  short call, which a resample's kept tokens need (*Keep each sample's tokens*, new on its form).
+  A server on the internet that asks for a key, or is not llama.cpp's, is said to be a hosted
+  model's API: tuningfork records your agent's calls through it, its own key passed on, and the
+  switch on Connections takes one, where it refused one before.
 - **The forking-token probe says what reached each behaviour**: whether the target counts it,
   and which tokens led to it — its page, `tuningfork experiment`, MCP. A flip is the accent's
   colour, its direction said in words. Where the step's answer is a tool call, the form offers
@@ -58,7 +65,8 @@ The CLI, MCP and the docs keep tuningfork's precise words.
   task…* takes a task file's path beside the scenario, greyed while a scenario is chosen.
 - **The README's pictures**, retaken in the redesigned pages, with a new one: a chat had
   elsewhere, made a scenario. `docs/images/shots.mjs` takes them all, the GIF included, in one
-  command, and keeps back any picture that shows a path naming a person or a place.
+  command, and keeps back any picture that shows a path naming a person or a place, or a word you
+  list (`TUNINGFORK_SHOTS_PRIVATE`).
 
 Changed:
 
@@ -67,15 +75,26 @@ Changed:
   One run before its α was kept takes its job's, else 0.05; `--alpha` judges at another level,
   and says so.
 - **Letters agree with the resample a target came from**: an A/B, a screen or a probe of a letter
-  target letters its behaviours as that resample did, so its B is the resample's B.
+  target letters its behaviours as that resample did, so its B is the resample's B. One stored
+  before finds its resample by its target's description, so read again, its behaviours may take
+  new letters.
+- **A resample that asked for each sample's tokens and got none says so**, and counts as having
+  kept them only the samples that did: its page said every sample had kept them.
 - **A dry run's refusal is an answer**: asked `quiet`, as the web UI's forms ask, `POST /jobs`
   and the scenario endpoint refuse with `200 {refused}`, not an HTTP error. Without `quiet`,
-  nothing changes.
-- **Every job under way is listed** by `GET /jobs`, `tuningfork jobs list` and MCP's `list_jobs`:
-  the list was cut at the newest 50, so a running job with 50 newer ones after it dropped out.
-  Over MCP's stdio transport it is still at most the 50 newest.
+  nothing changes. An import's and a scenario's plans give their notes apart from their warnings
+  (`notes` in the API, `note` lines in the terminal), and a scenario's refusal names the scenario,
+  never `spec`.
+- **Every job under way is listed** by `GET /jobs`, `tuningfork jobs list` and MCP's `list_jobs`,
+  however many came after it: the list was cut at the newest 50 (`list_jobs`: 20, or as many as
+  it asked for), so a running job with that many newer ones dropped out. Over MCP's stdio
+  transport, `list_jobs` still gives at most the 50 newest beside them, whatever it asks for.
 - **A launch is refused where the server asks for a key**: a harness tuningfork launches carries
-  none, and each harness's card on Connections says so.
+  none, and each harness's card on Connections says so. The server check says such a server
+  cannot be checked.
+- **A proposing model's address that cannot be read is refused** when it is set. One saved before
+  is taken for another machine's, so it needs `allow_remote`: it broke every read of the
+  proposer's settings. `GET` and `PUT /proposer` give `remote`.
 
 ## 0.3.0 — chats your agent already had, and any run as a scenario
 
