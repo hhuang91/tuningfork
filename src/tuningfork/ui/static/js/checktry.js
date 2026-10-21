@@ -70,7 +70,7 @@ export function checkPicker({ check = null, own = null, editable = true, onChang
   function draw() {
     if (kind === "own") {
       return replace(body,
-        h("p", { class: "form-help" }, "The check the run's task had, as its spec words it, with any file it reads from the task's folder."),
+        h("p", { class: "form-help" }, "The check the run's task had, as its task file words it, with any file it reads from the task's folder."),
         h("pre", { class: "code small" }, typeof own === "string" ? own : JSON.stringify(own)));
     }
     if (kind === "shell") {

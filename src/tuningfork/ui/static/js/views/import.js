@@ -16,6 +16,12 @@ const SOURCES = {
   tool: "loaded by a call",
   frontmatter: "found by its frontmatter",
 };
+// What the file is, by the name `read_chat` gives its shape.
+const FORMATS = {
+  "hermes-snapshot": "a Hermes session file",
+  "hermes-export": "a Hermes export",
+  messages: "a list of messages",
+};
 // The file's text is sent whole; past this the server refuses it anyway.
 const MAX_BYTES = 64 * 1024 * 1024;
 
@@ -33,8 +39,8 @@ export async function importView(root, _params, scope) {
     forScenario ? crumbs([["Scenarios", "#/scenarios"], ["From a run", "#/scenarios?from=run"], ["Import a chat"]]) : null,
     h("div", { class: "page-head" },
       h("div", null, h("h1", null, "Import a chat"),
-        h("p", { class: "sub" }, "A conversation an agent had elsewhere, as a run: each assistant turn a step, with "
-          + "everything before it as its context — so resample, A/B and refine work at its steps."))),
+        h("p", { class: "sub" }, "Turn a conversation your agent had elsewhere into a run. Each assistant turn becomes a "
+          + "step, with everything before it as its context, so you can resample, A/B and refine at its steps."))),
   ];
   if (live.mode !== "live") {
     replace(root, ...head, h("div", { class: "banner banner-warn" },
@@ -121,28 +127,28 @@ export async function importView(root, _params, scope) {
     const skills = plan.skills.length
       ? h("div", { class: "stack import-skills" },
           plan.skills.map((found) => {
-            const where = found.step === null ? "not in the conversation" : `in context from step ${found.step}`;
+            const where = found.step === null ? "it came in after the last answer, so no step reads it" : `the model reads it from step ${found.step}`;
             const how = found.source ? `${SOURCES[found.source] || found.source}; ` : "";
             return h("div", { class: "import-skill" },
-              h("div", null, h("strong", null, found.name), h("span", { class: "muted small" }, ` — ${how}${where}; kept `
-                + (found.folder ? `from ${found.folder}` : "as the model read it"))),
+              h("div", null, h("strong", null, found.name), h("span", { class: "muted small" }, ` — ${how}${where}; `
+                + (found.folder ? `kept whole, from ${found.folder}` : "only the SKILL.md the model read is kept"))),
               folderField(found.name),
               several
                 ? h("label", { class: "small" },
                     h("input", { type: "radio", name: "skill", value: found.name, checked: found.name === plan.skill,
                       onchange: () => { skill = found.name; look(); } }),
-                    " studied by default — else an A/B, a refinement or a scenario names it")
+                    " the one studied, unless an A/B, a refinement or a scenario names another")
                 : null);
           }))
       : h("div", { class: "stack" }, h("span", { class: "muted" }, "none shows in the conversation"), folderField(""));
     return h("div", { class: "stack" },
       panel("What it holds", kv([
-        ["format", plan.format],
+        ["file", FORMATS[plan.format] ? [FORMATS[plan.format], " ", h("span", { class: "faint mono" }, plan.format)] : plan.format],
         ["session", plan.session_id ? h("span", { class: "mono" }, plan.session_id) : null],
         ["title", plan.title],
         ["model", plan.model],
         ["harness", plan.harness],
-        ["steps", `${plan.steps}, one an assistant turn, of ${plural(plan.messages, "message")}`],
+        ["steps", `${plan.steps}, one for each assistant turn, among ${plural(plan.messages, "message")}`],
         ["system prompt", plan.system_prompt ? "kept" : "none in the file"],
         ["tools", plan.tools ? `${plan.tools}${plan.tools_from ? ` from run ${plan.tools_from.slice(0, 8)}` : ""}` : "none in the file"],
         ["skills", skills],
@@ -184,12 +190,12 @@ export async function importView(root, _params, scope) {
       field("File", file, { wide: true, help: "Hermes's session file (~/.hermes/sessions/session_<id>.json), its export "
         + "(hermes sessions export), or an OpenAI-style list of messages." }),
       field("Harness", harness, { help: "The agent the conversation was had with, where the file does not say." }),
-      field("Tools from", toolsFrom, { help: "Where the file names no tools (Hermes's export keeps none): a run recorded "
-        + "through the same harness, whose tools each step then offers." }))),
+      field("Take its tools from", toolsFrom, { help: "A run recorded through the same harness, for a file that names no "
+        + "tools (Hermes's export keeps none). Each step then offers that run's tools." }))),
     preview,
     panel("The run", h("div", { class: "stack" },
-      h("p", { class: "hint" }, "Every skill it shows is kept with the run: from its folder where you name one above — its "
-        + "scripts and references too — else its SKILL.md as the model read it."),
+      h("p", { class: "hint" }, "Every skill the conversation shows is kept with the run. Where you name a skill's folder "
+        + "above, the whole folder is kept, scripts and references too; otherwise only its SKILL.md, as the model read it."),
       h("div", { class: "form-grid" },
         field("Label", label),
         field("Task", task)),
@@ -207,8 +213,8 @@ export async function scenarioFromRunView(root, [runId], scope) {
   const head = (title) => [
     crumbs([["Runs", "#/runs"], [`run ${runId.slice(0, 8)}`, `#/runs/${runId}`], ["Make a scenario"]]),
     h("div", { class: "page-head" }, h("div", null, h("h1", null, title),
-      h("p", { class: "sub" }, "Runs of the skill through its harness, each continuing this run's conversation: sent "
-        + "the starting prompt, with the conversation before it as its context."))),
+      h("p", { class: "sub" }, "A scenario runs the skill through its harness again and again. Each run continues this "
+        + "run's conversation: it is sent the starting prompt, with the conversation before it as context."))),
   ];
   if (live.mode !== "live") {
     replace(root, ...head("Make a scenario"), h("div", { class: "banner banner-warn" },
@@ -281,7 +287,7 @@ export async function scenarioFromRunView(root, [runId], scope) {
       runs: () => api.get(`/runs/${runId}`).then((detail) => [detail.run]),
       runLabel: "The run it is made of",
       runHelp: "The run this scenario is made of: the check runs in a copy of the workspace it left — a run tuningfork "
-        + "launched keeps one — on its final reply.",
+        + "started keeps one — on its final reply.",
       task: () => "this run",
       files: () => [],
       where: "on the run it is made of, or on a reply you write — before trusting it",
@@ -374,20 +380,20 @@ export async function scenarioFromRunView(root, [runId], scope) {
         // A row of its own, first: the rest of the form follows from it.
         several ? field("The skill it studies", studies, { wide: true, help: about }) : null,
         field("Its folder", folder, { wide: true, help: "Where the skill lives on this machine, with its scripts and "
-          + "references: the scenario tunes it there. Left empty: the folder the run's skill came from, else a copy "
-          + "kept in the scenario's own folder." }),
+          + "references. An approved edit is written there. Left empty, it is the folder the run's skill came from, "
+          + "or else a copy kept in the scenario's own folder." }),
         field("Name", name, { help: "lowercase letters, digits, - and _" }),
         fromField,
-        field("Starting prompt", prompt, { wide: true, help: "What each run is sent as the person's message: the chat's "
-          + "words unless you change them — a file it names on another machine, say, to where the scenario's inputs "
-          + "put it in each run's workspace." }),
+        field("Starting prompt", prompt, { wide: true, help: "What each run is sent as the person's message. It is the "
+          + "chat's words unless you change them: a file the chat named on another machine, say, changed to where the "
+          + "scenario's inputs put it in each run's workspace." }),
         fromNote,
         steps,
         h("div", { class: "form-field wide" }, checks.element)),
       h("p", { class: "hint" }, found.launched
-        ? "Its inputs: the run's workspace where the scenario starts, from the snapshots tuningfork took as it ran."
-        : "Its inputs: the run kept none. What is made says which files its conversation names, to add on the "
-          + "scenario's page."),
+        ? "Its inputs are the run's workspace where the scenario starts, from the snapshots tuningfork took as it ran."
+        : "The run kept no inputs. Once the scenario is made, it lists the files its conversation names, to add on "
+          + "the scenario's page."),
     ],
     read: () => {
       const said = body();
@@ -426,9 +432,9 @@ function scenarioPlan(plan) {
     kv([
       ["scenario", [h("span", { class: "mono" }, plan.name), h("span", { class: "muted" }, ", a task of its own on the Scenarios page")]],
       ["its skill", [h("span", { class: "mono" }, plan.skill), h("span", { class: "muted" }, plan.own_skill
-        ? " — a copy kept in the scenario's own folder" : " — tuned in its folder, "), plan.own_skill ? null : h("span", { class: "mono" }, plan.skill_dir)]],
+        ? " — a copy kept in the scenario's own folder" : " — an approved edit is written to its folder, "), plan.own_skill ? null : h("span", { class: "mono" }, plan.skill_dir)]],
       ["each run", `continues ${plural(plan.context, "message")} of the conversation`
-        + (plan.in_turn ? `, then ${plural(plan.in_turn, "message")} of the prompt's own turn, given as done` : "")
+        + (plan.in_turn ? `, then ${plural(plan.in_turn, "message")} of the prompt's own turn, as already done` : "")
         + (plan.next_skill ? `; it stops where its model loads ${plan.next_skill.skill}` : "")],
       ["its check", check],
       ["its inputs", plan.files.length ? h("span", { class: "mono" }, plan.files.join(", "))
@@ -451,7 +457,7 @@ function startNote(found, offered) {
 // What a scenario's runs do with each step of the conversation from its starting prompt on
 // (`imports.STEP_PARTS`): what the step's row says, in which tone, and why.
 const PARTS = {
-  done: ["given as done", "muted", "In each run's context, as the chat had it: the model does not make this step again."],
+  done: ["already done", "muted", "In each run's context, as the chat had it. The model does not make this step again."],
   first: ["each run starts here", "accent", "Each run's first call stands for this one: its model answers it, through the harness."],
 };
 // Steps alike in a row, each shown up to this many; past it, the first two and the last.
@@ -475,8 +481,8 @@ function stepsView(found, promptRun) {
     + "reference, and never sent."];
   if (!steps.length) said.push("The chat has no step after the prompt: each run starts with its model's first answer to it.");
   if (found.in_turn) {
-    said.push(`The steps given as done are in each run's context, as the chat had them: ${found.skill || "the skill"} still comes in `
-      + "live, loaded by the model itself.");
+    said.push(`The steps already done are in each run's context, as the chat had them. ${found.skill || "The skill"} still comes in `
+      + "live: the model loads it itself.");
   }
   if (found.next_skill) {
     said.push(`The chat went on to load ${found.next_skill.skill}`
@@ -497,7 +503,7 @@ function stepsView(found, promptRun) {
 // the prompt, and the prompt.
 function givenRows(found, promptRun) {
   const own = found.launched ? "its harness's own, as this run's" : "its harness's own, not the chat's";
-  const why = "Each run's harness writes its own instructions and offers its own tools, as tuningfork launches it"
+  const why = "Each run's harness writes its own instructions and offers its own tools, as tuningfork starts it"
     + (found.launched ? " — as it did for this run" : "") + ". The chat's are shown for reference, and are never sent.";
   const ownCell = (text) => h("td", null, h("span", { class: "faint small", title: why }, text));
   const what = (text) => h("td", { class: "start-step-what" }, text);
@@ -540,7 +546,7 @@ function groupRows(group, found) {
   }
   if (group.length <= FOLD) return group.map((step) => stepRow(step, found));
   return [...group.slice(0, 2).map((step) => stepRow(step, found)),
-    folded(group.slice(2, -1), `${plural(group.length - 3, "more step")}, ${part === "done" ? "given as done" : "as the chat went on"}`),
+    folded(group.slice(2, -1), `${plural(group.length - 3, "more step")}, ${part === "done" ? "already done" : "as the chat went on"}`),
     stepRow(group[group.length - 1], found)];
 }
 
@@ -550,7 +556,7 @@ function stepRow(step, found) {
     h("td", { class: "start-step-what" }, step.step === null ? "" : `step ${step.step}`),
     h("td", { class: "mono start-step-label", title: step.label }, step.label),
     h("td", null, h("span", { class: "start-step-run" },
-      say ? chip(say, tone, why) : h("span", { class: "faint small" }, "made by its model"),
+      say ? chip(say, tone, why) : h("span", { class: "faint small", title: "Each run's model makes its own step here: the chat's is shown beside it." }, "made fresh"),
       step.stop ? chip("stops after a load like this", "skill", `Each run stops where its model loads a skill other `
         + `than ${found.skill || "the one studied"}, as the chat did here, and the check judges the workspace as it is then.`) : null)));
 }

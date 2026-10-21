@@ -7,12 +7,17 @@
 
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
-import { chip, command, h, kv, loading, panel, replace, short, when } from "../dom.js";
+import { capital, chip, command, h, kv, loading, panel, replace, short, when } from "../dom.js";
 import { field, formError, input } from "../forms.js";
 import { forgetTokenWork, live } from "../live.js";
+import { LABELS } from "../words.js";
 
 const SUPPORT_TONE = { yes: "muted", no: "warn", unknown: "faint" };
-const capital = (text) => `${text[0].toUpperCase()}${text.slice(1)}`;
+// A server's identity, field by field (`proxy.app.IDENTITY_FIELDS`), as the panel above names it.
+const FIELDS = {
+  build: "build", model_file: "model file", models: "models", n_ctx: "context window",
+  chat_template_sha256: "chat template", slots: "slots", defaults: "sampling defaults",
+};
 
 /** That tuningfork is built for a model you run yourself (`ops.connections.reminder`): where the
  *  server is on the internet and answers as a hosted model API does. Never a refusal. */
@@ -34,7 +39,7 @@ export async function connectionsView(root, _, scope) {
   const proxyEl = h("div");
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Connections"),
-      h("p", { class: "sub" }, "What the proxy talks to. Harness and proposer settings are kept in the recordings folder, never in a harness's own configuration."))),
+      h("p", { class: "sub" }, "What the proxy talks to. Settings for the harnesses and the proposing model are kept in the recordings folder, never in a harness's own configuration."))),
     h("div", { class: "stack" }, serverEl, proposerEl, panel("Harnesses", harnessesEl, {
       actions: h("button", { class: "btn btn-small", type: "button", "data-control": true, onclick: guard(detect) }, "Detect again"),
     }), proxyEl));
@@ -71,7 +76,7 @@ export async function connectionsView(root, _, scope) {
         ? cloudNote(server.reminder)
         : server.problem
           ? h("div", { class: "banner banner-warn" }, h("strong", null, "Not answering: "), `${server.problem}. `,
-              "Start the server — or let it finish loading its model — then check it again.")
+              "Start the server — or let it finish loading its model — then test it again.")
           : null,
       kv([
         ["forwarding to", h("span", { class: "mono" }, server.url)],
@@ -79,7 +84,7 @@ export async function connectionsView(root, _, scope) {
         ["build", identity.build ? h("span", { class: "mono" }, String(identity.build)) : null],
         ["model file", identity.model_file ? h("span", { class: "mono" }, identity.model_file) : null],
         ["models", (identity.models || []).length ? h("span", { class: "mono" }, identity.models.join(", ")) : null],
-        ["context", identity.n_ctx ? `${Number(identity.n_ctx).toLocaleString()} tokens` : null],
+        ["context window", identity.n_ctx ? `${Number(identity.n_ctx).toLocaleString()} tokens` : null],
         ["slots", identity.slots ?? null],
         ["identity", identity.id ? h("span", { class: "mono" }, short(identity.id)) : "not read yet"],
       ]),
@@ -101,7 +106,7 @@ export async function connectionsView(root, _, scope) {
             ruledOut.map((reason) => h("div", { class: "small warn-text" }, `${reason}.`)))
         : null,
       h("div", { class: "form-actions" }, checkButton(identity.models || [], server.checks?.model),
-        server.checks?.checked_at ? h("span", { class: "faint small" }, `checked ${when(server.checks.checked_at)} with ${server.checks.model}`) : null),
+        server.checks?.checked_at ? h("span", { class: "faint small" }, `tested ${when(server.checks.checked_at)} with ${server.checks.model}`) : null),
       h("details", { class: "fold" }, h("summary", null, "Point the proxy at another server"), switcher),
     ]));
   }
@@ -110,14 +115,14 @@ export async function connectionsView(root, _, scope) {
     const note = h("span", { class: "muted small" });
     // A server that lists several models is checked with one of them, chosen here.
     const choice = models.length > 1
-      ? h("select", { class: "field", name: "check_model", "aria-label": "Model to check with" },
+      ? h("select", { class: "field", name: "check_model", "aria-label": "Model to test with" },
           models.map((name) => h("option", { value: name, selected: name === last }, name)))
       : null;
     const button = h("button", {
       class: "btn btn-small", type: "button", "data-control": true,
       onclick: guard(async () => {
         button.disabled = true;
-        note.textContent = "checking: a streaming tool call, a Messages call, then what token work needs…";
+        note.textContent = "testing: a streaming tool call, a Messages call, then what token work needs…";
         try {
           const job = await api.post("/jobs", { kind: "server-check", params: choice ? { model: choice.value } : {} });
           await finished(job.id);
@@ -128,7 +133,7 @@ export async function connectionsView(root, _, scope) {
           button.disabled = false;
         }
       }),
-    }, "Check the server");
+    }, LABELS.testServer);
     return h("span", { class: "controls" }, choice, button, note);
   }
 
@@ -137,7 +142,7 @@ export async function connectionsView(root, _, scope) {
       const job = await api.get(`/jobs/${enc(jobId)}`);
       if (!["queued", "running"].includes(job.status)) {
         if (job.status !== "done") {
-          throw Object.assign(new Error(job.error?.message || `the check ${job.status}`), { hint: job.error?.hint || null });
+          throw Object.assign(new Error(job.error?.message || `the test ${job.status}`), { hint: job.error?.hint || null });
         }
         return job;
       }
@@ -177,7 +182,7 @@ export async function connectionsView(root, _, scope) {
         }
       }),
     },
-    h("p", { class: "hint" }, "Only while nothing uses the proxy: no call in flight or held, no job, no launched harness running."),
+    h("p", { class: "hint" }, "Only while nothing uses the proxy: no call in flight or held, no job, and no harness tuningfork started still running."),
     h("label", { class: "form-field" }, h("span", { class: "form-label" }, "Server address"), url),
     status, preview, h("div", { class: "form-actions" }, go));
 
@@ -212,7 +217,7 @@ export async function connectionsView(root, _, scope) {
         ? h("table", { class: "table" },
             h("thead", null, h("tr", null, h("th", null, "what"), h("th", null, "now"), h("th", null, "after"))),
             h("tbody", null, plan.differences.map((change) => h("tr", null,
-              h("td", { class: "mono" }, change.field),
+              h("td", { title: change.field }, FIELDS[change.field] || change.field),
               h("td", { class: "mono small" }, JSON.stringify(change.current ?? null)),
               h("td", { class: "mono small" }, JSON.stringify(change.proposed ?? null))))))
         : h("p", { class: "muted small" }, "It reports itself the same as the server now in use."),
@@ -250,21 +255,21 @@ export async function connectionsView(root, _, scope) {
       }
     };
     const number = (field) => (field.value.trim() === "" ? null : Number(field.value));
-    replace(proposerEl, panel("Proposer", [
+    replace(proposerEl, panel("Proposing model", [
       kv([
         ["asks", settings.url
           ? h("span", { class: "mono" }, settings.url)
-          : h("span", null, "the server above, ", h("span", { class: "muted" }, "through the proxy: gated, never recorded"))],
+          : h("span", null, "the server above, ", h("span", { class: "muted" }, "through the proxy: it waits its turn with other calls, and is never recorded"))],
         ["model", settings.model ? h("span", { class: "mono" }, settings.model) : h("span", { class: "muted" }, "the server's default")],
-        ["wire", h("span", { class: "mono" }, settings.wire)],
+        ["API format", h("span", { class: "mono" }, settings.wire)],
         ["max tokens", String(settings.max_tokens)],
         ["temperature", settings.temperature === null ? "the server's default" : String(settings.temperature)],
         ["another machine", settings.allow_remote ? chip("allowed", "warn") : chip("not allowed", "muted")],
         ["key", key.set ? chip(key.from === "environment" ? "set, from TUNINGFORK_PROPOSER_KEY" : "set, in the recordings folder", "muted") : chip("not set", "muted")],
       ]),
-      h("p", { class: "hint" }, "The model the built-in proposer asks for edits of a skill, on a refinement's page. What it is sent — the skill, recorded prompts and answers — goes to this address."),
+      h("p", { class: "hint" }, "The model tuningfork asks for edits of a skill, from a refinement's page. What it is sent — the skill, recorded prompts and answers — goes to this address."),
       error,
-      h("details", { class: "fold" }, h("summary", null, "Change the proposer"),
+      h("details", { class: "fold" }, h("summary", null, "Change the proposing model"),
         h("form", {
           class: "plan-form proposer-form", novalidate: true,
           onsubmit: guard(async (event) => {
@@ -277,7 +282,7 @@ export async function connectionsView(root, _, scope) {
         },
         h("div", { class: "form-grid" },
           field("Address", url, { help: "Empty: the proxy's own server. A cloud API's base, e.g. https://api.anthropic.com.", wide: true }),
-          field("Speaks", wire),
+          field("API format", wire),
           field("Model", model),
           field("Max tokens", maxTokens, { help: "A model that reasons first needs thousands." }),
           field("Temperature", temperature, { help: "Empty: the server's default." })),
@@ -294,7 +299,7 @@ export async function connectionsView(root, _, scope) {
             if (given) await save("/proposer/key", { key: given });
           }),
         },
-        h("p", { class: "hint" }, "Kept in the recordings folder, readable only by this user, and sent only in the proposer's own calls; never shown again. TUNINGFORK_PROPOSER_KEY in the proxy's environment wins over it."),
+        h("p", { class: "hint" }, "Kept in the recordings folder, readable only by this user, and sent only in the calls to the proposing model; never shown again. TUNINGFORK_PROPOSER_KEY in the proxy's environment wins over it."),
         secret,
         h("div", { class: "form-actions" },
           h("button", { class: "btn btn-small", type: "submit", "data-control": true }, "Save the key"),
@@ -310,6 +315,14 @@ export async function connectionsView(root, _, scope) {
     replace(harnessesEl, [sandboxCard(state.sandbox), ...state.harnesses.map(harnessCard)]);
   }
 
+  // A harness's need in the page's words, as the server test's measurement of it is named; the
+  // name the terminal prints on hover.
+  function needName(need) {
+    if (need.what === "n_ctx") return `A context window of at least ${(need.minimum ?? 0).toLocaleString()} tokens`;
+    const what = capital(state.server?.measures?.[need.what]?.what || need.what.replaceAll("_", " "));
+    return need.minimum ? `${what}: at least ${need.minimum.toLocaleString()}` : what;
+  }
+
   // Where every launch runs: what its harness sees is what the model reads.
   function sandboxCard(sandbox) {
     if (!sandbox) return null;
@@ -319,11 +332,11 @@ export async function connectionsView(root, _, scope) {
         sandbox.available ? chip(`bubblewrap ${sandbox.version || ""}`.trim(), "muted") : chip("none", "warn")),
       sandbox.available
         ? kv([
-            ["every launch sees", h("span", null, "its folder ", h("span", { class: "mono" }, sandbox.workspace), ", its home ", h("span", { class: "mono" }, sandbox.home))],
-            ["hidden from it", "the recordings folder, the runs' folders and the task's spec folder; the rest of the machine read-only"],
+            ["every run tuningfork starts sees", h("span", null, "its folder ", h("span", { class: "mono" }, sandbox.workspace), ", its home ", h("span", { class: "mono" }, sandbox.home))],
+            ["hidden from it", "the recordings folder, the runs' folders and the task file's folder; the rest of the machine read-only"],
           ])
         : h("div", { class: "banner banner-warn" },
-            `Launches are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from launch to launch, and the model reads them.`));
+            `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them.`));
   }
 
   function harnessCard(harness) {
@@ -350,7 +363,7 @@ export async function connectionsView(root, _, scope) {
       harness.requirements?.length
         ? h("div", null, h("div", { class: "label" }, "Needs of the server"),
             h("ul", { class: "small" }, harness.requirements.map((need) =>
-              h("li", null, need.minimum ? `${need.what} of at least ${need.minimum.toLocaleString()}` : need.what.replaceAll("_", " "),
+              h("li", { title: need.what }, needName(need),
                 h("span", { class: "faint" }, ` — ${need.why}`)))))
         : null,
       pre.problems.map((problem) => h("div", { class: "banner banner-warn" }, h("strong", null, "Cannot run here: "), problem)),

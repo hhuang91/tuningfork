@@ -1398,7 +1398,7 @@ The proxy serves the web UI at the address it printed, with its token:
 Everything this part did from the terminal can be started from the web UI, as jobs the
 proxy runs. Open the address `tuningfork serve` printed — the one with `?token=`:
 
-1. **Scenarios** → *Import a spec*: the absolute path of `examples/tally-report.evals.json`,
+1. **Scenarios** → *Add a task file you have*: the absolute path of `examples/tally-report.evals.json`,
    named `tally-report`. The editor shows the spec exactly as it will be saved, keeps the
    skill folder where it is, and flags the check for what it is: a shell command that runs,
    as you, in every run's workspace.
@@ -1414,12 +1414,13 @@ proxy runs. Open the address `tuningfork serve` printed — the one with `?token
    runs. The plan says what will be sent, through the proxy, and how long it may take. The
    finished job links the experiment.
 4. *A/B a wording…* opens an editor holding the skill as that run was given it. Make the
-   change `SKILL.v2.md` makes — or paste the file — name it, and say what the A/B is about:
+   change `SKILL.v2.md` makes — or paste the file — name it, and choose what to count:
    *What the model does matches a pattern*, `row_count`. Nothing is chosen for you. The
    plan shows where the skill sits in the context, and any part of your edit the model
    never sees at this step. The variant is saved in the recordings folder when the A/B
    starts, never beside the skill.
-5. *Reach: each to the end* turns either form into forks followed to the task's check.
+5. *Judge each try by: whether the whole run then passes* turns either form into forks
+   followed to the task's check.
    *Fork from here…* stops a fork at the step for you; on the **Live** page, *Evidence at
    this call* samples the held call where it stands, and *Hypotheses, not evidence* asks
    the model about it — its answer is its own account, never a result.
@@ -1835,17 +1836,17 @@ heatmap — by entropy, or by how close the top two were — with the reasoning 
 many of the likeliest forks are in it. An answer not scored yet offers *Score this answer*.
 Click a token for what else the model weighed there; *Select to probe*, then *Find forking
 tokens at these…*, opens the probe's form in the step, those positions filled in. The form
-shows its plan before anything runs: the tokens it will force, what counts as the same
-behaviour, what it can detect with that many continuations, and how long it may take.
+shows its plan before anything runs: the tokens it will force, what you count, what it can
+detect with that many continuations, and how long it may take.
 
-What counts as the same behaviour can be the answer's own, a regular expression, or a
-behaviour you describe: *Calls the tool* `search_files`, *Mentions* `data.csv`, every
-condition holding. Whichever you choose, the form sets it against every behaviour already
-seen at the step — the run's own, other runs of the task there, the samples drawn there —
-and marks which would count, before anything is sampled.
+*What to count* can be the answer's own behaviour, a regular expression, or a behaviour you
+describe: *Calls the tool* `search_files`, *Mentions* `data.csv`, every condition holding.
+Whichever you choose, the form sets it against every behaviour already seen at the step — the
+run's own, other runs of the task there, the samples drawn there — and marks which would
+count, before anything is sampled.
 
 The result is on the experiment's page: the answer it forked from, with the probed tokens
-ringed — solid where a forced token changed what the model did — then each position, the
+ringed — doubled where a forced token changed what the model did — then each position, the
 run's own token and each forced one, with where it flips. *In the answer* opens a position's
 token there; *On the step* opens it on the step's own Tokens view, where every token a probe
 forced is ringed and says what each probe found.

@@ -77,9 +77,9 @@ randomness either: every sample of an arm is the same answer.
 2. **Runs** → run `tally-report/1#demo.2` → step 1 → **A/B a wording…**
 3. In the editor, change `Write the totals to report.json.` to
    `Write the totals to report.json, using the keys row_count and amount_total.`
-4. For the target, choose *A behaviour I describe*: *Calls the tool* `write_file`, then *+ Add a
-   condition* twice, for *Mentions* `row_count` and *Mentions* `amount_total`. Keep the suggested
-   name and 20 samples per arm, and start it.
+4. Under *What to count*, choose *A behaviour I describe*: *Calls the tool* `write_file`, then
+   *+ Add a condition* twice, for *Mentions* `row_count` and *Mentions* `amount_total`. Keep the
+   suggested name and 20 samples for each wording, and start it.
 5. Its job's page shows the result as it ends: the original's 0/20 against the variant's 20/20,
-   Fisher exact p = 1.5e-11. *See the result* opens the A/B's own page, which leads with the edit as
-   a diff. Equal arms mean the sentence differs from the one above.
+   more than chance would explain (p = 1.5e-11). *See the result* opens the A/B's own page, which
+   leads with the edit as a diff. Equal arms mean the sentence differs from the one above.

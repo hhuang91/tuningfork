@@ -26,7 +26,7 @@ export async function scenariosView(root, _, scope) {
   replace(root,
     h("div", { class: "page-head" },
       h("div", null, h("h1", null, "Scenarios"),
-        h("p", { class: "sub" }, "Tasks kept in the recordings folder: an evals.json and its input files, each run as a batch.")),
+        h("p", { class: "sub" }, "Each scenario is a task file kept in the recordings folder, with its input files. Run one as a batch from its page.")),
       live.mode === "live"
         ? h("div", { class: "actions" },
             h("a", { class: "btn", href: "#/scenarios?from=run", "data-control": true }, "From a run…"),
@@ -35,8 +35,8 @@ export async function scenariosView(root, _, scope) {
     h("div", { class: "stack" },
       found.length
         ? h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
-            h("thead", null, h("tr", null, h("th", null, "scenario"), h("th", null, "task"), h("th", { class: "num" }, "evals"),
-              h("th", null, "passed, latest condition first"), h("th", null, "changed"))),
+            h("thead", null, h("tr", null, h("th", null, "scenario"), h("th", null, "skill"), h("th", { class: "num" }, "tasks"),
+              h("th", null, "passed, latest set-up first"), h("th", null, "changed"))),
             h("tbody", null, found.map((scenario) =>
               h("tr", { class: "clickable", onclick: () => (location.hash = `#/scenarios/${scenario.name}`) },
                 h("td", null, h("a", { class: "mono", href: `#/scenarios/${scenario.name}` }, scenario.name),
@@ -52,8 +52,8 @@ export async function scenariosView(root, _, scope) {
                 h("td", { class: "faint", title: when(scenario.modified) }, ago(scenario.modified))))))))
         : h("div", { class: "panel empty" }, h("h2", null, "No scenarios yet"),
             h("p", null, live.mode === "live"
-              ? "Make one here, make one from a run — a chat imported, a run launched or recorded — or import a spec you "
-                + "already have: its input files are copied in, its skill folder kept where it is."
+              ? "Make one here, or from a run: a chat imported, a run tuningfork started, or one recorded live. Or add a task "
+                + "file you have: its input files are copied in, and its skill folder stays where it is."
               : "Scenarios are made with a running proxy (tuningfork serve).")),
       importer));
 }
@@ -66,8 +66,8 @@ async function runPickView(root, scope) {
     crumbs([["Scenarios", "#/scenarios"], ["From a run"]]),
     h("div", { class: "page-head" },
       h("div", null, h("h1", null, "A scenario from a run"),
-        h("p", { class: "sub" }, "Any run — a chat imported, a run tuningfork launched, one recorded as it happened — "
-          + "continued from the person's message before its skill came in, each run of the scenario sent it again.")),
+        h("p", { class: "sub" }, "Pick any run: a chat imported, a run tuningfork started, or one recorded live. The scenario "
+          + "starts at the person's message just before the skill came in, and each of its runs is given the conversation up to there.")),
       live.mode === "live"
         ? h("div", { class: "actions" },
             h("a", { class: "btn", href: "#/import?then=scenario", "data-control": true }, "Import a chat…"))
@@ -122,7 +122,7 @@ function importForm() {
   const path = input("path", { placeholder: "e.g. C:\\Users\\you\\evals.json, or /home/you/evals.json" });
   const name = input("name", { placeholder: "a-name" });
   const status = h("div");
-  return panel("Import a spec", h("form", {
+  return panel("Add a task file you have", h("form", {
     class: "stack", style: { gap: "8px" }, novalidate: true,
     onsubmit: guard(async (event) => {
       event.preventDefault();
@@ -135,13 +135,13 @@ function importForm() {
     }),
   },
   h("div", { class: "form-grid" },
-    field("The spec", path, {
+    field("The task file", path, {
       wide: true,
       help: "Its full path. Under WSL a Windows path is read where WSL mounts it (C:\\… as /mnt/c/…); a relative path is taken from the folder tuningfork was started in.",
     }),
     field("Scenario name", name)),
   status,
-  h("div", { class: "form-actions" }, h("button", { class: "btn", type: "submit", "data-control": true }, "Import"))));
+  h("div", { class: "form-actions" }, h("button", { class: "btn", type: "submit", "data-control": true }, "Add it"))));
 }
 
 // --- the editor --------------------------------------------------------------------------
@@ -229,14 +229,14 @@ export async function scenarioView(root, [name], scope) {
     status,
     h("div", { class: "grid-2" },
       h("div", { class: "stack" },
-        panel("The task", h("div", { class: "form-grid" },
+        panel("The task file", h("div", { class: "form-grid" },
           nameField ? field("Scenario name", nameField, { help: "lowercase letters, digits, - and _" }) : null,
-          field("Task name", bind(input("skill_name", { value: draft.skill_name, placeholder: "tally-report" }), (v) => (draft.skill_name = v)),
-            { help: "Runs of it are filed as <task name>/<eval id>." }),
+          field("Skill name", bind(input("skill_name", { value: draft.skill_name, placeholder: "tally-report" }), (v) => (draft.skill_name = v)),
+            { help: "The skill these tasks exercise. A task's runs are filed under <skill name>/<its Id>." }),
           field("Skill folder", skillDirInput,
             {
               help: [
-                "The folder holding the skill's SKILL.md. A relative path is resolved against this scenario's own folder, where its evals.json is saved. Each run gets a copy; the folder stays where it is.",
+                "The folder holding the skill's SKILL.md. A relative path is taken from this scenario's own folder, where its task file is saved. Each run gets a copy, and the folder stays where it is.",
                 skillDirNote,
               ],
               wide: true,
@@ -250,10 +250,10 @@ export async function scenarioView(root, [name], scope) {
           draft.evals.push(newEval(String(next)));
           drawEvals();
           changed();
-        } }, "Add an eval") : null),
+        } }, "Add a task") : null),
       h("div", { class: "stack sticky-col" },
         panel("Before it runs", checkedEl),
-        panel("evals.json, exactly as it will be saved", previewEl))));
+        panel("The task file (evals.json), exactly as it will be saved", previewEl))));
 
   function bind(control, set) {
     control.disabled = !editable;
@@ -331,14 +331,14 @@ export async function scenarioView(root, [name], scope) {
             changed();
           },
         }), normalizer)));
-    return panel(`Eval ${item.id || index + 1}`, h("div", { class: "stack", style: { gap: "10px" } },
+    return panel(`Task ${item.id || index + 1}`, h("div", { class: "stack", style: { gap: "10px" } },
       h("div", { class: "form-grid" },
         field("Id", bind(input(`id-${index}`, { value: item.id }), (v) => (item.id = v))),
         field("Preloaded skills", bind(input(`skills-${index}`, { value: options.skills.join(", "), placeholder: "none" }),
           (v) => (options.skills = v.split(",").map((s) => s.trim()).filter(Boolean))), { help: "By folder name, comma-separated." })),
       field("Prompt", bind(textArea(`prompt-${index}`, item.prompt, { rows: 4 }), (v) => (item.prompt = v)), { help: "The task as the harness is given it." }),
       field("Expected output", bind(textArea(`expected-${index}`, item.expected_output, { rows: 2 }), (v) => (item.expected_output = v)),
-        { help: "A note for people reading the spec; nothing checks it. To judge runs by the agent's reply, choose “The reply contains…” under How a run passes." }),
+        { help: "A note for people reading the task file; nothing checks it. To judge runs by the agent's reply, choose “The reply contains…” under How a run passes." }),
       field("Expectations", bind(textArea(`expectations-${index}`, item.expectations.join("\n"), { rows: 3 }), (v) => (item.expectations = v.split("\n"))),
         { help: "One a line. For people only: not checked." }),
       h("div", null, h("div", { class: "label" }, "Input files, put in each run's workspace"), files),
@@ -361,13 +361,13 @@ export async function scenarioView(root, [name], scope) {
           " Stop where the model loads another skill"),
         h("p", { class: "hint" }, "Each run ends there, and the check judges the workspace as it is then: for a chat that "
           + "went on to a skill no run of this one has.")),
-      field("Normalizers", normalizers, { help: "How behaviours are told apart when runs are compared; none ticked means the defaults.", wide: true }),
+      field("How behaviours are grouped", normalizers, { help: "Which answers count as the same behaviour when runs are compared. None ticked means the defaults.", wide: true }),
       editable && draft.evals.length > 1
         ? h("button", { class: "btn btn-quiet btn-small", type: "button", onclick: () => {
             draft.evals.splice(index, 1);
             drawEvals();
             changed();
-          } }, "Remove this eval")
+          } }, "Remove this task")
         : null));
   }
 
@@ -400,7 +400,7 @@ export async function scenarioView(root, [name], scope) {
       changed();
     } }, "×") : null;
     if (typeof entry === "string") {
-      return h("div", { class: "file-row" }, h("span", { class: "mono" }, entry), h("span", { class: "muted small" }, "beside the spec"), remove);
+      return h("div", { class: "file-row" }, h("span", { class: "mono" }, entry), h("span", { class: "muted small" }, "beside the task file"), remove);
     }
     if (entry.source !== undefined) {
       const uploaded = inputs.find((found) => `inputs/${found.path}` === entry.source);
@@ -512,9 +512,9 @@ function contextPanel(name, context, editable) {
     // it said "an imported chat" of all three).
     replace(about, (before.length
       ? `${plural(before.length, "message")} of the conversation it was made of, put after the harness's instructions in every `
-        + "call of each run: the eval's prompt is its next turn."
-      : "Nothing comes before the eval's prompt: it is the chat's first turn.")
-      + (inTurn.length ? ` Then ${plural(inTurn.length, "message")} of that turn, the model's earlier steps — done already, `
+        + "call of each run: the task's prompt is its next turn."
+      : "Nothing comes before the task's prompt: it is the chat's first turn.")
+      + (inTurn.length ? ` Then ${plural(inTurn.length, "message")} of that turn, the model's earlier steps — already done, `
         + "an earlier skill among them — follow the prompt, so the skill comes in live." : ""));
     replace(reading,
       h("div", null, h("div", { class: "label" }, "Before the prompt"), before.length ? h("ol", { class: "small" }, listOf(before))

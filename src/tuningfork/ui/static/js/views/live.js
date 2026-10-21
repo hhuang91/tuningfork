@@ -351,13 +351,15 @@ function holdEditor(hold, { deciding, decided, tooLate }) {
   const revert = h("button", { class: "btn btn-quiet btn-small", type: "button", onclick: revertEdits }, "Revert edits");
   const rawToggle = h("button", { class: "btn btn-small", type: "button", onclick: switchRaw }, "Edit as JSON");
   const continueButton = h("button", { class: "btn btn-primary", type: "button", "data-control": true, onclick: guard(() => send("continue")) }, "Continue");
+  // Stepping stops again at the next place a call can be held: its answer, or the harness's next call.
+  const stepLabel = phase === "request" ? "Step to the answer" : "Step to the next call";
   const stepButton = h("button", {
     class: "btn",
     type: "button",
     title: phase === "request" ? "Send it on, and stop again when the model has answered" : "Hand it to the harness, and stop before its next call",
     "data-control": true,
     onclick: guard(() => send("step")),
-  }, "Step");
+  }, stepLabel);
   const dropButton = h("button", { class: "btn btn-danger", type: "button", "data-control": true, onclick: guard(armDrop) }, "Drop");
   let sending = false; // a decision is on its way: nothing enables the buttons until it lands
 
@@ -371,7 +373,7 @@ function holdEditor(hold, { deciding, decided, tooLate }) {
       : edit.invalid.size
         ? "Fix the fields marked in red first"
         : edited
-          ? "Edited — Continue and Step send your version"
+          ? "Edited — continuing or stepping sends your version"
           : "Unedited";
     const blocked = Boolean(edit.rawError) || edit.invalid.size > 0;
     continueButton.disabled = blocked || sending;
@@ -477,9 +479,8 @@ function holdEditor(hold, { deciding, decided, tooLate }) {
         const mark = () => block.classList.toggle("msg-edited", JSON.stringify(message) !== JSON.stringify(before));
         replace(
           block,
-          h("summary", { class: "msg-head" },
+          h("summary", { class: "msg-head", title: `message #${index}` },
             roleChip(message.role),
-            h("span", { class: "faint mono" }, `#${index}`),
             message.role === "tool" ? h("span", { class: "muted" }, `result of ${names.get(message.tool_call_id) || "a tool call"}`) : null,
             h("span", { class: "msg-preview" }, preview(message)),
             h("span", { class: "faint small" }, `${count(messageSize(message))} chars`)),

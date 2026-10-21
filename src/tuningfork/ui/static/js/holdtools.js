@@ -11,6 +11,7 @@ import { field, input, numberOf, planForm, textArea, textOf } from "./forms.js";
 import { ACTIVE, kindLabel, progressBar, stateChip, watchJob } from "./jobs.js";
 import { live } from "./live.js";
 import { distributionView } from "./results.js";
+import { LABELS } from "./words.js";
 
 export function holdTools(hold, scope) {
   return h("div", { class: "stack hold-tools" }, jobNote(hold), evidence(hold, scope), hypotheses(hold, scope));
@@ -32,7 +33,7 @@ function evidence(hold, scope) {
     fields: [h("div", { class: "form-grid" },
       field("Samples", input("n", { type: "number", value: 10, min: 1, max: 200 }))),
       h("details", { class: "fold more-settings" },
-        h("summary", null, "More settings"),
+        h("summary", null, LABELS.advanced),
         h("div", { class: "form-grid" }, field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }))))],
     read: (form) => ({ hold: hold.id, n: numberOf(form, "n") ?? 10, concurrency: numberOf(form, "concurrency") ?? 1 }),
     render: (plan) => h("div", { class: "stack", style: { gap: "6px" } },

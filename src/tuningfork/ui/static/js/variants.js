@@ -12,6 +12,7 @@ import { api, enc } from "./api.js";
 import { h, outcome, rateBar, short } from "./dom.js";
 import { field, input, textArea, textOf } from "./forms.js";
 import { describeBuilder, seenPreview } from "./targets.js";
+import { LABELS } from "./words.js";
 
 function suggestedName(saved) {
   const taken = new Set(saved.map((variant) => variant.name));
@@ -108,7 +109,7 @@ export function readVariant(form) {
  *  `exploratory: false` leaves that choice out. */
 export function targetPicker(targets, {
   run = null, idx = null, exploratory = true,
-  legend = "What the A/B is about — declared before any sample is drawn",
+  legend = `${LABELS.whatToCount} (chosen before sampling)`,
 } = {}) {
   const clusters = targets.behaviours?.clusters || [];
   const resample = targets.resample;
@@ -141,7 +142,7 @@ export function targetPicker(targets, {
     h("legend", null, legend),
     choice("letter", "A behaviour from this step's latest resample",
       resample
-        ? `resample ${short(resample.id)}, ${targets.behaviours.total} samples${targets.normalizers.length ? `, under ${targets.normalizers.join(", ")}` : ""}`
+        ? `resample ${short(resample.id)}, ${targets.behaviours.total} samples${targets.normalizers.length ? `, grouped by ${targets.normalizers.join(", ")}` : ""}`
         : "none yet: resample this step first, to name one",
       !clusters.length),
     letters,
@@ -149,7 +150,7 @@ export function targetPicker(targets, {
     builder.element,
     choice("pattern", "What the model does matches a pattern", "a regular expression over its text, reasoning and tool calls"),
     h("div", { class: "target-pattern" }, pattern),
-    exploratory ? choice("exploratory", "Exploratory: no target", "every behaviour is tested, and the p-values Bonferroni-adjusted") : null,
+    exploratory ? choice("exploratory", "Nothing declared", "every behaviour is compared, and each p-value adjusted for that (Bonferroni)") : null,
     seen ? seen.element : null);
   form.describe = builder;
   if (seen) {
@@ -177,16 +178,16 @@ export function targetPicker(targets, {
 export function readTarget(form) {
   const kind = form.querySelector('[name="target_kind"]:checked')?.value;
   if (!kind) {
-    throw Object.assign(new Error("Choose what the A/B is about before sampling: a behaviour, a pattern, or exploratory."), { field: "target_kind" });
+    throw Object.assign(new Error("Choose what to count before sampling: a behaviour, a pattern, or nothing declared."), { field: "target_kind" });
   }
   if (kind === "letter") {
     const letter = form.querySelector('[name="target"]:checked')?.value;
-    if (!letter) throw Object.assign(new Error("Choose the behaviour the A/B is about."), { field: "target" });
+    if (!letter) throw Object.assign(new Error("Choose the behaviour to count."), { field: "target" });
     return { target: letter };
   }
   if (kind === "pattern") {
     const regex = textOf(form, "target_match").trim();
-    if (!regex) throw Object.assign(new Error("Write the pattern the A/B is about."), { field: "target_match" });
+    if (!regex) throw Object.assign(new Error("Write the pattern to count."), { field: "target_match" });
     return { target_match: regex };
   }
   if (kind === "describe") {

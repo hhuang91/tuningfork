@@ -17,7 +17,7 @@ export async function chainsView(root) {
   replace(root,
     crumbs([["Runs", "#/runs"], ["chains"]]),
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Chains"),
-      h("p", { class: "sub" }, "A task run again and again, each run given the skill as the one before left it: what a harness's own self-improvement makes of a skill, link by link."))),
+      h("p", { class: "sub" }, "A task run again and again, each run given the skill the run before it left behind. It shows what a harness's own self-improvement makes of a skill, link by link."))),
     chains.length
       ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
           h("thead", null, h("tr", null, h("th", null, "chain"), h("th", null, "task"), h("th", null, "harness"),
@@ -77,7 +77,7 @@ function linkView(link) {
   return h("div", { class: "stack", style: { gap: "6px", marginBottom: "14px" } },
     h("div", null, h("strong", null, `Link ${link.index}  `), verdictChip,
       link.usable === false && link.exclusion !== "timed out"
-        ? [" ", chip("not counted", "muted", link.exclusion || undefined)] : null,
+        ? [" ", chip("not counted", "warn", link.exclusion || undefined)] : null,
       h("span", { class: "muted small" }, `  ${Math.round(link.duration_s / 6) / 10} min · `),
       link.run_id ? h("a", { class: "mono small", href: `#/runs/${link.run_id}` }, `run ${short(link.run_id)}`) : null),
     link.told?.message ? h("p", { class: "small" }, h("span", { class: "label" }, "Told  "), link.told.message) : null,

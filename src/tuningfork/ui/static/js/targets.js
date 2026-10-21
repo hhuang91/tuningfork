@@ -6,6 +6,7 @@
 
 import { api, enc, query } from "./api.js";
 import { h, outcome, replace } from "./dom.js";
+import { LABELS } from "./words.js";
 
 const KINDS = [
   ["calls", "Calls the tool"],
@@ -102,7 +103,7 @@ export function seenPreview({ run, idx, onTools = () => {} }) {
   }
 
   function draw(seen) {
-    if (!seen.behaviours.length) return h("p", { class: "muted small" }, "Nothing has been seen at this step yet to try the target on.");
+    if (!seen.behaviours.length) return h("p", { class: "muted small" }, "Nothing has been seen at this step yet, so there is nothing to try this on.");
     const total = seen.behaviours.reduce((sum, found) => sum + found.count, 0);
     const counted = seen.behaviours.filter((found) => found.matches).reduce((sum, found) => sum + found.count, 0);
     const parts = [
@@ -111,14 +112,14 @@ export function seenPreview({ run, idx, onTools = () => {} }) {
         : `What it would count, of the behaviours seen at this step: ${counted} of ${total}`),
       h("ul", { class: "seen-list" }, seen.behaviours.map((found) =>
         h("li", { class: ["seen", found.matches === true && "seen-yes", found.matches === false && "seen-no"] },
-          h("span", { class: "seen-mark", title: found.matches === null ? "" : found.matches ? "counts as the target" : "does not count" },
+          h("span", { class: "seen-mark", title: found.matches === null ? "" : found.matches ? LABELS.matches : LABELS.noMatch },
             found.matches === null ? "·" : found.matches ? "✓" : "✗"),
           outcome(found),
           h("span", { class: "muted small" }, Object.entries(found.seen).map(([where, n]) => `${where} ${n}`).join(" · ") + fared(found))))),
     ];
     const judged = split(seen);
     if (judged) parts.push(judged);
-    parts.push(h("p", { class: "form-help" }, "Seen before, and not the samples the test will draw: a check of what the target means, not a result."));
+    parts.push(h("p", { class: "form-help" }, "These are earlier answers, shown so you can see what your choice would count. They are not the samples the test will draw."));
     return h("div", { class: "stack", style: { gap: "4px" } }, ...parts);
   }
 

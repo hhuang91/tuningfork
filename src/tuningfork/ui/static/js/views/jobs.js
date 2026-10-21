@@ -29,7 +29,7 @@ export async function jobsView(root, _, scope) {
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Jobs"),
       h("p", { class: "sub" }, live.mode === "live"
-        ? "Work the proxy is doing: started here or from a step, or with `tuningfork jobs` from a terminal. One background job runs at a time unless the proxy was started with --jobs."
+        ? "Work the proxy is doing: started here or from a step, or with `tuningfork jobs` from a terminal. One background job runs at a time, unless the proxy was started to run more."
         : "Work a proxy did, as it recorded it. Starting work needs a running proxy.")),
       startButton ? h("div", { class: "actions" }, startButton) : null),
     start,
@@ -236,8 +236,8 @@ function jobSummary(job) {
   return parts;
 }
 
-/** What the built-in proposer made: each proposal kept, each one not and why — hypotheses,
- *  all of them, until a screen tests them. */
+/** What the built-in proposer made: each proposal kept, each one not and why — every one kept
+ *  untested until a screen tests it. */
 function proposedView(result) {
   const accepted = result.accepted || [];
   const rejected = result.rejected || [];
@@ -248,15 +248,15 @@ function proposedView(result) {
     accepted.length
       ? h("ul", { class: "small" }, accepted.map((proposal) =>
           h("li", null, h("span", { class: "mono" }, short(proposal.id)),
-            ` — ${plural(proposal.changed, "line")} changed${proposal.duplicate ? " (proposed before: this proposer is added to it)" : ""}: `,
+            ` — ${plural(proposal.changed, "line")} changed${proposal.duplicate ? " (proposed before: the proposing model is added to its proposers)" : ""}: `,
             h("span", { class: "muted" }, proposal.proposers[proposal.proposers.length - 1]?.rationale || ""))))
       : h("p", { class: "muted" }, "Nothing it proposed could be kept."),
+    accepted.length ? h("p", { class: "hint" }, "Each one kept stays untested until a test at the refinement's step tries it.") : null,
     rejected.length
       ? h("div", null, h("div", { class: "label" }, "Not kept"),
           h("ul", { class: "small" }, rejected.map((each) =>
             h("li", null, each.index ? `proposal ${each.index}: ` : "", each.reason, each.hint ? h("span", { class: "muted" }, ` — ${each.hint}`) : null))))
-      : null,
-    h("p", { class: "hint" }, result.hypothesis ? `${result.hypothesis[0].toUpperCase()}${result.hypothesis.slice(1)}.` : "")),
+      : null),
     { meta: h("span", { class: "muted" }, `kept in ${result.record}`) });
 }
 
@@ -269,13 +269,13 @@ function validatedView(result) {
     : h("span", { class: "muted" }, "not run");
   return panel("What it found", h("div", { class: "stack", style: { gap: "8px" } },
     kv([
-      ["forward", arms(result.forward)],
-      ["training", arms(result.training)],
+      ["forks", arms(result.forward)],
+      ["the task", arms(result.training)],
       ["held out", result.held_out.length ? `${result.held_out.join(", ")} — their verdicts are on the refinement's page` : "none"],
     ]),
     h("div", { class: "made" },
-      h("a", { class: "btn btn-primary", href: `#/refine/${enc(result.refinement)}` }, "The gate, in the refinement"))),
-    { meta: h("span", { class: "muted" }, `validation ${short(result.validation)}`) });
+      h("a", { class: "btn btn-primary", href: `#/refine/${enc(result.refinement)}` }, "The approval checks, in the refinement"))),
+    { meta: h("span", { class: "muted" }, `full test runs ${short(result.validation)}`) });
 }
 
 function madeView(job) {

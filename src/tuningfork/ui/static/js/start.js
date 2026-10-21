@@ -9,10 +9,11 @@
 
 import { api, enc } from "./api.js";
 import { chip, command, failure, h, kv, loading, panel, plural, replace, short } from "./dom.js";
-import { cacheField, field, input, numberOf, planForm, samplingChoices, seedField, textOf } from "./forms.js";
+import { cacheField, field, groupingField, input, numberOf, planForm, samplingChoices, seedField, textOf } from "./forms.js";
 import { live, tokenWork } from "./live.js";
 import { describeBuilder, seenPreview } from "./targets.js";
 import { readTarget, readVariant, targetPicker, variantEditor } from "./variants.js";
+import { LABELS } from "./words.js";
 import { refineStartForm } from "./views/refine.js";
 
 /** A link that opens `href` — through `go` when the page opens it in place (the run's
@@ -44,11 +45,11 @@ export function startPanel(step, { go = null, work = {} } = {}) {
   // none to replay. Its button stays, greyed, and says why — and the way to runs that fork: a
   // scenario of this one, whose runs tuningfork launches. A thread is never a scenario.
   const why = run.launch_id ? null
-    : `Forking needs a run tuningfork launched; this one was ${run.recorded === "imported" ? "imported" : "recorded live"}.`;
+    : `Forking needs a run tuningfork started. This one was ${run.recorded === "imported" ? "imported" : "recorded live"}.`;
   const scenario = why && !run.trashed_at && !["subagent", "side", "thread"].includes(run.role) ? `#/runs/${run.id}/scenario` : null;
   return panel("Work from here", [
     h("div", { class: "start-actions" },
-      way(`${here}?start=resample`, go, { class: "btn", "data-control": true }, "Resample…"),
+      way(`${here}?start=resample`, go, { class: "btn", "data-control": true, title: "Send this step again N times, and count what the model does" }, "Resample…"),
       way(`${here}?start=ab`, go, { class: "btn", "data-control": true }, "A/B a wording…"),
       // Greyed where the server's check found it cannot force tokens: the same words refuse it.
       work.forking
@@ -132,7 +133,7 @@ async function forkingForm(step, query) {
   pattern.addEventListener("input", () => pick("match"));
   const howMany = input("top", { type: "number", value: 5, min: 1, max: 20 });
   const leastChance = input("min_p", { type: "number", value: 0.05, min: 0.001, max: 0.5, step: "any" });
-  const target = h("fieldset", { class: "target-picker" }, h("legend", null, "What counts as the same behaviour (declared before sampling)"),
+  const target = h("fieldset", { class: "target-picker" }, h("legend", null, `${LABELS.whatToCount} (chosen before sampling)`),
     calls.length
       ? h("label", { class: "target-choice" },
           h("input", { type: "radio", name: "target_kind", value: "tools", checked: true }),
@@ -142,8 +143,8 @@ async function forkingForm(step, query) {
     h("label", { class: "target-choice" },
       h("input", { type: "radio", name: "target_kind", value: "base", checked: !calls.length }),
       h("span", null, h("strong", null, "The answer's own behaviour"), h("span", { class: "muted small" }, calls.length
-        ? " — the base's exact tool call, arguments and all, read the way every continuation is read"
-        : " — the base's tool call or reply, read the way every continuation is read"))),
+        ? " — its exact tool call, arguments and all, read the way every continuation is read"
+        : " — its tool call or reply, read the way every continuation is read"))),
     h("label", { class: "target-choice" },
       h("input", { type: "radio", name: "target_kind", value: "describe" }),
       h("span", null, h("strong", null, "A behaviour I describe"), h("span", { class: "muted small" }, " — the tools it calls, the phrases it mentions"))),
@@ -164,13 +165,13 @@ async function forkingForm(step, query) {
         field("Continuations", input("n", { type: "number", value: 10, min: 1, max: 200 }), { help: "Per forced token." })),
       target,
       h("details", { class: "fold more-settings" },
-        h("summary", null, "More settings"),
+        h("summary", null, LABELS.advanced),
         h("div", { class: "form-grid" },
           field("Least chance", leastChance, { help: "That the step's sampler gave an alternative, to count as a fork, when no positions are named." }),
-          field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" }), { help: "Holm-corrected over the tests planned." }),
+          field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" }), { help: "Corrected for the number of tests planned (Holm)." }),
           field("Max tokens", input("max_tokens", { type: "number", value: 4096, min: 1 }), { help: "Per continuation; hitting it counts as truncated." }),
           field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "On one GPU, 1 keeps the prompt cache." }),
-          field("Normalizers", input("normalizers", { placeholder: "the defaults" }), { help: "Comma-separated; none means the defaults.", wide: true }))),
+          groupingField())),
     ],
     read: (form) => {
       const positions = textOf(form, "positions").split(",").map((text) => text.trim()).filter(Boolean).map((text) => {
@@ -267,14 +268,14 @@ function forkingPreview(plan) {
   const estimate = plan.estimate || {};
   return h("div", { class: "stack", style: { gap: "8px" } },
     kv([
-      ["checkpoint", checkpointLine(plan)],
+      ["step", checkpointLine(plan)],
       ["forks from", h("span", null, h("span", { class: "mono" }, `stream ${short(plan.base.id)}`),
         ` — ${plan.base.source === "scored" ? "the answer the run gave, scored" : plan.base.source}, ${plural(plan.base.tokens, "token")}`)],
-      ["target", plan.target],
+      ["what you count", plan.target],
       ["draws", `${plural(plan.arms.length, "forced token")} × ${plan.per_arm} = ${plural(plan.planned, "continuation")}`],
       ["can detect", power.detectable
-        ? `a forced token that changes the outcome in about ${power.detectable} of its ${power.of} continuations, or more (Holm, over ${plural(plan.family, "test")})`
-        : h("span", { class: "form-error" }, `nothing: with ${power.of} continuations per token and ${plural(plan.family, "test")}, no change can reach significance — raise the continuations`)],
+        ? `a forced token that changes the outcome in about ${power.detectable} of its ${power.of} continuations, or more, corrected for ${plural(plan.family, "test")}`
+        : h("span", { class: "form-error" }, `nothing: with ${power.of} continuations a token and ${plural(plan.family, "test")}, no change could be told from chance. Raise the continuations.`)],
       ["takes", forkingTakes(estimate)],
     ]),
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
@@ -294,12 +295,12 @@ function reachToggle(step, kind, toEnd, go) {
   const option = (href, label, active, title) =>
     way(href, go, { class: active ? "active" : null, "aria-pressed": String(active), title }, label);
   return h("div", { class: "reach" },
-    h("span", { class: "muted small" }, "Reach:"),
+    h("span", { class: "muted small" }, LABELS.judgeBy),
     h("div", { class: "toggle" },
-      option(here, "This step", !toEnd, "Resend this step's request: what the model does next, and nothing after"),
-      option(`${here}&reach=end`, "Each to the end", toEnd, "Fork the run: replayed up to here, live to the end, where the task's check decides")),
+      option(here, LABELS.nextOnly, !toEnd, "Resend this step's request, and see what the model does next."),
+      option(`${here}&reach=end`, LABELS.wholeRun, toEnd, "Fork the run: replayed up to here, then live to the end, where the task's check decides.")),
     toEnd && !step.run.launch_id
-      ? h("span", { class: "form-error small" }, "Only a run tuningfork launched can be forked.")
+      ? h("span", { class: "form-error small" }, "Only a run tuningfork started can be forked.")
       : null);
 }
 
@@ -310,17 +311,17 @@ const opened = (job) => (location.hash = `#/jobs/${job.id}`);
 function samplingFields({ alpha = false, beside = null } = {}) {
   return [
     h("div", { class: "form-grid" },
-      field("Samples", input("n", { type: "number", value: 20, min: 1, max: 1000 }), { help: alpha ? "Per arm." : "More samples, a narrower interval." }),
+      field("Samples", input("n", { type: "number", value: 20, min: 1, max: 1000 }), { help: alpha ? "For each wording." : "More samples, a narrower interval." }),
       beside),
     h("details", { class: "fold more-settings" },
-      h("summary", null, "More settings"),
+      h("summary", null, LABELS.advanced),
       h("div", { class: "form-grid" },
-        field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 64 }), { help: "The proxy's --max-inflight still caps the server." }),
+        field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 64 }), { help: "The proxy's own limit on calls at once still applies." }),
         field("Max tokens", input("max_tokens", { type: "number", value: 4096, min: 1 }), { help: "Hitting it counts as truncated." }),
         seedField(),
         cacheField(),
         alpha ? field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" })) : null,
-        field("Normalizers", input("normalizers", { placeholder: "the defaults" }), { help: "Comma-separated; none means the defaults.", wide: true }))),
+        groupingField())),
   ];
 }
 
@@ -385,7 +386,7 @@ function resampleForm(step, work = {}) {
     },
     render: (plan) => h("div", { class: "stack", style: { gap: "8px" } },
       kv([
-        ["checkpoint", checkpointLine(plan)],
+        ["step", checkpointLine(plan)],
         ["samples", `${plural(plan.sampling.n, "sample")}, ${plan.sampling.concurrency} at a time`],
         ["through", h("span", { class: "mono" }, plan.base_url)],
         ["takes", estimateText(plan.estimate)],
@@ -394,7 +395,7 @@ function resampleForm(step, work = {}) {
         ["tokens", plan.sampling.logprobs
           ? `each sample's kept, with ${plural(plan.sampling.logprobs, "alternative")} at each token` : null],
       ]),
-      h("p", { class: "hint" }, "Each sample resends this step's request exactly as recorded, with its own seed; the history before it stays fixed. Nothing is recorded as a run.")),
+      h("p", { class: "hint" }, "Each sample resends this step's request exactly as recorded, with its own seed. Everything before the step stays as it was, and nothing is recorded as a run.")),
     startLabel: "Start the resample",
     onStarted: opened,
   });
@@ -437,7 +438,7 @@ async function abBody(step, toEnd, skill, named) {
       kind: "ab-to-end",
       fields: [
         variantEditor(skill, saved),
-        h("p", { class: "hint" }, "The target is the task's check passing: declared by the task, before any fork runs."),
+        h("p", { class: "hint" }, "What you count is the task's check passing, set by the task before any fork runs."),
         ...forkFields({ alpha: true }),
       ],
       read: (form) => {
@@ -480,11 +481,13 @@ async function abBody(step, toEnd, skill, named) {
 function forkFields({ alpha = false, n = 5 } = {}) {
   return [
     h("div", { class: "form-grid" },
-      field("Forks", input("n", { type: "number", value: n, min: 1, max: 200 }), { help: alpha ? "Per arm. Each is a full run from here: minutes, not seconds." : "Each is a full run from here: minutes, not seconds." })),
+      field("Forks", input("n", { type: "number", value: n, min: 1, max: 200 }), { help: alpha
+        ? "For each wording. Each fork runs in full from here, so it takes minutes, not seconds."
+        : "Each fork runs in full from here, so it takes minutes, not seconds." })),
     h("details", { class: "fold more-settings" },
-      h("summary", null, "More settings"),
+      h("summary", null, LABELS.advanced),
       h("div", { class: "form-grid" },
-        field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "No more than the proxy's --max-inflight; on one GPU, 1 is fastest." }),
+        field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "No more than the proxy's own limit on calls at once. On one GPU, 1 is fastest." }),
         alpha ? field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" })) : null)),
   ];
 }
@@ -495,7 +498,7 @@ function readForks(form) {
 
 function forkLines(plan) {
   return [
-    ["checkpoint", checkpointLine(plan)],
+    ["step", checkpointLine(plan)],
     ["replays", `${plural(plan.replayed, "recorded call")}, answered from the recording; live from step ${plan.checkpoint.step}`],
     ["harness", h("span", null, h("span", { class: "mono" }, plan.harness), ", model ", h("span", { class: "mono" }, plan.model || "as recorded"))],
   ];
@@ -506,8 +509,8 @@ function toEndPreview(plan) {
   return h("div", { class: "stack", style: { gap: "8px" } },
     kv([
       ...forkLines(arm),
-      ["forks", `${plural(plan.forks, "fork")}${plan.variant ? ` (${plan.n} per arm)` : ""}, ${plan.concurrency} at a time`],
-      ["target", "the task's check passes"],
+      ["forks", `${plural(plan.forks, "fork")}${plan.variant ? ` (${plan.n} for each wording)` : ""}, ${plan.concurrency} at a time`],
+      ["what you count", "the task's check passes"],
       plan.variant ? ["swaps", `the original for your variant, from step ${arm.checkpoint.step} on`] : null,
     ].filter(Boolean)),
     [...(arm.warnings || []), ...((plan.variant && plan.variant.warnings) || [])].map((warning) => h("div", { class: "banner banner-warn" }, warning)),
@@ -543,7 +546,7 @@ function forkForm(step) {
     fields: [holds, h("div", { class: "form-grid" },
       field("Forks", input("n", { type: "number", value: 1, min: 1, max: 20 }))),
       h("details", { class: "fold more-settings" },
-        h("summary", null, "More settings"),
+        h("summary", null, LABELS.advanced),
         h("div", { class: "form-grid" }, field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }))))],
     read: (form) => ({
       run: step.run.id,
@@ -567,10 +570,10 @@ function abPreview(plan) {
   const spans = plan.spans || [];
   return h("div", { class: "stack", style: { gap: "8px" } },
     kv([
-      ["checkpoint", checkpointLine(plan)],
+      ["step", checkpointLine(plan)],
       ["swaps", h("span", null, `the original, found in ${plural(spans.length, "place")} in this step's context, for your variant`)],
-      ["target", plan.target ? h("span", null, plan.target) : chip("exploratory: every behaviour, Bonferroni-adjusted", "warn")],
-      ["samples", `${plural(plan.sampling.n, "sample")} per arm, ${plan.sampling.concurrency} at a time, α = ${plan.alpha}`],
+      ["what you count", plan.target ? h("span", null, plan.target) : chip("nothing declared: every behaviour compared, each p adjusted", "warn")],
+      ["samples", `${plural(plan.sampling.n, "sample")} for each wording, ${plan.sampling.concurrency} at a time, α = ${plan.alpha}`],
       ["takes", estimateText(plan.estimate)],
       ["saved as", h("span", { class: "mono" }, plan.variant)],
     ]),
@@ -579,5 +582,5 @@ function abPreview(plan) {
           h("ul", { class: "small" }, plan.unapplied.map((line) => h("li", null, line))))
       : null,
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-    h("p", { class: "hint" }, "Both arms resend this step's request — the original as recorded, the variant with your text swapped in — so the history before it is the one written under the original wording. A checkpoint A/B screens a wording; confirm a winner with full runs."));
+    h("p", { class: "hint" }, "Both wordings resend this step's request: the original as recorded, and the variant with your text swapped in. Everything before this step was written under the original wording, so treat the result as a lead, and confirm it with full runs."));
 }

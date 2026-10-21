@@ -83,18 +83,18 @@ function conditionLabel(condition) {
   return [
     condition.harness ? chip(condition.harness, "muted") : null,
     condition.model ? h("span", { class: "mono small" }, condition.model) : null,
-    h("span", { class: "mono small" }, condition.skill_version ? `skill ${condition.skill_version}` : "skill not recorded"),
+    h("span", { class: "mono small" }, condition.skill_version ? `skill version ${condition.skill_version}` : "skill not recorded"),
     file ? chip(`SKILL.md from ${file}`, "skill", condition.skill_file) : null,
   ];
 }
 
 function conditionsBanner(task, conditions) {
   return h("div", { class: "banner banner-warn", style: { marginBottom: "14px" } },
-    h("strong", null, `These runs span ${conditions.length} conditions. `),
+    h("strong", null, `These runs span ${conditions.length} set-ups. `),
     "Compare within one: ",
     conditions.map((condition, position) => [
       position ? " · " : null,
-      h("a", { href: `#/divergence/${enc(task)}@${condition.id}` }, `${condition.skill_version ? `skill ${condition.skill_version}` : "no skill recorded"}${condition.skill_file ? ` (${condition.skill_file.split(/[\\/]/).pop()})` : ""}, ${plural(condition.runs, "run")}`),
+      h("a", { href: `#/divergence/${enc(task)}@${condition.id}` }, `${condition.skill_version ? `skill version ${condition.skill_version}` : "no skill recorded"}${condition.skill_file ? ` (${condition.skill_file.split(/[\\/]/).pop()})` : ""}, ${plural(condition.runs, "run")}`),
     ]));
 }
 
@@ -108,7 +108,7 @@ export async function divergenceView(root, [task, conditionId]) {
   const summary = (await api.get("/tasks")).find((candidate) => candidate.task_id === task);
   const conditions = summary?.conditions || [];
   const chosen = conditionId ? conditions.find((condition) => condition.id === conditionId) : null;
-  if (conditionId && !chosen) throw new Error(`Task ${task} has no runs under condition ${conditionId}.`);
+  if (conditionId && !chosen) throw new Error(`Task ${task} has no runs under set-up ${conditionId}.`);
   // One condition: its latest runs. Otherwise the task's latest runs, whatever they were run under.
   const report = chosen
     ? await api.get(`/divergence${query({ runs: chosen.run_ids.slice(0, 50).join(",") })}`)
@@ -130,7 +130,7 @@ export async function divergenceView(root, [task, conditionId]) {
     report.mixed_skills ? mixedSkillsBanner() : null,
     h("div", { class: "stack" },
       split ? panel(`At step ${at}`, [groupsView(split, at, report.verdicts || {}), nextStep(split, at)], {
-        meta: h("span", { class: "muted" }, "Intervals are Wilson 95%; with few runs they are wide."),
+        meta: h("span", { class: "muted", title: "Wilson score intervals" }, "Intervals are 95%. With few runs, they are wide."),
       }) : null,
       predictorsView(report),
       tallyView(tally, { only: chosen?.id || null }),
@@ -178,7 +178,7 @@ function predictorsView(report) {
   const passed = (report.steps?.[0]?.groups || []).reduce((sum, group) => sum + (group.passed?.successes || 0), 0);
   if (passed === 0 || passed === judged) {
     return panel("What goes with passing", h("p", { class: "hint" }, passed === 0
-      ? `None of the ${judged} judged runs passed: nothing here can separate passing from failing. A screen run to the end has passing forks to compare — its page asks Where does it hold? of them.`
+      ? `None of the ${judged} judged runs passed, so nothing here can separate passing from failing. A test at a step, judged by whole runs, has passing forks to compare: its page asks Where does it hold? of them.`
       : `All ${judged} judged runs passed: there is no failure here to separate.`));
   }
   const lines = [];
@@ -201,7 +201,8 @@ function predictorsView(report) {
     lines.push(h("p", { class: "hint" }, `No behaviour at any step, and no tool called, separates the passing runs from the failing ones (of ${judged} judged): the difference is in what they wrote. What the checks said, and Where does it hold?, look there.`));
   }
   return panel("What goes with passing", lines, {
-    meta: h("span", { class: "muted" }, "Fisher's exact test over the judged runs: a lead under p 0.2, never a verdict."),
+    meta: h("span", { class: "muted", title: "Fisher's exact test over the judged runs" },
+      "A lead, never a verdict: each split shown has p under 0.2, and with so many compared, chance alone can make one."),
   });
 }
 
@@ -238,7 +239,7 @@ function groupsView(step, index, verdicts) {
 function nextStep(step, index) {
   const example = step.groups[0].run_ids[0];
   return h("div", null,
-    h("p", { class: "hint", style: { marginBottom: "6px" } }, "A handful of runs cannot tell you how often each happens. Resample the checkpoint to measure it:"),
+    h("p", { class: "hint", style: { marginBottom: "6px" } }, "A handful of runs cannot tell you how often each happens. Resample the step to measure it:"),
     live.mode === "live"
       ? h("a", { class: "btn btn-primary", href: `#/runs/${example}/${index}?start=resample`, "data-control": true }, `Resample step ${index}…`)
       : command(`tuningfork resample ${short(example)} ${index} -n 20`),

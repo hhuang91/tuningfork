@@ -59,7 +59,7 @@ try {
   check(await page.eval(`[...document.querySelectorAll(".start-actions a")].map((a) => a.textContent).join("|") === "Resample…|A/B a wording…|Find forking tokens…|Fork from here…|Refine the skill here…"`), "the step offers a resample, an A/B, the forking-token probe, a fork and a refinement");
   // The lab's runs were launched by a batch, as their check's verdicts say (found in review: since
   // runs nothing launched read "recorded live", every seeded run did).
-  check(await page.eval(`!document.querySelector(".page-head h1 .chip") && document.querySelector(".about-run summary").textContent.includes("launched by tuningfork, batch")`),
+  check(await page.eval(`!document.querySelector(".page-head h1 .chip") && document.querySelector(".about-run summary").textContent.includes("started by tuningfork, batch")`),
     "a seeded run reads as a batch's, not as one recorded live");
   // A step opens at its actions; what it was is one block of lines, in one style; its record is
   // folded, its timings already in its call's line (the review's §7 and §3.6).
@@ -135,7 +135,7 @@ try {
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "A/B a wording at this step").click()`);
   await until(() => page.eval(`!!document.querySelector('.plan-form [name="variant_text"]')`), "the A/B form");
   check(await page.eval(`document.querySelector('[name="variant_text"]').value.includes("Write the totals to report.json.")`), "the editor starts from the skill as the run was given it");
-  await until(() => page.eval(`(document.querySelector(".plan-status")?.textContent || "").includes("Choose what the A/B is about")`), "the form to ask for a target first");
+  await until(() => page.eval(`(document.querySelector(".plan-status")?.textContent || "").includes("Choose what to count before sampling")`), "the form to ask for a target first");
   check(await page.eval(`!!document.querySelector(".plan-status .form-note-box") && !document.querySelector(".plan-status .form-error-box")`),
     "and asks it as a note: a form nobody has touched has done nothing wrong (found in review: it opened in red)");
   check(await page.eval(`![...document.querySelectorAll('[name="target_kind"]')].some((radio) => radio.checked)`), "no target is chosen for you");
@@ -148,7 +148,7 @@ try {
   await page.eval(`document.querySelector('[name="target"][value="A"]').click()`);
   check(await page.eval(`document.querySelector('[name="target_kind"][value="letter"]').checked`), "picking a behaviour picks the lettered target");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "6");
-  await planShows(page, "6 samples per arm");
+  await planShows(page, "6 samples for each wording");
   check(await page.eval(`document.querySelector(".plan-preview").textContent.includes(${JSON.stringify(`${variantName}.md`)})`), "the plan names where the variant will be saved");
   await startButtonReady(page, "Start the A/B");
   await page.press("Start the A/B");
@@ -174,18 +174,18 @@ try {
     return block.classList.contains("significant") && !block.classList.contains("tone-ok")
       && block.firstElementChild.classList.contains("verdict-target")
       && block.querySelector(".verdict-target-text").textContent.startsWith("A from resample ")
-      && block.querySelector(".verdict-big").textContent === "The variant hit the target less often: 0 of 6 samples, against 6 of 6 with the original";
+      && block.querySelector(".verdict-big").textContent === "What you count happened less often with the variant: 0 of 6 samples, against 6 of 6 with the original. That is more than chance would explain.";
   })()`), "the result says the target first, then which way the variant moved it, in the accent's colour, not green");
   const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
     [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
-  check(marked === "target:6/6", `the behaviours table marks the one the target counts: the original's every sample (${marked})`);
+  check(marked === "matches:6/6", `the behaviours table marks the one the target counts: the original's every sample (${marked})`);
   // Declared as the resample's A, it is the table's A: the two arms tie, and lettered afresh the
   // other behaviour came first, the target row B (found in use).
   const targetLetter = await page.eval(`document.querySelector(".table tr.is-target .chip.tone-accent")?.textContent`);
   check(targetLetter === "A", `the target is row A, as the resample it was named from lettered it (${targetLetter})`);
   const others = await page.eval(`[...document.querySelectorAll(".table tbody tr")].filter((row) => !row.classList.contains("is-target")).map((row) =>
     [row.querySelector(".chip.tone-not-target")?.textContent, row.children[3].textContent.split(" ")[0]].join(":")).join(",")`);
-  check(others === "not target:6/6", `and badges the other "not target", its 6/6 the variant's, not the target's (${others})`);
+  check(others === "no match:6/6", `and badges the other "no match", its 6/6 the variant's, not the target's (${others})`);
 
   // --- 3. A task run again from its run's page; a fork held at its step; forks to the end ----
   console.log("run a task again, fork at a step, and run forks to the end");
@@ -269,12 +269,12 @@ try {
   check(toEnd.status === "done" && toEnd.result.counted === 2 && toEnd.result.passed === 0, "resampled to the end: 0/2 pass the check");
 
   await openStepOf(page, launched, 1, "ab&reach=end");
-  check(!(await page.eval(`!!document.querySelector(".target-picker legend")?.textContent.includes("What the A/B is about")`)), "to the end, the target is the task's check: no picker");
+  check(!(await page.eval(`!!document.querySelector(".target-picker legend")?.textContent.includes("What to count")`)), "to the end, the target is the task's check: no picker");
   await page.type(`document.querySelector('[name="variant_text"]')`,
     (await page.eval(`document.querySelector('[name="variant_text"]').value`)).replace("Write the totals to report.json.", "Write the totals to report.json, using the keys row_count and amount_total."));
   await page.type(`document.querySelector('[name="variant_name"]')`, `to-end-${Date.now().toString(36)}`);
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "1");
-  await planShows(page, "(1 per arm)");
+  await planShows(page, "(1 for each wording)");
   await startButtonReady(page, "Start the A/B");
   await page.click("Start the A/B");
   const abEndId = await until(async () => jobIdIn(await page.eval("location.hash")), "the A/B's job page");
@@ -286,7 +286,7 @@ try {
   check(await page.eval(`(() => {
     const block = document.querySelector(".verdict-block");
     return block.querySelector(".verdict-target-text").textContent === "the task's check passes"
-      && block.querySelector(".verdict-big").textContent === "No significant difference: the variant's forks passed the check in 1 of 1, the original's in 0 of 1"
+      && block.querySelector(".verdict-big").textContent === "No difference beyond chance: the variant's forks passed the check in 1 of 1, and the original's in 0 of 1."
       && !block.classList.contains("tone-ok") && !block.classList.contains("tone-bad");
   })()`), "its page names the check as the target, and one fork an arm is said in words, not in green");
 
@@ -449,7 +449,7 @@ try {
   await page.eval(`location.hash = "#/connections"`);
   await until(() => page.eval(`document.querySelectorAll(".harness-card").length >= 2`), "the harness cards");
   const startedOn = (await api("/connections")).server.url;
-  await page.click("Check the server");
+  await page.click("Test the server");
   await until(() => page.eval(`[...document.querySelectorAll(".measured td .mono")].some((name) => name.textContent === "anthropic_messages")`), "the check's results", 60000);
   const checked = (await api("/connections")).server.checks.results;
   check(checked.streaming_tool_calls.support === "yes" && checked.anthropic_messages.support === "yes", "the server check measured both, and the page shows them");
@@ -740,7 +740,7 @@ try {
   check(await page.eval(`document.querySelector("main").textContent.includes("Not kept")`), "the job's page says what was not kept, and why");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See them in the refinement").click()`);
   await until(() => page.eval(`document.querySelectorAll(".proposal").length === 2`), "the two proposals");
-  check(await page.eval(`[...document.querySelectorAll(".proposal")].every((card) => card.textContent.includes("hypothesis: not screened yet"))`), "each a hypothesis until a screen tests it");
+  check(await page.eval(`[...document.querySelectorAll(".proposal")].every((card) => [...card.querySelectorAll(".chip")].some((c) => c.textContent === "untested"))`), "each untested until a test at the step tries it");
   check(await page.eval(`[...document.querySelectorAll(".proposal .diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))`), "each shown as a line diff");
   await page.eval(`document.querySelector(".propose-own > summary").click()`);
   const baseline = await page.eval(`document.querySelector('[name="proposal_text"]').value`);
@@ -758,48 +758,51 @@ try {
     return true;
   })()`);
   await page.type(`document.querySelector('.screen-panel [name="n"]')`, "6");
-  await until(() => page.eval(`(document.querySelector(".screen-panel .plan-preview")?.textContent || "").includes("6 an arm, 18 in all")`), "the screen's plan");
-  check(await page.eval(`document.querySelector(".screen-panel .plan-preview").textContent.includes("Holm over 2 proposals")`), "the screen's plan: the two ticked are the family the correction counts");
-  await startButtonReady(page, "Start the screen");
-  await page.click("Start the screen", `document.querySelector(".screen-panel")`);
+  await until(() => page.eval(`(document.querySelector(".screen-panel .plan-preview")?.textContent || "").includes("6 for each wording, 18 in all")`), "the screen's plan");
+  check(await page.eval(`document.querySelector(".screen-panel .plan-preview").textContent.includes("corrected for 2 proposals tested")`), "the screen's plan: the two ticked are the family the correction counts");
+  await startButtonReady(page, "Start the test");
+  await page.click("Start the test", `document.querySelector(".screen-panel")`);
   const screenJobId = await until(async () => jobIdIn(await page.eval("location.hash")), "the screen's job page");
   const screenJob = await finished(screenJobId, 60000);
   check(screenJob.status === "done" && screenJob.result.screen.complete && screenJob.result.screen.survivors.length === 1,
     "the screen: the wording that names the keys survives the correction, the other does not");
-  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal hit the target more often than the original, past the correction"`), "the verdict on the job's page");
+  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal beat the original by more than chance would explain."`), "the verdict on the job's page");
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do"
+    && [...document.querySelectorAll(".screen-table th")].some((th) => th.textContent === "did what it should")`),
+    "a refinement's test at its step names what it counts as the refinement does: what the model should do");
   // At the step, a survivor is a shift of a behaviour, not a check passed: the accent's, never green.
   check(await page.eval(`!document.querySelector(".verdict-block.tone-ok") && [...document.querySelectorAll(".screen-table .chip")]
-    .find((chip) => chip.textContent === "survives")?.classList.contains("tone-accent")`), "a step screen's survivor is the accent's colour, not a check's green");
+    .find((chip) => chip.textContent === "beat the original")?.classList.contains("tone-accent")`), "a step screen's survivor is the accent's colour, not a check's green");
   // What the model did, by arm: the right keys are the target ("calls write_file and mentions row_count").
   const byArm = await page.eval(`(() => {
-    const panel = [...document.querySelectorAll(".panel")].find((found) => found.querySelector("h2")?.textContent === "What the model did, by arm");
+    const panel = [...document.querySelectorAll(".panel")].find((found) => found.querySelector("h2")?.textContent === "What the model did, by wording");
     return [...panel.querySelectorAll("tbody tr")].map((row) =>
       [row.querySelector(".chip.tone-target, .chip.tone-not-target")?.textContent, row.children[1].textContent.includes("row_count")].join(":")).join(",");
   })()`);
-  check(byArm.split(",").sort().join(",") === "not target:false,target:true", `the screen's behaviours are badged target or not target (${byArm})`);
+  check(byArm.split(",").sort().join(",") === "matches:true,no match:false", `the screen's behaviours are badged as matching what is counted or not (${byArm})`);
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
-  check(await page.eval(`[...document.querySelectorAll(".screen-table .chip")].map((c) => c.textContent).sort().join(",") === "not significant,survives"`), "the screen's page gives each proposal its verdict");
+  check(await page.eval(`[...document.querySelectorAll(".screen-table .chip")].map((c) => c.textContent).sort().join(",") === "beat the original,within chance"`), "the screen's page gives each proposal its verdict");
   check(await page.eval(`document.querySelector(".page-head").textContent.includes("refinement ${refinementId.slice(0, 8)}")`), "and names the refinement it belongs to");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Back to the refinement").click()`);
-  await until(() => page.eval(`location.hash === "#/refine/${refinementId}" && [...document.querySelectorAll(".proposal .chip")].some((c) => c.textContent === "survived a screen")`), "the verdicts on the refinement's proposals");
-  check(await page.eval(`[...document.querySelectorAll(".proposal .chip")].filter((c) => c.textContent === "hypothesis: not screened yet").length === 1`), "the screened carry their verdicts; the one not screened is still a hypothesis");
+  await until(() => page.eval(`location.hash === "#/refine/${refinementId}" && [...document.querySelectorAll(".proposal .chip")].some((c) => c.textContent === "beat the original")`), "the verdicts on the refinement's proposals");
+  check(await page.eval(`[...document.querySelectorAll(".proposal .chip")].filter((c) => c.textContent === "untested").length === 1`), "the tested carry their verdicts; the one not tested is still untested");
   // The page leads with the evidence: where it stands, each proposal's screen, a step screen's survivor in the accent.
   const evidence = await page.eval(`(() => {
     const titles = [...document.querySelectorAll(".panel-head h2")].map((h2) => h2.textContent);
     const block = document.querySelector(".evidence-panel .verdict-block");
     const rows = [...document.querySelectorAll(".evidence-panel tbody tr")];
     return {
-      order: titles.indexOf("The evidence") < titles.indexOf("Proposals (3)") && titles.indexOf("Proposals (3)") < titles.indexOf("What a proposer is shown"),
+      order: titles.indexOf("The evidence") < titles.indexOf("Proposals (3)") && titles.indexOf("Proposals (3)") < titles.indexOf("What the proposing model is shown"),
       headline: block?.querySelector(".verdict-big")?.textContent,
       accent: block?.classList.contains("significant") && !block.classList.contains("tone-ok"),
-      survivor: rows.some((row) => row.querySelector(".chip.tone-accent")?.textContent === "survived a screen"),
-      unscreened: rows.filter((row) => row.textContent.includes("hypothesis: not screened yet")).length,
+      survivor: rows.some((row) => row.querySelector(".chip.tone-accent")?.textContent === "beat the original"),
+      unscreened: rows.filter((row) => row.textContent.includes("untested")).length,
       chosen: rows.some((row) => row.classList.contains("is-chosen")),
       about: !document.querySelector("details.about-refinement").open,
     };
   })()`);
-  check(evidence.order && evidence.headline === "1 of 3 proposals survived a screen" && evidence.accent,
+  check(evidence.order && evidence.headline === "1 of 3 proposals beat the original in a test at this step" && evidence.accent,
     `the refinement leads with the evidence: where it stands, in the accent for a step screen (${evidence.headline})`);
   check(evidence.survivor && evidence.unscreened === 1 && !evidence.chosen, "each proposal's screen in a line, nothing chosen before a validation");
   check(evidence.about, "the skill's paths wait in About this refinement, closed");
@@ -823,17 +826,17 @@ try {
   check(await page.eval(`document.querySelector(".validate-panel .plan-preview").textContent.includes("each of: 2 — only their verdicts are kept")`),
     "the plan names the held-out task by its id, and keeps only its verdicts");
   check(!(await page.eval(`document.body.textContent.includes("HELD-OUT-LAB")`)), "and shows nothing else of it");
-  await startButtonReady(page, "Start the validation");
-  await page.click("Start the validation", `document.querySelector(".validate-panel")`);
+  await startButtonReady(page, "Start the full test runs");
+  await page.click("Start the full test runs", `document.querySelector(".validate-panel")`);
   const validateJobId = await until(async () => jobIdIn(await page.eval("location.hash")), "the validation's job page");
   const validateJob = await finished(validateJobId, 240000);
   check(validateJob.status === "done" && validateJob.result.held_out.join() === "2" && validateJob.progress.done === 30,
     "the validation ran every run: forks, the training task, the held-out task");
   check(!JSON.stringify(validateJob).includes("HELD-OUT-LAB"), "its job holds no word of the held-out task");
-  await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "The gate, in the refinement")`), "the way to the gate");
-  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "The gate, in the refinement").click()`);
-  await until(() => page.eval(`[...document.querySelectorAll(".validation .chip")].some((c) => c.textContent === "meets the gate")`), "the validation's verdict");
-  check(await page.eval(`[...document.querySelectorAll(".validation-table td > strong")].map((s) => s.textContent).join() === "forward,training,held out 2"`),
+  await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "The approval checks, in the refinement")`), "the way to the gate");
+  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "The approval checks, in the refinement").click()`);
+  await until(() => page.eval(`[...document.querySelectorAll(".validation .chip")].some((c) => c.textContent === "passes the approval checks")`), "the validation's verdict");
+  check(await page.eval(`[...document.querySelectorAll(".validation-table td > strong")].map((s) => s.textContent).join() === "forks,the task,held out: 2"`),
     "the person's page shows each part, the held-out task's included");
   check(await page.eval(`[...document.querySelectorAll(".validation .gate-list .chip")].filter((c) => c.textContent === "low-powered").length === 2`),
     "the not-worse checks say they are low-powered");
@@ -847,13 +850,13 @@ try {
       row: row ? [...row.querySelectorAll(".chip")].map((c) => c.textContent).join() : null,
     };
   })()`);
-  check(ready.headline === `Proposal ${keysFix.id.slice(0, 8)} meets the gate: ready to approve` && ready.green,
+  check(ready.headline === `Proposal ${keysFix.id.slice(0, 8)} passes the approval checks, and is ready to approve` && ready.green,
     `a validation that meets the gate: the evidence names the proposal ready to approve, in the gate's green (${ready.headline})`);
-  check(ready.lines.includes("Survived its screen: 6/6 against the original's 0/6") && ready.lines.includes("on held-out task 2") && ready.lines.includes("checks met"),
+  check(ready.lines.includes("Beat the original in its test at this step: 6/6 against the original's 0/6") && ready.lines.includes("on held-out task 2") && ready.lines.includes("approval checks met"),
     `with its screen and its validation in a line each, the held-out task's included (${ready.lines})`);
-  check(ready.row === "ready to approve,survived a screen,meets the gate", `its row picked out (${ready.row})`);
+  check(ready.row === "ready to approve,beat the original,passes the approval checks", `its row picked out (${ready.row})`);
   const hash = await page.eval("location.hash");
-  await page.eval(`[...document.querySelectorAll(".evidence-panel .verdict-lines a")].find((a) => a.textContent.startsWith("validation ")).click()`);
+  await page.eval(`[...document.querySelectorAll(".evidence-panel .verdict-lines a")].find((a) => a.textContent.startsWith("full test runs ")).click()`);
   check(await page.eval(`location.hash === ${JSON.stringify(hash)} && document.querySelector(".validation").getBoundingClientRect().top < innerHeight`),
     "its link leads down the page to the validation, the address as it was");
   await page.click("Approve…", `document.querySelector(".validation")`);
@@ -885,12 +888,12 @@ try {
   })()`);
   check(writtenView.headline === `Approved: proposal ${keysFix.id.slice(0, 8)}, written to the skill's own file` && writtenView.green,
     `and the page says so first, with the evidence it stood on (${writtenView.headline})`);
-  check(writtenView.row === "approved,survived a screen,met the gate" && writtenView.card, `the approved proposal picked out, in the evidence and its card (${writtenView.row})`);
+  check(writtenView.row === "approved,beat the original,passed the approval checks" && writtenView.card, `the approved proposal picked out, in the evidence and its card (${writtenView.row})`);
   check(writtenView.about.includes(`${health.home}/lab-task/tally-report/SKILL.md`), "About this refinement says where it wrote");
 
   console.log("the proposer's key: set, never shown, cleared");
   await page.eval(`location.hash = "#/connections"`);
-  await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "Proposer")`), "the Proposer panel");
+  await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "Proposing model")`), "the Proposing model panel");
   const secret = `sk-browser-${Date.now().toString(36)}-0123456789abcdef`;
   await page.eval(`[...document.querySelectorAll("details.fold > summary")].find((s) => s.textContent === "Set a key").click()`);
   await page.type(`document.querySelector('[name="proposer_key"]')`, secret);
@@ -963,7 +966,7 @@ try {
   await until(() => page.eval(`[...document.querySelectorAll(".page-head button")].some((b) => b.textContent === "Move to trash")`), "the refinement's way to the trash");
   await page.click("Move to trash", `document.querySelector(".page-head")`);
   await until(() => page.eval(`(document.querySelector(".trashed-banner")?.textContent || "").includes("takes no new work")`), "the banner of a refinement in the trash");
-  check(await page.eval(`!document.querySelector(".page-head button") && ![...document.querySelectorAll("button")].some((b) => b.textContent === "Start the screen")`),
+  check(await page.eval(`!document.querySelector(".page-head button") && ![...document.querySelectorAll("button")].some((b) => b.textContent === "Start the test")`),
     "in the trash, it offers no new work");
   check(!(await api("/refinements")).some((each) => each.id === refinementId), "and leaves the list of refinements");
   await page.eval(`location.hash = "#/trash"`);
@@ -1137,7 +1140,7 @@ try {
   await until(() => page.eval(`document.querySelectorAll('input[name="session"]').length === 2`), "a file of two sessions asks which");
   await page.eval(`(() => { const choice = document.querySelector('input[name="session"][value="20261018_120001_aa11bb"]'); choice.click(); return true; })()`);
   await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "What it holds")`), "what the chosen session holds");
-  check(await page.eval(`document.querySelector("main").textContent.includes("tally-report — loaded by a call; in context from step 2")`),
+  check(await page.eval(`document.querySelector("main").textContent.includes("tally-report — loaded by a call; the model reads it from step 2")`),
     "the skill it shows, and from which step it is in context");
   check(await page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.includes("names no tools"))`),
     "what the file lacked, said before anything is recorded");
@@ -1176,7 +1179,7 @@ try {
     const note = document.querySelector("#s1 .start-note");
     return fork?.getAttribute("aria-disabled") === "true" && !fork.hasAttribute("href")
       && fork.title.endsWith("Make a scenario of this run, run it with tuningfork, and fork from one of its runs.")
-      && note.textContent.includes("Forking needs a run tuningfork launched; this one was imported. Make a scenario of it, run it, and fork from one of its runs.")
+      && note.textContent.includes("Forking needs a run tuningfork started. This one was imported. Make a scenario of it, run it, and fork from one of its runs.")
       && note.querySelector("a")?.getAttribute("href") === "#/runs/${imported.id}/scenario";
   })()`), "on an imported run, Fork from here… is greyed, says why, and leads to a scenario whose runs fork");
   await page.eval(`location.hash = "#/runs"`);
@@ -1334,10 +1337,10 @@ try {
   const ofSecond = await study("tally-report");
   check(await page.eval(`document.querySelector('textarea[name="prompt"]').value === "Tidy data.csv, then summarize it into report.json."`),
     "the skill chosen, its starting prompt is the person's message");
-  check(ofSecond.startsWith("part-done:given as done | part-first:each run starts here"),
-    `studying the second skill, the first one's load is given as done and each run starts at the second's (${ofSecond})`);
+  check(ofSecond.startsWith("part-done:already done | part-first:each run starts here"),
+    `studying the second skill, the first one's load is already done and each run starts at the second's (${ofSecond})`);
   const ofFirst = await study("csv-tidy");
-  check(ofFirst.startsWith("part-first:each run starts here | part-live:made by its modelstops after a load like this"),
+  check(ofFirst.startsWith("part-first:each run starts here | part-live:made freshstops after a load like this"),
     `studying the first skill, each run starts at its load and stops at the second's (${ofFirst})`);
 
   console.log("a run tuningfork launched, as a scenario: its task's check, its workspace's files");
@@ -1349,7 +1352,7 @@ try {
   check(await page.eval(`document.querySelector('[name="check-kind-run"][value="own"]').checked
     && document.querySelector(".check-command pre").textContent.startsWith("python3")`),
     "its check is the task's own unless told otherwise, chosen as a new scenario's is");
-  check(await page.eval(`document.querySelector("main").textContent.includes("Its inputs: the run's workspace where the scenario starts")`),
+  check(await page.eval(`document.querySelector("main").textContent.includes("Its inputs are the run's workspace where the scenario starts")`),
     "it says its inputs come from the run's workspace");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
   await planShows(page, "data.csv");
@@ -1397,7 +1400,7 @@ try {
     .querySelector(".chip").textContent === "recorded live"`), "the Runs list marks it recorded live, where a label would name it");
   // Its system prompt is the imported chats' too, but nothing else of them is: no branch of theirs.
   check(caught.forked_from_run === null && !(await page.eval(`[...document.querySelectorAll(".run-row")]
-    .find((row) => row.textContent.includes("${caught.id.slice(0, 8)}")).textContent.includes("fork @")`)),
+    .find((row) => row.textContent.includes("${caught.id.slice(0, 8)}")).textContent.includes("branch @")`)),
     "and sharing only a system prompt with other runs, it is no fork of theirs");
   await page.eval(`location.hash = "#/runs/${caught.id}"`);
   await until(() => page.eval(`!!document.querySelector(".tl-rail-head")`), "its page");

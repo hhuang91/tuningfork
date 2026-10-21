@@ -132,7 +132,7 @@ function facts({ run, steps, launch, entries }) {
   }
   if (launch?.context) {
     items.push(`continues its scenario's chat: ${plural(launch.context.messages, "message")}`
-      + (launch.context.in_turn ? `, ${plural(launch.context.in_turn, "step")} of its turn done` : ""));
+      + (launch.context.in_turn ? `, then ${plural(launch.context.in_turn, "message")} of its turn, already done` : ""));
   }
   if (run.parent_run_id && run.role !== "main" && run.role !== "fork") {
     items.push([`${run.role} of `, h("a", { class: "mono", href: `#/runs/${run.parent_run_id}` }, `run ${short(run.parent_run_id)}`),
@@ -177,7 +177,7 @@ function aboutRun({ run, launch, threads }) {
   const result = run.result;
   // A run nothing launched has a chip beside its title saying how it came: this says only what
   // the chip cannot.
-  const meta = [launch ? `launched by tuningfork, ${launch.kind}` : run.imported ? `from ${importedFrom(run.imported)}` : null,
+  const meta = [launch ? `started by tuningfork, ${launch.kind}` : run.imported ? `from ${importedFrom(run.imported)}` : null,
     threads.length ? plural(threads.length, "other conversation") : null].filter(Boolean).join(" · ");
   return foldPanel("About this run", () => h("div", { class: "stack" },
       kv([
@@ -190,7 +190,7 @@ function aboutRun({ run, launch, threads }) {
         ["imported from", run.imported ? importedFrom(run.imported) : null],
         ["its conversation", launch?.context
           ? [`${plural(launch.context.messages, "message")} of its scenario's chat`
-              + (launch.context.in_turn ? `, then ${plural(launch.context.in_turn, "step")} of its turn given as done` : ""),
+              + (launch.context.in_turn ? `, then ${plural(launch.context.in_turn, "message")} of its turn, already done` : ""),
             h("span", { class: "muted" }, ` — ${launch.context.file}`)]
           : null],
         ["fork of", run.fork_of
@@ -201,7 +201,7 @@ function aboutRun({ run, launch, threads }) {
               run.spawned_at !== null && run.spawned_at !== undefined ? `, from its step ${run.spawned_at}` : ""]
           : null],
         ["server", run.server_id ? h("span", { class: "mono" }, run.server_id.slice(0, 8)) : null],
-        ["forked from", run.forked_from_run
+        ["branched from", run.forked_from_run
           ? [h("a", { class: "mono", href: `#/runs/${run.forked_from_run}` }, short(run.forked_from_run)),
              `: the two share their first ${plural(run.forked_at_depth, "message")}`]
           : null],
@@ -237,7 +237,7 @@ function aboutRun({ run, launch, threads }) {
             " — the copy it kept, or the SKILL.md its model read, added to Skills as a copy of tuningfork's own.")
         : null,
       threads.length
-        ? h("div", null, h("div", { class: "label" }, "Other conversations in this launch"),
+        ? h("div", null, h("div", { class: "label" }, "Other conversations its harness had in this run"),
             h("div", { class: "stack", style: { gap: "4px" } }, threads.map((thread) =>
               h("a", { href: `#/runs/${thread.run_id}` }, chip(thread.role, "muted"),
                 ` ${short(thread.run_id)} · ${plural(thread.steps, "step")}`,

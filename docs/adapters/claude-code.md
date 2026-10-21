@@ -73,7 +73,7 @@ recorded, not after a failed run:
 |---|---|
 | The Anthropic Messages API, `/v1/messages` | Claude Code speaks nothing else; llama-server serves it natively |
 
-What a server offers is measured, not assumed: `tuningfork connections check` (or *Check
+What a server offers is measured, not assumed: `tuningfork connections check` (or *Test
 the server* on the Connections page) makes one streaming tool call and one `/v1/messages`
 call through the proxy, and keeps the answers with the server's identity. Until a server
 is checked, a launch goes ahead with a note that the requirement was not measured.

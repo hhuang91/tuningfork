@@ -19,7 +19,7 @@ export async function skillsView(root) {
   const found = await api.get("/skills");
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Skills"),
-      h("p", { class: "sub" }, "Each skill the recordings know, with every version its runs were given — a fingerprint of its files — how often each passed, and its SKILL.md.")),
+      h("p", { class: "sub" }, "Each skill the recordings know, with every version its runs were given, how often each passed, and its SKILL.md.")),
       live.mode === "live"
         ? h("div", { class: "actions" }, h("a", { class: "btn btn-primary", href: "#/add-skill", "data-control": true }, "Add a skill…"))
         : null),
@@ -174,7 +174,7 @@ async function runForm(asked) {
   const form = planForm({
     ...ways,
     fields: h("div", { class: "form-grid" },
-      field("Run", run, { help: "Imported, launched or recorded live: any run whose skill it kept, or whose conversation shows one." }),
+      field("Run", run, { help: "Imported, started by tuningfork or recorded live: any run whose skill it kept, or whose conversation shows one." }),
       field("Its skill", skill),
       field("Kept as", name, { help: "The name the copy is kept under: the skill's own, by default." })),
     read: () => {
@@ -236,7 +236,7 @@ export async function skillView(root, [name]) {
       h("p", { class: "sub" }, skill.tasks.length ? `Tasks: ${skill.tasks.join(", ")}` : "No run has been given this skill yet.")),
       waysIn(skill)),
     h("div", { class: "stack" },
-      skill.folders.map(folderPanel),
+      skill.folders.map((folder) => folderPanel(folder, versionName(skill))),
       panel("SKILL.md", viewer),
       versionsPanel(skill, (ref, against = "") => {
         state.shown = ref;
@@ -310,19 +310,28 @@ function waysIn(skill) {
           title: "Its folder is not known: a scenario of one of the runs it was in keeps the SKILL.md the model read" }, "Make a scenario of one of its runs…"));
 }
 
+/** A version's name on this page: its number in order of first run, its fingerprint beside it —
+ *  the fingerprint the Runs page shows. One the skill's versions do not hold keeps its fingerprint. */
+function versionName(skill) {
+  const order = [...skill.versions].sort((a, b) => a.first - b.first);
+  const numbers = new Map(order.map((version, index) => [version.fingerprint, index + 1]));
+  return (fingerprint) => (numbers.has(fingerprint) ? `version ${numbers.get(fingerprint)} (${fingerprint})` : `version ${fingerprint}`);
+}
+
 /** Every text the page can show: its own file now, each version, each variant, each old
  *  version an approval kept. Those whose text is already here carry it. */
 function textChoices(skill) {
+  const named = versionName(skill);
   const choices = [];
   skill.folders.forEach((folder, index) => {
     if (folder.text === null) return;
     choices.push({ ref: index ? `file:${index}` : "file", text: folder.text,
-      label: `its own file now${skill.folders.length > 1 ? ` (${folder.path})` : ""}${folder.version ? ` — version ${folder.version}` : " — not run yet"}` });
+      label: `its own file now${skill.folders.length > 1 ? ` (${folder.path})` : ""}${folder.version ? ` — ${named(folder.version)}` : " — not run yet"}` });
   });
   for (const version of skill.versions) {
     if (version.text === null) continue;
     const known = version.known_as.length ? ` — ${version.known_as.join("; ")}` : "";
-    choices.push({ ref: version.fingerprint, text: version.text, label: `version ${version.fingerprint} · ${plural(version.runs, "run")}${known}` });
+    choices.push({ ref: version.fingerprint, text: version.text, label: `${named(version.fingerprint)} · ${plural(version.runs, "run")}${known}` });
   }
   for (const variant of skill.variants) choices.push({ ref: `variant:${variant.name}`, text: null, label: `variant ${variant.name}` });
   for (const folder of skill.folders) {
@@ -331,16 +340,16 @@ function textChoices(skill) {
   return choices;
 }
 
-function folderPanel(folder) {
+function folderPanel(folder, named) {
   const status = folder.text === null
     ? chip("no SKILL.md there", "warn")
-    : folder.version ? chip(`its SKILL.md is version ${folder.version}`, "accent", "Runs have been given exactly this text")
+    : folder.version ? chip(`its SKILL.md is ${named(folder.version)}`, "accent", "Runs have been given exactly this text")
       : chip("its SKILL.md has not been run yet", "warn", "No run has been given this text: run a task to measure it");
   return panel("Its own folder", h("div", { class: "stack", style: { gap: "6px" } },
     folder.added ? addedLine(folder.added) : null,
     h("div", null, h("span", { class: "mono" }, folder.path), " ", status),
     folder.windows ? h("div", { class: "muted small" }, "From Windows: ", h("span", { class: "mono" }, folder.windows)) : null,
-    folder.specs.length ? h("div", { class: "muted small" }, `Named by ${plural(folder.specs.length, "spec")}: `,
+    folder.specs.length ? h("div", { class: "muted small" }, `Named by ${plural(folder.specs.length, "task file")}: `,
       h("span", { class: "mono" }, folder.specs.join(", "))) : null,
     folder.changelog !== null || folder.history.length
       ? h("div", { class: "muted small" }, "Beside it, written by approvals: ",
@@ -403,13 +412,15 @@ function versionsPanel(skill, show) {
     return panel("Versions", h("p", { class: "muted" }, "None yet: no run has been given this skill."));
   }
   const fileRef = skill.folders.find((folder) => folder.text !== null) ? "file" : null;
+  const order = [...skill.versions].sort((a, b) => a.first - b.first).map((version) => version.fingerprint);
   return panel(`Versions · ${skill.versions.length}`, [
-    h("p", { class: "hint" }, "A version is every run given the same skill files, byte for byte. Each rate is that version's alone — runs under another wording are another sample — with its Wilson 95% interval."),
+    h("p", { class: "hint" }, "A version is every run given the same skill files, byte for byte, numbered in order of first run. Each rate is that version's alone — runs under another wording are another sample — with its 95% interval."),
     h("div", { class: "table-wrap" }, h("table", { class: "table" },
       h("thead", null, h("tr", null, h("th", null, "version"), h("th", null, "pass rate, by task · harness · model"),
         h("th", { class: "num" }, "runs"), h("th", null, "when"), h("th", null, ""))),
       h("tbody", null, skill.versions.map((version) => h("tr", null,
-        h("td", null, h("div", { class: "mono" }, version.fingerprint),
+        h("td", null, h("div", null, h("strong", null, `version ${order.indexOf(version.fingerprint) + 1}`),
+          " ", h("span", { class: "mono faint small", title: "A fingerprint of its files, as the Runs page names it" }, version.fingerprint)),
           version.known_as.map((label) => h("div", null, chip(label, label.startsWith("its own file") ? "accent" : "skill")))),
         h("td", null, version.conditions.map((condition) => h("div", { class: "condition-rate" },
           h("span", { class: "muted small" }, [condition.task_id, condition.harness, condition.model].filter(Boolean).join(" · ")),
@@ -432,7 +443,7 @@ function variantsPanel(skill, show) {
       h("td", { class: "mono" }, variant.name),
       h("td", null,
         variant.proposal ? ["a proposal of ", h("a", { class: "mono", href: `#/refine/${variant.proposal.refinement}` }, `refinement ${variant.proposal.refinement}`)] : "a wording saved for an experiment",
-        variant.version ? [" · ", chip(`run as version ${variant.version}`, "skill")] : null),
+        variant.version ? [" · ", chip(`run as ${versionName(skill)(variant.version)}`, "skill")] : null),
       h("td", { class: "faint small", title: when(variant.modified) }, ago(variant.modified)),
       h("td", { class: "row-actions" }, h("button", { class: "btn btn-small", type: "button", onclick: () => show(`variant:${variant.name}`) }, "Show"))))))));
 }

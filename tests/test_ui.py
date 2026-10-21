@@ -208,7 +208,7 @@ class TestRefining:
         assert "gateList(plan.gate)" in refine and "/repair`" in refine
         # Validations are drawn as the person's own view: held-out rows, the gate's every check.
         assert "counts.held_out" in refine and "check.low_powered" in refine
-        assert 'validate: "Edit validated"' in source("js/jobs.js")
+        assert 'validate: "Full test runs of an edit"' in source("js/jobs.js")
 
     def test_the_key_is_written_and_never_shown(self):
         connections = source("js/views/connections.js")

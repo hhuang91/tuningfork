@@ -65,7 +65,7 @@ event as the focus leaves it once lost that click) — a form asking for its pla
 refreshes it, and not for an event that changes nothing — shows the known shift, saves the variant only
 when it starts, and leads its page with the
 edit it tested, then the target and which way the variant moved it — in the accent's colour, never
-a check's green — with each behaviour badged target or not target; that no target is
+a check's green — with each behaviour badged by whether it matches what is counted; that no target is
 chosen for you; that a task runs again from its run's page, its check shown whole; that a
 fork stops at its step for a person and runs on when continued, and one cancelled as it waits
 keeps no verdict, its page saying it was stopped and why; that forks run to the end,
@@ -95,7 +95,7 @@ target first, offering no exploratory choice; that the lab's built-in proposer, 
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have; that a person's own wording joins them; that a screen of two,
 Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
-behaviours badged target or not target — and each proposal then carries its
+behaviours badged by whether they match what is counted — and each proposal then carries its
 verdict, the refinement's page leading with that evidence — where it stands, each proposal's
 screen in a line — above what a proposer is shown, the original wording's answers, with the
 skill's paths closed away in About; that a survivor, validated from its refinement's page, runs forks to the end, the

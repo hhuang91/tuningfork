@@ -2,7 +2,7 @@
 
 import { api, enc, query } from "../api.js";
 import {
-  ago, chip, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
+  ago, capital, chip, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
 } from "../dom.js";
 import { costOf } from "../cost.js";
 import { live } from "../live.js";
@@ -10,6 +10,7 @@ import { comparisonView, distributionView, forkingView, formatP, screenView, tal
 import { trashButton, trashedBanner } from "../trash.js";
 import { whereForm } from "../where.js";
 import { diffView } from "./refine.js";
+import { LABELS } from "../words.js";
 
 export async function experimentsView(root) {
   replace(root, loading());
@@ -32,25 +33,25 @@ export async function experimentsView(root) {
       // A screen's arms: the original and each proposal, equal when it has finished.
       const group = arms.get(experiment.group_id) || [experiment];
       return new Set(group.map((arm) => arm.samples)).size === 1
-        ? `${group[0].samples} per arm · ${group.length} arms`
+        ? `${group[0].samples} for each of ${group.length} wordings`
         : group.map((arm) => `${arm.arm} ${arm.samples}`).join(" · ");
     }
     if (experiment.kind !== "ab") return String(experiment.samples);
     const group = [...(arms.get(experiment.group_id) || [experiment])].sort((a, b) => a.arm.localeCompare(b.arm));
     // Equal arms read as one number; an A/B still running, or stopped part way, shows each.
     return group.length === 2 && group[0].samples === group[1].samples
-      ? `${group[0].samples} per arm`
+      ? `${group[0].samples} for each wording`
       : group.map((arm) => `${arm.arm} ${arm.samples}`).join(" · ");
   };
 
   replace(
     root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Experiments"),
-      h("p", { class: "sub" }, "Resamples, wording A/B tests and screens of proposed edits, from a recorded step. Start one from a step's page, or from a terminal: `tuningfork resample`, `tuningfork ab`, `tuningfork refine screen`."))),
+      h("p", { class: "sub" }, "Resamples, wording A/B tests and tests of proposed edits, each made at a recorded step. Start one from a step's page, or from a terminal: `tuningfork resample`, `tuningfork ab`, `tuningfork refine screen`."))),
     rows.length
       ? h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
-          h("thead", null, h("tr", null, h("th", null, "experiment"), h("th", null, "kind"), h("th", null, "checkpoint"),
-            h("th", { class: "num" }, "samples"), h("th", null, "declared target"), h("th", null, "when"))),
+          h("thead", null, h("tr", null, h("th", null, "experiment"), h("th", null, "kind"), h("th", null, "step"),
+            h("th", { class: "num" }, "samples"), h("th", null, "what is counted"), h("th", null, "when"))),
           h("tbody", null, rows.map((experiment) =>
             h("tr", { class: "clickable", onclick: () => (location.hash = `#/experiments/${experiment.id}`) },
               h("td", null, h("a", { class: "mono", href: `#/experiments/${experiment.id}` }, short(experiment.id))),
@@ -68,13 +69,18 @@ export async function experimentsView(root) {
   );
 }
 
-function kindChip(experiment) {
+/** What kind of experiment it is, in the pages' words. */
+export function kindName(experiment) {
   const toEnd = experiment.reach === "end";
-  const kinds = { ab: toEnd ? "A/B to the end" : "A/B", "forking-tokens": "forking tokens", screen: "screen" };
-  return chip(kinds[experiment.kind] || (toEnd ? "resample to the end" : "resample"), "muted");
+  const kinds = { ab: toEnd ? "A/B to the end" : "A/B", "forking-tokens": "forking tokens", screen: toEnd ? "test at a step, to the end" : "test at a step" };
+  return kinds[experiment.kind] || (toEnd ? "resample to the end" : "resample");
 }
 
-const TITLES = { ab: "Wording A/B", resample: "Resample", "forking-tokens": "Forking tokens", screen: "Screen of proposed edits" };
+function kindChip(experiment) {
+  return chip(kindName(experiment), "muted");
+}
+
+const TITLES = { ab: "Wording A/B", resample: "Resample", "forking-tokens": "Forking tokens", screen: "Proposed edits, tested at a step" };
 
 export async function experimentView(root, [id], scope) {
   replace(root, loading());
@@ -133,7 +139,7 @@ export async function experimentView(root, [id], scope) {
       : experiment.kind === "forking-tokens"
         ? ": at each probed token, the run's own and each alternative forced, and the model left to go on — with everything before it held fixed."
         : experiment.kind === "screen"
-          ? ": each proposal's wording swapped in, and sampled against a fresh arm of the original — with everything before it held fixed."
+          ? ": each proposal's wording swapped in, and sampled against the original wording, drawn fresh — with everything before it held fixed."
           : ", with everything before it held fixed.";
     const refinement = experiment.settings?.refinement;
 
@@ -162,10 +168,10 @@ export async function experimentView(root, [id], scope) {
         runningBanner(experiment),
         (experiment.partial || []).map((arm) =>
           h("div", { class: "banner banner-warn" }, h("strong", null, "Stopped early. "),
-            `The ${arm.arm} arm has ${arm.drawn} of its ${arm.meant} samples; its rates are over those.`)),
+            `The ${arm.arm} wording has ${arm.drawn} of its ${arm.meant} samples, and its rates are over those.`)),
         experiment.interrupted
           ? h("div", { class: "banner banner-warn" }, h("strong", null, "This A/B was interrupted. "),
-            `Only its ${experiment.interrupted} arm ran, so there is nothing to compare; its samples are below.`)
+            `Only its ${experiment.interrupted} wording ran, so there is nothing to compare. Its samples are below.`)
           : null,
         experiment.wording ? wordingPanel(experiment.wording) : null,
         experiment.comparison ? comparisonView(experiment) : null,
@@ -177,7 +183,7 @@ export async function experimentView(root, [id], scope) {
         // forks wrote that the failing ones did not.
         experiment.screen && experiment.reach === "end"
           ? (whereHolds ??= panel("Where does it hold?", whereForm(null, { screen: experiment.id }), {
-              meta: h("span", { class: "muted" }, "One question of every fork, arm by arm: what the passing forks have that the failing lack."),
+              meta: h("span", { class: "muted" }, "One question of every fork, wording by wording: what the passing forks have that the failing lack."),
             }))
           : null,
         experiment.distribution ? distributionView(experiment.distribution) : null,
@@ -223,7 +229,7 @@ function originBanner(experiment) {
   if (!origin?.hold) return null;
   if (origin.matches_step === false) {
     return h("div", { class: "banner banner-warn" }, h("strong", null, "Sampled at a held call, then edited. "),
-      "These samples are of the request as it was held; the model then saw an edited one. They are not this step's behaviour, and no A/B target is taken from them.");
+      "These samples are of the request as it was held, and the model then saw an edited one. They are not this step's behaviour, and an A/B never takes what to count from them.");
   }
   return h("div", { class: "banner" }, h("strong", null, "Sampled at a held call. "),
     experiment.run_id ? "Filed under the step the call became." : "Filed under its step once the call is recorded.");
@@ -231,7 +237,7 @@ function originBanner(experiment) {
 
 function runningBanner(experiment) {
   if (experiment.status !== "running") return null;
-  const arms = (experiment.running || []).map((arm) => `${arm.arm === "original" && experiment.kind !== "ab" ? "" : `the ${arm.arm} arm: `}${arm.drawn} of ${arm.meant}`);
+  const arms = (experiment.running || []).map((arm) => `${arm.arm === "original" && experiment.kind !== "ab" ? "" : `the ${arm.arm} wording: `}${arm.drawn} of ${arm.meant}`);
   return h("div", { class: "banner" }, h("strong", null, "Still running. "),
     arms.length ? `${arms.join("; ")} samples so far — the rates below are over those. ` : "The rates below are over the samples so far. ",
     experiment.job_id ? h("a", { href: `#/jobs/${experiment.job_id}` }, "Its job") : null,
@@ -270,7 +276,7 @@ function nextSteps(experiment) {
 function armView(arm, label, tone) {
   return h("div", { class: "stack", style: { gap: "4px" } },
     h("span", null, h("span", { class: "muted" }, `${label}  `), arm.rate ? rateBar(arm.rate, tone) : h("span", { class: "muted" }, "no fork counts")),
-    arm.timeouts ? h("span", { class: "small muted" }, `${plural(arm.timeouts, "fork")} timed out: counted as failures, as the gate counts them`) : null,
+    arm.timeouts ? h("span", { class: "small muted" }, `${plural(arm.timeouts, "fork")} timed out, counted as failures, as the approval checks count them`) : null,
     arm.exclusions.length
       ? h("ul", { class: "small" }, arm.exclusions.map((left) =>
           h("li", null, h("span", { class: "mono" }, short(left.run_id || "")), ` not counted: ${left.why}`)))
@@ -283,7 +289,7 @@ function toEndView(experiment) {
     // One arm: a resample to the end, or the arm an interrupted A/B got through.
     return h("div", { class: "stack" },
       panel("The task's check, end to end", [armView(result, "passed", undefined)],
-        { meta: h("span", { class: "muted" }, `${plural(result.counted, "fork")} counted · Wilson 95%`) }),
+        { meta: h("span", { class: "muted", title: "Wilson score interval" }, `${plural(result.counted, "fork")} counted · 95% interval`) }),
       distributionView(result.actions, "What the model did at the step"),
       forksPanel([[null, result]]));
   }
@@ -292,19 +298,19 @@ function toEndView(experiment) {
   const up = result.direction === "up";
   const passes = (arm) => `${arm.passed} of ${arm.counted}`;
   const headline = result.p_value === null
-    ? "No test: an arm has no fork that counts"
+    ? "No test: one wording has no fork that counts."
     : significant
-      ? `The variant passed the check ${up ? "more" : "less"} often: ${passes(result.variant)} forks, against ${passes(result.original)} with the original`
-      : `No significant difference: the variant's forks passed the check in ${passes(result.variant)}, the original's in ${passes(result.original)}`;
+      ? `The variant passed the check ${up ? "more" : "less"} often: ${passes(result.variant)} forks, against ${passes(result.original)} with the original. That is ${LABELS.beyondChance}.`
+      : `${capital(LABELS.withinChance)}: the variant's forks passed the check in ${passes(result.variant)}, and the original's in ${passes(result.original)}.`;
   return h("div", { class: "stack" },
     panel("Original wording against the variant, to the end", [
       h("div", { class: ["verdict-block", significant ? "significant" : "not-significant", significant ? (up ? "tone-ok" : "tone-bad") : null] },
-        targetLine("the task's check passes", "declared by the task, before any fork ran"),
+        targetLine("the task's check passes", "set by the task, before any fork ran"),
         h("div", { class: "verdict-big" }, headline),
         h("div", { class: "stack", style: { gap: "4px" } },
           armView(result.original, "original", undefined), armView(result.variant, "variant", "change")),
-        result.p_value === null ? null : h("div", { class: "mono small" }, `Fisher exact p = ${formatP(result.p_value)} (α = ${result.alpha})`)),
-      h("p", { class: "hint" }, "Steps before this one were answered from the recording in every fork, so both arms share the history written under the original wording; from here each ran live with its own wording."),
+        result.p_value === null ? null : h("div", { class: "mono small", title: "Fisher's exact test" }, `p = ${formatP(result.p_value)}, α = ${result.alpha}`)),
+      h("p", { class: "hint" }, "Steps before this one were answered from the recording in every fork, so both wordings share the history written under the original. From here, each ran live with its own wording."),
     ]),
     distributionView(result.original.actions, "Original: what the model did at the step"),
     distributionView(result.variant.actions, "Variant: what the model did at the step"),

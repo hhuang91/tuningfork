@@ -52,6 +52,12 @@ export function seedField() {
   return field("Seed base", input("seed_base", { type: "number", placeholder: "random", min: 0 }), { help: SEED_HELP });
 }
 
+/** How behaviours are grouped: the normalizers an experiment reads them by, none naming the defaults. */
+export function groupingField() {
+  return field("How behaviours are grouped", input("normalizers", { placeholder: "the defaults" }),
+    { help: "Normalizer names, comma-separated. None means the defaults.", wide: true });
+}
+
 export function cacheField() {
   return h("label", { class: "form-field" },
     h("span", { class: "form-label" }, "Prompt cache"),
@@ -143,7 +149,7 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     for (const invalid of form.querySelectorAll(".field-invalid")) invalid.classList.remove("field-invalid");
     const found = name ? form.querySelector(`[name="${CSS.escape(name)}"]`) : null;
     found?.classList.add("field-invalid");
-    // A field folded away under More settings is opened, so the one refused can be seen.
+    // A field folded away under Advanced settings is opened, so the one refused can be seen.
     const fold = found?.closest("details");
     if (fold) fold.open = true;
   }

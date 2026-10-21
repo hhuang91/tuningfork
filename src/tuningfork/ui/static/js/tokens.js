@@ -185,8 +185,10 @@ export function heatmap(view, { onProbe = null, probeOff = null, marks = null, f
         h("span", { class: "muted" }, PART_LABEL[token.part] || token.part || ""),
         h("span", { class: "mono tk-quoted" }, quoted(token.text)),
         h("span", { class: "muted small" }, `chosen at ${pct(token.p)}`),
-        token.entropy !== null ? h("span", { class: "muted small" }, `entropy ≥ ${token.entropy.toFixed(2)} bits`) : null,
-        token.margin !== null ? h("span", { class: "muted small" }, `margin ${token.margin.toFixed(2)}`) : null),
+        token.entropy !== null ? h("span", { class: "muted small", title: "How spread the model's chances were over all its alternatives: 0 bits is certain." },
+          `entropy ≥ ${token.entropy.toFixed(2)} bits`) : null,
+        token.margin !== null ? h("span", { class: "muted small", title: "The top choice's chance minus the second's: near 0, a toss-up between the two." },
+          `margin ${token.margin.toFixed(2)}`) : null),
       token.redacted
         ? h("p", { class: "muted small" }, "Redacted: part of a secret, so nothing about it is kept.")
         : h("div", { class: "tk-alts" }, token.alternatives.map(([text, p]) =>
@@ -212,7 +214,7 @@ export function heatmap(view, { onProbe = null, probeOff = null, marks = null, f
         h("a", { class: "mono", href: `#/experiments/${experiment.id}?at=${position.position}` }, `probe ${short(experiment.id)}`),
         h("span", { class: "small muted" }, arm(position.baseline, "as run")),
         position.alternatives.map((alt) => h("span", { class: ["small", alt.flips ? "tk-probe-flip" : "muted"] },
-          arm(alt, "forced") + (alt.flips ? `, flips ${alt.direction === "away" ? "away from" : "toward"} the target` : ""))))));
+          arm(alt, "forced") + (alt.flips ? `, flips ${alt.direction === "away" ? "away from" : "toward"} what you count` : ""))))));
   }
 
   function choose(position) {
@@ -291,6 +293,8 @@ function head(view) {
   if (stream.exact === true) facts.push("rebuilt exactly");
   if (stream.exact === false) facts.push("rebuilt approximately");
   return h("div", { class: "tk-head" },
+    h("p", null, "Each token is shaded by how unsure the model was when it chose it: the stronger the shade, the more "
+      + "easily it could have gone another way. Click a token for the alternatives it had."),
     h("span", { class: "muted small" }, `stream ${short(stream.id)} · ${facts.filter(Boolean).join(" · ")} · ${when(stream.created_at)}`),
     view.same_server === false
       ? h("div", { class: "banner banner-warn small" }, "Scored on a different server than the step ran on: the numbers are that server's.")

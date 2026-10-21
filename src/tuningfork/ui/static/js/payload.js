@@ -80,8 +80,9 @@ export function toolCallView(call) {
   return h(
     "div",
     { class: "toolcall" },
-    h("div", { class: "toolcall-head" }, chip("tool call", "accent"), h("span", { class: "mono toolcall-name" }, fn.name || "?"),
-      call.id ? h("span", { class: "faint mono small push" }, call.id) : null),
+    // The call's id, which a tool result answers to, on hover: it is the harness's, not the model's.
+    h("div", { class: "toolcall-head" }, chip("tool call", "accent"),
+      h("span", { class: "mono toolcall-name", title: call.id ? `call id ${call.id}` : undefined }, fn.name || "?")),
     h(
       "div",
       { class: "args" },
@@ -218,7 +219,6 @@ export function messageView(message, index, {
   const own = spans.filter((span) => span.message_index === index);
   const head = [
     roleChip(role),
-    h("span", { class: "faint mono" }, `#${index}`),
     role === "tool" ? h("span", { class: "muted" }, `result of ${names.get(message.tool_call_id) || "a tool call"}`) : null,
     own.length ? chip(own.map((span) => span.name).join(", "), "skill") : null,
     edited ? chip(...(CHANGED[changedBy] || CHANGED.breakpoint)) : null,
@@ -229,7 +229,8 @@ export function messageView(message, index, {
   return h(
     "details",
     { class: ["msg", `msg-${roleClass(role)}`, edited && "msg-edited"], id: `${idPrefix}m${index}`, open },
-    h("summary", { class: "msg-head" }, head),
+    // Its number in the request, on hover: what the terminal's `tuningfork step` calls it.
+    h("summary", { class: "msg-head", title: `message #${index}` }, head),
     h("div", { class: "msg-body" }, reasoningView(message), contentView(message, own, { recorded }), (message.tool_calls || []).map(toolCallView)),
   );
 }

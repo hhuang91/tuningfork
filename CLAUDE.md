@@ -129,8 +129,8 @@ preloaded — a run starting before its turn is never sent that turn, one after 
 context, where a variant never reaches it. The form sets each run beside the chat: what it is
 given — its harness's own system prompt and tools, the chat's shown and never sent
 (`scenario_choices`' `system`, `tools`), the conversation before the prompt, the prompt — then the
-steps from the prompt on, each by what a run does with it (`Start.steps`, `STEP_PARTS`: given as
-done, where each run starts, made by its model, past where it stops, after the person's next turn).
+steps from the prompt on, each by what a run does with it (`Start.steps`, `STEP_PARTS`: already
+done, where each run starts, made fresh by its model, past where it stops, after the person's next turn).
 The skill is the folder the person names, the import named or a launched run's task's (an approval
 writes there), else a copy in the scenario's own folder (`skill/<name>/`: the copy the run kept, or
 the SKILL.md the model read, given frontmatter where its harness showed none) — never the run's own
@@ -549,7 +549,8 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                proxy, or over its API), stdio, http (the route on the proxy)
     src/tuningfork/control.py  Python client for a running proxy (what `break`/`hold` use)
     src/tuningfork/ui/static/  the web UI: plain HTML/CSS/JS modules, no build step; markdown.js
-                               renders Markdown as DOM nodes, never as HTML
+                               renders Markdown as DOM nodes, never as HTML; words.js, the pages'
+                               plainer words for the glossary's terms
     src/tuningfork/wire/       wire formats: OpenAI chat-completions, Anthropic Messages; raw
                                completions (model load the proxy gates, never recorded)
     src/tuningfork/backends/   server capability profiles + runtime probe; raw.py, the raw path
@@ -610,6 +611,19 @@ than on a hardcoded assumption about which server is running.
   never typed.
 - The UI puts every string on the page as a text node — payloads are full of markup-looking
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
+- The web UI says some terms more plainly than the CLI, MCP and the docs, which keep the precise
+  words: an arm is a *wording*, a target *what you count* (a refinement's, *what the model should
+  do*), a screen a *test at this step*, a validation *full test runs*, a spec a *task file*.
+  `ui/static/js/words.js` holds the phrase for each term the glossary defines (a term's `ui`;
+  `tests/test_words.py` holds the two together), the Words page shows both, and `tuningfork
+  glossary` finds a term by its page phrase too. A sentence the server writes — a refusal, a plan's
+  warning — keeps the precise words, as the terminal prints it; one that points at a control names
+  it in both front ends. A target's badge beside a behaviour says *matches* or *no match*, never
+  *counted*: amber *not counted* is a run or fork left out of a pass rate. The pages' own
+  sentences: one idea a sentence, a sentence rather than a label with a colon; what a thing is
+  before what it is not ("a lead, not a verdict"); the plain phrase first, the precise term after
+  it, muted or in a tooltip; help under a field says what to type, why it matters goes in a
+  tooltip; buttons are verb phrases, with an ellipsis only where a form opens.
 - The UI keeps green and red for a check: a run's verdict (which closes its page), a fork's, a
   gate's, and a change in how often a task's check passes (an A/B or a screen run to the end).
   Any other significant result is the accent's colour, said in words with its direction —

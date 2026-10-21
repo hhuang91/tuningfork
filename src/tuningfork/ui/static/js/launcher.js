@@ -50,7 +50,7 @@ export async function launcher() {
     const run = chosenRun();
     const unlaunched = run && NEEDS_LAUNCH.has(kind?.name) && !run.launch_id;
     replace(about, kind?.summary || "",
-      unlaunched ? h("span", { class: "path-line path-bad" }, "This run was not launched by tuningfork, so it cannot be forked: choose one from a batch.") : null);
+      unlaunched ? h("span", { class: "path-line path-bad" }, "This run was not started by tuningfork, so it cannot be forked: choose one from a batch.") : null);
     open.disabled = !kind || !run || stepSelect.disabled || stepSelect.value === "" || unlaunched;
   }
 
@@ -88,8 +88,8 @@ export async function launcher() {
       about,
       h("div", { class: "form-actions" }, open)) : null,
     h("p", { class: "form-help" },
-      "The server check is on ", h("a", { href: "#/connections" }, "Connections"),
+      "The server test is on ", h("a", { href: "#/connections" }, "Connections"),
       "; sampling a call held at a breakpoint, or asking the model about it, is on ",
-      h("a", { href: "#/live" }, "Live"), ", beside the call; proposing and screening edits of a skill, on ",
+      h("a", { href: "#/live" }, "Live"), ", beside the call; proposing edits of a skill and testing them, on ",
       h("a", { href: "#/refine" }, "Refine"), ".")), { className: "launcher" });
 }
