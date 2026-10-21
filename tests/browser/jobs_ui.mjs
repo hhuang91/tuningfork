@@ -979,12 +979,15 @@ try {
     return above?.dataset.idx === "${result.after}" && line.textContent === "↳${called.function.name} result";
   })()`), `a tool's result named for its tool, under the step that called it (${called.function.name}, step ${result.after})`);
   // Its line leads to it in the conversation, and opens nothing, as a step's line opens nothing:
-  // folded, it stays folded.
-  await page.eval(`document.querySelector("#tm${result.index}").open = false; window.scrollTo(0, document.documentElement.scrollHeight)`);
+  // folded, it stays folded. It starts out of sight, so reaching it is the line's doing (found in
+  // review: from the page's end, it was in sight already).
+  const inSight = (selector) => `(() => { const top = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`;
+  await page.eval(`document.querySelector("#tm${result.index}").open = false; window.scrollTo(0, 0)`);
+  const resultBefore = await page.eval(inSight(`#tm${result.index}`));
   await page.eval(`document.querySelector('.tl-rail-result[data-entry="${result.index}"]').click()`);
-  await until(() => page.eval(`(() => { const top = document.querySelector("#tm${result.index}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`),
-    "the result, from the rail");
-  check(await page.eval(`!document.querySelector("#tm${result.index}").open`), "its line leads to it in the conversation, folded as it was: the rail opens nothing");
+  await until(() => page.eval(inSight(`#tm${result.index}`)), "the result, from the rail");
+  check(!resultBefore && await page.eval(`!document.querySelector("#tm${result.index}").open`),
+    "its line brings the result, out of sight, into sight in the conversation, folded as it was: the rail opens nothing");
   // Opening a step happens in place: the page is not drawn again, and the address follows.
   await page.eval(`document.querySelector(".view").dataset.sentinel = "kept"`);
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
@@ -2072,16 +2075,22 @@ try {
   const lines = await page.eval(`[...document.querySelector(".tl-rail").children].map((line) => line.textContent).join(" | ")`);
   check(lines.startsWith("1 step · after 2 earlier answers | userFile receipt A. | ·read_file | ↳read_file result | ·reply | userNow file receipt B. | 0"),
     `its rail lists the conversation the first call continued, its answers unnumbered, then the run's step (${lines})`);
+  // On a page short enough to leave the answer out of sight at its end, so reaching it is the
+  // line's doing (found in review: on a tall page it was in sight already).
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 420, deviceScaleFactor: 1, mobile: false });
   const earlierLine = await page.eval(`(() => {
     const line = document.querySelector(".tl-rail-earlier");
     document.querySelector("#tm" + line.dataset.entry).open = false;
     window.scrollTo(0, document.documentElement.scrollHeight);
-    line.click();
     return line.dataset.entry;
   })()`);
-  await until(() => page.eval(`(() => { const top = document.querySelector("#tm${earlierLine}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`),
-    "the earlier answer, from the rail");
-  check(await page.eval(`document.querySelector("#tm${earlierLine}").open === false`), "an earlier answer's line leads to it in the conversation, folded as it was");
+  const earlierAt = `(() => { const top = document.querySelector("#tm${earlierLine}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`;
+  const earlierBefore = await page.eval(earlierAt);
+  await page.eval(`document.querySelector(".tl-rail-earlier").click()`);
+  await until(() => page.eval(earlierAt), "the earlier answer, from the rail");
+  const earlierFolded = await page.eval(`document.querySelector("#tm${earlierLine}").open === false`);
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  check(!earlierBefore && earlierFolded, "an earlier answer's line brings it, out of sight, into sight in the conversation, folded as it was");
 
   console.log("a long session in the rail: each of the person's turns folds to its line");
   const three = await post("/imports", { content: JSON.stringify({ id: "20261019_100000_ee44ff", source: "cli", model: "m",

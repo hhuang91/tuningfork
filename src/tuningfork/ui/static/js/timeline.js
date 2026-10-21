@@ -457,7 +457,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
         h("a", {
           class: ["tl-rail-step", step.outcome.kind === "error" && "tl-rail-error", step.kept === "retried" && "tl-rail-retried"],
           href: `${base}/${step.idx}`, dataset: { idx: step.idx },
-          // The rail moves through the run and opens nothing: a step opens from its own row.
+          // The rail's lines move through the run and open nothing: a step opens from its own row.
           onclick: (event) => {
             event.preventDefault();
             goTo(step.idx);
@@ -604,7 +604,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   }
 
   /** What a rail line for a message does: brings the message into sight in the conversation,
-   *  folded or open as it was. The rail moves through the run and opens nothing, a step's line
+   *  folded or open as it was. The rail's lines move through the run and open nothing, a step's
    *  or a message's: each opens from its own place in the conversation. */
   function goToMessage(entry) {
     return (event) => {
