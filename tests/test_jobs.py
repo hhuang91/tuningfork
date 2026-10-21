@@ -324,6 +324,18 @@ class TestLanes:
         assert runner.get(long["id"])["status"] == "running"
         runner.cancel(long["id"])
 
+    def test_work_under_way_is_listed_however_many_jobs_came_after_it(self, runner):
+        # The Jobs page says "Nothing is running or queued." from this list: a running job past
+        # its window would make that false.
+        long = runner.submit("count", {"steps": 1, "delay": 5})
+        until(lambda: runner.get(long["id"])["status"] == "running")
+        for _ in range(3):
+            settled(runner, runner.submit("quick", {"steps": 1})["id"])
+        listed = runner.list(limit=2)
+        assert [job["status"] for job in listed] == ["done", "done", "running"]
+        assert listed[-1]["id"] == long["id"]
+        runner.cancel(long["id"])
+
     def test_nothing_starts_while_paused(self, runner):
         runner.proxy.paused = True
         job = runner.submit("count", {"steps": 1})

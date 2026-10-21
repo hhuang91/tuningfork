@@ -131,12 +131,23 @@ export function subject(job) {
   return null;
 }
 
+/** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th … 21st: a place in line. */
+function ordinal(n) {
+  const tens = n % 100;
+  return `${n}${tens >= 11 && tens <= 13 ? "th" : { 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th"}`;
+}
+
+/** The interactive lane, in the pages' words: short work a person waits on never waits behind a
+ *  background job. */
+export const QUICK_LINE = "Quick work a person waits on — a server test, a check tried, tools at a held call — has a line of its own.";
+
 export function stateText(job) {
   const progress = job.progress || {};
   if (job.status === "queued") {
-    return job.queue_position !== null && job.queue_position !== undefined
-      ? `queued, ${job.queue_position === 0 ? "next" : `#${job.queue_position + 1}`}`
-      : "queued";
+    // Its place in its lane's line (`queue_position`, from 0): the next to start is first.
+    const place = job.queue_position;
+    const line = job.lane === "interactive" ? "in the quick line" : "in line";
+    return place !== null && place !== undefined ? `queued, ${place === 0 ? "next" : ordinal(place + 1)} ${line}` : "queued";
   }
   if (job.status === "running") {
     if (progress.waiting) return `waiting: ${progress.waiting === "paused" ? "the proxy is paused" : progress.waiting}`;
@@ -145,7 +156,8 @@ export function stateText(job) {
   return job.status;
 }
 
-export const stateChip = (job) => chip(stateText(job), STATE_TONE[job.status] || "muted");
+export const stateChip = (job) => chip(stateText(job), STATE_TONE[job.status] || "muted",
+  job.status === "queued" && job.lane === "interactive" ? QUICK_LINE : undefined);
 
 export function progressBar(job) {
   const progress = job.progress || {};

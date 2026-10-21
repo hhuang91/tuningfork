@@ -4,7 +4,8 @@ import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
 import { ago, crumbs, foldPanel, h, kv, loading, outcome, panel, plural, pretty, rateBar, replace, short, tick, when } from "../dom.js";
 import {
-  ACTIVE, KIND_SECTION, cancelButton, duration, kindLabel, logLine, madeLink, progressBar, startedBy, stateChip, subject, watchJob,
+  ACTIVE, KIND_SECTION, QUICK_LINE, cancelButton, duration, kindLabel, logLine, madeLink, progressBar, startedBy, stateChip, subject,
+  watchJob,
 } from "../jobs.js";
 import { costOf } from "../cost.js";
 import { launcher } from "../launcher.js";
@@ -18,7 +19,7 @@ export async function jobsView(root, _, scope) {
   replace(root, loading());
   const body = h("div");
   const start = h("div");
-  // Finished jobs ticked to move to the trash together; kept while the list is redrawn.
+  // Jobs that have ended, ticked to move to the trash together; kept while the list is redrawn.
   const selected = new Set();
   const bar = h("div", { class: "compare-bar", hidden: true });
   // The launcher is built on first use: it reads the proxy's kinds and the recent runs.
@@ -31,7 +32,7 @@ export async function jobsView(root, _, scope) {
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Jobs"),
       h("p", { class: "sub" }, live.mode === "live"
-        ? "Work the proxy is doing: started here or from a step, or with `tuningfork jobs` from a terminal. One background job runs at a time, unless the proxy was started to run more."
+        ? `Work the proxy is doing: started here or from a step, or with \`tuningfork jobs\` from a terminal. One background job runs at a time, unless the proxy was started to run more. ${QUICK_LINE}`
         : "Work a proxy did, as it recorded it. Starting work needs a running proxy.")),
       startButton ? h("div", { class: "actions" }, startButton) : null),
     start,
@@ -50,15 +51,17 @@ export async function jobsView(root, _, scope) {
       const box = row.querySelector("td.pick input");
       if (box) box.checked = ticked;
     }
-    const all = body.querySelector("th.pick input");
-    if (all) all.checked = [...body.querySelectorAll("td.pick input")].every((box) => box.checked);
+    // Each part of the list has its own box for all of its jobs.
+    for (const all of body.querySelectorAll("th.pick input")) {
+      all.checked = [...all.closest("table").querySelectorAll("td.pick input")].every((box) => box.checked);
+    }
     drawBar();
   };
   function drawBar() {
     const ids = [...selected];
     bar.hidden = ids.length === 0;
     replace(bar,
-      h("span", null, ids.length === 1 ? "1 finished job selected" : `${ids.length} finished jobs selected`),
+      h("span", null, `${plural(ids.length, "job")} selected`),
       h("button", {
         class: "btn btn-small", type: "button", "data-control": true,
         onclick: guard(async (event) => {
@@ -85,10 +88,10 @@ export async function jobsView(root, _, scope) {
     const jobs = await api.get("/jobs");
     if (!scope.active) return;
     // A job that left the list — moved to the trash elsewhere — is no longer selected.
-    const finished = new Set(jobs.filter((job) => !ACTIVE.has(job.status)).map((job) => job.id));
-    for (const id of [...selected]) if (!finished.has(id)) selected.delete(id);
+    const ended = new Set(jobs.filter((job) => !ACTIVE.has(job.status)).map((job) => job.id));
+    for (const id of [...selected]) if (!ended.has(id)) selected.delete(id);
     drawBar();
-    replace(body, jobs.length ? jobsTable(jobs, { selected, toggle }) : h("div", { class: "panel empty" }, h("h2", null, "No jobs yet"),
+    replace(body, jobs.length ? jobsSections(jobs, { selected, toggle }) : h("div", { class: "panel empty" }, h("h2", null, "No jobs yet"),
       h("p", null, live.mode === "live"
         ? "Start one with Start…, or open a run, choose a step, and resample it or A/B a wording there."
         : "Open a run, choose a step, and resample it or A/B a wording there, with a proxy running.")));
@@ -103,15 +106,41 @@ export async function jobsView(root, _, scope) {
   scope.onLeave(() => clearTimeout(timer));
 }
 
-function jobsTable(jobs, { selected, toggle }) {
-  // Only a finished job can go to the trash, so only finished jobs can be ticked.
-  const selectable = live.mode === "live";
-  const finished = jobs.filter((job) => !ACTIVE.has(job.status)).map((job) => job.id);
-  const all = selectable && finished.length
+/** The jobs by part: what is running or waiting its turn — the running first, then the quick
+ *  line and then the background line, each in its order — what finished, and what was stopped
+ *  or failed, each newest first. */
+export function jobParts(jobs) {
+  // Each lane numbers its own line (`queue_position`): the two are kept apart, not interleaved,
+  // the quick line first, as quick work never waits behind a background job.
+  const rank = (job) => (job.status === "running" ? 0 : job.lane === "interactive" ? 1 : 2);
+  const place = (job) => job.queue_position ?? Infinity;
+  return [
+    jobs.filter((job) => ACTIVE.has(job.status)).sort((a, b) => rank(a) - rank(b) || place(a) - place(b)),
+    jobs.filter((job) => job.status === "done"),
+    jobs.filter((job) => !ACTIVE.has(job.status) && job.status !== "done"),
+  ];
+}
+
+/** The list in its three parts. The first is always there, and says when nothing is in it. */
+function jobsSections(jobs, { selected, toggle }) {
+  const [active, finished, stopped] = jobParts(jobs);
+  return h("div", { class: "stack" },
+    panel("Running and queued", active.length
+      ? jobsTable(active, { selected, toggle })
+      : h("p", { class: "muted" }, "Nothing is running or queued.")),
+    finished.length ? panel("Finished", jobsTable(finished, { selected, toggle, every: "Select every finished job" })) : null,
+    stopped.length ? panel("Stopped or failed", jobsTable(stopped, { selected, toggle, every: "Select every stopped or failed job" })) : null);
+}
+
+function jobsTable(jobs, { selected, toggle, every }) {
+  // Only a job that has ended can go to the trash: only those can be ticked.
+  const ended = jobs.filter((job) => !ACTIVE.has(job.status)).map((job) => job.id);
+  const selectable = live.mode === "live" && ended.length > 0;
+  const all = selectable
     ? h("input", {
-        type: "checkbox", "aria-label": "Select every finished job", "data-control": true,
-        checked: finished.length > 0 && finished.every((id) => selected.has(id)),
-        onchange: guard((event) => toggle(finished, event.target.checked)),
+        type: "checkbox", "aria-label": every, "data-control": true,
+        checked: ended.every((id) => selected.has(id)),
+        onchange: guard((event) => toggle(ended, event.target.checked)),
       })
     : null;
   const box = (job) => selectable && !ACTIVE.has(job.status)
@@ -121,7 +150,7 @@ function jobsTable(jobs, { selected, toggle }) {
         onchange: guard((event) => toggle([job.id], event.target.checked)),
       })
     : null;
-  return h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
+  return h("div", { class: "table-wrap" }, h("table", { class: "table" },
     h("thead", null, h("tr", null, selectable ? h("th", { class: "pick" }, all) : null, h("th", null, "job"), h("th", null, "what"), h("th", null, "of"),
       h("th", null, "state"), h("th", null, "result"), h("th", null, "took"), h("th", null, "started"))),
     h("tbody", null, jobs.map((job) =>
@@ -133,7 +162,7 @@ function jobsTable(jobs, { selected, toggle }) {
         h("td", null, stateChip(job)),
         h("td", null, resultCell(job)),
         h("td", { class: "faint" }, duration(job)),
-        h("td", { class: "faint", title: when(job.created_at) }, ago(job.created_at), byLine(job))))))));
+        h("td", { class: "faint", title: when(job.created_at) }, ago(job.created_at), byLine(job)))))));
 }
 
 /** Running, how far it has got; stopped, how far it got; done, what it made, leading there — or,
@@ -242,7 +271,7 @@ function heldBanner(job) {
 export function jobSummary(job) {
   const parts = [];
   if (ACTIVE.has(job.status)) {
-    parts.push(panel("Running", [progressBar(job), job.progress?.waiting === "paused"
+    parts.push(panel(job.status === "queued" ? "Queued" : "Running", [progressBar(job), job.progress?.waiting === "paused"
       ? h("p", { class: "hint" }, "The proxy is paused: sampling goes on when it resumes.")
       : null], { meta: h("span", { class: "muted" }, duration(job)) }));
   }

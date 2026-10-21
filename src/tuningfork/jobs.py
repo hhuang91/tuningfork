@@ -297,15 +297,24 @@ class JobRunner:
         return job_json(stored, events=[] if after is not None else None) if stored else None
 
     def list(self, limit: int = 50) -> list[dict[str, Any]]:
-        """Recent jobs, newest first: the ones held here as they are now, the rest as stored."""
+        """Recent jobs, newest first: the ones held here as they are now, the rest as stored —
+        and every job still queued or running, however many came after it: a list that left out
+        work under way would say none is."""
         stored = self.store.jobs(limit=limit)
         with self._lock:
-            return [
+            listed = [
                 self._jobs[record.id].to_json(position=self._position(self._jobs[record.id]))
                 if record.id in self._jobs
                 else job_json(record)
                 for record in stored
             ]
+            shown = {record.id for record in stored}
+            under_way = [
+                job.to_json(position=self._position(job)) for job in self._jobs.values()
+                if job.record.status in ("queued", "running") and job.id not in shown
+            ]
+        # Newest first, whole: a job submitted after the stored window was read joins it here.
+        return sorted(listed + under_way, key=lambda job: job["created_at"], reverse=True)
 
     def active(self) -> list[dict[str, Any]]:
         """Queued and running jobs, for a page's first snapshot. Memory only: safe on the
