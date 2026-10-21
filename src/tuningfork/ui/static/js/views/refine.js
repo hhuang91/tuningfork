@@ -180,7 +180,7 @@ export async function refinementView(root, [id], scope) {
   const approveLine = slot();
   const approveEl = slot();
   const stagePanels = {
-    propose: stagePanel("propose", 1, "Propose", "small edits, each with its reason", [proposeEl]),
+    propose: stagePanel("propose", 1, "Propose", "small edits, each with its reason", [proposeEl], { fold: true, className: "propose-panel" }),
     test: stagePanel("test", 2, LABELS.screen, "the proposals ticked, each against the original", [proposalsEl, screenEl, screensEl]),
     validate: stagePanel("validate", 3, LABELS.validate, "the task, and the tasks held out from it, each against the original", [validateEl, validationsEl]),
     approve: stagePanel("approve", 4, "Approve", "nothing is written until you type the code", [approveLine, approveEl]),
@@ -386,19 +386,27 @@ export async function refinementView(root, [id], scope) {
 
   /** A stage's section: numbered as the stepper numbers it, its parts in the order the work goes.
    *  Its number turns to a tick once the stage is done (`drawStageHeads`). */
-  function stagePanel(key, n, name, meta, parts) {
+  function stagePanel(key, n, name, meta, parts, { className = null, fold = false } = {}) {
     const num = h("span", { class: "stage-num", "aria-hidden": "true" }, String(n));
     const done = h("span", { class: "visually-hidden" });
-    const element = h("section", { class: "panel stage-panel", dataset: { stage: key } },
-      h("div", { class: "panel-head" }, h("h2", null, num, done, name), h("div", { class: "panel-meta" }, h("span", { class: "muted" }, meta))),
-      h("div", { class: "panel-body stack" }, parts));
+    const heading = [h("h2", null, num, done, name), h("div", { class: "panel-meta" }, h("span", { class: "muted" }, meta))];
+    // A stage that is all form — proposing — folds as a whole, its heading the line that opens
+    // it: no form's fold inside it to open as well.
+    const element = fold
+      ? h("details", { class: ["panel", "stage-panel", className], dataset: { stage: key } },
+          h("summary", { class: "panel-head" }, heading), h("div", { class: "panel-body stack" }, parts))
+      : h("section", { class: ["panel", "stage-panel", className], dataset: { stage: key } },
+          h("div", { class: "panel-head" }, heading), h("div", { class: "panel-body stack" }, parts));
     return { element, num, done, n };
   }
 
-  /** Where a stage's link leads — its section — and the form there it opens. */
+  /** Where a stage's link leads — its section — and the form there it opens: the proposing
+   *  stage's own fold, else the fold of the form in it. */
   function stageParts(key) {
-    const form = { propose: proposeEl, test: screenEl, validate: validateEl }[key]?.firstChild;
-    return { to: stagePanels[key].element, form: form?.tagName === "DETAILS" ? form : null };
+    const to = stagePanels[key].element;
+    if (to.tagName === "DETAILS") return { to, form: to };
+    const form = { test: screenEl, validate: validateEl }[key]?.firstChild;
+    return { to, form: form?.tagName === "DETAILS" ? form : null };
   }
 
   function drawStepper(stages, now) {
@@ -439,13 +447,20 @@ export async function refinementView(root, [id], scope) {
     }
   }
 
-  /** A stage's link: its section in sight, its form opened, and the focus there — the form's own
-   *  line, else the section's first action, else the section itself. */
+  /** A stage's link: its section in sight, its form opened, and the focus on the first of these
+   *  in sight there — the form's own line, a proposal's box, the stage's action — else on the
+   *  section itself: never on one out of sight below (found in review: the test's form, under its
+   *  proposals). */
   function goToStage(key) {
     const { to, form } = stageParts(key);
     if (form && !form.open) form.open = true;
     to.scrollIntoView({ block: "start" });
-    const focus = form?.querySelector(":scope > summary") || to.querySelector(".stage-action") || to;
+    const seen = (el) => {
+      const box = el?.getBoundingClientRect();
+      return Boolean(box) && box.height > 0 && box.top >= 0 && box.bottom <= innerHeight;
+    };
+    const focus = [form?.querySelector(":scope > summary"), to.querySelector('.proposal input[type="checkbox"]'), to.querySelector(".stage-action")]
+      .find(seen) || to;
     if (!focus.matches("a, button, summary, input, select, textarea, [tabindex]")) focus.tabIndex = -1;
     focus.focus({ preventScroll: true });
   }
@@ -698,7 +713,7 @@ export async function refinementView(root, [id], scope) {
       validateForm.element.open = open;
       replace(validateEl, validateForm.element);
     }
-    const fold = { propose: proposeEl, test: screenEl, validate: validateEl }[opening]?.firstChild;
+    const fold = opening === "propose" ? stagePanels.propose.element : { test: screenEl, validate: validateEl }[opening]?.firstChild;
     if (fold) fold.open = true;
   }
 
@@ -709,14 +724,13 @@ export async function refinementView(root, [id], scope) {
   }
 
   // The two ways to propose, side by side: alternatives, either one making proposals. What the
-  // proposing model is shown sits under the way that sends it.
+  // proposing model is shown sits under the way that sends it. The stage's own fold holds them.
   function proposePanel() {
-    return stageForm("Propose an edit", h("div", { class: "propose-ways" },
+    return h("div", { class: "propose-ways" },
       h("div", { class: "propose-way propose-builtin" }, h("h3", { class: "stage-part" }, "Ask the proposing model"),
         builtinForm(), packetEl),
       h("div", { class: "propose-way propose-own" }, h("h3", { class: "stage-part" }, "Write one yourself"),
-        ownForm())),
-    { className: "propose-panel", meta: "ask the proposing model, or write one yourself" });
+        ownForm()));
   }
 
   function builtinForm() {
@@ -858,7 +872,7 @@ export async function refinementView(root, [id], scope) {
       onStarted: opened,
     });
     return {
-      element: stageForm("Test the ticked proposals at this step", form.element, { className: "screen-panel", meta: "each against the original" }),
+      element: stageForm("Test the ticked proposals at this step", form.element, { className: "screen-panel" }),
       refresh: form.refresh,
     };
   }
@@ -897,7 +911,7 @@ export async function refinementView(root, [id], scope) {
       onStarted: opened,
     });
     return {
-      element: stageForm("Full test runs of an edit that beat the original", form.element, { className: "validate-panel", meta: "one at a time" }),
+      element: stageForm("Full test runs of an edit that beat the original", form.element, { className: "validate-panel", meta: "one proposal at a time" }),
     };
   }
 
@@ -927,7 +941,7 @@ export async function refinementView(root, [id], scope) {
     if (approval?.state === "applied") {
       replace(approveLine, h("p", null, `Proposal ${short(approval.proposal)} is written to the skill's own file. About this refinement, at the foot of the page, says where.`));
     } else if (approval) {
-      replace(approveLine, h("p", { class: "warn-text" }, "The approval did not finish: the banner above says how to finish it."));
+      replace(approveLine, h("p", { class: "warn-text" }, "The approval did not finish: the banner above says what happened."));
     } else if (record) {
       replace(approveLine, h("p", null, `Proposal ${short(pick)} passes the approval checks.`),
         acting() && record.gate?.passed

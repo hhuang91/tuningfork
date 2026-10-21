@@ -1835,7 +1835,7 @@ On a run's conversation, each step's answer has **Answer | Tokens**. *Tokens* sh
 heatmap — by entropy, or by how close the top two were — with the reasoning folded, and how
 many of the likeliest forks are in it. An answer not scored yet offers *Score this answer*.
 Click a token for what else the model weighed there; *Select to probe*, then *Find forking
-tokens at these…*, opens the probe's form in the step, those positions filled in. The form
+tokens at these…*, opens the probe's form beside the run, those positions filled in. The form
 shows its plan before anything runs: the tokens it will force, what you count, what it can
 detect with that many continuations, and how long it may take.
 

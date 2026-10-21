@@ -58,9 +58,11 @@ TUNINGFORK_PROTECTED=127.0.0.1:18099 uv run python tests/browser/demo.py lab /tm
 node tests/browser/jobs_ui.mjs
 ```
 
-It checks that a step's work opens beside the run, never inside it — its actions and the form
-they open, in a column where the rail was, its row pressed — each step's kept as it was left
-when another's takes its place, and Hide giving the rail back; that a resample started there runs
+It sets its page 1440 px wide, whatever window the browser has. It checks that a step's work
+opens beside the run, never inside it — its actions and the form they open, in a column where the
+rail was, its row marked and the address naming it — each step's kept as it was left when
+another's takes its place, and Hide or Escape giving the rail back, the keys going on from the
+row; that a resample started there runs
 through the proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter
 as its target, starts at one press of Start with the mouse, the name just typed still focused (the change
 event as the focus leaves it once lost that click) — a form asking for its plan again when the page
@@ -91,8 +93,9 @@ switches its server after a dry run; that Start… on the Jobs page leads to a s
 that a run reads as one conversation — each message once, the final reply marked (and not
 green), its verdict closing the page and the step rail, coloured by it with what the check
 printed, a step opening in place, one at a time, kept as it was when opened again, the rail
-bringing a step into sight and opening nothing, a form opening beside the step and its Close
-leaving the step's work there, and its exact context on a page of its own;
+bringing a step into sight and opening no step, a form opening beside the step without moving
+the run, its Close leaving the step's work there, an address naming that work reloading to it,
+and its exact context on a page of its own;
 that the divergence page leads with the step whose behaviour best predicts a pass, in a callout
 with the ways to it, colours each run by its own verdict, draws "then passed", the tally's counts
 and where a question held as rates — the accent's, never green or red — and says plainly how it
@@ -108,8 +111,8 @@ the one open and what a proposer is shown folded; that the lab's built-in propos
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
 line the skill does not have, the refinement then moving on to testing them, that form open; that
 a person's own wording joins them, proposing opened again from its stage's link, the focus
-going where the page went, the two ways to propose side by side, what a proposer is shown under
-the one that sends it; that a refusal answered again leaves a form folded by hand folded;
+going where the page went, the testing stage's link moving it to what is in sight there, the two
+ways to propose side by side, what a proposer is shown under the one that sends it; that a refusal answered again leaves a form folded by hand folded;
 that a screen of
 two, Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
 behaviours badged by whether they match what is counted — and each proposal then carries its
@@ -125,7 +128,8 @@ a survivor, validated from its refinement's page, runs forks to the end, the
 training task and the lab's held-out task — named only by its id in the plan and the job,
 its text nowhere — and meets the gate, each part and check shown to the person, the evidence
 then naming it ready to approve, its screen and its full runs in a line each and a link down
-to them, and approving the stage next, its link leading to those full runs; that
+to them, and approving the stage next, its link leading to the stage's own section, the way to
+approve the proposal ready for a key; that
 approving shows the file it writes and the edit, writes nothing for a wrong code, and writes
 the skill's own file once the code shown is typed, the page then saying so first, the
 approved proposal picked out in the evidence and in its card, every stage done; and that the proposer's key, set on

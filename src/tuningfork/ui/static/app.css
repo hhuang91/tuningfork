@@ -1389,7 +1389,7 @@ pre.code { color: var(--muted); }
   flex-direction: column;
   gap: 12px;
 }
-/* Its heading stays in sight as the column scrolls: which step, and the way to close it. */
+/* Its heading stays in sight as the column scrolls: which step, and the way to hide it. */
 .tl-workcol-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; padding: 4px 0 8px; background: var(--bg); }
 .tl-workcol-title { flex: none; margin: 0; font-size: 15px; }
 .tl-workcol-what { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
@@ -1397,7 +1397,7 @@ pre.code { color: var(--muted); }
 .tl-workcol-step { display: flex; flex-direction: column; gap: 12px; }
 .tl-workcol .start-actions { flex-wrap: wrap; }
 /* A row whose step's work is the one beside the run. */
-.tl-work[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.tl-work[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .tl { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .tl-entry .msg { margin: 0; }
 .tl-tag { color: var(--faint); font-size: 11.5px; white-space: nowrap; }
@@ -1697,7 +1697,11 @@ a.stage-name:hover { color: var(--accent); text-decoration: none; }
 .inline-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 /* A refinement's stages, each a section numbered as the stepper numbers it, the current one
    marked in the accent: what to do there first, then what it made. */
+.stage-panel { scroll-margin-top: calc(var(--topbar) + 12px); }
 .stage-panel > .panel-head h2 { display: flex; align-items: center; gap: 10px; }
+/* A stage's parts are spaced by its stack alone: a part with nothing in it adds no space. */
+.stage-panel > .panel-body > * + * { margin-top: 0; }
+.stage-form > summary, .packet-panel > summary, .stage-panel > summary.panel-head { flex-wrap: wrap; }
 .stage-panel.current { border-left: 3px solid var(--accent); }
 .stage-panel.current .stage-num { border-color: var(--accent); background: var(--accent); color: var(--panel); }
 .stage-part { margin: 0; font-size: 13.5px; font-weight: 600; }

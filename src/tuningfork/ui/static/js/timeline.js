@@ -3,10 +3,11 @@
 //
 // A step's answer comes from the recording, reasoning included: a harness can send an answer
 // back without its reasoning, so the next context is not where to read it. A step opens in
-// place — its settings, the skills in its context, the files its call found, the experiments
-// at it, and the work that can start from it — and the exact context it was sent is one link
-// away, on its own page: that is what a resample resends. The conversation ends with the run's
-// verdict: what its task's check said, coloured by it — the only green or red on the page.
+// place, one at a time — its settings, the skills in its context, the files its call found, the
+// experiments at it — and the exact context it was sent is one link away, on its own page: that
+// is what a resample resends. The work that can start from a step opens beside the run, never
+// inside it. The conversation ends with the run's verdict: what its task's check said, coloured
+// by it — the only green or red on the page.
 
 import { api, enc } from "./api.js";
 import { chip, count, failure, firstLine, h, kv, loading, longText, millis, outcome, panel, plural, replace, short, toggle } from "./dom.js";
@@ -23,11 +24,12 @@ const EXPERIMENT = { resample: "Resample", ab: "A/B", "forking-tokens": "Forking
 // but the last folded to their turn's line.
 const FOLD_FROM = 3;
 
-/** The timeline for `data`, a run's `/timeline`. Returns its element, its step rail and its
- *  verdict strip — the verdict in a line, for the top of the page — and `start()` — to call
- *  once they are on the page — `update(data)` for a run still going, and `dispose()`. `focus`
- *  opens a step; `query` may name a form to open in it, or `view=tokens` its answer's tokens.
- *  `scope` is the page's, for following work started here. */
+/** The timeline for `data`, a run's `/timeline`. Returns its element, its step rail, its layout
+ *  (the run with the rail, or the work on a step, beside it) and its verdict strip — the verdict
+ *  in a line, for the top of the page — and `start()` — to call once they are on the page —
+ *  `update(data)` for a run still going, and `dispose()`. `focus` opens a step; `query` may name a
+ *  form to open in its work beside the run (`start`), that work with no form (`work`), or
+ *  `view=tokens` its answer's tokens. `scope` is the page's, for following work started here. */
 export function timeline(data, { focus = null, query = new URLSearchParams(), scope = null } = {}) {
   const run = data.run;
   const base = `#/runs/${run.id}`;
@@ -51,7 +53,15 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   let workIdx = null;
   const workHead = h("div", { class: "tl-workcol-head" });
   const workBody = h("div", { class: "tl-workcol-body" });
-  const workCol = h("aside", { class: "tl-workcol", hidden: true, "aria-label": "Work from a step of the run" }, workHead, workBody);
+  const workCol = h("aside", {
+    class: "tl-workcol", hidden: true, "aria-label": "Work from a step of the run",
+    // Escape hides it as its Hide does: on a narrow page it is a drawer over the run.
+    onkeydown: (event) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      closeWork();
+    },
+  }, workHead, workBody);
   const layout = h("div", { class: "tl-layout" }, element, h("div", { class: "tl-side" }, rail, workCol));
   // Each step's call, read once: what both its details and its work are drawn from.
   const details = new Map();
@@ -90,7 +100,11 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     layout,
     strip,
     start() {
-      if (focus !== null && sections.has(focus)) reveal(focus, { start: query.get("start"), query });
+      if (focus === null || !sections.has(focus)) return;
+      // The address as the page left it: a form in the step's work beside the run, that work with
+      // no form, or the step's details.
+      if (!query.get("start") && query.has("work")) revealWork(focus);
+      else reveal(focus, { start: query.get("start"), query });
     },
     update,
     dispose() {
@@ -103,6 +117,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   function draw() {
     sections.clear();
     gapsShown.clear();
+    // Drawn anew, each step's call is read anew as it opens.
+    details.clear();
     seen.disconnect();
     verdictNode = verdictSection();
     toolsNode = toolsSection();
@@ -110,7 +126,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     drawStrip();
     drawRail();
     // The work beside the run is the run's, not its rows': drawn again, its rows say whose it is.
-    pressWork();
+    markWork();
   }
 
   /** The tools the run's first call offered, before its system prompt: the model reads them as
@@ -303,9 +319,9 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       onclick: () => toggleOpen(step.idx),
     }, markerParts(step));
     // A replayed step was answered from the recording: nothing starts there, and its button
-    // says so rather than leave. Pressed while its work is the one beside the run.
+    // says so rather than leave. Marked current while its work is the one beside the run.
     const workButton = h("button", {
-      class: "btn btn-small tl-work", type: "button", disabled: Boolean(step.served), "aria-pressed": String(workIdx === step.idx),
+      class: "btn btn-small tl-work", type: "button", disabled: Boolean(step.served), "aria-current": workIdx === step.idx ? "true" : null,
       title: step.served ? "Answered from the recording: nothing starts from here"
         : `Resample, A/B a wording, fork or refine the skill from step ${step.idx}`,
       onclick: () => workFrom(step.idx),
@@ -633,7 +649,8 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     setOpen(found, open);
     const moved = found.section.getBoundingClientRect().top - before;
     if (moved) window.scrollBy(0, moved);
-    settle(open ? `${base}/${idx}` : workIdx !== null ? `${base}/${workIdx}` : base);
+    // The address names the step opened; one closed gives it back to the work beside the run.
+    settle(open ? `${base}/${idx}` : workAddress() ?? base);
   }
 
   /** One step open at a time: opening one closes the one open, which keeps what it held. */
@@ -703,14 +720,15 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
 
   // --- the work beside the run ----------------------------------------------------------------
 
-  /** Step `idx`'s work, built the first time it is asked for and kept: its actions, and under
-   *  them the slot a form opens in. */
+  /** Step `idx`'s work, built the first time it is asked for and kept: its actions, under them
+   *  the slot a form opens in, and its address as it was left — with the form open there, if
+   *  one is. */
   function workOf(idx) {
     if (works.has(idx)) return works.get(idx);
     const step = sections.get(idx)?.step;
     const slot = h("div", { class: "start-slot" });
     const node = h("div", { class: "tl-workcol-step", dataset: { idx } }, loading("Loading the step…"));
-    const work = { idx, node, slot, ready: null };
+    const work = { idx, node, slot, ready: null, address: `${base}/${idx}?work` };
     work.ready = detailOf(idx).then(([detail, tokens]) => {
       // A replayed step was answered from the recording: there is no call to sample.
       replace(node, step?.served
@@ -742,30 +760,41 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     workCol.hidden = false;
     rail.hidden = true;
     layout.classList.add("working");
-    pressWork();
+    markWork();
     await work.ready;
     return work;
   }
 
   /** The rail back in its place; each step's work kept for when it is opened again. */
   function closeWork() {
+    const found = sections.get(workIdx);
     // The step worked from stays where it was on the screen, though the run widens again.
-    const anchor = sections.get(workIdx)?.section;
-    const before = anchor?.getBoundingClientRect().top;
+    const before = found?.section.getBoundingClientRect().top;
+    // Hidden from inside — its Hide, or Escape — the keys go on from the row's Work from here.
+    const inside = workCol.contains(document.activeElement);
     workIdx = null;
     workCol.hidden = true;
     rail.hidden = false;
     layout.classList.remove("working");
-    pressWork();
-    const moved = anchor ? anchor.getBoundingClientRect().top - before : 0;
+    markWork();
+    const moved = found ? found.section.getBoundingClientRect().top - before : 0;
     if (moved) window.scrollBy(0, moved);
+    if (inside) found?.workButton.focus({ preventScroll: true });
     const open = [...sections.values()].find((other) => !other.block.hidden);
     settle(open ? `${base}/${open.step.idx}` : base);
   }
 
-  /** Each row's "Work from here" pressed while its step's work is the one beside the run. */
-  function pressWork() {
-    for (const [idx, found] of sections) found.workButton.setAttribute("aria-pressed", String(idx === workIdx));
+  /** Each row's "Work from here" marked current while its step's work is the one beside the run. */
+  function markWork() {
+    for (const [idx, found] of sections) {
+      if (idx === workIdx) found.workButton.setAttribute("aria-current", "true");
+      else found.workButton.removeAttribute("aria-current");
+    }
+  }
+
+  /** The address of the work beside the run, as it was left: `?work`, or the form open in it. */
+  function workAddress() {
+    return workIdx === null ? null : works.get(workIdx)?.address ?? `${base}/${workIdx}?work`;
   }
 
   /** Step `idx`'s work beside the run — what its "Work from here" and the rail offer — the first
@@ -773,19 +802,19 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
   async function workFrom(idx) {
     const found = sections.get(idx);
     if (!found) return;
-    settle(`${base}/${idx}`);
     // The row clicked stays where it was on the screen, though the run narrows beside the column.
     const before = found.section.getBoundingClientRect().top;
     const opening = openWork(idx);
     const moved = found.section.getBoundingClientRect().top - before;
     if (moved) window.scrollBy(0, moved);
+    settle(workAddress());
     const work = await opening;
     work.node.querySelector(".start-actions a")?.focus({ preventScroll: true });
   }
 
-  /** Step `idx` in sight and — given `start` — that form open in its work beside the run; with
-   *  none, its details open under it. */
-  async function reveal(idx, { start = null, query: asked = new URLSearchParams() } = {}) {
+  /** Step `idx` in sight — the run scrolled to it unless `scroll` is false — and, given `start`,
+   *  that form open in its work beside the run; with none, its details open under it. */
+  async function reveal(idx, { start = null, query: asked = new URLSearchParams(), scroll = true } = {}) {
     const found = sections.get(idx);
     if (!found) return;
     unfoldAround(rail.querySelector(`.tl-rail-step[data-idx="${idx}"]`));
@@ -795,14 +824,17 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       settle(`${base}/${idx}`);
       return;
     }
-    settle(`${base}/${idx}?${asked.toString()}`);
     const mine = ++asking;
+    const work = workOf(idx);
+    work.address = `${base}/${idx}?${asked.toString()}`;
+    settle(work.address);
     const opening = openWork(idx);
     // The step worked from, in sight beside its form — once the column has taken its place, and
     // the run, narrowed, has settled.
-    found.section.scrollIntoView({ block: "start" });
-    const work = await opening;
-    if (mine !== asking) return;
+    if (scroll) found.section.scrollIntoView({ block: "start" });
+    await opening;
+    // Asked for again since, or the step could not be read: the column says which.
+    if (mine !== asking || works.get(idx) !== work) return;
     const waiting = loading("Preparing the form…");
     replace(work.slot, waiting);
     try {
@@ -813,16 +845,29 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
         return;
       }
       replace(work.slot, form || failure(new Error(`There is no form called ${start}.`)));
-      // The form in sight under the column's heading, by the column's own scroll: the run beside
-      // it stays where it is.
-      workCol.scrollTo({ top: Math.max(0, work.slot.offsetTop - workHead.offsetHeight - 8) });
+      // The form in sight under the column's heading, by the column's own scroll — while the
+      // column still shows this step — the run beside it staying where it is.
+      if (workIdx === idx) workCol.scrollTo({ top: Math.max(0, work.slot.offsetTop - workHead.offsetHeight - 8) });
     } catch (error) {
       if (mine === asking) replace(work.slot, failure(error, "Could not open the form"));
       else if (work.slot.firstChild === waiting) replace(work.slot);
     }
   }
 
-  /** Where a form's links lead: a step of this run opens here; anywhere else, away. */
+  /** Step `idx` in sight, its work beside the run as an address with `?work` left it: no form
+   *  open in it. */
+  function revealWork(idx) {
+    const found = sections.get(idx);
+    if (!found) return;
+    unfoldAround(rail.querySelector(`.tl-rail-step[data-idx="${idx}"]`));
+    openWork(idx);
+    settle(workAddress());
+    found.section.scrollIntoView({ block: "start" });
+  }
+
+  /** Where a form's links lead: a step of this run opens here; anywhere else, away. A link here
+   *  is followed beside the run — from its work, or from the step's own answer — so the run
+   *  stays where it is. */
   function go(href) {
     const [path, text = ""] = href.replace(/^#/, "").split("?", 2);
     const match = /^\/runs\/([^/]+)\/(\d+)$/.exec(path);
@@ -838,11 +883,14 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       // never comes.
       asking += 1;
       const work = works.get(idx);
-      if (work) replace(work.slot);
-      settle(`${base}/${idx}`);
+      if (work) {
+        replace(work.slot);
+        work.address = `${base}/${idx}?work`;
+      }
+      settle(`${base}/${idx}?work`);
       return;
     }
-    reveal(idx, { start, query: asked });
+    reveal(idx, { start, query: asked, scroll: false });
   }
 
   // --- a run still going ----------------------------------------------------------------------
