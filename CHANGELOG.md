@@ -10,7 +10,7 @@ The CLI, MCP and the docs keep tuningfork's precise words.
   Connections; then Start (Scenarios, Run a task…, Import a chat, Live, Skills, Jobs), Record
   (Runs, Chains), Measure (Experiments), Improve (Refine) and the Trash. Its foot says how the
   proxy, the server and the harnesses are. What needs a running proxy stays in it, greyed, saying
-  why. Narrower, it keeps its icons; on a phone, it opens from the top bar.
+  why. Narrower, it shows only its icons; on a phone, it opens from a bar across the top.
 - **Plain words on the pages**: an arm is a *wording*, a target *what you count* (a refinement's,
   *what the model should do*), a screen a *test at this step*, a validation *full test runs*, the
   gate the *approval checks*, a spec a *task file*. The CLI, MCP, the docs and every sentence the
@@ -21,8 +21,9 @@ The CLI, MCP and the docs keep tuningfork's precise words.
   significant change in how often a task's check passes; amber a caution; the accent what can be
   acted on, what is current or significant, the model's own answer and every rate, a pass rate
   included; purple a skill's own words; teal, with ✎, what a person or tuningfork changed; grey
-  everything else. Red keeps only what every page means by it besides: a diff's removed lines, a
-  button that deletes, a field to put right. The Guide shows the legend in a line.
+  everything else. Red keeps only what every page means by it besides: a diff's removed lines
+  beside its green added ones, a button that deletes, a field to put right. The Guide shows the
+  legend in a line.
 - **Each page leads with its take-away**: a run's verdict in a strip under its title, with the
   call that made the check's complaint where the check was run along the run; on the divergence
   page, the step whose behaviour best predicts a pass; Connections' setup at a glance; a
@@ -41,8 +42,8 @@ The CLI, MCP and the docs keep tuningfork's precise words.
   there, its log folded. The Jobs list is in three parts — running and queued, each queued job
   saying its place in its line; finished; stopped or failed — and names each job by the section
   of its work, links what it made, and says who started it: you, from which page, or an agent
-  over MCP; `jobs list` and `jobs show` say so too. A job's link to the step it worked at opens
-  that step.
+  over MCP; `tuningfork jobs list` and `jobs show` say so too. A job's link to the step it worked
+  at opens that step.
 - **Add a skill** (`tuningfork add-skill`, `forget-skill`, the Skills page's *Add a skill…*, a
   run's *Keep its skill…*): a folder on this machine, remembered where it is, or an uploaded
   folder or a run's skill, kept as tuningfork's own copy. An approved edit is written to the
@@ -51,11 +52,11 @@ The CLI, MCP and the docs keep tuningfork's precise words.
   how its folder was added, and its page runs it again from the scenarios that name it.
 - **Token work is held to the server check.** Scoring an answer and finding forking tokens are
   greyed on the page, and refused before anything is sent, where the check found the server
-  without what they need. The check now measures the chat endpoint's logprobs too, in one more
-  short call, which a resample's kept tokens need (*Keep each sample's tokens*, new on its form).
-  A server on the internet that asks for a key, or is not llama.cpp's, is said to be a hosted
-  model's API: tuningfork records your agent's calls through it, its own key passed on, and the
-  switch on Connections takes one, where it refused one before.
+  without what they need. The check now measures the chat endpoint's logprobs too, which a
+  resample's kept tokens need (*Keep each sample's tokens*, new on its form), in one more short
+  call. A server on the internet that asks for a key, or is not llama.cpp's, is said to be a
+  hosted model's API: tuningfork records your agent's calls through it, its own key passed on, and
+  the switch on Connections takes one that asks for a key, where it refused it before.
 - **The forking-token probe says what reached each behaviour**: whether the target counts it,
   and which tokens led to it — its page, `tuningfork experiment`, MCP. A flip is the accent's
   colour, its direction said in words. Where the step's answer is a tool call, the form offers
@@ -82,9 +83,10 @@ Changed:
   kept them only the samples that did: its page said every sample had kept them.
 - **A dry run's refusal is an answer**: asked `quiet`, as the web UI's forms ask, `POST /jobs`
   and the scenario endpoint refuse with `200 {refused}`, not an HTTP error. Without `quiet`,
-  nothing changes. An import's and a scenario's plans give their notes apart from their warnings
-  (`notes` in the API, `note` lines in the terminal), and a scenario's refusal names the scenario,
-  never `spec`.
+  nothing changes.
+- **A plan gives its notes apart from its warnings**: an import's and a scenario's (`notes` in
+  the API, `note` lines in the terminal). A batch or chain of a scenario, refused for the task
+  file the scenario keeps, names the field `scenario`, never `spec`.
 - **Every job under way is listed** by `GET /jobs`, `tuningfork jobs list` and MCP's `list_jobs`,
   however many came after it: the list was cut at the newest 50 (`list_jobs`: 20, or as many as
   it asked for), so a running job with that many newer ones dropped out. Over MCP's stdio
@@ -92,9 +94,9 @@ Changed:
 - **A launch is refused where the server asks for a key**: a harness tuningfork launches carries
   none, and each harness's card on Connections says so. The server check says such a server
   cannot be checked.
-- **A proposing model's address that cannot be read is refused** when it is set. One saved before
-  is taken for another machine's, so it needs `allow_remote`: it broke every read of the
-  proposer's settings. `GET` and `PUT /proposer` give `remote`.
+- **A proposing model's address that cannot be read is refused** when it is set: a mistyped port
+  was kept, and failed only when the proposer was asked. One saved before is shown as another
+  machine's until it is set again. `GET` and `PUT /proposer` give `remote`.
 
 ## 0.3.0 — chats your agent already had, and any run as a scenario
 
