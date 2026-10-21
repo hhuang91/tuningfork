@@ -57,6 +57,8 @@ export class Page {
     this.problems = [];
     this.dialogs = [];
     this.dialogAnswer = true;
+    // An event the caller listens for, by its method (`on`): a screencast's frames, say.
+    this.listeners = new Map();
     socket.onmessage = ({ data }) => {
       const message = JSON.parse(data);
       if (message.id && this.waiting.has(message.id)) {
@@ -74,8 +76,15 @@ export class Page {
       } else if (message.method === "Log.entryAdded" && message.params.entry.source === "security") {
         // A content-security-policy violation: the page tried to run what it must not.
         this.problems.push(`security: ${message.params.entry.text}`);
+      } else if (this.listeners.has(message.method)) {
+        this.listeners.get(message.method)(message.params);
       }
     };
+  }
+
+  /** Call `handler` with the params of each `method` event the page sends. */
+  on(method, handler) {
+    this.listeners.set(method, handler);
   }
 
   static async open(url) {

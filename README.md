@@ -94,7 +94,7 @@ is labelled exploratory and corrected for every comparison it makes.
 In the web UI, an A/B is a few clicks from a run's step (here on the demo's scripted model, which
 answers at once; [the quickstart](#try-it-without-a-gpu-five-minutes) starts it):
 
-![Opening a run in the web UI, choosing its write step, and A/B-testing an edited wording there: the original arm at 0 of 20, the edit at 20 of 20, with their intervals and Fisher's test](docs/images/ui-demo.gif)
+![Opening a run in the web UI, working from its write step beside the run, and A/B-testing an edited wording there: the original arm at 0 of 20, the edit at 20 of 20, with their intervals and Fisher's test](docs/images/ui-demo.gif)
 
 The [step-by-step guide](examples/README.md) walks through every part of the tool on another toy
 skill, with Claude Code beside Hermes, and every output in it is from a real run.
@@ -323,11 +323,11 @@ start the work as well as show it: a batch of runs, a resample, an A/B, a fork, 
 <table>
   <tr>
     <td width="50%"><img src="docs/images/ui-run.png" alt="A step's exact context: every message as the model saw it, the skill marked in it, and the call it made"></td>
-    <td width="50%"><img src="docs/images/ui-divergence.png" alt="The divergence page: where a task's runs split, and how each behaviour fared"></td>
+    <td width="50%"><img src="docs/images/ui-divergence.png" alt="The divergence page: the step that best predicts whether a run passes, then where a task's runs split and how each behaviour fared"></td>
   </tr>
   <tr>
     <td>A step's exact context: every message as the model saw it, the skill marked line by line, and the call it made</td>
-    <td>Where a task's runs stop agreeing, how the runs that took each path fared, and the step that best predicts the verdict</td>
+    <td>The step that best predicts the verdict, then where a task's runs stop agreeing and how the runs that took each path fared</td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/ui-ab.png" alt="An A/B result: the edit it tested, each arm's rate with its interval, and Fisher's test"></td>
@@ -338,12 +338,18 @@ start the work as well as show it: a batch of runs, a resample, an A/B, a fork, 
     <td>An answer as the model's tokens, shaded by how unsure it was; a click shows what else it weighed there</td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/ui-refine.png" alt="A refinement: its target, then the evidence — each proposal's screen and the approved one's validation — and its proposals as diffs"></td>
+    <td width="50%"><img src="docs/images/ui-refine.png" alt="A refinement: its target and its four stages in a line, then the evidence — each proposal's screen and the approved one's validation — and a section for each stage"></td>
     <td width="50%"><img src="docs/images/ui-live.png" alt="The Live page: a call held at a breakpoint, its tool call edited in place"></td>
   </tr>
   <tr>
-    <td>A refinement: the target declared first, then each proposal's screen and the full runs behind the one approved</td>
+    <td>A refinement: the target declared first and its four stages in a line, then each proposal's screen and the full runs behind the one approved</td>
     <td>A call held at a breakpoint, edited in place before the harness gets it</td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/ui-scenario.png" alt="Making a scenario from a chat had elsewhere: its first message the starting prompt, and each step the chat took beside what each run of the scenario does there"></td>
+  </tr>
+  <tr>
+    <td colspan="2">A chat had elsewhere, imported and made a scenario: each run is sent the person's message with the conversation before it, the skill comes in live, and the check you write judges it</td>
   </tr>
 </table>
 

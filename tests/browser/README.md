@@ -195,3 +195,6 @@ the mock model, for trying breakpoints by hand. `examples/README.md` walks throu
 A live page keeps its event stream open, so `--virtual-time-budget` never runs out there;
 give live pages `--timeout=6000` instead. Headless windows are at least about 500 px
 wide: a narrower `--window-size` crops the screenshot rather than narrowing the layout.
+
+The README's own pictures, and its GIF, are taken by `docs/images/shots.mjs` over the page
+helpers here (`cdp.mjs`), as [its README](../../docs/images/README.md) says.
