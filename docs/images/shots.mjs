@@ -296,7 +296,8 @@ async function recordGif(page, file, { width, height }, play) {
     frames.push({ data: Buffer.from(data, "base64"), at: metadata.timestamp });
     page.send("Page.screencastFrameAck", { sessionId });
   });
-  // Text node by node, so that a label and the value beside it stay two words.
+  // Each added part's text both whole and node by node: a word split across elements is found in
+  // the one, a label and the value beside it stay two words in the other.
   await page.eval(`(() => {
     window.shotsSeen = [];
     new MutationObserver((records) => {
@@ -307,6 +308,7 @@ async function recordGif(page, file, { width, height }, play) {
             window.shotsSeen.push(node.data);
             continue;
           }
+          window.shotsSeen.push(node.textContent || "");
           const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
           while (walker.nextNode()) window.shotsSeen.push(walker.currentNode.data);
         }
