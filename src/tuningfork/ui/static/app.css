@@ -1299,6 +1299,15 @@ pre.code { color: var(--muted); }
 
 /* --- connections ------------------------------------------------------------------------ */
 
+/* Connections at a glance: a word and a colour each, grey what is fine and amber what needs a
+   look, then what that means. */
+.health-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px 24px; }
+.glance { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.glance > .label { margin: 0; }
+.glance-line { max-width: 100%; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.glance-line .controls { gap: 6px; }
+.health-means { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.health-means ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
 .harness-card { display: flex; flex-direction: column; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .harness-card:last-child { padding-bottom: 0; border-bottom: none; }
 .harness-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

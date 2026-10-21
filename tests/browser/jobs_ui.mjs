@@ -736,6 +736,24 @@ try {
   await page.eval(`location.hash = "#/connections"`);
   await until(() => page.eval(`document.querySelectorAll(".harness-card").length >= 2`), "the harness cards");
   const startedOn = (await api("/connections")).server.url;
+  // The page leads with the setup at a glance: a word and a colour each, what that means, and
+  // the server test, which nothing has run yet.
+  const glance = () => page.eval(`(() => {
+    const strip = document.querySelector(".health-strip");
+    return {
+      first: !!strip && strip.closest(".panel") === document.querySelector("main .panel"),
+      names: [...(strip?.querySelectorAll(".glance > .label") || [])].map((label) => label.textContent).join(","),
+      server: strip?.querySelector(".glance > .chip")?.textContent,
+      tested: [...(strip?.querySelectorAll(".glance-line") || [])].map((line) => line.textContent).find((line) => /tested/.test(line)),
+      button: [...(strip?.querySelectorAll("button") || [])].some((b) => b.textContent === "Test the server"),
+      means: [...document.querySelectorAll(".health-means li")].map((li) => li.textContent),
+    };
+  })()`);
+  const glanceBefore = await glance();
+  check(glanceBefore.first && glanceBefore.names === "Server,Harnesses,Sandbox,Proposing model" && glanceBefore.server === "answering",
+    `Connections leads with the server, the harnesses, the sandbox and the proposing model at a glance (${glanceBefore.names}; ${glanceBefore.server})`);
+  check(glanceBefore.tested === "not tested yet" && glanceBefore.button && glanceBefore.means.includes("Test the server to measure what each harness and the token tools need of it."),
+    `the server test is there, and what it means that none has run (${glanceBefore.means.join(" / ")})`);
   await page.click("Test the server");
   await until(() => page.eval(`[...document.querySelectorAll(".measured td .mono")].some((name) => name.textContent === "anthropic_messages")`), "the check's results", 60000);
   const serverJob = (await api("/jobs")).find((job) => job.kind === "server-check");
@@ -752,6 +770,9 @@ try {
   check(checked.logprobs.support === "no", "the check measured the chat endpoint's logprobs: none came back");
   check(await page.eval(`[...document.querySelectorAll(".warn-text")].some((line) => line.textContent.startsWith("Keeping each sample's tokens needs token probabilities"))`),
     "the page says what that rules out, in the words that grey it elsewhere");
+  const glanceAfter = await until(async () => { const now = await glance(); return /^tested /.test(now.tested || "") ? now : null; }, "the strip, tested");
+  check(glanceAfter.means.includes("“Keep each sample's tokens” is greyed out on this server.") && !glanceAfter.means.some((line) => line.startsWith("Test the server")),
+    `at a glance too, by the control it greys (${glanceAfter.means.join(" / ")})`);
   // A harness found, a capability there, a sandbox: fine is grey. Green and red are a check's.
   check(await page.eval(`!document.querySelector("main .chip.tone-ok, main .chip.tone-bad") && [...document.querySelectorAll("table td .chip")].some((c) => c.textContent === "yes" && c.classList.contains("tone-muted"))`),
     "nothing on the page is a verdict's green or red: what is there is grey");

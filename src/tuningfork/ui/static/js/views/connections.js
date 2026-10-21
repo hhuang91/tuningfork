@@ -7,7 +7,7 @@
 
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
-import { capital, chip, command, h, kv, loading, panel, replace, short, when } from "../dom.js";
+import { ago, capital, chip, command, h, kv, loading, panel, replace, short, when } from "../dom.js";
 import { field, formError, input } from "../forms.js";
 import { forgetTokenWork, live } from "../live.js";
 import { LABELS } from "../words.js";
@@ -26,6 +26,20 @@ export function cloudNote(reminder) {
     h("a", { href: "#/words?term=local%20model" }, "Why a model you run yourself"));
 }
 
+/** The server in a word, as the strip here and the status strip at the sidebar's foot say it:
+ *  on the internet, or whether it answers. `warn` where it needs a look. */
+export function serverWord(server = {}) {
+  if (server.reminder) return { word: "on the internet", warn: true, title: server.reminder.headline };
+  if (server.problem) return { word: "not answering", warn: true, title: server.problem };
+  if (server.identity?.id) return { word: "answering", warn: false };
+  return { word: "not read yet", warn: false };
+}
+
+// The controls the server test can grey, by the token work each needs (`token_work`'s keys).
+const TOKEN_CONTROLS = { score: "“Score this answer”", forking: "“Find forking tokens”", logprobs: "“Keep each sample's tokens”" };
+
+const listed = (items) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+
 export async function connectionsView(root, _, scope) {
   if (live.mode !== "live") {
     replace(root, h("div", { class: "panel empty" }, h("h2", null, "No live proxy"),
@@ -33,6 +47,7 @@ export async function connectionsView(root, _, scope) {
     return;
   }
   replace(root, loading());
+  const healthEl = h("div");
   const serverEl = h("div");
   const proposerEl = h("div");
   const harnessesEl = h("div", { class: "stack" });
@@ -40,7 +55,7 @@ export async function connectionsView(root, _, scope) {
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Connections"),
       h("p", { class: "sub" }, "What the proxy talks to. Settings for the harnesses and the proposing model are kept in the recordings folder, never in a harness's own configuration."))),
-    h("div", { class: "stack" }, serverEl, proposerEl, panel("Harnesses", harnessesEl, {
+    h("div", { class: "stack" }, healthEl, serverEl, proposerEl, panel("Harnesses", harnessesEl, {
       actions: h("button", { class: "btn btn-small", type: "button", "data-control": true, onclick: guard(detect) }, "Detect again"),
     }), proxyEl));
 
@@ -49,6 +64,7 @@ export async function connectionsView(root, _, scope) {
     const [connections, proposer] = await Promise.all([api.get("/connections"), api.get("/proposer")]);
     state = { ...connections, proposer };
     if (!scope.active) return;
+    drawHealth();
     drawServer();
     drawProposer();
     drawHarnesses();
@@ -58,6 +74,92 @@ export async function connectionsView(root, _, scope) {
     replace(harnessesEl, loading("Running each harness's --version…"));
     await api.post("/connections/harnesses/detect");
     await load();
+  }
+
+  // --- at a glance ----------------------------------------------------------------------
+  //
+  // The server, the harnesses, the sandbox and the proposing model, a word and a colour each —
+  // grey what is fine, amber what needs a look — then what that means, in at most three
+  // sentences. The server test is here too: much of the rest stands on what it measures. The
+  // panels below hold the detail.
+
+  function drawHealth() {
+    const server = state.server;
+    const identity = server.identity || {};
+    const checks = server.checks || {};
+    const said = serverWord(server);
+    const settings = state.proposer;
+    const sandbox = state.sandbox;
+    replace(healthEl, h("section", { class: "panel health", "aria-label": "Connections at a glance" }, h("div", { class: "panel-body" },
+      h("div", { class: "health-strip" },
+        glance("Server", chip(said.word, said.warn ? "warn" : "muted", said.title), [
+          (identity.models || []).length ? h("span", { class: "mono" }, identity.models.join(", ")) : null,
+          identity.n_ctx ? `a ${Number(identity.n_ctx).toLocaleString()}-token context window` : null,
+          checks.checked_at
+            ? h("span", { class: "faint", title: `${when(checks.checked_at)}, with ${checks.model}` }, `tested ${ago(checks.checked_at)}`)
+            : h("span", { class: "warn-text" }, "not tested yet"),
+          checkButton(identity.models || [], checks.model),
+        ]),
+        glance("Harnesses", null, state.harnesses.map((harness) => {
+          const [word, tone, title] = harnessWord(harness);
+          return h("span", null, h("strong", null, harness.name), " ", chip(word, tone, title));
+        })),
+        sandbox
+          ? glance("Sandbox", sandbox.available ? chip("on", "muted") : chip("off", "warn"),
+              [sandbox.available ? `bubblewrap ${sandbox.version || ""}`.trim() : sandbox.reason])
+          : null,
+        glance("Proposing model", proposerWord(settings), [
+          settings.url ? h("span", { class: "mono" }, settings.url) : "asked through the proxy",
+          settings.remote && !settings.allow_remote ? h("span", { class: "warn-text" }, "not allowed yet") : null,
+          settings.remote && !settings.key?.set ? h("span", { class: "warn-text" }, "no key set") : null,
+        ])),
+      h("div", { class: "health-means" }, h("div", { class: "label" }, "What this means for you"),
+        h("ul", null, meaning().map((line) => h("li", null, line)))))));
+  }
+
+  /** One part of the strip: its name, its word, and a line or two beneath. */
+  function glance(name, word, lines) {
+    return h("div", { class: "glance" }, h("div", { class: "label" }, name), word,
+      lines.filter(Boolean).map((line) => h("div", { class: "glance-line" }, line)));
+  }
+
+  /** A harness in a word: found, not found, or found and unable to run against this server. */
+  function harnessWord(harness) {
+    if (!harness.path) return ["not found", "warn", harness.error || "Not on PATH, and no program named for it"];
+    const problems = harness.preflight?.problems || [];
+    if (problems.length) return ["cannot run here", "warn", problems.join("; ")];
+    return ["found", "muted", [harness.version, harness.path].filter(Boolean).join(", ")];
+  }
+
+  /** Where the proposing model is, in a word: what it is sent goes there. */
+  function proposerWord(settings) {
+    if (!settings.url) return chip("this server", "muted", "Asked through the proxy: it waits its turn with other calls, and is never recorded");
+    if (!settings.remote) return chip("this machine", "muted");
+    return chip("another machine", "warn", "What it is sent — recorded prompts, answers and your skill — leaves this machine");
+  }
+
+  /** What the strip means for the person, the most pressing first: at most three sentences, or
+   *  one saying nothing needs a look. */
+  function meaning() {
+    const server = state.server;
+    const lines = [];
+    if (server.problem) lines.push("The server is not answering, so nothing can be recorded or measured until it does.");
+    else if (server.reminder) lines.push(server.reminder.headline);
+    const found = state.harnesses.filter((harness) => harness.path);
+    if (!found.length) {
+      lines.push("No harness was found, so tuningfork can record your own agent but cannot start runs of its own.");
+    } else if (found.every((harness) => (harness.preflight?.problems || []).length)) {
+      lines.push("No harness found here can run against this server, so tuningfork cannot start runs of its own.");
+    }
+    const greyed = Object.entries(server.token_work || {}).filter(([, reason]) => reason).map(([work]) => TOKEN_CONTROLS[work] || work);
+    if (greyed.length) lines.push(`${listed(greyed)} ${greyed.length === 1 ? "is" : "are"} greyed out on this server.`);
+    if (state.sandbox && !state.sandbox.available) {
+      lines.push("Runs tuningfork starts are not sandboxed, so their folders' paths differ from run to run, and the model reads them.");
+    }
+    if (!server.checks?.checked_at && !server.problem) {
+      lines.push("Test the server to measure what each harness and the token tools need of it.");
+    }
+    return lines.length ? lines.slice(0, 3) : ["Nothing here needs a look."];
   }
 
   // --- the server -----------------------------------------------------------------------
@@ -98,15 +200,14 @@ export async function connectionsView(root, _, scope) {
               h("td", null, chip(found.support, SUPPORT_TONE[found.support] || "muted")),
               h("td", { class: "small" }, h("div", { class: "muted" }, found.detail || ""),
                 measures[name] ? h("div", { class: "faint" }, `Needed for ${measures[name].for}.`) : null)))))
-        : h("p", { class: "muted small" }, "Nothing measured on this server yet."),
+        : h("p", { class: "muted small" }, `Nothing is measured on this server yet. “${LABELS.testServer}”, at the top of the page, measures it.`),
       // What the check rules out is greyed wherever it is offered, saying the same.
       ruledOut.length
         ? h("div", { class: "stack", style: { gap: "4px" } },
             h("div", { class: "label" }, "Greyed out on this server"),
             ruledOut.map((reason) => h("div", { class: "small warn-text" }, `${reason}.`)))
         : null,
-      h("div", { class: "form-actions" }, checkButton(identity.models || [], server.checks?.model),
-        server.checks?.checked_at ? h("span", { class: "faint small" }, `tested ${when(server.checks.checked_at)} with ${server.checks.model}`) : null),
+      server.checks?.checked_at ? h("p", { class: "faint small" }, `Tested ${when(server.checks.checked_at)} with ${server.checks.model}.`) : null,
       h("details", { class: "fold" }, h("summary", null, "Point the proxy at another server"), switcher),
     ]));
   }

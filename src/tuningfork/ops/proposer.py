@@ -79,6 +79,15 @@ def config(home: Path | str) -> dict[str, Any]:
     return {**DEFAULTS, **{key: value for key, value in stored.items() if key in DEFAULTS}}
 
 
+def is_remote(url: str | None) -> bool:
+    """Whether the proposer's address is another machine, where what it is sent — recorded
+    prompts, answers, the skill — leaves this one. None, the proxy's own server asked through
+    the proxy, is not."""
+    from tuningfork.endpoints import address, is_loopback
+
+    return url is not None and not is_loopback(address(url)[0])
+
+
 def set_config(home: Path | str, **changes: Any) -> dict[str, Any]:
     """Change the proposer's settings. `url` None means the proxy's own server."""
     from tuningfork.config import read_home_config, write_home_config

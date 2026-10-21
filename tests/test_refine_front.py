@@ -104,6 +104,8 @@ class TestOverHttp:
 
     def test_the_proposers_key_is_set_and_never_read_back(self, stack):
         with client(stack) as http:
+            own = http.get(PROPOSER).json()
+            local = http.put(PROPOSER, json={"url": "http://127.0.0.1:8088"}).json()
             changed = http.put(PROPOSER, json={"url": "https://api.example.test", "model": "big", "allow_remote": True})
             assert changed.status_code == 200, changed.text
             stored = http.put(f"{PROPOSER}/key", json={"key": KEY})
@@ -112,6 +114,9 @@ class TestOverHttp:
             cleared = http.put(f"{PROPOSER}/key", json={"key": None})
         assert stored.json() == {"set": True, "from": "file"}
         assert shown.json()["key"] == {"set": True, "from": "file"} and shown.json()["url"] == "https://api.example.test"
+        # Where what it is sent goes, for the Connections page: another machine, or this one.
+        assert shown.json()["remote"] is True and changed.json()["remote"] is True
+        assert own["url"] is None and own["remote"] is False and local["remote"] is False
         assert all(KEY not in response.text for response in (changed, stored, shown))
         assert bad.status_code == 400 and bad.json()["error"]["field"] == "wire"
         assert cleared.json() == {"set": False, "from": None}
