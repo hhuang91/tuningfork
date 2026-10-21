@@ -978,11 +978,13 @@ try {
     while (above && above.classList.contains("tl-rail-result")) above = above.previousElementSibling;
     return above?.dataset.idx === "${result.after}" && line.textContent === "↳${called.function.name} result";
   })()`), `a tool's result named for its tool, under the step that called it (${called.function.name}, step ${result.after})`);
-  await page.eval(`document.querySelector("#tm${result.index}").open = false`);
+  // Its line leads to it in the conversation, and opens nothing, as a step's line opens nothing:
+  // folded, it stays folded.
+  await page.eval(`document.querySelector("#tm${result.index}").open = false; window.scrollTo(0, document.documentElement.scrollHeight)`);
   await page.eval(`document.querySelector('.tl-rail-result[data-entry="${result.index}"]').click()`);
-  await until(() => page.eval(`document.querySelector("#tm${result.index}").open`), "the result opened from the rail");
-  check(await page.eval(`(() => { const top = document.querySelector("#tm${result.index}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`),
-    "its line leads to it in the conversation, opened");
+  await until(() => page.eval(`(() => { const top = document.querySelector("#tm${result.index}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`),
+    "the result, from the rail");
+  check(await page.eval(`!document.querySelector("#tm${result.index}").open`), "its line leads to it in the conversation, folded as it was: the rail opens nothing");
   // Opening a step happens in place: the page is not drawn again, and the address follows.
   await page.eval(`document.querySelector(".view").dataset.sentinel = "kept"`);
   await page.eval(`document.querySelector("#s1 .tl-marker").click()`);
@@ -2070,10 +2072,16 @@ try {
   const lines = await page.eval(`[...document.querySelector(".tl-rail").children].map((line) => line.textContent).join(" | ")`);
   check(lines.startsWith("1 step · after 2 earlier answers | userFile receipt A. | ·read_file | ↳read_file result | ·reply | userNow file receipt B. | 0"),
     `its rail lists the conversation the first call continued, its answers unnumbered, then the run's step (${lines})`);
-  const earlierLine = await page.eval(`(() => { const line = document.querySelector(".tl-rail-earlier"); line.click(); return line.dataset.entry; })()`);
-  await until(() => page.eval(`document.querySelector("#tm${earlierLine}")?.open === true`), "the earlier answer opened from the rail");
-  check(await page.eval(`(() => { const top = document.querySelector("#tm${earlierLine}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`),
-    "an earlier answer's line leads to it in the conversation, opened");
+  const earlierLine = await page.eval(`(() => {
+    const line = document.querySelector(".tl-rail-earlier");
+    document.querySelector("#tm" + line.dataset.entry).open = false;
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    line.click();
+    return line.dataset.entry;
+  })()`);
+  await until(() => page.eval(`(() => { const top = document.querySelector("#tm${earlierLine}").getBoundingClientRect().top; return top >= 0 && top < innerHeight / 2; })()`),
+    "the earlier answer, from the rail");
+  check(await page.eval(`document.querySelector("#tm${earlierLine}").open === false`), "an earlier answer's line leads to it in the conversation, folded as it was");
 
   console.log("a long session in the rail: each of the person's turns folds to its line");
   const three = await post("/imports", { content: JSON.stringify({ id: "20261019_100000_ee44ff", source: "cli", model: "m",

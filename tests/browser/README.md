@@ -96,9 +96,9 @@ switches its server after a dry run; that Start… on the Jobs page leads to a s
 that a run reads as one conversation — each message once, the final reply marked (and not
 green), its verdict closing the page and the step rail, coloured by it with what the check
 printed, a step opening in place, one at a time, kept as it was when opened again, the rail
-bringing a step into sight and opening no step, a form opening beside the step without moving
-the run, its Close leaving the step's work there, an address naming that work reloading to it,
-and its exact context on a page of its own;
+bringing a step or a message into sight and opening nothing, a form opening beside the step
+without moving the run, its Close leaving the step's work there, an address naming that work
+reloading to it, and its exact context on a page of its own;
 that the divergence page leads with the step whose behaviour best predicts a pass, in a callout
 with the ways to it, colours each run by its own verdict, draws "then passed", the tally's counts
 and where a question held as rates — the accent's, never green or red — and says plainly how it

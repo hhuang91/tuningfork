@@ -569,7 +569,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
    *  the conversation the run's first call continued. A tool's result goes under the answer that
    *  called it, by the tool's name, and so does a user message the harness wrote itself, by what
    *  it is; a person's turn starts a new exchange, unindented, in their words. Each leads to the
-   *  message in the conversation, opened. */
+   *  message in the conversation, as it was left. */
   function railEntry(entry, step, names) {
     const message = entry.message;
     const href = step ? `${base}/${step.idx}` : base;
@@ -580,7 +580,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       const words = entry.words ?? (firstLine(messageText(message), 80) || "(no text)");
       return h("div", { class: "tl-rail-turn", dataset: { entry: entry.index } },
         h("button", { class: "tl-rail-fold", type: "button", "aria-expanded": "true", "aria-label": "Fold this turn" }),
-        h("a", { class: "tl-rail-turn-link", href, title: `A person's turn, ${where}: ${words}`, onclick: openMessage(entry) },
+        h("a", { class: "tl-rail-turn-link", href, title: `A person's turn, ${where}: ${words}`, onclick: goToMessage(entry) },
           h("span", { class: "tl-rail-who" }, "user"), h("span", { class: "tl-rail-what" }, words)),
         h("span", { class: "tl-rail-folded" }));
     }
@@ -588,7 +588,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return h("a", {
       class: "tl-rail-result", href, dataset: { entry: entry.index },
       title: entry.note ? `Written by the harness itself ${where}, not by a person` : step ? `${what}, added by the harness ${where}` : `${what}, ${where}`,
-      onclick: openMessage(entry),
+      onclick: goToMessage(entry),
     }, h("span", { class: "tl-rail-arrow", "aria-hidden": "true" }, "↳"), h("span", { class: "tl-rail-what" }, what));
   }
 
@@ -599,18 +599,17 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
     return h("a", {
       class: "tl-rail-step tl-rail-earlier", href: base, dataset: { entry: entry.index },
       title: "An answer in the conversation the run's first call continued: not a call this run made",
-      onclick: openMessage(entry),
+      onclick: goToMessage(entry),
     }, h("span", { class: "mono", "aria-hidden": "true" }, "·"), h("span", { class: "tl-rail-what" }, calls.length ? calls.join(", ") : "reply"));
   }
 
-  /** What a rail line for a message does: opens the message in the conversation, there. */
-  function openMessage(entry) {
+  /** What a rail line for a message does: brings the message into sight in the conversation,
+   *  folded or open as it was. The rail moves through the run and opens nothing, a step's line
+   *  or a message's: each opens from its own place in the conversation. */
+  function goToMessage(entry) {
     return (event) => {
       event.preventDefault();
-      const shown = element.querySelector(`#tm${entry.index}`);
-      if (!shown) return;
-      shown.open = true;
-      shown.scrollIntoView({ block: "start" });
+      element.querySelector(`#tm${entry.index}`)?.scrollIntoView({ block: "start" });
     };
   }
 
