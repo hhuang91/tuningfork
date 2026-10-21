@@ -7,7 +7,7 @@ import {
 import { field, input, numberOf, planForm } from "../forms.js";
 import { live } from "../live.js";
 import { responseView } from "../payload.js";
-import { tallyView } from "../results.js";
+import { formatP, tallyView } from "../results.js";
 import { whereForm } from "../where.js";
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -129,10 +129,11 @@ export async function divergenceView(root, [task, conditionId]) {
     !chosen && conditions.length > 1 ? conditionsBanner(task, conditions) : null,
     report.mixed_skills ? mixedSkillsBanner() : null,
     h("div", { class: "stack" },
+      // The take-away first: which step's behaviour goes with passing, and the way to it.
+      predictorsView(report),
       split ? panel(`At step ${at}`, [groupsView(split, at, report.verdicts || {}), nextStep(split, at)], {
         meta: h("span", { class: "muted", title: "Wilson score intervals" }, "Intervals are 95%. With few runs, they are wide."),
       }) : null,
-      predictorsView(report),
       tallyView(tally, { only: chosen?.id || null }),
       live.mode === "live" ? alongPanel(task) : null,
       panel("Where does it hold?", whereForm(task, { condition: chosen?.id || null }), {
@@ -168,7 +169,8 @@ function alongPanel(task) {
 
 /** What goes with passing, over the runs that have a verdict: the step whose behaviour best
  *  predicts it, and the tool whose use does, wherever in a run it was called — the first split
- *  is often neither. Fisher's exact test, a lead under p 0.2, never a verdict. */
+ *  is often neither. Fisher's exact test, a lead under p 0.2, never a verdict. The page leads
+ *  with it: the best lead in a callout, with the ways to its step. */
 function predictorsView(report) {
   const byStep = report.verdict_split?.best;
   const byTool = report.tool_split?.best;
@@ -181,29 +183,62 @@ function predictorsView(report) {
       ? `None of the ${judged} judged runs passed, so nothing here can separate passing from failing. A test at a step, judged by whole runs, has passing forks to compare: its page asks Where does it hold? of them.`
       : `All ${judged} judged runs passed: there is no failure here to separate.`));
   }
-  const lines = [];
-  if (byStep) {
-    // A run that took the behaviour: its step — or, for runs that had ended before it, the run.
-    const ended = byStep.kind === "ended";
-    const href = byStep.run_id && (ended ? `#/runs/${byStep.run_id}` : `#/runs/${byStep.run_id}/${byStep.index}`);
-    lines.push(h("p", null, href ? h("a", { href }, `Step ${byStep.index}`) : `Step ${byStep.index}`,
-      ended ? ": the runs that had ended before it" : `: the runs that did “${byStep.label}”`,
-      ` passed ${byStep.passed} of ${byStep.total}, the others ${byStep.others_passed} of ${byStep.others_total} `,
-      h("span", { class: "muted" }, `(p ${byStep.p})`), " — the step whose behaviour best predicts the verdict."));
+  let body;
+  if (byStep) body = [stepLead(byStep), byTool ? toolLine(byTool) : null];
+  else if (byTool) body = toolLead(byTool);
+  else {
+    body = h("p", { class: "hint" }, `No behaviour at any step, and no tool called, separates the passing runs from the failing ones (of ${judged} judged): the difference is in what they wrote. What the checks said, and Where does it hold?, look there.`);
   }
-  if (byTool) {
-    lines.push(h("p", null, "The runs that called ", h("span", { class: "mono" }, byTool.tool),
-      ` passed ${byTool.called.passed} of ${byTool.called.total}; those that never did, ${byTool.never.passed} of ${byTool.never.total} `,
-      h("span", { class: "muted" }, `(p ${byTool.p})`),
-      byTool.with_passing ? " — its use goes with passing, at whatever step a run called it." : " — its use goes with failing."));
-  }
-  if (!lines.length) {
-    lines.push(h("p", { class: "hint" }, `No behaviour at any step, and no tool called, separates the passing runs from the failing ones (of ${judged} judged): the difference is in what they wrote. What the checks said, and Where does it hold?, look there.`));
-  }
-  return panel("What goes with passing", lines, {
+  return panel("What goes with passing", body, {
     meta: h("span", { class: "muted", title: "Fisher's exact test over the judged runs" },
       "A lead, never a verdict: each split shown has p under 0.2, and with so many compared, chance alone can make one."),
+    className: "predictors",
   });
+}
+
+const pOf = (p) => h("span", { class: "muted", title: "Fisher's exact test over the judged runs" }, `(p = ${formatP(p)})`);
+
+/** The step whose behaviour best predicts the verdict, in the accent: the numbers it stands on,
+ *  then the ways to it — a run that took the behaviour, at the step, and a resample there. For
+ *  runs that had ended before the step, the run: it has no such step to resample. */
+function stepLead(best) {
+  const ended = best.kind === "ended";
+  const open = best.run_id
+    ? h("a", { class: "btn btn-primary btn-small", href: ended ? `#/runs/${best.run_id}` : `#/runs/${best.run_id}/${best.index}` },
+        ended ? `Open run ${short(best.run_id)}` : `Open step ${best.index} in run ${short(best.run_id)}`)
+    : null;
+  let resample = null;
+  if (best.run_id && !ended) {
+    resample = live.mode === "live"
+      ? h("a", { class: "btn btn-small", href: `#/runs/${best.run_id}/${best.index}?start=resample`, "data-control": true }, `Resample step ${best.index}…`)
+      : command(`tuningfork resample ${short(best.run_id)} ${best.index} -n 20`);
+  }
+  return h("div", { class: "callout" },
+    h("div", { class: "callout-big" }, ended
+      ? `Ending before step ${best.index} best predicts whether a run passes.`
+      : `What the model does at step ${best.index} best predicts whether a run passes.`),
+    h("p", null,
+      ended
+        ? `The runs that had ended before it passed ${best.passed} of ${best.total}. `
+        : ["The runs that did “", h("span", { class: "mono" }, best.label), `” there passed ${best.passed} of ${best.total}. `],
+      `The others passed ${best.others_passed} of ${best.others_total}. `, pOf(best.p)),
+    open || resample ? h("div", { class: "callout-actions" }, open, resample) : null);
+}
+
+/** The tool whose use, at whatever step, goes with the verdict, as the lead: no step to open. */
+function toolLead(tool) {
+  return h("div", { class: "callout" },
+    h("div", { class: "callout-big" }, "Calling ", h("span", { class: "mono" }, tool.tool),
+      tool.with_passing ? " goes with passing." : " goes with failing."),
+    h("p", null, `The runs that called it, at whatever step, passed ${tool.called.passed} of ${tool.called.total}. `,
+      `Those that never did passed ${tool.never.passed} of ${tool.never.total}. `, pOf(tool.p)));
+}
+
+/** The same, under a step's lead: a line of its own. */
+function toolLine(tool) {
+  return h("p", null, "The runs that called ", h("span", { class: "mono" }, tool.tool),
+    ` passed ${tool.called.passed} of ${tool.called.total}. Those that never did passed ${tool.never.passed} of ${tool.never.total}. `,
+    tool.with_passing ? "Its use goes with passing, at whatever step a run called it. " : "Its use goes with failing. ", pOf(tool.p));
 }
 
 /** Each run's chip, coloured by its own verdict: which behaviours went on to pass is seen at a

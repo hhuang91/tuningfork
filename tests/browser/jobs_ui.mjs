@@ -897,13 +897,41 @@ try {
   });
   check(chips.length > 1 && !wrong.length && chips.some(([, className]) => className.includes("tone-ok")) && chips.some(([, className]) => className.includes("tone-bad")),
     `each run's chip is coloured by its own verdict (${chips.length} runs${wrong.length ? `; wrong: ${JSON.stringify(wrong)}` : ""})`);
-  check(await page.eval(`!document.querySelector(".group-rates .ci-track.tone-ok")`), "and a behaviour's \"then passed\" is a rate, never drawn green");
+  check(await page.eval(`!document.querySelector(".ci-track.tone-ok, .ci-track.tone-bad") && document.querySelectorAll(".group-rates .ci-track.tone-accent").length > 1`),
+    "and a behaviour's \"then passed\" is a rate, never drawn green: no rate here is");
+  // The page leads with what goes with passing: the step that best predicts it, in a callout,
+  // with the ways to it.
+  const best = split.verdict_split?.best;
+  const lead = await page.eval(`(() => {
+    const callout = document.querySelector(".predictors .callout");
+    return {
+      first: document.querySelector("main .panel .panel-head h2")?.textContent,
+      big: callout?.querySelector(".callout-big")?.textContent,
+      ways: [...(callout?.querySelectorAll(".callout-actions a") || [])].map((a) => a.textContent + "=" + a.getAttribute("href")).join(" | "),
+      p: callout?.querySelector("p > .muted:last-child")?.textContent,
+    };
+  })()`);
+  check(!!best && best.kind !== "ended" && lead.first === "What goes with passing"
+    && lead.big === `What the model does at step ${best.index} best predicts whether a run passes.`,
+    `the page leads with the step whose behaviour best predicts a pass (${lead.first}: ${lead.big})`);
+  check(lead.ways === `Open step ${best.index} in run ${best.run_id.slice(0, 8)}=#/runs/${best.run_id}/${best.index} | Resample step ${best.index}…=#/runs/${best.run_id}/${best.index}?start=resample`
+    && /^\(p = /.test(lead.p || ""), `with the ways to it, and its p last (${lead.ways}; ${lead.p})`);
   const tallied = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What the failed runs' checks said")`;
   check(await page.eval(`(() => {
     const panel = ${tallied};
     return !!panel && panel.querySelector("th").textContent === "failed runs that printed it"
-      && panel.querySelector(".hint").textContent.startsWith("Each bar counts the failed runs that printed the line");
-  })()`), "the failed runs' checks are counted line by line, and the page says so plainly");
+      && panel.querySelector(".hint").textContent.startsWith("Each bar counts the failed runs that printed the line")
+      && [...panel.querySelectorAll(".ci-track")].every((bar) => bar.classList.contains("tone-accent"));
+  })()`), "the failed runs' checks are counted line by line, each count a rate in the accent, and the page says so plainly");
+  // One question of every run, lined up with the verdicts: how often it held among the passing
+  // runs and among the failing ones — rates, so the accent's, the verdict said in the label.
+  await page.type(`document.querySelector('[name="target_match"]')`, "row_count");
+  await page.click("Ask every run");
+  await until(() => page.eval(`[...document.querySelectorAll(".group-rates .what")].some((what) => what.textContent.endsWith("of the failing runs"))`), "where it held, by verdict");
+  check(await page.eval(`!document.querySelector(".ci-track.tone-ok, .ci-track.tone-bad")
+    && [...document.querySelectorAll(".group-rates .what")].filter((what) => /of the (passing|failing) runs$/.test(what.textContent))
+      .every((what) => what.nextElementSibling.querySelector(".ci-track").classList.contains("tone-accent"))`),
+    "where it held among the passing runs and among the failing ones: rates, in the accent, never a verdict's green or red");
 
   // --- 11. A step's answer as tokens, and the token that decides it -------------------------
   console.log("score an answer, read its tokens, find the token that decides it");

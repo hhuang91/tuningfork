@@ -1089,6 +1089,23 @@ pre.code { color: var(--muted); }
 /* What to do next, after a result: the same words on every result page. */
 .next-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; border: 1px dashed var(--border-strong); border-radius: var(--radius); }
 .next-line strong { margin-right: 4px; }
+/* A page's lead, in the accent: what to look at first, the numbers it stands on, and the ways to
+   it. A lead, never a verdict: no green or red. */
+.callout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--accent);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.callout p { margin: 0; }
+.callout .mono { overflow-wrap: anywhere; }
+.callout-big { font-size: 16px; font-weight: 650; }
+.callout-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.callout + p { margin-top: 12px; }
 
 .cmd {
   display: flex;
