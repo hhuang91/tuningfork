@@ -77,6 +77,10 @@ export function whatItMeans({ server = {}, harnesses = [], sandbox = null, propo
       blocked.length ? `${listed(blocked)} cannot run against this server.` : null,
     ].filter(Boolean).join(" "));
   }
+  // Before what the test would tell: the sentence beside the strip's own "not tested yet".
+  if (!server.checks?.checked_at && !server.problem && !asksKey) {
+    lines.push("Test the server to measure what each harness needs of it, and whether it can score answers and find forking tokens.");
+  }
   const greyed = Object.entries(server.token_work || {}).filter(([, reason]) => reason).map(([work]) => TOKEN_CONTROLS[work] || work);
   if (greyed.length) lines.push(`${listed(greyed)} ${greyed.length === 1 ? "is" : "are"} greyed out on this server.`);
   if (sandbox && !sandbox.available) {
@@ -88,9 +92,6 @@ export function whatItMeans({ server = {}, harnesses = [], sandbox = null, propo
       : proposer.key?.set
         ? "The proposing model is on another machine, so what it is sent — recorded prompts, answers and your skill — leaves this one."
         : "The proposing model is on another machine and no key is set, so it may refuse the call.");
-  }
-  if (!server.checks?.checked_at && !server.problem && !asksKey) {
-    lines.push("Test the server to measure what each harness needs of it, and whether it can score answers and find forking tokens.");
   }
   return lines.length ? lines.slice(0, 3) : ["Nothing here needs a look."];
 }

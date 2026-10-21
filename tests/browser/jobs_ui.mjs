@@ -774,6 +774,9 @@ try {
       down: whatItMeans({ ...fine, server: { problem: "nothing is listening there" } }),
       missing: whatItMeans({ ...fine, harnesses: [hermes, { name: "claude-code", path: null }] }),
       remote: whatItMeans({ ...fine, proposer: { url: "https://api.example.test", remote: true, allow_remote: false } }),
+      // More than three to say: the sentence beside the strip's "not tested yet" is kept.
+      crowded: whatItMeans({ server: { identity: { id: "s" }, token_work: {} }, harnesses: [hermes, { name: "claude-code", path: null }],
+        sandbox: { available: false }, proposer: { url: "https://api.example.test", remote: true, allow_remote: true, key: { set: true } } }),
     };
   })()`);
   check(meant.fine.join(" / ") === "Nothing here needs a look." && meant.words.join() === "on the internet,asks for a key,not answering,answering",
@@ -785,6 +788,8 @@ try {
     && meant.missing.includes("claude-code was not found, so runs of it cannot start.")
     && meant.remote.includes("The proposing model is on another machine and not allowed yet, so asking it is refused."),
     "a server down, a harness missing, a proposing model elsewhere: each amber part has its sentence");
+  check(meant.crowded.length === 3 && meant.crowded[1].startsWith("Test the server to measure"),
+    `with more to say than three sentences, the server test's is among them (${meant.crowded.join(" / ")})`);
   await page.click("Test the server");
   await until(() => page.eval(`[...document.querySelectorAll(".measured td .mono")].some((name) => name.textContent === "anthropic_messages")`), "the check's results", 60000);
   const serverJob = (await api("/jobs")).find((job) => job.kind === "server-check");
@@ -1139,6 +1144,13 @@ try {
   // A stage's link opens its form: proposing once more, by hand.
   await page.eval(`[...document.querySelectorAll(".stepper a.stage-name")].find((a) => a.textContent === "Propose").click()`);
   check(await opened(".propose-panel") === true, "the stage's link opens its form again");
+  // The focus goes where the page went (found in review: it went to the form, out of sight below
+  // the proposals the page had scrolled to).
+  check(await page.eval(`(() => {
+    const summary = document.querySelector(".propose-panel > summary");
+    const box = summary.getBoundingClientRect();
+    return document.activeElement === summary && box.top >= 0 && box.top < innerHeight;
+  })()`), "and moves the focus there, in sight");
   await page.eval(`document.querySelector(".propose-own > summary").click()`);
   const baseline = await page.eval(`document.querySelector('[name="proposal_text"]').value`);
   await page.type(`document.querySelector('[name="proposal_text"]')`, baseline.replace("Write the totals to report.json.", "Write the totals to report.json, as JSON."));

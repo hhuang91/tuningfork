@@ -373,11 +373,11 @@ export async function refinementView(root, [id], scope) {
     return stages.find((stage) => !stage.done)?.key || null;
   }
 
-  /** Where a stage's link leads — the first of its parts on the page — and the form it opens.
-   *  None while it has nothing on the page. */
+  /** Where a stage's link leads — its form, else the first of its parts on the page — and the
+   *  form it opens. None while it has nothing on the page. */
   function stageParts(key) {
     const drawn = (el) => (el.firstChild ? el : null);
-    if (key === "propose") return { to: proposalsEl, form: proposeEl.firstChild };
+    if (key === "propose") return { to: drawn(proposeEl) || proposalsEl, form: proposeEl.firstChild };
     if (key === "test") return { to: drawn(screenEl) || drawn(screensEl), form: screenEl.firstChild };
     if (key === "validate") return { to: drawn(validateEl) || drawn(validationsEl), form: validateEl.firstChild };
     const record = chosen() ? validationOf(chosen()) : null;
@@ -399,8 +399,9 @@ export async function refinementView(root, [id], scope) {
                 const { to, form } = stageParts(stage.key);
                 if (form && !form.open) form.open = true;
                 to?.scrollIntoView({ block: "start" });
-                // The focus goes where the stage is: its form's own line, else its part.
-                const focus = form?.querySelector(":scope > summary") || to;
+                // The focus goes where the page went: the form's own line where the form is what it
+                // went to, else that part — never somewhere out of sight below it.
+                const focus = form && to?.contains(form) ? form.querySelector(":scope > summary") : to;
                 if (focus && !focus.matches("a, button, summary, input, select, textarea, [tabindex]")) focus.tabIndex = -1;
                 focus?.focus({ preventScroll: true });
               },
