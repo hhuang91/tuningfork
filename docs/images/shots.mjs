@@ -40,7 +40,8 @@ const SHOWN = `[document.body.innerText, ...[...document.querySelectorAll("input
 function exposed(text) {
   // A path's start only: the lab's seeded runs name /tmp/run/home/skills, which names nobody.
   const paths = text.match(/(?<![\w.~-])\/(?:home\/(?!user\b)[\w.-]+|Users\/[\w.-]+|mnt\/\w+)|\b[A-Za-z]:[\\/][\w.-]+|\\\\wsl(?:\.localhost|\$)\\[\w.-]+/g) || [];
-  const words = PRIVATE.filter((word) => new RegExp(`(?<!\\w)${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?!\\w)`, "i").test(text));
+  // A word between letters or digits is part of another (8088 in an id); one beside _ is not.
+  const words = PRIVATE.filter((word) => new RegExp(`(?<![A-Za-z0-9])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9])`, "i").test(text));
   return [...new Set([...paths, ...words])];
 }
 const SKILL = readFileSync(new URL("../../examples/tally-report/SKILL.md", import.meta.url), "utf8");
