@@ -4624,11 +4624,11 @@ def jobs_list(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)) -> No
 
 
 def _job_via(job: dict) -> str:
-    """Who asked for a job, when its front end said: `mcp · claude-code`."""
+    """Who asked for a job, when its front end said: `mcp · claude-code`, `web · step`."""
     by = job.get("started_by") or {}
     if not by.get("via"):
         return ""
-    return " · ".join(part for part in (by["via"], by.get("client")) if part)
+    return " · ".join(part for part in (by["via"], by.get("client"), by.get("page")) if part)
 
 
 def _print_job(job: dict) -> None:

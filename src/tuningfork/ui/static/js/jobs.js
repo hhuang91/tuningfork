@@ -6,7 +6,7 @@
 
 import { api, enc } from "./api.js";
 import { guard } from "./auth.js";
-import { chip, elapsed, h, outcome, short, since } from "./dom.js";
+import { chip, elapsed, h, outcome, plural, short, since } from "./dom.js";
 
 export const KIND_LABEL = {
   resample: "Resample",
@@ -29,10 +29,78 @@ export const KIND_LABEL = {
   "check-along": "Check run along the runs",
 };
 
+// The sidebar's section each kind's result lives in: a job reads as the work it is.
+export const KIND_SECTION = {
+  resample: "Measure", ab: "Measure", "resample-to-end": "Measure", "ab-to-end": "Measure",
+  tokens: "Measure", "forking-tokens": "Measure",
+  propose: "Improve", screen: "Improve", "screen-to-end": "Improve", validate: "Improve",
+  batch: "Record", chain: "Record", fork: "Record", "check-along": "Record",
+  "server-check": "Connections", "check-trial": "Scenarios",
+  "hold-sample": "Live", "hold-console": "Live",
+};
+
 const STATE_TONE = { queued: "muted", running: "accent", done: "muted", failed: "warn", cancelled: "muted", interrupted: "warn" };
 export const ACTIVE = new Set(["queued", "running"]);
 
 export const kindLabel = (job) => KIND_LABEL[job.kind] || job.kind;
+
+// The pages a person starts work from, as a job records them (`api.startedFrom`), in words.
+const FROM = {
+  step: "a step's page", run: "a run's page", refinement: "a refinement's page", scenario: "a scenario's page",
+  experiment: "an experiment's page", skill: "a skill's page", live: "Live", connections: "Connections",
+  jobs: "Jobs", batch: "Run a task", scenarios: "Scenarios", refine: "Refine", runs: "Runs",
+  experiments: "Experiments", skills: "Skills", import: "Import a chat", guide: "the Guide", "add-skill": "Add a skill",
+  "make-scenario": "Make a scenario", divergence: "Where do they diverge?",
+};
+
+/** Who started a job, and from where, as its front end said: a person on one of the web UI's
+ *  pages, or an agent over MCP. Null where nothing was said, as for a job started before the
+ *  web UI said. */
+export function startedBy(job) {
+  const by = job.started_by;
+  if (!by?.via) return null;
+  if (by.via === "mcp") {
+    return { text: `an agent over MCP${by.client ? ` · ${by.client}` : ""}`, title: by.version ? `${by.client || "MCP"} ${by.version}` : undefined };
+  }
+  if (by.via === "web") return { text: `you, from ${FROM[by.page] || by.page || "the web UI"}` };
+  return { text: [by.via, by.client].filter(Boolean).join(" · ") };
+}
+
+/** What a finished job made, and where it lives: an experiment, a test at a step, a
+ *  refinement's proposals or full test runs, a chain, runs, a step's tokens, the server's
+ *  results — for its row, its page, and the note when it ends. Null where the job's own page
+ *  is its result's only home, or it made nothing. */
+export function madeLink(job) {
+  const result = job.result || {};
+  const experiments = job.links?.experiments || [];
+  const runs = job.links?.runs || [];
+  switch (job.kind) {
+    case "server-check":
+      return { href: "#/connections", text: "results on Connections" };
+    case "propose":
+      return result.refinement
+        ? { href: `#/refine/${enc(result.refinement)}`, text: `${plural((result.accepted || []).length, "proposal")} in refinement ${short(result.refinement)}` }
+        : null;
+    case "validate":
+      return result.refinement ? { href: `#/refine/${enc(result.refinement)}`, text: `full test runs ${short(result.validation || "")}` } : null;
+    case "chain":
+      return result.id ? { href: `#/chains/${enc(result.id)}`, text: `chain ${short(result.id)}` } : null;
+    case "tokens":
+      return result.run_id ? { href: `#/runs/${enc(result.run_id)}/${result.step}?view=tokens`, text: `tokens at step ${result.step}` } : null;
+    case "batch":
+      return result.task_id && runs.length ? { href: `#/divergence/${enc(result.task_id)}`, text: `${plural(runs.length, "run")} of ${result.task_id}` } : null;
+    case "screen":
+    case "screen-to-end":
+      // One experiment a wording, the first the test's own report.
+      return experiments.length ? { href: `#/experiments/${experiments[0]}`, text: `test ${short(experiments[0])}` } : null;
+    default:
+      break;
+  }
+  // An A/B's two wordings are one report: the first's page shows both.
+  if (experiments.length) return { href: `#/experiments/${experiments[0]}`, text: `experiment ${short(experiments[0])}` };
+  if (runs.length === 1) return { href: `#/runs/${enc(runs[0])}`, text: `run ${short(runs[0])}` };
+  return null;
+}
 
 /** What the job is about, from what it was asked: a run and a step, or a task. */
 export function subject(job) {
@@ -66,16 +134,6 @@ export function stateText(job) {
 }
 
 export const stateChip = (job) => chip(stateText(job), STATE_TONE[job.status] || "muted");
-
-/** Who asked for the job, when its front end said: an agent driving tuningfork over MCP is
- * named, so work nobody started from this page is never a mystery. */
-export function originChip(job) {
-  const by = job.started_by;
-  if (!by || !by.via) return null;
-  const via = by.via === "mcp" ? "MCP" : by.via;
-  return chip(`from ${via}${by.client ? ` · ${by.client}` : ""}`, "accent",
-    by.version ? `${by.client || via} ${by.version}` : undefined);
-}
 
 export function progressBar(job) {
   const progress = job.progress || {};

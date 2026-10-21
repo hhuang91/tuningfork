@@ -266,11 +266,11 @@ export function screenTones(reach) {
 /** A screen: each proposal against a fresh arm of the original, Holm-corrected over the
  *  proposals planned before sampling. `arms` names each arm's experiment, to link to it; an
  *  unfinished screen shows its rates and no verdict. */
-export function screenView(screen, { arms = {} } = {}) {
+/** A test at a step in a line, and its block's tone: a test run to the end is judged by the
+ *  task's check, so what beat the original there is green, as a check that passed is. */
+export function screenHeadline(screen) {
   const survivors = new Set(screen.survivors);
-  // Run to the end, the target is the task's check: green and red, as for a run.
-  const [up, down] = screenTones(screen.reach);
-  const [headline, tone] = screen.quick
+  return screen.quick
     ? ["A quick look gives rates only, never a verdict.", "not-significant"]
     : !screen.complete
       ? ["This test is unfinished, so it gives rates only, and no verdict.", "not-significant"]
@@ -278,6 +278,93 @@ export function screenView(screen, { arms = {} } = {}) {
         ? [`${plural(survivors.size, "proposal")} beat the original by ${LABELS.beyondChance}.`,
             screen.reach === "end" ? "significant tone-ok" : "significant"]
         : [`No proposal beat the original by ${LABELS.beyondChance}.`, "not-significant"];
+}
+
+/** A wording A/B run to the end in a line, and its block's tone: the task's check decides
+ *  each fork, so a shift is green or red, as a run's verdict is. */
+export function endHeadline(result) {
+  const significant = result.significant;
+  const up = result.direction === "up";
+  const passes = (arm) => `${arm.passed} of ${arm.counted}`;
+  const headline = result.p_value === null
+    ? "No test: one wording has no fork that counts."
+    : significant
+      ? `The variant passed the check ${up ? "more" : "less"} often: ${passes(result.variant)} forks, against ${passes(result.original)} with the original. That is ${LABELS.beyondChance}.`
+      : `${capital(LABELS.withinChance)}: the variant's forks passed the check in ${passes(result.variant)}, and the original's in ${passes(result.original)}.`;
+  return [headline, significant ? `significant ${up ? "tone-ok" : "tone-bad"}` : "not-significant"];
+}
+
+/** What a finished job found, as the page of what it made leads with it: the headline, the
+ *  tone of its block, and the rates it rests on, each with its interval. Null for a job whose
+ *  result is told elsewhere, or not at all. An A/B with nothing declared is judged at its own α. */
+export function found(job) {
+  const result = job.result || {};
+  switch (job.kind) {
+    case "resample":
+    case "hold-sample":
+      return result.distribution ? distributionFinding(result.distribution) : null;
+    case "ab":
+      return result.comparison ? abFinding(result.comparison, job.params?.alpha ?? 0.05) : null;
+    case "forking-tokens": {
+      if (!result.forking) return null;
+      const flips = result.forking.positions.reduce((total, position) => total + position.alternatives.filter((alt) => alt.flips).length, 0);
+      return {
+        text: flips ? `${plural(flips, "forced token")} changed what the model did` : "No forced token decided what the model did",
+        tone: flips ? "significant" : "not-significant", bars: [],
+      };
+    }
+    case "screen":
+    case "screen-to-end": {
+      if (!result.screen) return null;
+      const [text, tone] = screenHeadline(result.screen);
+      return { text, tone, bars: [] };
+    }
+    case "resample-to-end":
+      return result.counted === undefined ? null : {
+        text: `${result.passed} of ${plural(result.counted, "fork")} passed the task's check.`,
+        tone: "not-significant", bars: [["passed", result.rate]],
+      };
+    case "ab-to-end": {
+      if (!result.original || !result.variant) return null;
+      const [text, tone] = endHeadline(result);
+      return { text, tone, bars: [["original", result.original.rate], ["variant", result.variant.rate, "change"]] };
+    }
+    default:
+      return null;
+  }
+}
+
+function distributionFinding(distribution) {
+  const [first] = distribution.clusters;
+  if (!first) return { text: "No sample came back to count.", tone: "not-significant", bars: [] };
+  const total = distribution.total;
+  const text = distribution.clusters.length === 1
+    ? `One behaviour, in every one of the ${plural(total, "sample")}.`
+    : `${plural(distribution.clusters.length, "behaviour")} in ${plural(total, "sample")}; the most common, ${first.letter}, in ${first.rate.successes} of them.`;
+  return { text, tone: "not-significant", bars: [[first.letter, first.rate]] };
+}
+
+function abFinding(comparison, alpha) {
+  const target = comparison.target;
+  if (target) {
+    return {
+      text: shiftWords(target), tone: target.significant ? "significant" : "not-significant",
+      bars: [["original", target.original], ["variant", target.variant, "change"]],
+    };
+  }
+  const moved = comparison.shifts.filter((shift) => shift.adjusted_p < alpha).length;
+  return {
+    text: moved
+      ? `Nothing declared: ${moved} of ${plural(comparison.shifts.length, "behaviour")} moved by ${LABELS.beyondChance}, each p adjusted for comparing them all.`
+      : `Nothing declared: no behaviour moved by ${LABELS.beyondChance}, each p adjusted for comparing them all.`,
+    tone: moved ? "significant" : "not-significant", bars: [],
+  };
+}
+
+export function screenView(screen, { arms = {} } = {}) {
+  // Run to the end, the target is the task's check: green and red, as for a run.
+  const [up, down] = screenTones(screen.reach);
+  const [headline, tone] = screenHeadline(screen);
   const verdict = (arm) => {
     if (screen.quick) return chip("quick look", "muted");
     if (!screen.complete) return chip("no verdict", "warn");

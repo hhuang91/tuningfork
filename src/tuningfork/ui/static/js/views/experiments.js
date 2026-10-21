@@ -2,15 +2,14 @@
 
 import { api, enc, query } from "../api.js";
 import {
-  ago, capital, chip, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
+  ago, chip, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
 } from "../dom.js";
 import { costOf } from "../cost.js";
 import { live } from "../live.js";
-import { comparisonView, distributionView, forkingView, formatP, screenView, tallyView, targetLine } from "../results.js";
+import { comparisonView, distributionView, endHeadline, forkingView, formatP, screenView, tallyView, targetLine } from "../results.js";
 import { trashButton, trashedBanner } from "../trash.js";
 import { whereForm } from "../where.js";
 import { diffView } from "./refine.js";
-import { LABELS } from "../words.js";
 
 export async function experimentsView(root) {
   replace(root, loading());
@@ -294,17 +293,10 @@ function toEndView(experiment) {
       forksPanel([[null, result]]));
   }
   // The target is the task's check: here green and red mean what they mean for a run.
-  const significant = result.significant;
-  const up = result.direction === "up";
-  const passes = (arm) => `${arm.passed} of ${arm.counted}`;
-  const headline = result.p_value === null
-    ? "No test: one wording has no fork that counts."
-    : significant
-      ? `The variant passed the check ${up ? "more" : "less"} often: ${passes(result.variant)} forks, against ${passes(result.original)} with the original. That is ${LABELS.beyondChance}.`
-      : `${capital(LABELS.withinChance)}: the variant's forks passed the check in ${passes(result.variant)}, and the original's in ${passes(result.original)}.`;
+  const [headline, tone] = endHeadline(result);
   return h("div", { class: "stack" },
     panel("Original wording against the variant, to the end", [
-      h("div", { class: ["verdict-block", significant ? "significant" : "not-significant", significant ? (up ? "tone-ok" : "tone-bad") : null] },
+      h("div", { class: ["verdict-block", tone] },
         targetLine("the task's check passes", "set by the task, before any fork ran"),
         h("div", { class: "verdict-big" }, headline),
         h("div", { class: "stack", style: { gap: "4px" } },

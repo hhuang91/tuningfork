@@ -571,9 +571,11 @@ what each said it was.
 
 ### `jobs list`, `jobs show`, `jobs cancel`, `jobs wait`
 
-Work a running proxy is doing, started from its web UI or by an agent. `show <id>` says what a job
-was asked, how it went and what it made; `cancel <id>` stops it, keeping what it finished;
-`wait <id>` blocks until it ends, printing its progress, and exits 1 unless it finished.
+Work a running proxy is doing, started from its web UI or by an agent. `list` says who started
+each, where its front end said: an agent over MCP and its client (`mcp · claude-code`), or the web
+UI and the page it was started from (`web · step`). `show <id>` says what a job was asked, how it
+went and what it made; `cancel <id>` stops it, keeping what it finished; `wait <id>` blocks until
+it ends, printing its progress, and exits 1 unless it finished.
 
 ### `trash`
 

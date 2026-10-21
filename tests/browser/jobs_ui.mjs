@@ -91,11 +91,40 @@ try {
   const resample = await finished(resampleId);
   check(resample.status === "done" && resample.result.distribution.total === 6, "the resample ran: 6 samples");
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "See the result")`), "the link to the result");
-  check(await page.eval(`document.querySelectorAll(".job-log .log-line").length >= 7`), "the job's page logged the experiment and each sample");
+  // Done, the job's page hands off to what it made: what it found in a line, with its rate, and the
+  // way to the whole — the experiment's page draws the rest. Its log is folded below.
+  check(await page.eval(`(() => {
+    const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h2")?.textContent === "What it found");
+    return !!panel && panel.querySelector(".verdict-big").textContent === "One behaviour, in every one of the 6 samples."
+      && !!panel.querySelector(".ci") && !document.querySelector(".groups");
+  })()`), "the job's page says what it found in a line, and leaves the whole to the experiment's page");
+  check(await page.eval(`(() => {
+    const fold = [...document.querySelectorAll("details.fold-panel")].find((d) => d.querySelector("h2")?.textContent === "Progress");
+    if (!fold || fold.open) return false;
+    fold.open = true;
+    return true;
+  })()`), "its log is folded under what it found");
+  await until(() => page.eval(`document.querySelectorAll(".job-log .log-line").length >= 7`), "the job's page logged the experiment and each sample");
+  check(true, "opened, the log has the experiment and each sample");
   // The job names the step it worked at, and its link opens that step, not the top of the run
   // (found in use: it led to the run alone).
   check(await page.eval(`[...document.querySelectorAll("main a")].some((a) => a.textContent === "run ${run.id.slice(0, 8)} @ step 1"
     && a.getAttribute("href") === "#/runs/${run.id}/1")`), "the job's page links the step it worked at");
+  // Who started it, and from where: the web UI says which page.
+  check(await page.eval(`document.querySelector(".page-head .sub").textContent.includes("started by you, from a step's page")`),
+    "the job's page says it was started from a step's page");
+  // On the Jobs list: the work it is, by its section, who started it, and what it made, leading there.
+  await page.eval(`location.hash = "#/jobs"`);
+  await until(() => page.eval(`!!document.querySelector('tr[data-job="${resampleId}"]')`), "the job on the Jobs list");
+  const jobRow = await page.eval(`(() => {
+    const row = document.querySelector('tr[data-job="${resampleId}"]');
+    const made = [...row.querySelectorAll("a")].find((a) => a.textContent.startsWith("→ "));
+    return { what: row.children[2].textContent, made: made?.getAttribute("href"), by: row.lastElementChild.textContent };
+  })()`);
+  check(jobRow.what === "Measure · Resample" && jobRow.made === `#/experiments/${resample.links.experiments[0]}` && jobRow.by.endsWith("you, from a step's page"),
+    `the Jobs list says what each job is, what it made and who started it (${JSON.stringify(jobRow)})`);
+  await page.eval(`location.hash = "#/jobs/${resampleId}"`);
+  await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "See the result")`), "the job's page again");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/")`), "the experiment page");
   await until(() => page.eval(`!!document.querySelector(".groups .letter")`), "the distribution");
@@ -656,6 +685,10 @@ try {
   const forkJobId = await until(async () => jobIdIn(await page.eval("location.hash")), "the probe's job page");
   const forkJob = await finished(forkJobId, 120000);
   check(forkJob.status === "done" && forkJob.result.forking.flips === 1, "the probe found the token that decides the answer");
+  // Its job's page says so in a line, and hands off to the probe's own page for the rest.
+  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 forced token changed what the model did"`), "what the probe found, on its job's page");
+  check(true, "the probe's job page says what it found in a line");
+  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`[...document.querySelectorAll(".chip")].some((c) => c.textContent === "flips away")`), "the result, marked where it forks");
   check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => c.textContent.startsWith("flips")).every((c) => c.classList.contains("tone-accent"))`),
     "a flip is the accent's colour, its direction in words: a result, not a check's red");
@@ -771,6 +804,11 @@ try {
   check(screenJob.status === "done" && screenJob.result.screen.complete && screenJob.result.screen.survivors.length === 1,
     "the screen: the wording that names the keys survives the correction, the other does not");
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal beat the original by more than chance would explain."`), "the verdict on the job's page");
+  // The job's page says it in a line, and hands off: the test's own page has the rest.
+  check(await page.eval(`!document.querySelector(".screen-table") && [...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "What it found")`),
+    "the test's job page says what it found, and leaves the table to the test's own page");
+  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
+  await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
   check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do"
     && [...document.querySelectorAll(".screen-table th")].some((th) => th.textContent === "did what it should")`),
     "a refinement's test at its step names what it counts as the refinement does: what the model should do");
@@ -784,8 +822,6 @@ try {
       [row.querySelector(".chip.tone-target, .chip.tone-not-target")?.textContent, row.children[1].textContent.includes("row_count")].join(":")).join(",");
   })()`);
   check(byArm.split(",").sort().join(",") === "matches:true,no match:false", `the screen's behaviours are badged as matching what is counted or not (${byArm})`);
-  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
-  await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
   check(await page.eval(`[...document.querySelectorAll(".screen-table .chip")].map((c) => c.textContent).sort().join(",") === "beat the original,within chance"`), "the screen's page gives each proposal its verdict");
   check(await page.eval(`document.querySelector(".page-head").textContent.includes("refinement ${refinementId.slice(0, 8)}")`), "and names the refinement it belongs to");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Back to the refinement").click()`);
@@ -958,11 +994,11 @@ try {
     started_by: { via: "mcp", client: "claude-code", version: "2.1.281" },
   });
   await finished(agentJob.id);
-  const chipIn = (scope) => page.eval(`[...document.querySelectorAll(${JSON.stringify(scope)})].some((c) => c.textContent === "from MCP · claude-code")`);
+  const saysAgent = (scope) => page.eval(`[...document.querySelectorAll(${JSON.stringify(scope)})].some((el) => el.textContent.includes("an agent over MCP · claude-code"))`);
   await page.eval(`location.hash = "#/jobs"`);
-  check(await until(() => chipIn(`tr[data-job="${agentJob.id}"] .chip`), "the chip on the Jobs list"), "the Jobs list names the agent that started a job");
+  check(await until(() => saysAgent(`tr[data-job="${agentJob.id}"] td`), "who started it, on the Jobs list"), "the Jobs list names the agent that started a job");
   await page.eval(`location.hash = "#/jobs/${agentJob.id}"`);
-  check(await until(() => chipIn(".page-head .chip"), "the chip on the job's page"), "so does the job's page");
+  check(await until(() => saysAgent(".page-head .sub"), "who started it, on the job's page"), "so does the job's page");
 
   // --- 14. A refinement to the trash, and back ------------------------------------------------
   console.log("a refinement goes to the trash from its page, and comes back");
