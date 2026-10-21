@@ -470,9 +470,18 @@ Record, Measure, Improve, and the Trash; what needs a running proxy stays in it 
 greyed and saying why, and its foot is a status strip — the proxy, the server and the harnesses,
 from `GET /connections`. Its front page is `#/guide` — setup, where you left off, a map of the
 loop and the ways in — and its words have a page of their own, `#/words`, each living once in
-`ops/glossary.py`. The Skills page (`ops/skills.py`) names a skill by its folder, as variants
-and refinements do, and runs it again from the scenarios that name it; it is the person's view,
-never offered over MCP: the changelog an approval writes carries held-out verdicts. A person adds
+`ops/glossary.py`. Each page leads with its take-away: a run its verdict strip; the divergence
+page the step whose behaviour best predicts the verdict, in a callout with the ways to it;
+Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model,
+a word and a colour each, the server in the status strip's words (`serverWord`), and what that
+means in at most three sentences (`whatItMeans`); a refinement its four stages in a line
+(`stagesOf` in `views/refine.js`: propose, test at this step, full test runs, approve — where each
+proposal stands is its latest finished test, as the gate's G0 reads it), the current one's form
+the one open as the page opens — after, no form opens by itself — then its evidence, each
+proposal named by the line it changes. The Skills page
+(`ops/skills.py`) names a skill by its folder, as variants and refinements do, and runs it again
+from the scenarios that name it; it is the person's view, never offered over MCP: the changelog
+an approval writes carries held-out verdicts. A person adds
 a skill there too (`ops/addskill.py`; `tuningfork add-skill`, Add a skill…, `POST
 /skills/add`), planned before anything is written, as a record in `<home>/skills/<name>.json`:
 a folder on this machine, remembered where it is, so an approval writes to it; or a copy of
@@ -642,16 +651,18 @@ than on a hardcoded assumption about which server is running.
 - The UI keeps green and red for a check: a run's verdict (which closes its page), a fork's, a
   gate's, and a change in how often a task's check passes (an A/B or a screen run to the end).
   Any other significant result is the accent's colour, said in words with its direction —
-  tuningfork is never told whether more of a behaviour is wanted. One meaning a colour, the
-  legend written beside the tokens in `app.css` and shown in a line on the Guide: amber
-  (`warn`) a caution — not counted, unfinished, paused, held, something missing or gone wrong
-  (a failed call or job is one, never a verdict's red); the accent what can be acted on, what is
-  current or significant, and the model's own answer; purple a skill's own words; teal
-  (`change`, with a pencil) what a person or tuningfork changed — an edit at a breakpoint, a
-  variant swapped in — on chips, outlines and banners, never a step's border; everything else
-  grey, what is fine included (found, done, a file that matches, every role but the
-  assistant's). Red keeps only what every page means by it besides: a diff's removed lines
-  beside its green added ones, a button that deletes, a field or an action to put right.
+  tuningfork is never told whether more of a behaviour is wanted. A rate is never green or red,
+  a pass rate included: its bar is the accent's (a variant's teal), the verdict it counts said in
+  its label. One meaning a colour, the legend written beside the tokens in `app.css` and shown in
+  a line on the Guide: amber (`warn`) a caution — not counted, unfinished, paused, held,
+  something missing or gone wrong (a failed call or job is one, never a verdict's red); the
+  accent what can be acted on, what is current or significant, and the model's own answer;
+  purple a skill's own words; teal (`change`, with a pencil) what a person or tuningfork changed
+  — an edit at a breakpoint, a variant swapped in — on chips, outlines and banners, never a
+  step's border; everything else grey, what is fine included (found, done, a file that matches,
+  every role but the assistant's). Red keeps only what every page means by it besides: a diff's
+  removed lines beside its green added ones, a button that deletes, a field or an action to put
+  right.
 - tuningfork's own endpoints (`/_tuningfork/`) answer only to a loopback Host, refuse
   cross-site state changes by Origin, and accept no state change without the access token
   (`api/guard.py`): a loopback port is reachable from any page in the user's browser. Keep new endpoints under

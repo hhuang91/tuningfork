@@ -4823,10 +4823,9 @@ def _print_proposer(settings: dict, key: dict) -> None:
     if settings["url"] is None:
         console.print("[bold]proposer[/bold]  the proxy's own server — through the proxy for a job, gated and never recorded")
     else:
-        from tuningfork.endpoints import address, is_loopback
+        from tuningfork.ops.proposer import is_remote
 
-        host, _ = address(settings["url"])
-        remote = "" if is_loopback(host) else (
+        remote = "" if not is_remote(settings["url"]) else (
             " — not this machine: [green]allowed[/green]" if settings["allow_remote"]
             else " — not this machine: [yellow]not allowed yet (--allow-remote)[/yellow]"
         )

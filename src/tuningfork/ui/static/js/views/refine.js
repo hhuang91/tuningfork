@@ -9,7 +9,7 @@
 
 import { api, enc, query } from "../api.js";
 import { guard } from "../auth.js";
-import { ago, capital, chip, crumbs, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when } from "../dom.js";
+import { ago, capital, chip, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when } from "../dom.js";
 import { cacheField, field, formError, input, numberOf, planForm, samplingChoices, seedField, textArea } from "../forms.js";
 import { ACTIVE } from "../jobs.js";
 import { live } from "../live.js";
@@ -160,30 +160,40 @@ export async function refinementView(root, [id], scope) {
   // Ticked to screen: kept while the proposals are drawn again.
   const selected = new Set();
   // The page in parts, each drawn again on its own: what a job changes is redrawn when it
-  // ends, and a form someone is typing in is left as it is.
+  // ends, and a form someone is typing in is left as it is. Below where it stands — its stages
+  // and its evidence — each stage's parts in turn: proposing, the tests at this step, the full
+  // test runs, approving.
   const head = h("div", { class: "page-head" });
-  const banners = h("div", { class: "stack" });
-  const facts = h("div");
-  const evidenceEl = h("div");
-  const packetEl = h("div");
-  const proposalsEl = h("div");
-  const proposeEl = h("div");
-  const screenEl = h("div");
-  const screensEl = h("div");
-  const validateEl = h("div");
-  const validationsEl = h("div");
-  const approveEl = h("div");
+  const banners = h("div", { class: "stack slot" });
+  const slot = () => h("div", { class: "slot" });
+  const stepperEl = slot();
+  const facts = slot();
+  const evidenceEl = slot();
+  const packetEl = slot();
+  const proposalsEl = slot();
+  const proposeEl = slot();
+  const screenEl = slot();
+  const screensEl = slot();
+  const validateEl = slot();
+  const validationsEl = slot();
+  const approveEl = slot();
   let screenForm = null;
   let validateForm = null;
+  // The stage the stepper last drew as current: undefined until the page is first drawn.
+  let current;
+  // What the stepper last drew: drawn again only when that changes, so a job's every event — a
+  // validation sends dozens — leaves it, and a focus on one of its links, as they are.
+  let stepperDrawn = null;
   // The evidence asked for most recently: an older answer arriving late is not drawn.
   let asked = 0;
   let timer = null;
   replace(root, crumbs([["Refine", "#/refine"], [short(shown.refinement.id)]]), head,
-    h("div", { class: "stack" }, banners, facts, evidenceEl, proposalsEl, packetEl, proposeEl, screenEl, screensEl,
-      validateEl, validationsEl, approveEl));
+    h("div", { class: "stack" }, banners, stepperEl, evidenceEl, proposalsEl, packetEl, proposeEl, screenEl, screensEl,
+      validateEl, validationsEl, approveEl, facts));
 
-  // Nothing new starts on a refinement closed, approved, or in the trash.
-  const acting = () => live.mode === "live" && shown.refinement.status === "open" && !shown.refinement.trashed_at;
+  // Nothing new starts on a refinement closed, approved, or in the trash: it has no current stage.
+  const settled = () => shown.refinement.status !== "open" || Boolean(shown.refinement.trashed_at);
+  const acting = () => live.mode === "live" && !settled();
   const mine = (job) => {
     const ref = job?.params?.refinement || "";
     return ref !== "" && shown.refinement.id.startsWith(ref);
@@ -196,23 +206,36 @@ export async function refinementView(root, [id], scope) {
   }
 
   function drawAll() {
+    const stages = stagesOf();
+    const now = settled() ? null : currentOf(stages);
     drawHead();
     drawBanners();
     drawFacts();
     drawEvidence();
     drawProposals();
     drawPacket();
-    drawForms();
+    // The current stage's form is the one open as the page is first drawn. After, a form opens
+    // only when the person opens it: a stage a job moves the refinement on to is shown current,
+    // its form left folded. Forms opening on their own with none closing would clutter the page,
+    // and one closed under the person would confuse them.
+    drawForms(current === undefined ? now : null);
+    current = now;
     drawScreens();
     drawValidations();
+    // Last: its links lead to what the others drew.
+    drawStepper(stages, now);
   }
 
   // A job about this refinement: said while it runs; when it ends — proposals made, a screen
   // done — what it changed is read again.
   scope.on((event) => {
-    if (event.type === "snapshot") drawBanners();
+    if (event.type === "snapshot") {
+      drawBanners();
+      drawStepper(stagesOf(), current);
+    }
     if (event.type !== "job" || !mine(event.job)) return;
     drawBanners();
+    drawStepper(stagesOf(), current);
     if (ACTIVE.has(event.job.status)) return;
     clearTimeout(timer);
     timer = setTimeout(reload, 100);
@@ -297,10 +320,112 @@ export async function refinementView(root, [id], scope) {
     return button;
   }
 
+  // --- where it stands: the four stages, in a line --------------------------------------------
+  //
+  // Propose, test at this step, full test runs, approve: each stage done or not, what it holds,
+  // and a link to its part of the page, which opens its form. The first not done is the
+  // current one: its form is the one open when the page opens, and no form opens by itself after.
+
+  function stagesOf() {
+    const items = shown.proposals;
+    const screens = shown.screens;
+    const records = shown.validations || [];
+    const running = live.jobs.filter(mine);
+    const doing = (...kinds) => running.some((job) => kinds.includes(job.kind));
+    const won = survivors();
+    const pick = chosen();
+    const approval = shown.approval;
+
+    let proposed = items.length ? plural(items.length, "proposal") : "none yet";
+    if (doing("propose")) proposed = "asking the proposing model…";
+
+    // Where each proposal stands is its latest finished test (`standingOf`): a quick look gives
+    // rates only, and a test stopped part way gives none.
+    let tested;
+    if (doing("screen", "screen-to-end")) tested = "a test under way";
+    else if (!screens.length) tested = items.length ? "none yet" : "waits for a proposal";
+    else if (won.length) tested = items.length === 1 ? "the proposal beat the original" : `${won.length} of ${plural(items.length, "proposal")} beat the original`;
+    else if (items.some(standingOf)) tested = "none beat the original";
+    else if (screens.some((screen) => !screen.report.quick)) tested = "unfinished: no verdict";
+    else tested = screens.length === 1 ? "a quick look: rates, no verdict" : "quick looks: rates, no verdict";
+
+    let validated;
+    if (doing("validate")) validated = "under way";
+    else if (pick) validated = "pass the approval checks";
+    else if (records.some((record) => record.complete)) validated = "do not pass the approval checks";
+    else if (records.length) validated = "unfinished: no verdict";
+    else validated = won.length ? "none yet" : "wait for a proposal that beat the original";
+
+    let approved;
+    if (approval?.state === "applied") approved = "written to the skill's own file";
+    else if (approval) approved = "interrupted: see above";
+    else if (pick) approved = `proposal ${short(pick)} is ready`;
+    else approved = "waits for full test runs that pass the approval checks";
+
+    return [
+      { key: "propose", name: "Propose", state: proposed, done: items.length > 0 },
+      { key: "test", name: LABELS.screen, state: tested, done: won.length > 0 },
+      { key: "validate", name: LABELS.validate, state: validated, done: Boolean(pick) },
+      { key: "approve", name: "Approve", state: approved, done: approval?.state === "applied" },
+    ];
+  }
+
+  /** The first stage not done: none once the edit is written. */
+  function currentOf(stages) {
+    return stages.find((stage) => !stage.done)?.key || null;
+  }
+
+  /** Where a stage's link leads — its form, else the first of its parts on the page — and the
+   *  form it opens. None while it has nothing on the page. */
+  function stageParts(key) {
+    const drawn = (el) => (el.firstChild ? el : null);
+    if (key === "propose") return { to: drawn(proposeEl) || proposalsEl, form: proposeEl.firstChild };
+    if (key === "test") return { to: drawn(screenEl) || drawn(screensEl), form: screenEl.firstChild };
+    if (key === "validate") return { to: drawn(validateEl) || drawn(validationsEl), form: validateEl.firstChild };
+    const record = chosen() ? validationOf(chosen()) : null;
+    return { to: drawn(approveEl) || (record ? root.querySelector(`[data-validation="${record.id}"]`) : null), form: null };
+  }
+
+  function drawStepper(stages, now) {
+    const linked = stages.map((stage) => Boolean(stageParts(stage.key).to));
+    const drawing = JSON.stringify([stages, now, linked]);
+    if (drawing === stepperDrawn) return;
+    stepperDrawn = drawing;
+    replace(stepperEl, h("ol", { class: "stepper", "aria-label": "Where this refinement stands" },
+      stages.map((stage, index) => {
+        const name = linked[index]
+          ? h("a", {
+              class: "stage-name", href: `#/refine/${shown.refinement.id}`,
+              onclick: (event) => {
+                event.preventDefault();
+                const { to, form } = stageParts(stage.key);
+                if (form && !form.open) form.open = true;
+                to?.scrollIntoView({ block: "start" });
+                // The focus goes where the page went: the form's own line where the form is what it
+                // went to, else that part — never somewhere out of sight below it.
+                const focus = form && to?.contains(form) ? form.querySelector(":scope > summary") : to;
+                if (focus && !focus.matches("a, button, summary, input, select, textarea, [tabindex]")) focus.tabIndex = -1;
+                focus?.focus({ preventScroll: true });
+              },
+            }, stage.name)
+          : h("span", { class: "stage-name" }, stage.name);
+        return h("li", {
+          class: ["stage", stage.done && "done", stage.key === now && "current"],
+          "aria-current": stage.key === now ? "step" : null,
+        },
+        h("span", { class: "stage-num", "aria-hidden": "true" }, stage.done ? "✓" : String(index + 1)),
+        h("span", { class: "stage-body" },
+          // The tick, in words, for a screen reader; the current stage is `aria-current`.
+          stage.done ? h("span", { class: "visually-hidden" }, "Done: ") : null,
+          name, h("span", { class: "stage-state" }, stage.state)));
+      })));
+  }
+
   // --- the evidence: each proposal's screen, and the validation behind the one chosen ---------
   //
-  // First on the page, so an approval is read with what it stood on: what a proposer is shown
-  // — the original's answers here, none of which may reach the target — is the problem, below.
+  // Under the stages, before any stage's parts, so an approval is read with what it stood on: what
+  // a proposer is shown — the original's answers here, none of which may reach the target — is the
+  // problem, below.
 
   /** The proposal the page points to: the one approved, else one whose validation meets the gate. */
   function chosen() {
@@ -339,7 +464,7 @@ export async function refinementView(root, [id], scope) {
     replace(evidenceEl, panel("The evidence", h("div", { class: "stack" },
       standing(items, pick),
       h("div", { class: "table-wrap" }, h("table", { class: "table evidence-table" },
-        h("thead", null, h("tr", null, h("th", null, "proposal"), h("th", null, "its test at this step"), h("th", null, "its full test runs"))),
+        h("thead", null, h("tr", null, h("th", null, "the edit"), h("th", null, "its test at this step"), h("th", null, "its full test runs"))),
         h("tbody", null, items.map((item) => evidenceRow(item, pick)))))),
       { meta: h("span", { class: "muted" }, "why a proposal is kept: a test at this step, then full test runs"), className: "evidence-panel" }));
   }
@@ -348,9 +473,11 @@ export async function refinementView(root, [id], scope) {
     const verdict = screenedOf(item);
     const record = validationOf(item.id);
     const approved = shown.approval?.proposal === item.id;
+    // Each proposal by what it changes: the line, and the id the lines above name it by.
     return h("tr", { class: item.id === pick ? "is-chosen" : null },
-      h("td", { class: "nowrap" }, jump(h("span", { class: "mono" }, short(item.id)), `[data-proposal="${item.id}"]`, "Its edit, below"),
-        approved ? [" ", chip("approved", "ok")] : item.id === pick ? [" ", chip("ready to approve", "ok")] : null),
+      h("td", { class: "edit-cell" }, jump(editLine(item), `[data-proposal="${item.id}"]`, "Its edit in full, below"),
+        h("div", { class: "faint small" }, h("span", { class: "mono" }, short(item.id)),
+          approved ? [" ", chip("approved", "ok")] : item.id === pick ? [" ", chip("ready to approve", "ok")] : null)),
       h("td", null, verdict
         ? [verdictChip(verdict), " ", h("span", { class: "small" }, screenLine(verdict), " · ",
             h("a", { href: `#/experiments/${verdict.screen}` }, `test ${short(verdict.screen)}`))]
@@ -380,9 +507,9 @@ export async function refinementView(root, [id], scope) {
     if (pick) return verdictBox("tone-ok", `Proposal ${short(pick)} passes the approval checks, and is ready to approve`, behind(pick));
     const judged = (shown.validations || []).find((record) => record.complete);
     if (judged) return verdictBox("tone-bad", `Proposal ${short(judged.proposal)} does not pass the approval checks`, behind(judged.proposal));
-    const survived = items.filter((item) => item.screens.some((verdict) => verdict.complete && verdict.survives));
+    const survived = items.filter((item) => standingOf(item)?.survives);
     if (survived.length) {
-      const toEnd = survived.some((item) => item.screens.some((verdict) => verdict.complete && verdict.survives && verdict.reach === "end"));
+      const toEnd = survived.some((item) => standingOf(item).reach === "end");
       return verdictBox(toEnd ? "significant tone-ok" : "significant",
         items.length === 1 ? `Proposal ${short(survived[0].id)} beat the original in a test at this step`
           : `${survived.length} of ${plural(items.length, "proposal")} beat the original in a test at this step`,
@@ -390,8 +517,8 @@ export async function refinementView(root, [id], scope) {
           ? "Before approving one, give it full test runs: the task's own runs, and the tasks held out from it."
           : "A test at one step is a lead, not proof. Before approving an edit that beat the original, give it full test runs."));
     }
-    const worse = items.filter((item) => item.screens.some((verdict) => verdict.complete && verdict.worse));
-    if (items.some((item) => item.screens.some((verdict) => verdict.complete && !verdict.quick))) {
+    const worse = items.filter((item) => standingOf(item)?.worse);
+    if (items.some(standingOf)) {
       return verdictBox("not-significant", "No proposal has beaten the original in a test at this step",
         worse.length ? h("p", { class: "verdict-lines" }, `${worse.map((item) => short(item.id)).join(", ")} made it worse.`) : null);
     }
@@ -401,16 +528,20 @@ export async function refinementView(root, [id], scope) {
 
   // --- what a proposer is shown: the packet, as it would be built now -------------------------
 
+  // Folded, in the proposing stage: gathered only when someone opens it, and kept open, or
+  // closed, as it was when the page is drawn again.
   function drawPacket() {
     const found = shown.refinement;
-    const body = h("div", null, loading("Gathering what the proposing model is shown…"));
-    replace(packetEl, panel("What the proposing model is shown", body,
-      { meta: h("span", { class: "muted" }, "built from what is recorded, never sampled for it"), className: "packet-panel" }));
-    const mineAsked = (asked += 1);
-    api.get(`/refinements/${enc(found.id)}/packet`)
-      .then((packet) => packetBody(found, packet))
-      .catch((error) => h("p", { class: "form-error" }, error.message))
-      .then((drawn) => { if (scope.active && mineAsked === asked) replace(body, drawn); });
+    const open = packetEl.firstChild?.open === true;
+    replace(packetEl, foldPanel("What the proposing model is shown", () => {
+      const body = h("div", null, loading("Gathering what the proposing model is shown…"));
+      const mineAsked = (asked += 1);
+      api.get(`/refinements/${enc(found.id)}/packet`)
+        .then((packet) => packetBody(found, packet))
+        .catch((error) => h("p", { class: "form-error" }, error.message))
+        .then((drawn) => { if (scope.active && mineAsked === asked) replace(body, drawn); });
+      return body;
+    }, { meta: h("span", { class: "muted" }, "built from what is recorded, never sampled for it"), className: "packet-panel", open }));
   }
 
   function packetBody(found, evidence) {
@@ -490,9 +621,10 @@ export async function refinementView(root, [id], scope) {
 
   // --- the forms: proposing, and screening --------------------------------------------------------
   //
-  // Made once and kept: a proposal made, or a screen ended, leaves what is typed in them.
+  // Made once and kept: a proposal made, or a screen ended, leaves what is typed in them. Each
+  // folded, but the current stage's as the page is first drawn (`opening`).
 
-  function drawForms() {
+  function drawForms(opening) {
     if (!acting()) {
       replace(proposeEl);
       replace(screenEl);
@@ -508,31 +640,36 @@ export async function refinementView(root, [id], scope) {
     } else {
       screenForm?.refresh();
     }
-    // Drawn again when the survivors change: a form left as typed otherwise.
+    // Drawn again when the survivors change: a form left as typed otherwise, and open as it was.
     const names = survivors().map((each) => each.id).join(",");
     if (!names) {
       replace(validateEl);
       validateForm = null;
     } else if (!validateForm || validateForm.names !== names) {
+      const open = validateEl.firstChild?.open === true;
       validateForm = { ...validatePanel(), names };
+      validateForm.element.open = open;
       replace(validateEl, validateForm.element);
     }
+    const fold = { propose: proposeEl, test: screenEl, validate: validateEl }[opening]?.firstChild;
+    if (fold) fold.open = true;
   }
 
-  /** Proposals a finished screen found to shift the target: what may be validated. */
+  /** Proposals whose latest finished screen kept them (`standingOf`): what may be validated, as the
+   *  approval checks' G0 reads it. */
   function survivors() {
-    return shown.proposals.filter((each) => each.screens.some((verdict) => verdict.complete && verdict.survives));
+    return shown.proposals.filter((each) => standingOf(each)?.survives);
   }
 
   function proposePanel() {
-    return panel("Propose an edit", h("div", { class: "stack" },
+    return foldPanel("Propose an edit", h("div", { class: "stack" },
       h("details", { class: "fold propose-builtin", open: true },
         h("summary", null, h("strong", null, "Ask the proposing model")),
         builtinForm()),
       h("details", { class: "fold propose-own" },
         h("summary", null, h("strong", null, "Write one yourself")),
         ownForm())),
-      { meta: h("span", { class: "muted" }, "small edits, each with its reason") });
+      { meta: h("span", { class: "muted" }, "small edits, each with its reason"), className: "propose-panel" });
   }
 
   function builtinForm() {
@@ -674,7 +811,7 @@ export async function refinementView(root, [id], scope) {
       onStarted: opened,
     });
     return {
-      element: panel("Test the ticked proposals at this step", form.element,
+      element: foldPanel("Test the ticked proposals at this step", form.element,
         { meta: h("span", { class: "muted" }, "each against the original"), className: "screen-panel" }),
       refresh: form.refresh,
     };
@@ -714,7 +851,7 @@ export async function refinementView(root, [id], scope) {
       onStarted: opened,
     });
     return {
-      element: panel("Full test runs of an edit that beat the original", form.element,
+      element: foldPanel("Full test runs of an edit that beat the original", form.element,
         { meta: h("span", { class: "muted" }, "the task, and the tasks held out from it, each against the original"), className: "validate-panel" }),
     };
   }
@@ -951,9 +1088,16 @@ function verdictChip(verdict) {
   return chip("within chance", "muted");
 }
 
-/** A proposal's screen to show. Screens come newest first: one it survived, else the newest. */
+/** A proposal's verdict where it stands, as the approval checks read it (`validate.latest_screen`):
+ *  its newest test at this step that finished and is not a quick look. A later test that did not
+ *  keep it undoes an earlier one that did. Screens come newest first. */
+function standingOf(item) {
+  return item.screens.find((verdict) => verdict.complete && !verdict.quick) || null;
+}
+
+/** A proposal's screen to show: where it stands, else its newest — a quick look, or unfinished. */
 function screenedOf(item) {
-  return item.screens.find((verdict) => verdict.complete && verdict.survives) || item.screens[0] || null;
+  return standingOf(item) || item.screens[0] || null;
 }
 
 /** A validation's verdict in a chip: the gate is a check, so green or red. */
@@ -1000,6 +1144,22 @@ export function diffView(hunks) {
         h("span", { class: "diff-text" }, line.text || " "));
     }));
   }));
+}
+
+/** A proposal's edit in a line: the first line it adds — or, where it only removes, the first it
+ *  removes — and how many more lines it changes. */
+function editLine(item) {
+  const changed = (item.diff || []).flatMap((hunk) => hunk.lines).filter((line) => line.op !== " ");
+  // A line with words in it names the edit: a blank one added before a paragraph does not.
+  const first = changed.find((line) => line.op === "+" && line.text.trim())
+    || changed.find((line) => line.text.trim()) || changed[0];
+  if (!first) return h("span", { class: "faint" }, "no change");
+  const text = first.text.trim();
+  const more = (item.changed || 1) - 1;
+  return h("span", { class: "edit-line" },
+    h("span", { class: "mono" }, `${first.op} ${text.length > 140 ? `${text.slice(0, 140)}…` : text}`),
+    text ? null : h("span", { class: "faint" }, "an empty line"),
+    more > 0 ? h("span", { class: "muted small" }, ` and ${plural(more, "more line")}`) : null);
 }
 
 /** Lines added or removed, roughly: enough to say how much was edited. */

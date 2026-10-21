@@ -12,7 +12,7 @@ import { leaving, place, unsaved } from "./nav.js";
 import { batchView } from "./views/batch.js";
 import { chainsView, chainView } from "./views/chains.js";
 import { diffView, divergenceView } from "./views/compare.js";
-import { connectionsView } from "./views/connections.js";
+import { connectionsView, serverWord } from "./views/connections.js";
 import { scenariosView, scenarioView } from "./views/scenarios.js";
 import { experimentsView, experimentView } from "./views/experiments.js";
 import { homeView, wordsView } from "./views/home.js";
@@ -182,17 +182,15 @@ function healthLines() {
   }
   const server = health.server || {};
   const found = (health.harnesses || []).filter((each) => each.path).map((each) => each.name);
-  const answering = !server.problem && Boolean(server.identity?.id);
-  const trouble = Boolean(server.problem || server.reminder) || !found.length;
+  // In the words of Connections' own strip: a server on the internet that asks for a key
+  // answered, so it says where it is, not that it is down.
+  const said = serverWord(server);
+  const trouble = said.warn || !found.length;
   dot.hidden = false;
   dot.className = ["dot", "nav-dot", trouble ? "dot-wait" : "dot-live"].join(" ");
   dot.title = trouble ? "Something here needs a look" : "The server answers, and a harness was found";
   return h("div", { class: "status-health" },
-    // A server on the internet that asks for a key answered: say where it is, not that it is down.
-    h("a", {
-      href: "#/connections", class: server.problem || server.reminder ? "warn-text" : null,
-      title: server.reminder?.headline || server.problem || server.url || "",
-    }, server.reminder ? "server on the internet" : server.problem ? "server not answering" : answering ? "server answering" : "server not read yet"),
+    h("a", { href: "#/connections", class: said.warn ? "warn-text" : null, title: said.title || server.url || "" }, `server ${said.word}`),
     h("a", { href: "#/connections", class: found.length ? null : "warn-text" },
       found.length ? `${found.join(", ")} found` : "no harness found"));
 }

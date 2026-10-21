@@ -47,7 +47,7 @@ export async function scenariosView(root, _, scope) {
                   ? h("div", { class: "stack", style: { gap: "4px" } }, scenario.results.slice(0, 3).map((result) =>
                       h("div", { class: "scenario-result" },
                         h("span", { class: "muted small mono" }, `${result.task_id} · ${result.harness || "?"}${result.skill_file ? " · variant" : ""}`),
-                        result.passed ? rateBar(result.passed, "ok") : h("span", { class: "muted small" }, "no verdict"))))
+                        result.passed ? rateBar(result.passed) : h("span", { class: "muted small" }, "no verdict"))))
                   : h("span", { class: "faint" }, "not run yet")),
                 h("td", { class: "faint", title: when(scenario.modified) }, ago(scenario.modified))))))))
         : h("div", { class: "panel empty" }, h("h2", null, "No scenarios yet"),

@@ -149,9 +149,12 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     for (const invalid of form.querySelectorAll(".field-invalid")) invalid.classList.remove("field-invalid");
     const found = name ? form.querySelector(`[name="${CSS.escape(name)}"]`) : null;
     found?.classList.add("field-invalid");
-    // A field folded away under Advanced settings is opened, so the one refused can be seen.
+    // A field folded away under Advanced settings is opened, so the one refused can be seen — a
+    // fold inside the form only. A form itself in a fold the person closed stays closed: a
+    // refusal answered again as the page redraws would otherwise open it by itself (found in
+    // review, a refinement's forms each in a stage's fold).
     const fold = found?.closest("details");
-    if (fold) fold.open = true;
+    if (fold && form.contains(fold)) fold.open = true;
   }
 
   function changed(event) {

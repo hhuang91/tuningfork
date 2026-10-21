@@ -431,9 +431,15 @@ try {
   const batchId = await until(async () => jobIdIn(await page.eval("location.hash")), "the batch's job page");
   const batch = await finished(batchId, 120000);
   check(batch.status === "done" && batch.result.rate.total === 2 && batch.result.rate.successes === 0, "the batch ran twice: 0/2, the known failure");
+  // A pass rate is a rate, never a verdict's green: the accent's, wherever it is drawn.
+  const madeBar = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What it made")?.querySelector(".ci-track")`;
+  await until(() => page.eval(`!!${madeBar}`), "the batch's pass rate on its page");
+  check(await page.eval(`${madeBar}.classList.contains("tone-accent")`), "a batch's pass rate on its page is the accent's");
   await page.eval(`location.hash = "#/runs"`);
   await until(() => page.eval(`[...document.querySelectorAll(".passes-when")].some((line) => line.textContent.includes("row_count"))`), "the task's check on the Runs page");
   check(true, "on the Runs page, the task says how its runs pass");
+  check(await page.eval(`(() => { const bars = [...document.querySelectorAll(".task-rate .ci-track")];
+    return bars.length > 0 && bars.every((bar) => bar.classList.contains("tone-accent")); })()`), "each task's pass rate on the Runs page is the accent's");
 
   await openStepOf(page, launched, 1, "fork");
   await planShows(page, "Stop at the step");
@@ -663,7 +669,8 @@ try {
   check(scenarioJob.status === "done" && scenarioJob.result.rate.total === 1, "the scenario ran as a batch");
   await page.eval(`location.hash = "#/scenarios"`);
   await until(() => page.eval(`[...document.querySelectorAll(".scenario-result")].some((row) => row.textContent.includes("tally-scenario/1"))`), "the scenario's result in the list");
-  check(true, "the list shows the scenario's pass rate");
+  check(await page.eval(`(() => { const bars = [...document.querySelectorAll(".scenario-result .ci-track")];
+    return bars.length > 0 && bars.every((bar) => bar.classList.contains("tone-accent")); })()`), "the list shows the scenario's pass rate, in the accent");
 
   // The check, tried before trusting it: on the run the batch just made, then on files written here.
   await page.eval(`location.hash = "#/scenarios/${scenarioName}"`);
@@ -729,6 +736,64 @@ try {
   await page.eval(`location.hash = "#/connections"`);
   await until(() => page.eval(`document.querySelectorAll(".harness-card").length >= 2`), "the harness cards");
   const startedOn = (await api("/connections")).server.url;
+  // The page leads with the setup at a glance: a word and a colour each, what that means, and
+  // the server test, which nothing has run yet.
+  const glance = () => page.eval(`(() => {
+    const strip = document.querySelector(".health-strip");
+    return {
+      first: !!strip && strip.closest(".panel") === document.querySelector("main .panel"),
+      names: [...(strip?.querySelectorAll(".glance > .label") || [])].map((label) => label.textContent).join(","),
+      server: strip?.querySelector(".glance > .chip")?.textContent,
+      tested: [...(strip?.querySelectorAll(".glance-line") || [])].map((line) => line.textContent).find((line) => /tested/.test(line)),
+      button: [...(strip?.querySelectorAll("button") || [])].some((b) => b.textContent === "Test the server"),
+      means: [...document.querySelectorAll(".health-means li")].map((li) => li.textContent),
+    };
+  })()`);
+  const glanceBefore = await glance();
+  check(glanceBefore.first && glanceBefore.names === "Server,Harnesses,Sandbox,Proposing model" && glanceBefore.server === "answering",
+    `Connections leads with the server, the harnesses, the sandbox and the proposing model at a glance (${glanceBefore.names}; ${glanceBefore.server})`);
+  check(glanceBefore.tested === "not tested yet" && glanceBefore.button
+    && glanceBefore.means.includes("Test the server to measure what each harness needs of it, and whether it can score answers and find forking tokens."),
+    `the server test is there, and what it means that none has run (${glanceBefore.means.join(" / ")})`);
+  // What the strip means, worked out for the states the lab's server is never in: one that asks
+  // for a key (found in review: said to be "not answering", the refusal it got taken for none),
+  // one down, a harness missing, a proposing model on another machine, and all well.
+  const meant = await page.eval(`(async () => {
+    const { serverWord, whatItMeans } = await import(new URL("js/views/connections.js", location.href).href);
+    const hermes = { name: "hermes", path: "/bin/hermes", preflight: { problems: [] } };
+    const fine = { server: { identity: { id: "s" }, checks: { checked_at: 1 }, token_work: {} }, harnesses: [hermes],
+      sandbox: { available: true }, proposer: { url: null, remote: false } };
+    const keyed = { ...fine, server: { identity: {}, problem: "it answered 401", read: { asks_key: true, internet: true },
+      reminder: { headline: "This server is on the internet and asks for an API key." }, token_work: { score: "it has no /props" } },
+      harnesses: [{ ...hermes, preflight: { problems: ["this server asks for an API key"] } }] };
+    return {
+      fine: whatItMeans(fine),
+      keyed: whatItMeans(keyed),
+      words: [serverWord(keyed.server).word, serverWord({ problem: "it answered 401", read: { asks_key: true } }).word,
+        serverWord({ problem: "nothing is listening there" }).word, serverWord(fine.server).word],
+      down: whatItMeans({ ...fine, server: { problem: "nothing is listening there" } }),
+      missing: whatItMeans({ ...fine, harnesses: [hermes, { name: "claude-code", path: null }] }),
+      remote: whatItMeans({ ...fine, proposer: { url: "https://api.example.test", remote: true, allow_remote: false } }),
+      // More than three to say: the sentence beside the strip's "not tested yet" is kept.
+      crowded: whatItMeans({ server: { identity: { id: "s" }, token_work: {} }, harnesses: [hermes, { name: "claude-code", path: null }],
+        sandbox: { available: false }, proposer: { url: "https://api.example.test", remote: true, allow_remote: true, key: { set: true } } }),
+      // Untested, scoring and forking already greyed (no /props): the test is not said to tell them.
+      noProps: whatItMeans({ ...fine, server: { identity: { id: "s" }, token_work: { score: "no /props", forking: "no /props" } } }),
+    };
+  })()`);
+  check(meant.fine.join(" / ") === "Nothing here needs a look." && meant.words.join() === "on the internet,asks for a key,not answering,answering",
+    `all well, nothing needs a look; the server's word, as the status strip says it too (${meant.words.join(", ")})`);
+  check(meant.keyed[0] === "The server asks for an API key, so your agent's calls are recorded, but what tuningfork runs itself is refused: it sends no key."
+    && !meant.keyed.some((line) => /not answering|No harness/.test(line)) && meant.keyed.includes("“Score this answer” is greyed out on this server."),
+    `a server that asks for a key answered: never "not answering" (${meant.keyed.join(" / ")})`);
+  check(meant.down.join(" / ") === "The server is not answering, so nothing can be recorded or measured until it does."
+    && meant.missing.includes("claude-code was not found, so runs of it cannot start.")
+    && meant.remote.includes("The proposing model is on another machine and not allowed yet, so asking it is refused."),
+    "a server down, a harness missing, a proposing model elsewhere: each amber part has its sentence");
+  check(meant.crowded.length === 3 && meant.crowded[1].startsWith("Test the server to measure"),
+    `with more to say than three sentences, the server test's is among them (${meant.crowded.join(" / ")})`);
+  check(meant.noProps.join(" / ") === "Test the server to measure what each harness needs of it. / “Score this answer” and “Find forking tokens…” are greyed out on this server.",
+    `the test is not said to tell what is greyed already (${meant.noProps.join(" / ")})`);
   await page.click("Test the server");
   await until(() => page.eval(`[...document.querySelectorAll(".measured td .mono")].some((name) => name.textContent === "anthropic_messages")`), "the check's results", 60000);
   const serverJob = (await api("/jobs")).find((job) => job.kind === "server-check");
@@ -745,6 +810,14 @@ try {
   check(checked.logprobs.support === "no", "the check measured the chat endpoint's logprobs: none came back");
   check(await page.eval(`[...document.querySelectorAll(".warn-text")].some((line) => line.textContent.startsWith("Keeping each sample's tokens needs token probabilities"))`),
     "the page says what that rules out, in the words that grey it elsewhere");
+  const glanceAfter = await until(async () => { const now = await glance(); return /^tested /.test(now.tested || "") ? now : null; }, "the strip, tested");
+  check(glanceAfter.means.includes("“Keep each sample's tokens” is greyed out on this server.") && !glanceAfter.means.some((line) => line.startsWith("Test the server")),
+    `at a glance too, by the control it greys (${glanceAfter.means.join(" / ")})`);
+  // The mock answers a prompt it saw before from its cache, as llama-server does without
+  // --no-cache-prompt: what a batch's plan warns of, said here too, beside the server.
+  check(checked.fresh_prompts.support === "no" && glanceAfter.means.some((line) => line.startsWith("The server reuses the prompts it processes"))
+    && await page.eval(`[...document.querySelectorAll(".health-strip .glance-line")].some((line) => line.textContent === "reuses its prompts")`),
+    `a server that reuses its prompts says so at a glance (fresh prompts: ${checked.fresh_prompts.support})`);
   // A harness found, a capability there, a sandbox: fine is grey. Green and red are a check's.
   check(await page.eval(`!document.querySelector("main .chip.tone-ok, main .chip.tone-bad") && [...document.querySelectorAll("table td .chip")].some((c) => c.textContent === "yes" && c.classList.contains("tone-muted"))`),
     "nothing on the page is a verdict's green or red: what is there is grey");
@@ -890,13 +963,41 @@ try {
   });
   check(chips.length > 1 && !wrong.length && chips.some(([, className]) => className.includes("tone-ok")) && chips.some(([, className]) => className.includes("tone-bad")),
     `each run's chip is coloured by its own verdict (${chips.length} runs${wrong.length ? `; wrong: ${JSON.stringify(wrong)}` : ""})`);
-  check(await page.eval(`!document.querySelector(".group-rates .ci-track.tone-ok")`), "and a behaviour's \"then passed\" is a rate, never drawn green");
+  check(await page.eval(`!document.querySelector(".ci-track.tone-ok, .ci-track.tone-bad") && document.querySelectorAll(".group-rates .ci-track.tone-accent").length > 1`),
+    "and a behaviour's \"then passed\" is a rate, never drawn green: no rate here is");
+  // The page leads with what goes with passing: the step that best predicts it, in a callout,
+  // with the ways to it.
+  const best = split.verdict_split?.best;
+  const lead = await page.eval(`(() => {
+    const callout = document.querySelector(".predictors .callout");
+    return {
+      first: document.querySelector("main .panel .panel-head h2")?.textContent,
+      big: callout?.querySelector(".callout-big")?.textContent,
+      ways: [...(callout?.querySelectorAll(".callout-actions a") || [])].map((a) => a.textContent + "=" + a.getAttribute("href")).join(" | "),
+      p: callout?.querySelector("p > .muted:last-child")?.textContent,
+    };
+  })()`);
+  check(!!best && best.kind !== "ended" && lead.first === "What goes with passing"
+    && lead.big === `What the model does at step ${best.index} best predicts whether a run passes.`,
+    `the page leads with the step whose behaviour best predicts a pass (${lead.first}: ${lead.big})`);
+  check(lead.ways === `Open step ${best.index} in run ${best.run_id.slice(0, 8)}=#/runs/${best.run_id}/${best.index} | Resample step ${best.index}…=#/runs/${best.run_id}/${best.index}?start=resample`
+    && /^\(p = /.test(lead.p || ""), `with the ways to it, and its p last (${lead.ways}; ${lead.p})`);
   const tallied = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What the failed runs' checks said")`;
   check(await page.eval(`(() => {
     const panel = ${tallied};
     return !!panel && panel.querySelector("th").textContent === "failed runs that printed it"
-      && panel.querySelector(".hint").textContent.startsWith("Each bar counts the failed runs that printed the line");
-  })()`), "the failed runs' checks are counted line by line, and the page says so plainly");
+      && panel.querySelector(".hint").textContent.startsWith("Each bar counts the failed runs that printed the line")
+      && [...panel.querySelectorAll(".ci-track")].every((bar) => bar.classList.contains("tone-accent"));
+  })()`), "the failed runs' checks are counted line by line, each count a rate in the accent, and the page says so plainly");
+  // One question of every run, lined up with the verdicts: how often it held among the passing
+  // runs and among the failing ones — rates, so the accent's, the verdict said in the label.
+  await page.type(`document.querySelector('[name="target_match"]')`, "row_count");
+  await page.click("Ask every run");
+  await until(() => page.eval(`[...document.querySelectorAll(".group-rates .what")].some((what) => what.textContent.endsWith("of the failing runs"))`), "where it held, by verdict");
+  check(await page.eval(`!document.querySelector(".ci-track.tone-ok, .ci-track.tone-bad")
+    && [...document.querySelectorAll(".group-rates .what")].filter((what) => /of the (passing|failing) runs$/.test(what.textContent))
+      .every((what) => what.nextElementSibling.querySelector(".ci-track").classList.contains("tone-accent"))`),
+    "where it held among the passing runs and among the failing ones: rates, in the accent, never a verdict's green or red");
 
   // --- 11. A step's answer as tokens, and the token that decides it -------------------------
   console.log("score an answer, read its tokens, find the token that decides it");
@@ -1011,6 +1112,21 @@ try {
   check(await page.eval(`document.querySelector('.start-panel [name="target_kind"][value="describe"]').checked`), "describing the behaviour chooses that way of declaring it");
   await page.click("Start refining", `document.querySelector(".start-panel")`);
   const refinementId = await until(async () => /^#\/refine\/([0-9a-f]{32})$/.exec(await page.eval("location.hash"))?.[1], "the refinement's page");
+  // Where it stands, its four stages in a line: each done, current or to come, with what it holds.
+  const stages = () => page.eval(`[...document.querySelectorAll(".stepper .stage")].map((stage) => [
+    stage.querySelector(".stage-name").textContent, stage.querySelector(".stage-state").textContent,
+    stage.classList.contains("done") ? "done" : stage.getAttribute("aria-current") === "step" ? "current" : "to come"].join(": ")).join(" | ")`);
+  const opened = (panel) => page.eval(`document.querySelector(${JSON.stringify(panel)})?.open ?? null`);
+  await until(() => page.eval(`!!document.querySelector(".stepper")`), "the refinement's stages");
+  const atStart = await stages();
+  check(atStart === "Propose: none yet: current | Test at this step: waits for a proposal: to come"
+    + " | Full test runs: wait for a proposal that beat the original: to come | Approve: waits for full test runs that pass the approval checks: to come",
+    `a new refinement stands at its first stage, proposing (${atStart})`);
+  check(await opened(".propose-panel") === true && !(await page.eval(`!!document.querySelector(".screen-panel")`)),
+    "its form is the one open: there is nothing to test yet");
+  // What the proposing model is shown, folded in the proposing stage: gathered once opened.
+  check(await opened(".packet-panel") === false, "what the proposing model is shown waits folded");
+  await page.eval(`document.querySelector(".packet-panel > summary").click()`);
   await until(() => page.eval(`[...document.querySelectorAll(".packet-panel dt")].some((dt) => dt.textContent === "the original wording")`), "what a proposer is shown");
   check(await page.eval(`!document.querySelector(".evidence-panel")`), "no evidence panel before there is a proposal to weigh");
   check(await page.eval(`document.querySelector(".page-head").textContent.includes('a behaviour that calls write_file, and mentions "row_count"')`), "the refinement states its target, declared before anything was proposed");
@@ -1030,6 +1146,20 @@ try {
   await until(() => page.eval(`document.querySelectorAll(".proposal").length === 2`), "the two proposals");
   check(await page.eval(`[...document.querySelectorAll(".proposal")].every((card) => [...card.querySelectorAll(".chip")].some((c) => c.textContent === "untested"))`), "each untested until a test at the step tries it");
   check(await page.eval(`[...document.querySelectorAll(".proposal .diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))`), "each shown as a line diff");
+  const proposedStages = await stages();
+  check(proposedStages.startsWith("Propose: 2 proposals: done | Test at this step: none yet: current | "),
+    `proposals made, the refinement moves on to testing them (${proposedStages})`);
+  check(await opened(".screen-panel") === true && await opened(".propose-panel") === false, "the test's form is the one open now; proposing waits folded");
+  // A stage's link opens its form: proposing once more, by hand.
+  await page.eval(`[...document.querySelectorAll(".stepper a.stage-name")].find((a) => a.textContent === "Propose").click()`);
+  check(await opened(".propose-panel") === true, "the stage's link opens its form again");
+  // The focus goes where the page went (found in review: it went to the form, out of sight below
+  // the proposals the page had scrolled to).
+  check(await page.eval(`(() => {
+    const summary = document.querySelector(".propose-panel > summary");
+    const box = summary.getBoundingClientRect();
+    return document.activeElement === summary && box.top >= 0 && box.top < innerHeight;
+  })()`), "and moves the focus there, in sight");
   await page.eval(`document.querySelector(".propose-own > summary").click()`);
   const baseline = await page.eval(`document.querySelector('[name="proposal_text"]').value`);
   await page.type(`document.querySelector('[name="proposal_text"]')`, baseline.replace("Write the totals to report.json.", "Write the totals to report.json, as JSON."));
@@ -1045,6 +1175,24 @@ try {
     }
     return true;
   })()`);
+  // A refused field is shown where it is in the form, and a form folded stays folded (found in
+  // review: the refusal, answered again as the form was asked for its plan once more, opened the
+  // fold the person had closed). Two samples cannot beat what the step already does.
+  await page.type(`document.querySelector('.screen-panel [name="n"]')`, "2");
+  await until(() => page.eval(`(document.querySelector(".screen-panel .form-error-box")?.textContent || "").includes("correction over 2")`), "two samples refused");
+  await page.eval(`document.querySelector(".screen-panel > summary").click()`);
+  // A box ticked on a card asks the folded form for its plan again: refused again, over three.
+  const tickCompactly = `(() => {
+    for (const card of document.querySelectorAll(".proposal")) {
+      if ([...card.querySelectorAll(".diff-line.add")].some((line) => line.textContent.includes("compactly"))) card.querySelector('input[type="checkbox"]').click();
+    }
+    return true;
+  })()`;
+  await page.eval(tickCompactly);
+  await until(() => page.eval(`(document.querySelector(".screen-panel .form-error-box")?.textContent || "").includes("correction over 3")`), "the refusal answered again");
+  check(await opened(".screen-panel") === false, "a refusal answered again leaves a form folded by hand folded: no form opens by itself");
+  await page.eval(tickCompactly);
+  await page.eval(`document.querySelector(".screen-panel > summary").click()`);
   await page.type(`document.querySelector('.screen-panel [name="n"]')`, "6");
   await until(() => page.eval(`(document.querySelector(".screen-panel .plan-preview")?.textContent || "").includes("6 for each wording, 18 in all")`), "the screen's plan");
   check(await page.eval(`document.querySelector(".screen-panel .plan-preview").textContent.includes("corrected for 2 proposals tested")`), "the screen's plan: the two ticked are the family the correction counts");
@@ -1093,12 +1241,22 @@ try {
       unscreened: rows.filter((row) => row.textContent.includes("untested")).length,
       chosen: rows.some((row) => row.classList.contains("is-chosen")),
       about: !document.querySelector("details.about-refinement").open,
+      // Each proposal named by the line it changes, its id beneath, its edit in full a link away.
+      edits: rows.map((row) => row.querySelector(".edit-cell a")?.textContent || ""),
+      ids: rows.every((row) => /^[0-9a-f]{8}/.test(row.querySelector(".edit-cell .faint .mono")?.textContent || "")),
     };
   })()`);
   check(evidence.order && evidence.headline === "1 of 3 proposals beat the original in a test at this step" && evidence.accent,
     `the refinement leads with the evidence: where it stands, in the accent for a step screen (${evidence.headline})`);
   check(evidence.survivor && evidence.unscreened === 1 && !evidence.chosen, "each proposal's screen in a line, nothing chosen before a validation");
+  check(evidence.edits.some((line) => line.startsWith("+ ") && line.includes("row_count and amount_total")) && evidence.edits.every((line) => /^[+-] /.test(line)) && evidence.ids,
+    `each proposal named by the line it changes, its id beneath (${evidence.edits.join(" / ")})`);
   check(evidence.about, "the skill's paths wait in About this refinement, closed");
+  const testedStages = await stages();
+  check(testedStages.startsWith("Propose: 3 proposals: done | Test at this step: 1 of 3 proposals beat the original: done | Full test runs: none yet: current | "),
+    `a proposal beat the original: full test runs are next (${testedStages})`);
+  check(await opened(".validate-panel") === true && await opened(".screen-panel") === false, "and their form is the one open");
+  await page.eval(`document.querySelector(".packet-panel > summary").click()`);
   await until(() => page.eval(`(document.querySelector(".packet-panel")?.textContent || "").includes("the original wording")`),
     "what a proposer is shown, below them: the original wording's answers, the problem and not the result");
 
@@ -1114,6 +1272,31 @@ try {
   });
   const labScreen = await finished((await post("/jobs", { kind: "screen", params: { refinement: made.id, proposals: [keysFix.id], n: 6 } })).id, 60000);
   check(labScreen.status === "done" && labScreen.result.screen.survivors.length === 1, "a refinement of the lab task: the keys fix survives its screen");
+  // Where a proposal stands is its latest finished test, as the approval checks read it (found in
+  // review: kept by one test and not by a later one, it was still said to have beaten the
+  // original, and full test runs were offered that the proxy then refused). Watched on the page as
+  // each test ends: the stage moving on opens no form by itself — forms opening on their own, none
+  // closing, would pile up — and moving back takes the full test runs' form away.
+  const undone = await post("/refinements", { run: labRun, step: "1", target_match: "row_count" });
+  const undoneFix = await post(`/refinements/${undone.id}/proposals`, {
+    edits: [{ old: "Write the totals to report.json.", new: "Write the totals to report.json, using the keys row_count and amount_total." }],
+    rationale: "the check reads row_count",
+  });
+  await page.eval(`location.hash = "#/refine/${undone.id}"`);
+  await until(() => page.eval(`document.querySelector(".screen-panel")?.open === true`), "the test's form, open while its proposal is untested");
+  const undoneKept = await finished((await post("/jobs", { kind: "screen", params: { refinement: undone.id, proposals: [undoneFix.id], n: 6 } })).id, 60000);
+  check(undoneKept.result.screen.survivors.length === 1, "a test of six keeps the proposal");
+  await until(async () => (await stages()).includes("Full test runs: none yet: current"), "the stage moving on, on the page");
+  check(await opened(".validate-panel") === false && await opened(".screen-panel") === true,
+    "on the page as the test ended: the stage moved on, its form folded until opened, and the form that was open still open");
+  const undoneLost = await finished((await post("/jobs", { kind: "screen", params: { refinement: undone.id, proposals: [undoneFix.id], n: 2 } })).id, 60000);
+  check(undoneLost.result.screen.complete && !undoneLost.result.screen.survivors.length, "a later test of two does not keep it");
+  const undoneStages = await until(async () => { const now = await stages(); return now.includes("Test at this step: none beat the original: current") ? now : null; },
+    "the stage back to testing");
+  check(undoneStages.includes("Full test runs: wait for a proposal that beat the original: to come") && !(await page.eval(`!!document.querySelector(".validate-panel")`))
+    && await page.eval(`[...document.querySelectorAll(".proposal-head .chip")].some((c) => c.textContent === "within chance")
+      && document.querySelector(".evidence-panel .verdict-big")?.textContent === "No proposal has beaten the original in a test at this step"`),
+    `kept by an earlier test and not by the latest, it stands where the latest left it, and no full test runs are offered (${undoneStages})`);
   await page.eval(`location.hash = "#/refine/${made.id}"`);
   await until(() => page.eval(`(document.querySelector(".validate-panel .plan-preview")?.textContent || "").includes("30 in all")`), "the validation's plan");
   check(await page.eval(`document.querySelector(".validate-panel .plan-preview").textContent.includes("each of: 2 — only their verdicts are kept")`),
@@ -1148,7 +1331,15 @@ try {
   check(ready.lines.includes("Beat the original in its test at this step: 6/6 against the original's 0/6") && ready.lines.includes("on held-out task 2") && ready.lines.includes("approval checks met"),
     `with its screen and its validation in a line each, the held-out task's included (${ready.lines})`);
   check(ready.row === "ready to approve,beat the original,passes the approval checks", `its row picked out (${ready.row})`);
+  const readyStages = await stages();
+  check(readyStages.endsWith(`Full test runs: pass the approval checks: done | Approve: proposal ${keysFix.id.slice(0, 8)} is ready: current`),
+    `full test runs that pass the approval checks: approving is next (${readyStages})`);
   const hash = await page.eval("location.hash");
+  await page.eval(`window.scrollTo(0, 0)`);
+  await page.eval(`[...document.querySelectorAll(".stepper a.stage-name")].find((a) => a.textContent === "Approve").click()`);
+  check(await page.eval(`location.hash === ${JSON.stringify(hash)} && document.querySelector(".validation").getBoundingClientRect().top < innerHeight / 2`),
+    "the stage's link leads to the full test runs with their Approve…, the address as it was");
+  await page.eval(`window.scrollTo(0, 0)`);
   await page.eval(`[...document.querySelectorAll(".evidence-panel .verdict-lines a")].find((a) => a.textContent.startsWith("full test runs ")).click()`);
   check(await page.eval(`location.hash === ${JSON.stringify(hash)} && document.querySelector(".validation").getBoundingClientRect().top < innerHeight`),
     "its link leads down the page to the validation, the address as it was");
@@ -1183,6 +1374,10 @@ try {
     `and the page says so first, with the evidence it stood on (${writtenView.headline})`);
   check(writtenView.row === "approved,beat the original,passed the approval checks" && writtenView.card, `the approved proposal picked out, in the evidence and its card (${writtenView.row})`);
   check(writtenView.about.includes(`${health.home}/lab-task/tally-report/SKILL.md`), "About this refinement says where it wrote");
+  const writtenStages = await stages();
+  check(writtenStages.endsWith("Approve: written to the skill's own file: done") && !writtenStages.includes(": current")
+    && !(await page.eval(`!!document.querySelector('.stepper [aria-current="step"]')`)),
+    `written, every stage is done and none is current (${writtenStages})`);
 
   console.log("the proposer's key: set, never shown, cleared");
   await page.eval(`location.hash = "#/connections"`);
@@ -1261,6 +1456,8 @@ try {
   await until(() => page.eval(`(document.querySelector(".trashed-banner")?.textContent || "").includes("takes no new work")`), "the banner of a refinement in the trash");
   check(await page.eval(`!document.querySelector(".page-head button") && ![...document.querySelectorAll("button")].some((b) => b.textContent === "Start the test")`),
     "in the trash, it offers no new work");
+  check(await page.eval(`!!document.querySelector(".stepper") && !document.querySelector('.stepper [aria-current="step"]')`),
+    "and no stage of it is current: where it stands is shown, with nothing next");
   check(!(await api("/refinements")).some((each) => each.id === refinementId), "and leaves the list of refinements");
   await page.eval(`location.hash = "#/trash"`);
   await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent.startsWith("Refinements"))`), "the Trash page's refinements");
@@ -1270,6 +1467,9 @@ try {
   await page.click("Restore", `document.querySelector(".trashed-banner")`);
   await until(() => page.eval(`!document.querySelector(".trashed-banner") && [...document.querySelectorAll(".page-head button")].some((b) => b.textContent === "Move to trash")`), "the refinement, restored");
   check((await api("/refinements")).some((each) => each.id === refinementId), "restored, it is back in the list as it went");
+  await until(() => page.eval(`document.querySelector('.stepper [aria-current="step"] .stage-name')?.textContent === "Full test runs"
+    && document.querySelector(".validate-panel")?.open === false`), "its current stage back, that stage's form folded");
+  check(true, "restored, its current stage is back, its form folded until opened: none opens by itself");
 
   // --- 15. The front page, and the Skills page ---------------------------------------------------
   console.log("the front page: setup, the map, ways in, words");
@@ -1318,8 +1518,9 @@ try {
   check(await page.eval(`document.querySelector('input[name="skill_dir"]').value === ${JSON.stringify(skill.folders[0].path)}`), "its skill folder filled in");
   await page.eval(`location.hash = "#/skills/tally-report"`);
   await until(() => page.eval(`!!document.querySelector(".markdown .md-front")`), "back on the skill's page");
-  check(skill.versions.length >= 2 && await page.eval(`document.querySelectorAll(".condition-rate .ci").length >= 2`),
-    "each version with its pass rates, intervals drawn");
+  check(skill.versions.length >= 2 && await page.eval(`document.querySelectorAll(".condition-rate .ci").length >= 2
+    && [...document.querySelectorAll(".condition-rate .ci-track")].every((bar) => bar.classList.contains("tone-accent"))`),
+    "each version with its pass rates, intervals drawn, in the accent");
   check(skill.folders.some((folder) => folder.changelog && folder.history.length === 1), "the folder the approval wrote: its changelog and the old version beside it");
   check(await page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "Changelog")`), "and the page shows the changelog");
   const older = skill.versions[skill.versions.length - 1].fingerprint;

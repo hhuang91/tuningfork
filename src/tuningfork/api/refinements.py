@@ -67,6 +67,11 @@ async def _body(request: Request, allowed: set[str]) -> dict[str, Any]:
 
 
 def refinement_routes(*, store: Any, writable: bool) -> list[Route]:
+    def shown(settings: dict[str, Any]) -> dict[str, Any]:
+        """The proposer's settings for the page: whether its address is another machine, and
+        whether a key is set — never the key."""
+        return {**settings, "remote": proposer.is_remote(settings["url"]), "key": proposer.key_status(store.home)}
+
     def answer(function: Callable[[], Any], status: int = 200) -> Any:
         async def run() -> Response:
             try:
@@ -116,7 +121,7 @@ def refinement_routes(*, store: Any, writable: bool) -> list[Route]:
         return await answer(lambda: build_packet(store, request.path_params["id"], keep=False))
 
     async def settings(request: Request) -> Response:
-        return await answer(lambda: {**proposer.config(store.home), "key": proposer.key_status(store.home)})
+        return await answer(lambda: shown(proposer.config(store.home)))
 
     routes = [
         Route(PREFIX, listing, methods=["GET"]),
@@ -185,7 +190,7 @@ def refinement_routes(*, store: Any, writable: bool) -> list[Route]:
             body = await _body(request, set(proposer.DEFAULTS))
         except OperationError as error:
             return _refusal(error)
-        return await answer(lambda: {**proposer.set_config(store.home, **body), "key": proposer.key_status(store.home)})
+        return await answer(lambda: shown(proposer.set_config(store.home, **body)))
 
     async def key(request: Request) -> Response:
         try:

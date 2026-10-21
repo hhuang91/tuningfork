@@ -566,7 +566,7 @@ export function tallyView(tally, { only = null } = {}) {
         ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
             h("thead", null, h("tr", null, h("th", null, `${failed} that printed it`), h("th", null, "a line the check printed"))),
             h("tbody", null, group.findings.slice(0, 12).map((found) =>
-              h("tr", null, h("td", null, rateBar(found.rate, "bad")), h("td", { class: "mono small" }, found.finding,
+              h("tr", null, h("td", null, rateBar(found.rate)), h("td", { class: "mono small" }, found.finding,
                 // Where the check was run along the runs: the call that made it, passing runs included.
                 found.made_text ? h("div", { class: "faint small" }, found.made_text) : null))))))
         : group.failed ? null : h("p", { class: "muted small" }, "None failed."),

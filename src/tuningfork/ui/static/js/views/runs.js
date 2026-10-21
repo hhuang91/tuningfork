@@ -117,7 +117,7 @@ export async function runsView(root, _params, scope) {
   function rateMeta(counts) {
     const meta = [];
     if (counts.passed) {
-      meta.push(h("span", { class: "task-rate" }, h("span", { class: "muted" }, "check passed"), rateBar(counts.passed, "ok")));
+      meta.push(h("span", { class: "task-rate" }, h("span", { class: "muted" }, "check passed"), rateBar(counts.passed)));
     }
     if (counts.uncounted) {
       meta.push(chip(`${counts.uncounted} not counted`, "warn", "Runs that timed out, changed their own skill, failed at the server, or were edited at a breakpoint are left out of the rate"));

@@ -2575,13 +2575,14 @@ rm -r examples/tally-report.history examples/tally-report.changelog.md
 ### 7. The same in the browser, or from an agent
 
 The **Refine** page lists refinements; a step's **Refine the skill here…** starts one. A
-refinement's page shows the evidence and each proposal as a line diff, with who proposed it,
-why and its verdicts; asks the proposer, or takes your own wording; screens the proposals you
-tick; validates a survivor; and shows each validation's parts and gate, with an **Approve…**
-that shows the file, the edit and the code to type. An agent gets the loop up to the screen
-over MCP with `tuningfork mcp --tools refine`: it starts a refinement, reads the evidence,
-proposes its own edits and screens them. It is never offered the built-in proposer, a
-validation or an approval, and never shown a held-out task's verdicts.
+refinement's page leads with where it stands, its stages in a line — **Propose**, **Test at
+this step**, **Full test runs**, **Approve** — and shows the evidence and each proposal as a
+line diff, with who proposed it, why and its verdicts; asks the proposer, or takes your own
+wording; screens the proposals you tick; validates a survivor; and shows each validation's
+parts and gate, with an **Approve…** that shows the file, the edit and the code to type. An
+agent gets the loop up to the screen over MCP with `tuningfork mcp --tools refine`: it starts a
+refinement, reads the evidence, proposes its own edits and screens them. It is never offered
+the built-in proposer, a validation or an approval, and never shown a held-out task's verdicts.
 
 ## Clean up
 

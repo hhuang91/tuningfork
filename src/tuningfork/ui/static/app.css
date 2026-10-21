@@ -3,13 +3,13 @@
 
    One meaning a colour (CLAUDE.md says the same, and the Guide in a line):
      --ok, --bad   green and red: a check's verdict — passed or failed, a gate met or not, an
-                   approval, a change in how often a task's check passes. Nowhere else, but for
-                   what every page means by them: a diff's added and removed lines, a button
-                   that deletes, a field to put right.
+                   approval, a change in how often a task's check passes. Never a rate, a pass
+                   rate included. Nowhere else, but for what every page means by them: a diff's
+                   added and removed lines, a button that deletes, a field to put right.
      --warn        amber: a caution — not counted, unfinished, paused, held, something missing
                    or gone wrong.
-     --accent      indigo: what can be acted on, what is current, a significant result, and
-                   the model's own answer.
+     --accent      indigo: what can be acted on, what is current, a significant result, every
+                   rate's bar (a variant's is teal), and the model's own answer.
      --skill       purple: a skill's own words.
      --change      teal, with a pencil: what a person or tuningfork changed — an edit at a
                    breakpoint, a variant swapped in. Chips, outlines and banners; never a step's
@@ -394,6 +394,20 @@ main { padding: 20px 24px 64px; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 /* A slot a page fills later — an import's preview, what was made, a job's summary — takes no gap while empty. */
 .slot:empty { display: none; }
+/* A part of a page a link leads to: it stops below the drawer's bar, when narrow. */
+.slot, .proposal { scroll-margin-top: calc(var(--topbar) + 12px); }
+/* Words for a screen reader alone: what the page shows by a mark. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 
 .panel {
   background: var(--panel);
@@ -606,8 +620,6 @@ a.chip:hover { text-decoration: none; filter: brightness(0.97); }
 }
 .ci-band { position: absolute; top: -1px; bottom: -1px; border-radius: 4px; opacity: 0.35; background: var(--accent); }
 .ci-point { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; background: var(--accent); border-radius: 1px; }
-.ci-track.tone-ok .ci-band, .ci-track.tone-ok .ci-point { background: var(--ok); }
-.ci-track.tone-bad .ci-band, .ci-track.tone-bad .ci-point { background: var(--bad); }
 .ci-track.tone-change .ci-band, .ci-track.tone-change .ci-point { background: var(--change); }
 .ci-text { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 
@@ -1091,6 +1103,23 @@ pre.code { color: var(--muted); }
 /* What to do next, after a result: the same words on every result page. */
 .next-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; border: 1px dashed var(--border-strong); border-radius: var(--radius); }
 .next-line strong { margin-right: 4px; }
+/* A page's lead, in the accent: what to look at first, the numbers it stands on, and the ways to
+   it. A lead, never a verdict: no green or red. */
+.callout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--accent);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.callout p { margin: 0; }
+.callout .mono { overflow-wrap: anywhere; }
+.callout-big { font-size: 16px; font-weight: 650; }
+.callout-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.callout + p { margin-top: 12px; }
 
 .cmd {
   display: flex;
@@ -1284,6 +1313,15 @@ pre.code { color: var(--muted); }
 
 /* --- connections ------------------------------------------------------------------------ */
 
+/* Connections at a glance: a word and a colour each, grey what is fine and amber what needs a
+   look, then what that means. */
+.health-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px 24px; }
+.glance { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.glance > .label { margin: 0; }
+.glance-line { max-width: 100%; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.glance-line .controls { gap: 6px; }
+.health-means { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.health-means ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
 .harness-card { display: flex; flex-direction: column; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .harness-card:last-child { padding-bottom: 0; border-bottom: none; }
 .harness-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -1551,6 +1589,39 @@ details.panel[open] > summary:hover { border-radius: var(--radius) var(--radius)
 .table tr.selected td { background: var(--accent-soft); }
 
 /* --- refining a skill (views/refine.js) ------------------------------------------------------ */
+
+/* Where a refinement stands, its four stages in a line: done grey with a tick, the current one
+   the accent's, what is still to come muted. */
+.stepper { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.stage { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+/* A stage's link covers its box: the whole of it leads to the stage's part of the page. */
+.stage a.stage-name::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.stage:has(a.stage-name):hover { border-color: var(--accent); }
+.stage a.stage-name:focus-visible { outline: none; }
+.stage:has(a.stage-name:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.stage-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stage-name { font-weight: 600; color: var(--muted); }
+.stage.done .stage-name, .stage.current .stage-name { color: var(--text); }
+a.stage-name:hover { color: var(--accent); text-decoration: none; }
+.stage-state { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.stage.current { border-color: var(--accent); background: var(--accent-soft); }
+.stage.current .stage-num { border-color: var(--accent); background: var(--accent); color: var(--panel); }
+/* The evidence names each proposal by the line it changes. */
+.edit-cell { min-width: 180px; }
+.edit-line .mono { overflow-wrap: anywhere; }
 
 .proposal-list { display: flex; flex-direction: column; gap: 12px; }
 .proposal { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }

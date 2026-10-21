@@ -75,44 +75,62 @@ sampled, and a running job's time moves while nothing is sent; that a scenario m
 page — its skill folder shown where it resolves, its check flagged as the shell command it
 is, leaving it unsaved asking first, a file uploaded through its picker — runs as a batch
 (chosen on Run a task, where a task file's path, on the same line and named apart, is greyed out
-while a scenario is chosen) and shows its pass rate, and that its check, tried on the run it judged, gives the verdict
+while a scenario is chosen) and shows its pass rate, in the accent, and that its check, tried on the run it judged, gives the verdict
 the run got, and passes on a report written with the right keys; that at a held call, sampling places the held answer among the
 sampled behaviours and is filed under the step once the call is recorded, while a question
-to the model comes back marked a hypothesis; on the Connections page, that a server
+to the model comes back marked a hypothesis; on the Connections page, that it leads with the
+setup at a glance — the server, the harnesses, the sandbox and the proposing model, the server
+test there, and what it means before the test and after (a server that reuses its prompts says
+so), worked out too for a server that asks for a key (never said to be down), one down, a harness
+missing, a proposing model on another machine, more to say than three sentences, and scoring
+greyed before any test — that a server
 check measures what the harnesses need, a protected endpoint is refused, and an idle proxy
 switches its server after a dry run; that Start… on the Jobs page leads to a step's form;
 that a run reads as one conversation — each message once, the final reply marked (and not
 green), its verdict closing the page and the step rail, coloured by it with what the check
 printed, a step opening in place with its form in it, and its exact context on a page of its own;
-that the divergence page colours each run by its own verdict, draws "then passed" as a rate, and
-says plainly how it counts the failed runs' check lines;
+that the divergence page leads with the step whose behaviour best predicts a pass, in a callout
+with the ways to it, colours each run by its own verdict, draws "then passed", the tally's counts
+and where a question held as rates — the accent's, never green or red — and says plainly how it
+counts the failed runs' check lines;
 that an answer scored from its Tokens view is rebuilt token for token and drawn once
 per token, a token shows what else the model weighed there, and a token selected there
 opens the forking-token form, whose probe finds that token decides the answer; that the
 probe's page shows the answer it forked from with that token ringed, and leads to it on the
 step's Tokens view and back; and that a target described in conditions is set against what
 the step has done, and declared in words; that a refinement started from a step declares its
-target first, offering no exploratory choice; that the lab's built-in proposer, asked through
+target first, offering no exploratory choice, and stands at its first stage, proposing, its form
+the one open and what a proposer is shown folded; that the lab's built-in proposer, asked through
 the proxy and never recorded, has two of its three ideas kept and one refused for editing a
-line the skill does not have; that a person's own wording joins them; that a screen of two,
-Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
+line the skill does not have, the refinement then moving on to testing them, that form open; that
+a person's own wording joins them, proposing opened again from its stage's link, the focus
+going where the page went; that a refusal answered again leaves a form folded by hand folded;
+that a screen of
+two, Holm-corrected, finds the one that names the keys — a survivor in the accent's colour, its
 behaviours badged by whether they match what is counted — and each proposal then carries its
-verdict, the refinement's page leading with that evidence — where it stands, each proposal's
-screen in a line — above what a proposer is shown, the original wording's answers, with the
-skill's paths closed away in About; that a survivor, validated from its refinement's page, runs forks to the end, the
+verdict, the refinement's page leading with that evidence — where it stands, each proposal named
+by the line it changes, its screen in a line — above what a proposer is shown, the original
+wording's answers, with the skill's paths closed away in About, and full test runs next, their
+form open; that a proposal kept by one test and not by a later one stands where the later left it,
+with no full test runs offered — the stage moving on, and back, on the page as each test ends, no
+form opening by itself; that
+a survivor, validated from its refinement's page, runs forks to the end, the
 training task and the lab's held-out task — named only by its id in the plan and the job,
 its text nowhere — and meets the gate, each part and check shown to the person, the evidence
 then naming it ready to approve, its screen and its full runs in a line each and a link down
-to them; that
+to them, and approving the stage next, its link leading to those full runs; that
 approving shows the file it writes and the edit, writes nothing for a wrong code, and writes
 the skill's own file once the code shown is typed, the page then saying so first, the
-approved proposal picked out in the evidence and in its card; and that the proposer's key, set on
+approved proposal picked out in the evidence and in its card, every stage done; and that the proposer's key, set on
 Connections, is never on the page or in an answer again. On the way it checks that a batch's plan opens with
 how a run passes and offers the spec's task by what it asks, that Start is ready with nothing
-more typed, and that the Runs page says how a task passes. Last, it moves a run to the trash
+more typed, and that the Runs page says how a task passes; and that a pass rate is drawn in the
+accent, never a verdict's green — on Runs, on Skills and on a batch's page. Last, it moves a run to the trash
 from its page — out of the Runs list, on the Trash page with what deleting it would remove —
 restores it, and deletes it for good, the first click saying what goes; and two finished jobs
-ticked on the Jobs page go to the trash together. And a job started as an agent would over
+ticked on the Jobs page go to the trash together; and a refinement moved to the trash shows no
+current stage, and once restored, its current stage is back, its form folded until opened. And a
+job started as an agent would over
 MCP — `started_by` naming its client — says so on the Jobs list and on its own page.
 
 The resample's job page, once done, says what it found in a line with its rate, leaves the whole
