@@ -49,6 +49,9 @@ const TOKEN_CONTROLS = { score: "“Score this answer”", forking: "“Find for
 
 const listed = (items) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
+/** Whether the server test found the server answering a prompt from its cache. */
+const reusesPrompts = (server) => server.checks?.results?.fresh_prompts?.support === "no";
+
 /** What Connections' strip means for the person, the most pressing first: at most three
  *  sentences, one for each part of it that is amber — or one saying nothing needs a look, only
  *  when none is. `state` is `GET /connections` with the proposer's settings as `proposer`. */
@@ -80,6 +83,10 @@ export function whatItMeans({ server = {}, harnesses = [], sandbox = null, propo
   // Before what the test would tell: the sentence beside the strip's own "not tested yet".
   if (!server.checks?.checked_at && !server.problem && !asksKey) {
     lines.push("Test the server to measure what each harness needs of it, and whether it can score answers and find forking tokens.");
+  }
+  // What a batch's or a fork's plan warns of (`ops.connections.cached_prompts_warning`).
+  if (reusesPrompts(server)) {
+    lines.push("The server reuses the prompts it processes, so each run's calls, and every fork's, depend on what it ran before: start llama-server with --no-cache-prompt.");
   }
   const greyed = Object.entries(server.token_work || {}).filter(([, reason]) => reason).map(([work]) => TOKEN_CONTROLS[work] || work);
   if (greyed.length) lines.push(`${listed(greyed)} ${greyed.length === 1 ? "is" : "are"} greyed out on this server.`);
@@ -151,6 +158,7 @@ export async function connectionsView(root, _, scope) {
         glance("Server", chip(said.word, said.warn ? "warn" : "muted", said.title), [
           (identity.models || []).length ? h("span", { class: "mono" }, identity.models.join(", ")) : null,
           identity.n_ctx ? `a ${Number(identity.n_ctx).toLocaleString()}-token context window` : null,
+          reusesPrompts(server) ? h("span", { class: "warn-text" }, "reuses its prompts") : null,
           checks.checked_at
             ? h("span", { class: "faint", title: `${when(checks.checked_at)}, with ${checks.model}` }, `tested ${ago(checks.checked_at)}`)
             : h("span", { class: "warn-text" }, "not tested yet"),

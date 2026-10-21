@@ -809,6 +809,11 @@ try {
   const glanceAfter = await until(async () => { const now = await glance(); return /^tested /.test(now.tested || "") ? now : null; }, "the strip, tested");
   check(glanceAfter.means.includes("“Keep each sample's tokens” is greyed out on this server.") && !glanceAfter.means.some((line) => line.startsWith("Test the server")),
     `at a glance too, by the control it greys (${glanceAfter.means.join(" / ")})`);
+  // The mock answers a prompt it saw before from its cache, as llama-server does without
+  // --no-cache-prompt: what a batch's plan warns of, said here too, beside the server.
+  check(checked.fresh_prompts.support === "no" && glanceAfter.means.some((line) => line.startsWith("The server reuses the prompts it processes"))
+    && await page.eval(`[...document.querySelectorAll(".health-strip .glance-line")].some((line) => line.textContent === "reuses its prompts")`),
+    `a server that reuses its prompts says so at a glance (fresh prompts: ${checked.fresh_prompts.support})`);
   // A harness found, a capability there, a sandbox: fine is grey. Green and red are a check's.
   check(await page.eval(`!document.querySelector("main .chip.tone-ok, main .chip.tone-bad") && [...document.querySelectorAll("table td .chip")].some((c) => c.textContent === "yes" && c.classList.contains("tone-muted"))`),
     "nothing on the page is a verdict's green or red: what is there is grey");
