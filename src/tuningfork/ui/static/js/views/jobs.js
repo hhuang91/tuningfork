@@ -2,14 +2,16 @@
 
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
-import { ago, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, tick, when } from "../dom.js";
+import { ago, crumbs, foldPanel, h, kv, loading, outcome, panel, plural, pretty, rateBar, replace, short, tick, when } from "../dom.js";
 import {
-  ACTIVE, cancelButton, duration, kindLabel, logLine, originChip, progressBar, stateChip, subject, watchJob,
+  ACTIVE, KIND_SECTION, cancelButton, duration, kindLabel, logLine, madeLink, progressBar, startedBy, stateChip, subject, watchJob,
 } from "../jobs.js";
 import { costOf } from "../cost.js";
 import { launcher } from "../launcher.js";
 import { live } from "../live.js";
-import { comparisonView, distributionView, forkingView, screenView } from "../results.js";
+import { verdictView } from "../checktry.js";
+import { replyCard } from "../holdtools.js";
+import { found, targetLine } from "../results.js";
 import { trashButton, trashedBanner } from "../trash.js";
 
 export async function jobsView(root, _, scope) {
@@ -120,18 +122,35 @@ function jobsTable(jobs, { selected, toggle }) {
       })
     : null;
   return h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
-    h("thead", null, h("tr", null, selectable ? h("th", { class: "pick" }, all) : null, h("th", null, "job"), h("th", null, "kind"), h("th", null, "of"),
-      h("th", null, "state"), h("th", null, "progress"), h("th", null, "took"), h("th", null, "started"))),
+    h("thead", null, h("tr", null, selectable ? h("th", { class: "pick" }, all) : null, h("th", null, "job"), h("th", null, "what"), h("th", null, "of"),
+      h("th", null, "state"), h("th", null, "result"), h("th", null, "took"), h("th", null, "started"))),
     h("tbody", null, jobs.map((job) =>
       h("tr", { class: ["clickable", selected.has(job.id) && "selected"], dataset: { job: job.id }, onclick: () => (location.hash = `#/jobs/${job.id}`) },
         selectable ? h("td", { class: "pick", onclick: (event) => event.stopPropagation() }, box(job)) : null,
         h("td", null, h("a", { class: "mono", href: `#/jobs/${job.id}` }, short(job.id))),
-        h("td", null, kindLabel(job), originChip(job) ? " " : null, originChip(job)),
+        h("td", null, KIND_SECTION[job.kind] ? h("span", { class: "muted" }, `${KIND_SECTION[job.kind]} · `) : null, kindLabel(job)),
         h("td", { onclick: (event) => event.stopPropagation() }, subject(job)),
         h("td", null, stateChip(job)),
-        h("td", null, ACTIVE.has(job.status) || job.progress?.total ? progressBar(job) : null),
+        h("td", null, resultCell(job)),
         h("td", { class: "faint" }, duration(job)),
-        h("td", { class: "faint", title: when(job.created_at) }, ago(job.created_at))))))));
+        h("td", { class: "faint", title: when(job.created_at) }, ago(job.created_at), byLine(job))))))));
+}
+
+/** Running, how far it has got; stopped, how far it got; done, what it made, leading there — or,
+ *  runs that no one page holds, how many: its own page lists them. */
+function resultCell(job) {
+  if (ACTIVE.has(job.status)) return progressBar(job);
+  if (job.status !== "done") return job.progress?.total ? progressBar(job) : null;
+  const made = madeLink(job);
+  if (made) return h("a", { href: made.href, onclick: (event) => event.stopPropagation() }, `→ ${made.text}`);
+  const runs = job.links?.runs || [];
+  return runs.length ? h("span", { class: "muted" }, plural(runs.length, "run")) : null;
+}
+
+/** Who started a job, and from where, under when. */
+function byLine(job) {
+  const by = startedBy(job);
+  return by ? h("div", { class: "small", title: by.title }, by.text) : null;
 }
 
 export async function jobView(root, [id], scope) {
@@ -139,11 +158,14 @@ export async function jobView(root, [id], scope) {
   const head = h("div", { class: "page-head" });
   const summary = h("div", { class: "stack slot" });
   const logEl = h("div", { class: "job-log" });
-  replace(root, crumbs([["Jobs", "#/jobs"], [short(id)]]), head, h("div", { class: "stack" }, summary,
-    panel("Progress", logEl, { meta: h("span", { class: "muted" }, "as it happened, newest last") })));
+  // The log, open while the job runs or where it went wrong; folded once it is done and the page
+  // leads with what it found or made.
+  const progressEl = h("div", { class: "slot" });
+  replace(root, crumbs([["Jobs", "#/jobs"], [short(id)]]), head, h("div", { class: "stack" }, summary, progressEl));
 
   let cancel = null;
   let last = null;
+  let folded = null;
   // A fork stopped at a breakpoint waits on the Live page: say so here, with the way there.
   scope.on((event) => {
     if (last && ["hold", "resolved", "snapshot"].includes(event.type)) draw(last);
@@ -157,10 +179,12 @@ export async function jobView(root, [id], scope) {
     if (!job) return;
     if (!cancel || !ACTIVE.has(job.status)) cancel = ACTIVE.has(job.status) && live.mode === "live" ? cancelButton(job) : null;
     const again = () => jobView(root, [id], scope);
+    const by = startedBy(job);
     replace(head,
       h("div", null,
         h("h1", null, kindLabel(job), h("span", { class: "h-sub mono" }, short(job.id))),
-        h("p", { class: "sub" }, subject(job) || "", " ", stateChip(job), originChip(job) ? " " : null, originChip(job))),
+        h("p", { class: "sub" }, subject(job) || "", " ", stateChip(job),
+          by ? h("span", { class: "muted small", title: by.title }, ` started by ${by.text}`) : null)),
       h("div", { class: "actions" }, cancel,
         ACTIVE.has(job.status) || job.trashed_at ? null : trashButton({ kind: "job", id: job.id, onDone: again })));
     replace(summary, heldBanner(job),
@@ -169,10 +193,39 @@ export async function jobView(root, [id], scope) {
             onPurged: () => { location.hash = "#/trash"; } })
         : null,
       ...jobSummary(job));
+    // Folded only where the page leads with what the job found or made: a job done with nothing
+    // else to show keeps its log in sight.
+    const handedOff = job.status === "done" && showsResult(job);
+    if (handedOff !== folded) {
+      folded = handedOff;
+      const meta = h("span", { class: "muted" }, "as it happened, newest last");
+      replace(progressEl, handedOff ? foldPanel("Progress", logEl, { meta }) : panel("Progress", logEl, { meta }));
+    }
     replace(logEl,
       state.gap ? h("p", { class: "hint" }, "Earlier events are no longer kept; the newest are below.") : null,
-      state.events.length ? state.events.slice(-120).map(logLine) : h("p", { class: "muted" }, job.status === "queued" ? "Waiting its turn." : "Nothing yet."));
+      state.events.length ? state.events.slice(-120).map(logLine) : h("p", { class: "muted" }, emptyLog(job)));
   }
+}
+
+/** Why a job's log is empty: it has not begun, or has logged nothing yet — or, ended, its log
+ *  is not kept here (a proxy keeps the logs of its latest jobs, in memory: a job from before it
+ *  started, one long finished, or one read from the recordings has none), or it logged nothing.
+ *  Then, where the page shows one, its result or what went wrong. */
+export function emptyLog(job) {
+  if (job.status === "queued") return "Waiting its turn.";
+  if (ACTIVE.has(job.status)) return "Nothing yet.";
+  const where = job.status === "done" && showsResult(job) ? " Its result is above." : job.error ? " What went wrong is above." : "";
+  return job.seq === null || job.seq === undefined
+    ? `Its log is not kept here: a proxy keeps only its latest jobs' logs, and only in memory.${where}`
+    : `It logged nothing along the way.${where}`;
+}
+
+// Kinds whose finished page says what they made in a panel of their own.
+const OWN_PANEL = new Set(["propose", "validate", "tokens", "hold-console", "check-trial"]);
+
+/** Whether a finished job's page shows what it found or made, above its log. */
+function showsResult(job) {
+  return Boolean(found(job) || madeLink(job) || OWN_PANEL.has(job.kind) || (job.links?.experiments || []).length || (job.links?.runs || []).length);
 }
 
 function heldBanner(job) {
@@ -184,7 +237,9 @@ function heldBanner(job) {
     held.map((hold) => h("a", { class: "btn btn-small", href: `#/live/${hold.id}` }, `Open it: step ${hold.step}`)));
 }
 
-function jobSummary(job) {
+/** A job's page under its head, from the job alone: how it is going or went, what it found or
+ *  made, and what it was asked. */
+export function jobSummary(job) {
   const parts = [];
   if (ACTIVE.has(job.status)) {
     parts.push(panel("Running", [progressBar(job), job.progress?.waiting === "paused"
@@ -200,31 +255,10 @@ function jobSummary(job) {
     parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, job.status === "cancelled" ? "Cancelled. " : "Interrupted: the proxy stopped. "),
       "What finished before that is stored and counted; anything it cut off is not."));
   }
-  parts.push(...madeView(job));
-  const result = job.result;
-  if (result && job.status === "done") {
-    if (result.distribution) parts.push(distributionView(result.distribution));
-    if (result.comparison) parts.push(comparisonView(result));
-    if (result.forking) parts.push(forkingView(result.forking));
-    if ((job.kind === "screen" || job.kind === "screen-to-end") && result.screen) {
-      const arms = Object.fromEntries(Object.entries(result.experiments || {}).map(([name, id]) => [name, { id }]));
-      parts.push(screenView(result.screen, { arms }));
-    }
-    if (job.kind === "chain" && result.id) {
-      parts.push(panel("What it made", h("div", { class: "made" },
-        h("a", { class: "btn btn-primary", href: `#/chains/${enc(result.id)}` }, "See the chain, link by link"),
-        h("span", { class: "muted small" }, `${plural((result.links || []).length, "link")}`
-          + (result.rate ? `, ${result.rate.successes} of ${result.rate.total} counted passed` : "")))));
-    }
-    if (job.kind === "propose") parts.push(proposedView(result));
-    if (job.kind === "validate") parts.push(validatedView(result));
-    if (job.kind === "tokens" && result.run_id) {
-      const stream = result.view?.stream;
-      parts.push(panel("What it made", h("div", { class: "made" },
-        h("a", { class: "btn btn-primary", href: `#/runs/${enc(result.run_id)}/${result.step}?view=tokens` }, "See its tokens"),
-        h("span", { class: "muted small" }, stream ? `${plural(stream.tokens, "token")} scored${stream.exact === false ? ", rebuilt approximately" : ""}` : ""))));
-    }
-  }
+  // A job that made an experiment hands off to it, done: the page of what it made shows the whole.
+  // A kind whose result is told in a panel of its own leads with that, then what it made.
+  const finding = job.status === "done" ? found(job) : null;
+  parts.push(...(finding ? [foundPanel(job, finding)] : [...ownPanels(job), ...madeView(job)]));
   // What it was asked is kept for the record: folded, the page leading with what it did.
   parts.push(foldPanel("What it was asked", [
     kv(Object.entries(job.params || {})
@@ -234,6 +268,26 @@ function jobSummary(job) {
     job.plan ? h("details", { class: "fold" }, h("summary", null, "The plan it ran"), h("pre", { class: "code" }, pretty(job.plan))) : null,
   ], { className: "record-panel", meta: h("span", { class: "muted" }, `queued ${when(job.created_at)}`) }));
   return parts;
+}
+
+/** A finished job's result in a panel of its own (`OWN_PANEL`): what it was its only home for, or
+ *  what the page of what it made does not lead with. */
+function ownPanels(job) {
+  const result = job.result;
+  if (!result || job.status !== "done") return [];
+  // A question at a held call, and a check tried: this page is their only home once the call
+  // is decided or the tester closed.
+  if (job.kind === "hold-console" && result.reply) return [panel("What it answered", replyCard(job))];
+  if (job.kind === "check-trial" && result.found) return [panel("What the check said", verdictView(result))];
+  if (job.kind === "propose") return [proposedView(result)];
+  if (job.kind === "validate") return [validatedView(result)];
+  if (job.kind === "tokens" && result.run_id) {
+    const stream = result.view?.stream;
+    return [panel("What it made", h("div", { class: "made" },
+      h("a", { class: "btn btn-primary", href: `#/runs/${enc(result.run_id)}/${result.step}?view=tokens` }, "See its tokens"),
+      h("span", { class: "muted small" }, stream ? `${plural(stream.tokens, "token")} scored${stream.exact === false ? ", rebuilt approximately" : ""}` : "")))];
+  }
+  return [];
 }
 
 /** What the built-in proposer made: each proposal kept, each one not and why — every one kept
@@ -278,19 +332,86 @@ function validatedView(result) {
     { meta: h("span", { class: "muted" }, `full test runs ${short(result.validation)}`) });
 }
 
+/** What a finished job found: what it counted, the result in a line with the rates it rests on,
+ *  what was left out, the runs it made, and the way to the whole. */
+function foundPanel(job, finding) {
+  const made = madeLink(job);
+  const bars = finding.bars.filter(([, rate]) => rate && rate.total);
+  return panel("What it found", h("div", { class: "stack", style: { gap: "8px" } },
+    finding.caution
+      ? h("div", { class: "banner banner-warn" }, finding.text)
+      : h("div", { class: ["verdict-block", finding.tone] },
+          finding.target ? targetLine(finding.target[1], finding.target[2], finding.target[0]) : null,
+          h("div", { class: "verdict-big" }, finding.text),
+          finding.seen ? h("p", { class: "verdict-lines" }, finding.seen) : null,
+          bars.length
+            ? h("div", { class: "stack", style: { gap: "4px" } }, bars.map(([label, rate, tone, said]) =>
+                h("span", null, h("span", { class: "muted" }, `${label}  `), said ? [outcome(said), " "] : null, rateBar(rate, tone))))
+            : null),
+    (finding.notes || []).map((note) => h("p", { class: "small warn-text" }, note)),
+    runsLine(job),
+    made
+      ? h("div", { class: "made" }, h("a", { class: "btn btn-primary", href: made.href }, "See the result"),
+          h("span", { class: "muted small" }, made.text))
+      : null,
+    kv([["cost", costOf({ job: job.id })]])));
+}
+
+/** The runs a job made — its forks, a batch's runs — each linked, the first twenty in sight and
+ *  the rest folded under them: forks are in no list of runs. */
+function runsLine(job) {
+  const runs = job.links?.runs || [];
+  if (!runs.length) return null;
+  const named = (some) => some.map((run, index) => [index ? ", " : "", h("a", { class: "mono", href: `#/runs/${enc(run)}` }, short(run))]);
+  return h("div", { class: "muted small" }, `${plural(runs.length, "run")}: `, named(runs.slice(0, 20)),
+    runs.length > 20 ? h("details", { class: "fold" }, h("summary", null, `and ${runs.length - 20} more`), named(runs.slice(20))) : null);
+}
+
 function madeView(job) {
   const links = job.links || {};
   const experiments = links.experiments || [];
   const runs = links.runs || [];
-  if (!experiments.length && !runs.length) return [];
+  // A panel of its own above holds the result: what it made here is only to open.
+  const own = OWN_PANEL.has(job.kind);
+  // Done, what it made and where that lives — and a chain's page, stopped too, holding the links
+  // it got through.
+  const lead = own ? null : job.status === "done" || (job.kind === "chain" && job.result?.id) ? madeLink(job) : null;
+  if (!experiments.length && !runs.length) {
+    if (!lead) return [];
+    // Nothing of its own to list: a chain whose links made no run, or what a server test or a
+    // check run along the runs found, which another page shows.
+    return job.kind === "chain"
+      ? [panel("What it made", madeRow(job, lead))]
+      : [panel("What it found", h("div", { class: "made" }, h("a", { class: "btn btn-primary", href: lead.href }, "See the results"),
+          h("span", { class: "muted small" }, job.kind === "server-check" ? "on Connections" : lead.text)))];
+  }
   // An A/B's two arms are one report: its first arm's page shows both.
   const report = experiments[0];
+  // Runs and nothing else — a batch's, a chain's, a fork's: where they are, how many passed, and
+  // how many the rate leaves out.
+  const made = report ? null : lead;
+  const batch = job.kind === "batch" && job.status === "done" ? job.result || {} : {};
+  const left = batch.not_counted || 0;
   return [panel("What it made", h("div", { class: "stack", style: { gap: "8px" } },
     report ? h("div", { class: "made" },
-      h("a", { class: "btn btn-primary", href: `#/experiments/${report}` }, job.status === "done" ? "See the result" : "Open the experiment"),
+      h("a", { class: own ? "btn" : "btn btn-primary", href: `#/experiments/${report}` }, job.status === "done" && !own ? "See the result" : "Open the experiment"),
       h("span", { class: "muted small" }, experiments.length > 1 ? `experiments ${experiments.map(short).join(", ")}` : `experiment ${short(report)}`)) : null,
-    runs.length ? h("div", { class: "muted small" }, `${plural(runs.length, "run")}: `,
-      runs.slice(0, 20).map((run, index) => [index ? ", " : "", h("a", { class: "mono", href: `#/runs/${enc(run)}` }, short(run))])) : null,
+    made ? madeRow(job, made) : null,
+    batch.rate ? h("div", null, h("span", { class: "muted" }, "passed  "), rateBar(batch.rate, "ok")) : null,
+    left ? h("p", { class: "small warn-text" }, `${plural(left, "run")} ${left === 1 ? "is" : "are"} not counted; each one's page says why.`) : null,
+    // A fork's one run is what it made: named once.
+    made && runs.length === 1 && made.href === `#/runs/${enc(runs[0])}` ? null : runsLine(job),
     // Counted from the records of what it made: once nothing is still being added to them.
     job.status === "running" || job.status === "queued" ? null : kv([["cost", costOf({ job: job.id })]])))];
+}
+
+/** The way to what a job made, and its name — a chain's page, link by link, with how its links
+ *  went, whether it finished or was stopped. */
+function madeRow(job, made) {
+  const chain = job.kind === "chain" ? job.result || {} : null;
+  return h("div", { class: "made" },
+    h("a", { class: "btn btn-primary", href: made.href }, chain ? "See the chain, link by link" : "See the result"),
+    h("span", { class: "muted small" }, chain
+      ? `${plural((chain.links || []).length, "link")}${chain.rate ? `, ${chain.rate.successes} of ${chain.rate.total} counted passed` : ""}`
+      : made.text));
 }

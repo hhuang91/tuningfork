@@ -49,9 +49,25 @@ async function call(method, path, body, { raw = false, contentType } = {}) {
   return data;
 }
 
+/** The page a job is started from, as the job records it (`started_by.page`): its section,
+ *  or the one thing it shows — a run, a step of one, a refinement, a scenario. */
+export function startedFrom(hash = location.hash) {
+  const [section = "", id, step] = hash.replace(/^#\/?/, "").split("?")[0].split("/");
+  if (section === "runs" && id && /^\d+$/.test(step ?? "")) return "step";
+  // Make a scenario, at its address and the one it had before.
+  if ((section === "runs" || section === "import") && id && step === "scenario") return "make-scenario";
+  const one = { runs: "run", refine: "refinement", scenarios: "scenario", experiments: "experiment", skills: "skill", live: "live" };
+  return (id && one[section]) || section || "guide";
+}
+
+// Work a person starts here says so, and from which page; a dry run starts nothing.
+const startedHere = (path, body) => (path === "/jobs" && body && !body.dry_run && !body.started_by
+  ? { ...body, started_by: { via: "web", page: startedFrom() } }
+  : body);
+
 export const api = {
   get: (path) => call("GET", path),
-  post: (path, body = {}) => call("POST", path, body),
+  post: (path, body = {}) => call("POST", path, startedHere(path, body)),
   patch: (path, body) => call("PATCH", path, body),
   del: (path) => call("DELETE", path),
   /** Raw bytes — a file as it is — rather than JSON. */

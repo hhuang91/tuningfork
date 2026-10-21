@@ -1,5 +1,6 @@
-// What experiments found: behaviour distributions and comparisons, shown the same on an
-// experiment's page and on the page of the job that ran it.
+// What experiments found: behaviour distributions and comparisons, drawn on an experiment's
+// page — and, in a line, on the page of the job that made it (`found`), with that page's own
+// verdict and cautions where it leads with them.
 
 import { capital, chip, h, loading, outcome, panel, plural, rateBar, short } from "./dom.js";
 import { heatmap, probeMarks } from "./tokens.js";
@@ -135,19 +136,12 @@ export function forkingView(report, context = {}) {
   const onStep = (position) => experiment?.run_id
     ? h("a", { class: "btn btn-quiet btn-small", href: `#/runs/${experiment.run_id}/${experiment.step_idx}?view=tokens&at=${position}`, title: "This token on the step's own Tokens view" }, "On the step")
     : null;
-  const flips = report.positions.reduce((total, position) => total + position.alternatives.filter((alt) => alt.flips).length, 0);
+  const [headline, tone, seen] = forkingHeadline(report);
   const parts = [
-    h("div", { class: ["verdict-block", flips ? "significant" : "not-significant"] },
+    h("div", { class: ["verdict-block", tone] },
       targetLine(report.target),
-      h("div", { class: "verdict-big" }, flips
-        ? `${plural(flips, "forced token")} changed what the model did`
-        : "No forced token decided what the model did"),
-      // A null is what the probe could see, never that nothing changed.
-      !flips && report.per_arm
-        ? h("p", { class: "verdict-lines" }, report.detectable
-            ? `With ${report.per_arm} continuations a token, only a token that changes about ${report.detectable} of its ${report.per_arm} would show. A smaller shift can be real and go unseen.`
-            : `With ${report.per_arm} continuations a token, no change could be told from chance. Draw more.`)
-        : null,
+      h("div", { class: "verdict-big" }, headline),
+      seen ? h("p", { class: "verdict-lines" }, seen) : null,
       report.reproduced
         ? h("div", { class: "stack", style: { gap: "4px" } },
             h("span", null, h("span", { class: "muted" }, "the run's own tokens led to it  "), rateBar(report.reproduced)))
@@ -155,19 +149,8 @@ export function forkingView(report, context = {}) {
       h("div", { class: "mono small", title: "Fisher's exact test, Holm-corrected" },
         `Each p corrected for the ${plural(report.family, "test")} planned; α = ${report.alpha}`)),
   ];
-  const undecided = report.missed?.undecided || [];
-  const tooFine = report.missed?.too_fine || [];
-  if (undecided.length) {
-    parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, "Still undecided there. "),
-      `At ${positionList(undecided)}, the run's own token led elsewhere more often than to its own behaviour, so a later token decided it. On the answer's heatmap, select tokens after these and probe them.`));
-  }
-  if (tooFine.length) {
-    parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, "What you count is too fine. "),
-      `At ${positionList(tooFine)}, the run's own token led mostly to the same tools with other arguments, so what you count may be too fine to compare on. Grouping behaviours by tool name alone (tool_name), or a pattern, may say more.`));
-  }
-  if (!undecided.length && !tooFine.length && report.reproduced && report.reproduced.total && report.reproduced.point < 0.5) {
-    parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, "What you count is rarely reproduced. "),
-      "Even with the run's own tokens forced, the model did it less than half the time. What you count may be too fine to reproduce, or the step not yet decided at these positions."));
+  for (const [title, text, here] of forkingCautions(report)) {
+    parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, `${title} `), here ? `${text} ${here}` : text));
   }
   if (answer) parts.push(answer);
   // Where each token's continuations went, by behaviour: the behaviours' table, inverted.
@@ -263,14 +246,63 @@ export function screenTones(reach) {
   return reach === "end" ? ["ok", "bad"] : ["accent", "warn"];
 }
 
-/** A screen: each proposal against a fresh arm of the original, Holm-corrected over the
- *  proposals planned before sampling. `arms` names each arm's experiment, to link to it; an
- *  unfinished screen shows its rates and no verdict. */
-export function screenView(screen, { arms = {} } = {}) {
+/** A forking-token probe in a line, its block's tone, and — where no forced token changed what the
+ *  model did — what the probe could have seen: a null is what it could see, never that nothing
+ *  changed. */
+export function forkingHeadline(report) {
+  const flips = report.positions.reduce((total, position) => total + position.alternatives.filter((alt) => alt.flips).length, 0);
+  const seen = !flips && report.per_arm
+    ? report.detectable
+      ? `With ${report.per_arm} continuations a token, only a token that changes about ${report.detectable} of its ${report.per_arm} would show. A smaller shift can be real and go unseen.`
+      : `With ${report.per_arm} continuations a token, no change could be told from chance. Draw more.`
+    : null;
+  return [flips ? `${plural(flips, "forced token")} changed what the model did` : "No forced token decided what the model did",
+    flips ? "significant" : "not-significant", seen];
+}
+
+/** What a probe leaves open, as cautions: each its title, what was seen, and — where the next
+ *  step is taken on the probe's own page — that step, which only that page shows. */
+export function forkingCautions(report) {
+  const undecided = report.missed?.undecided || [];
+  const tooFine = report.missed?.too_fine || [];
+  const cautions = [];
+  if (undecided.length) {
+    cautions.push(["Still undecided there.",
+      `At ${positionList(undecided)}, the run's own token led elsewhere more often than to its own behaviour, so a later token decided it.`,
+      "On the answer's heatmap, select tokens after these and probe them."]);
+  }
+  if (tooFine.length) {
+    cautions.push(["What you count is too fine.",
+      `At ${positionList(tooFine)}, the run's own token led mostly to the same tools with other arguments, so what you count may be too fine to compare on. Grouping behaviours by tool name alone (tool_name), or a pattern, may say more.`]);
+  }
+  if (!undecided.length && !tooFine.length && report.reproduced && report.reproduced.total && report.reproduced.point < 0.5) {
+    cautions.push(["What you count is rarely reproduced.",
+      "Even with the run's own tokens forced, the model did it less than half the time. What you count may be too fine to reproduce, or the step not yet decided at these positions."]);
+  }
+  return cautions;
+}
+
+/** A test at a step that did not draw all it planned: its rates, and no verdict. */
+const SCREEN_UNFINISHED = ["Not every wording drew what was planned.",
+  "Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made."];
+
+/** What a test's wording left out of its count (`errors`), in words: at the step, samples whose
+ *  call failed; to the end, forks something kept from measuring the wording, or that no check
+ *  judged (`fork_counted`) — one that timed out counts, as a failure. */
+function screenLeftOut(arm, whose, reach) {
+  const count = arm.errors || 0;
+  if (!count) return [];
+  const are = count === 1 ? "is" : "are";
+  return [reach === "end"
+    ? `${plural(count, "fork")} of ${whose} ${are} not counted: something kept ${count === 1 ? "it" : "each"} from measuring the wording, or no check judged it.`
+    : `${plural(count, "sample")} of ${whose} ${are} not counted, because the call itself failed.`];
+}
+
+/** A test at a step in a line, and its block's tone: a test run to the end is judged by the
+ *  task's check, so what beat the original there is green, as a check that passed is. */
+export function screenHeadline(screen) {
   const survivors = new Set(screen.survivors);
-  // Run to the end, the target is the task's check: green and red, as for a run.
-  const [up, down] = screenTones(screen.reach);
-  const [headline, tone] = screen.quick
+  return screen.quick
     ? ["A quick look gives rates only, never a verdict.", "not-significant"]
     : !screen.complete
       ? ["This test is unfinished, so it gives rates only, and no verdict.", "not-significant"]
@@ -278,6 +310,143 @@ export function screenView(screen, { arms = {} } = {}) {
         ? [`${plural(survivors.size, "proposal")} beat the original by ${LABELS.beyondChance}.`,
             screen.reach === "end" ? "significant tone-ok" : "significant"]
         : [`No proposal beat the original by ${LABELS.beyondChance}.`, "not-significant"];
+}
+
+/** A wording A/B run to the end in a line, and its block's tone: the task's check decides
+ *  each fork, so a shift is green or red, as a run's verdict is. */
+export function endHeadline(result) {
+  const significant = result.significant;
+  const up = result.direction === "up";
+  const passes = (arm) => `${arm.passed} of ${arm.counted}`;
+  const headline = result.p_value === null
+    ? "No test: one wording has no fork that counts."
+    : significant
+      ? `The variant passed the check ${up ? "more" : "less"} often: ${passes(result.variant)} forks, against ${passes(result.original)} with the original. That is ${LABELS.beyondChance}.`
+      : `${capital(LABELS.withinChance)}: the variant's forks passed the check in ${passes(result.variant)}, and the original's in ${passes(result.original)}.`;
+  return [headline, significant ? `significant ${up ? "tone-ok" : "tone-bad"}` : "not-significant"];
+}
+
+/** What a finished job found, in a line, for its page: the verdict the page of what it made
+ *  leads with, from the same helpers, where that page has one (a test at a step, an A/B, a
+ *  probe); else the result in a line (a resample, a resample to the end). With what was counted
+ *  (`target`: its label, what it is, when it was chosen), what the verdict could see (`seen`, as
+ *  that page says it), the rates it rests on — each with its interval, and the behaviour where one
+ *  is named — and what was left out or is still open, as cautions in that page's words (`notes`;
+ *  `caution` where nothing could be counted at all). Null for a job whose result is told
+ *  elsewhere, or not at all. An A/B with nothing declared is judged at its own α. */
+export function found(job) {
+  const result = job.result || {};
+  switch (job.kind) {
+    case "resample":
+    case "hold-sample":
+      return result.distribution ? distributionFinding(result.distribution) : null;
+    case "ab":
+      return result.comparison ? abFinding(result.comparison, job.params?.alpha ?? 0.05) : null;
+    case "forking-tokens": {
+      if (!result.forking) return null;
+      const [text, tone, seen] = forkingHeadline(result.forking);
+      // A next step taken on the answer's heatmap is the probe's page's to say.
+      const notes = forkingCautions(result.forking).map(([title, said]) => `${title} ${said}`);
+      return { text, tone, target: ["What you count", result.forking.target], seen, bars: [], notes };
+    }
+    case "screen":
+    case "screen-to-end": {
+      const screen = result.screen;
+      if (!screen) return null;
+      const [text, tone] = screenHeadline(screen);
+      // Run to the end, the task's check decides, whatever the refinement said should happen.
+      return {
+        text, tone,
+        target: screen.reach === "end"
+          ? ["What you count", screen.target, "set by the task, before any fork ran"]
+          : ["What the model should do", screen.target],
+        bars: [["original", screen.baseline?.target], ...screen.arms.map((arm) => [arm.name, arm.target, "change"])],
+        notes: [
+          ...(screen.complete ? [] : [SCREEN_UNFINISHED.join(" ")]),
+          ...[[screen.baseline || {}, "the original"], ...screen.arms.map((arm) => [arm, arm.name])]
+            .flatMap(([arm, whose]) => [...screenLeftOut(arm, whose, screen.reach), ...leftOut(arm, whose)]),
+        ],
+      };
+    }
+    case "resample-to-end":
+      return result.counted === undefined ? null : endArmFinding(result);
+    case "ab-to-end": {
+      if (!result.original || !result.variant) return null;
+      const [text, tone] = endHeadline(result);
+      return {
+        text, tone, target: CHECK_TARGET,
+        bars: [["original", result.original.rate], ["variant", result.variant.rate, "change"]],
+        notes: [...leftOut(result.original, "the original"), ...leftOut(result.variant, "the variant")],
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+const CHECK_TARGET = ["What you count", "the task's check passes", "set by the task, before any fork ran"];
+
+function distributionFinding(distribution) {
+  const [first] = distribution.clusters;
+  const notes = distribution.errors ? [notCounted(distribution.errors, "sample")] : [];
+  if (!first) return { text: "No sample came back to count.", caution: true, tone: "not-significant", bars: [], notes };
+  const total = distribution.total;
+  // Where calls failed, the samples that came back are fewer than were drawn: said "counted".
+  const counted = distribution.errors ? " counted" : "";
+  const text = distribution.clusters.length === 1
+    ? `One behaviour, in ${total === 1 ? "the one sample" : total === 2 ? "both samples" : `all ${total} samples`}${counted}.`
+    : `${plural(distribution.clusters.length, "behaviour")} in ${plural(total, "sample")}${counted}; the most common, ${first.letter}, in ${first.rate.successes} of them.`;
+  return { text, tone: "not-significant", bars: [[first.letter, first.rate, undefined, first.outcome]], notes };
+}
+
+function abFinding(comparison, alpha) {
+  const target = comparison.target;
+  if (target) {
+    return {
+      text: shiftWords(target), tone: target.significant ? "significant" : "not-significant",
+      target: ["What you count", target.description],
+      bars: [["original", target.original], ["variant", target.variant, "change"]], notes: [],
+    };
+  }
+  const moved = comparison.shifts.filter((shift) => shift.adjusted_p < alpha).length;
+  return {
+    text: moved
+      ? `${moved} of ${plural(comparison.shifts.length, "behaviour")} moved between the wordings by ${LABELS.beyondChance}.`
+      : `No behaviour moved between the wordings by ${LABELS.beyondChance}.`,
+    tone: moved ? "significant" : "not-significant", bars: [],
+    notes: ["Nothing was declared before sampling, so every behaviour was compared, each p adjusted for comparing them all."],
+  };
+}
+
+/** One arm of forks run to the end, in a line: how many passed the task's check, and what was
+ *  left out of the count. */
+function endArmFinding(arm) {
+  if (!arm.counted) {
+    return { text: "No fork counts: each was left out of the count, or none ran.", caution: true, tone: "not-significant", bars: [], notes: leftOut(arm) };
+  }
+  return {
+    text: `${arm.passed} of ${plural(arm.counted, "fork")} passed the task's check.`, tone: "not-significant",
+    target: CHECK_TARGET, bars: [["passed", arm.rate]], notes: leftOut(arm),
+  };
+}
+
+/** What an arm of forks left out of its count, or counted as failures, in words. */
+function leftOut(arm, whose = null) {
+  const of = whose ? ` of ${whose}` : "";
+  const excluded = (arm.exclusions || []).length;
+  return [
+    excluded ? `${plural(excluded, "fork")}${of} ${excluded === 1 ? "is" : "are"} not counted; the experiment's page says why.` : null,
+    arm.timeouts ? `${plural(arm.timeouts, "fork")}${of} timed out, counted as ${arm.timeouts === 1 ? "a failure" : "failures"}.` : null,
+  ].filter(Boolean);
+}
+
+/** A screen: each proposal against a fresh arm of the original, Holm-corrected over the
+ *  proposals planned before sampling. `arms` names each arm's experiment, to link to it; an
+ *  unfinished screen shows its rates and no verdict. */
+export function screenView(screen, { arms = {} } = {}) {
+  // Run to the end, the target is the task's check: green and red, as for a run.
+  const [up, down] = screenTones(screen.reach);
+  const [headline, tone] = screenHeadline(screen);
   const verdict = (arm) => {
     if (screen.quick) return chip("quick look", "muted");
     if (!screen.complete) return chip("no verdict", "warn");
@@ -286,6 +455,8 @@ export function screenView(screen, { arms = {} } = {}) {
     return chip("within chance", "muted");
   };
   const drawn = (arm) => (arm.drawn < arm.planned ? chip(`${arm.drawn} of ${arm.planned} drawn`, "warn") : null);
+  // What a wording left out of its count, and why: its rate is over the rest.
+  const leftOutChip = (arm, whose) => (arm.errors ? chip(`${arm.errors} not counted`, "warn", screenLeftOut(arm, whose, screen.reach)[0]) : null);
   // A fork run to the end that timed out failed, as the gate counts it: said, since it is not the check.
   const timedOut = (arm) => (arm.timeouts ? chip(`${arm.timeouts} timed out`, "warn", "Counted as failures, as the approval checks count them.") : null);
   const name = (arm) => (arms[arm.name]?.id
@@ -324,19 +495,18 @@ export function screenView(screen, { arms = {} } = {}) {
           ? h("div", { class: "mono small" }, "A lead for the next edit. Only a test at this step that is not a quick look can keep a proposal.")
           : h("div", { class: "mono small", title: "Fisher's exact test, Holm-corrected" },
               `Each against the original, corrected for the ${plural(screen.family, "proposal")} planned; α = ${screen.alpha}`)),
-      screen.complete ? null : h("div", { class: "banner banner-warn" }, h("strong", null, "Not every wording drew what was planned. "),
-        "Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made."),
+      screen.complete ? null : h("div", { class: "banner banner-warn" }, h("strong", null, `${SCREEN_UNFINISHED[0]} `), SCREEN_UNFINISHED[1]),
       h("div", { class: "table-wrap" }, h("table", { class: "table screen-table" },
         h("thead", null, h("tr", null, h("th", null, "wording"), h("th", null, screen.reach === "end" ? "passed the check" : "did what it should"), h("th", { class: "num" }, "p"),
           h("th", { class: "num", title: "Holm-corrected" }, "p, corrected"), h("th", null, ""))),
         h("tbody", null,
           h("tr", null, h("td", null, name({ name: "original" })),
             h("td", null, screen.baseline.target.total ? rateBar(screen.baseline.target) : h("span", { class: "muted" }, "none drawn"),
-              screen.quick ? null : drawn(screen.baseline), timedOut(screen.baseline)),
+              screen.quick ? null : drawn(screen.baseline), leftOutChip(screen.baseline, "the original"), timedOut(screen.baseline)),
             h("td", null, ""), h("td", null, ""), h("td", { class: "muted small" }, originalNote)),
           screen.arms.map((arm) => h("tr", null,
             h("td", null, name(arm)),
-            h("td", null, arm.target.total ? rateBar(arm.target, "change") : h("span", { class: "muted" }, "none drawn"), drawn(arm), timedOut(arm)),
+            h("td", null, arm.target.total ? rateBar(arm.target, "change") : h("span", { class: "muted" }, "none drawn"), drawn(arm), leftOutChip(arm, arm.name), timedOut(arm)),
             h("td", { class: "num mono" }, formatP(arm.p_value)),
             h("td", { class: "num mono" }, formatP(arm.adjusted_p)),
             h("td", null, verdict(arm))))))),

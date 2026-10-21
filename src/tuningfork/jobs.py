@@ -121,16 +121,18 @@ def remaining(record: JobRecord) -> dict[str, Any] | None:
 
 
 def asked_by(value: Any) -> dict[str, str] | None:
-    """Who asked for a job, as a front end says it: `{"via": "mcp", "client": ...,
-    "version": ...}`. Short text only: it is shown on a page, never acted on."""
+    """Who asked for a job, as a front end says it: an agent over MCP, `{"via": "mcp",
+    "client": ..., "version": ...}`, or a person in the web UI and the page they asked from,
+    `{"via": "web", "page": ...}`. Short text only: it is shown on a page, never acted on."""
     if value is None:
         return None
     if not isinstance(value, dict) or not isinstance(value.get("via"), str):
         raise OperationError(
-            'started_by is {"via": ..., "client": ..., "version": ...}', code="bad_params", field="started_by"
+            'started_by is {"via": ..., "client": ..., "version": ..., "page": ...}',
+            code="bad_params", field="started_by",
         )
     kept = {}
-    for key in ("via", "client", "version"):
+    for key in ("via", "client", "version", "page"):
         found = value.get(key)
         if found is None:
             continue

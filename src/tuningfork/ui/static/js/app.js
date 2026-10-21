@@ -6,7 +6,7 @@
 import { api } from "./api.js";
 import { auth, guard, keep, onAuthChange, pickUpToken, setAuth } from "./auth.js";
 import { failure, h, replace, toast } from "./dom.js";
-import { kindLabel } from "./jobs.js";
+import { kindLabel, madeLink, onPage } from "./jobs.js";
 import { live, start, subscribe } from "./live.js";
 import { leaving, place, unsaved } from "./nav.js";
 import { batchView } from "./views/batch.js";
@@ -335,7 +335,11 @@ function noteJobEnd(job) {
   // A kind without a short subject of its own is named by its label, quoted: the verbs are singular.
   const label = { resample: "A resample", ab: "An A/B", propose: "The proposing model", screen: "A test at a step" }[job.kind]
     || `The job “${kindLabel(job)}”`;
-  toast(`${label} ${verb}`, { tone, href: `#/jobs/${job.id}`, action: "Show", timeout: job.status === "done" ? 8000 : 0 });
+  // Done, it leads to what it made — unless that is the page already open; otherwise to the job,
+  // where what went wrong is said.
+  const made = job.status === "done" ? madeLink(job)?.href : null;
+  const href = made && !onPage(made) ? made : `#/jobs/${job.id}`;
+  toast(`${label} ${verb}`, { tone, href, action: "Show", timeout: job.status === "done" ? 8000 : 0 });
 }
 
 // --- theme --------------------------------------------------------------------------------

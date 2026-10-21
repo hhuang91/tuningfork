@@ -91,11 +91,153 @@ try {
   const resample = await finished(resampleId);
   check(resample.status === "done" && resample.result.distribution.total === 6, "the resample ran: 6 samples");
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "See the result")`), "the link to the result");
-  check(await page.eval(`document.querySelectorAll(".job-log .log-line").length >= 7`), "the job's page logged the experiment and each sample");
+  // Done, the job's page hands off to what it made: what it found in a line, with its rate, and the
+  // way to the whole — the experiment's page draws the rest. Its log is folded below.
+  check(await page.eval(`(() => {
+    const panel = [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h2")?.textContent === "What it found");
+    return !!panel && panel.querySelector(".verdict-big").textContent === "One behaviour, in all 6 samples."
+      && !!panel.querySelector(".ci") && !document.querySelector(".groups");
+  })()`), "the job's page says what it found in a line, and leaves the whole to the experiment's page");
+  check(await page.eval(`(() => {
+    const fold = [...document.querySelectorAll("details.fold-panel")].find((d) => d.querySelector("h2")?.textContent === "Progress");
+    if (!fold || fold.open) return false;
+    fold.open = true;
+    return true;
+  })()`), "its log is folded under what it found");
+  await until(() => page.eval(`document.querySelectorAll(".job-log .log-line").length >= 7`), "the job's page logged the experiment and each sample");
+  check(true, "opened, the log has the experiment and each sample");
   // The job names the step it worked at, and its link opens that step, not the top of the run
   // (found in use: it led to the run alone).
   check(await page.eval(`[...document.querySelectorAll("main a")].some((a) => a.textContent === "run ${run.id.slice(0, 8)} @ step 1"
     && a.getAttribute("href") === "#/runs/${run.id}/1")`), "the job's page links the step it worked at");
+  // Who started it, and from where: the web UI says which page.
+  check(await page.eval(`document.querySelector(".page-head .sub").textContent.includes("started by you, from a step's page")`),
+    "the job's page says it was started from a step's page");
+  // On the Jobs list: the work it is, by its section, who started it, and what it made, leading there.
+  await page.eval(`location.hash = "#/jobs"`);
+  await until(() => page.eval(`!!document.querySelector('tr[data-job="${resampleId}"]')`), "the job on the Jobs list");
+  const jobRow = await page.eval(`(() => {
+    const row = document.querySelector('tr[data-job="${resampleId}"]');
+    const made = [...row.querySelectorAll("a")].find((a) => a.textContent.startsWith("→ "));
+    return { what: row.children[2].textContent, made: made?.getAttribute("href"), by: row.lastElementChild.textContent };
+  })()`);
+  check(jobRow.what === "Measure · Resample" && jobRow.made === `#/experiments/${resample.links.experiments[0]}` && jobRow.by.endsWith("you, from a step's page"),
+    `the Jobs list says what each job is, what it made and who started it (${JSON.stringify(jobRow)})`);
+  // What each kind of job made, what it found, why its log is empty, and each page's name, as the
+  // list, the pages and the note when a job ends work them out: from the shapes the server gives them.
+  const mapped = await page.eval(`(async () => {
+    const { madeLink, onPage, startedBy } = await import(new URL("js/jobs.js", location.href).href);
+    const { startedFrom } = await import(new URL("js/api.js", location.href).href);
+    const { found, screenView } = await import(new URL("js/results.js", location.href).href);
+    const { emptyLog, jobSummary } = await import(new URL("js/views/jobs.js", location.href).href);
+    const done = (kind, result = {}, links = {}) => madeLink({ kind, status: "done", result, links });
+    const rate = (successes, total) => ({ successes, total, point: successes / total, low: 0, high: 1 });
+    const sampled = { distribution: { total: 1, clusters: [{ letter: "A", rate: rate(1, 1) }] } };
+    const probeNull = found({ kind: "forking-tokens", result: { forking: { positions: [], per_arm: 8, detectable: 5, target: null } } });
+    const probeOpen = found({ kind: "forking-tokens", result: { forking: { positions: [], missed: { undecided: [12] }, target: null } } });
+    const unfinished = found({ kind: "screen-to-end", result: { screen: {
+      complete: false, reach: "end", target: null, survivors: [],
+      baseline: { target: rate(0, 3), timeouts: 1 }, arms: [{ name: "p1", target: rate(1, 3), errors: 1, timeouts: 2 }],
+    } } });
+    const stepLeft = found({ kind: "screen", result: { screen: {
+      complete: true, reach: "step", target: null, survivors: [],
+      baseline: { target: rate(1, 3) }, arms: [{ name: "p1", target: rate(2, 3), errors: 2 }],
+    } } });
+    // The test's own page says it too: a chip on the wording's row, the same words in its tooltip.
+    const tested = screenView({ complete: true, reach: "end", target: null, survivors: [], family: 1, alpha: 0.05,
+      baseline: { target: rate(0, 3), drawn: 3, planned: 3 }, arms: [{ name: "p1", target: rate(1, 3), drawn: 3, planned: 3, errors: 1 }] });
+    const leftChip = [...tested.querySelectorAll(".chip.tone-warn")].find((c) => c.textContent === "1 not counted");
+    const twoCounted = found({ kind: "resample", result: { distribution: { total: 2, errors: 1, clusters: [{ letter: "A", rate: rate(2, 2) }] } } });
+    // A job's page, drawn from a job alone: its panels' titles, its buttons, and its text.
+    const drawn = (job) => {
+      const parts = jobSummary({ id: "j1", status: "done", params: {}, result: {}, links: {}, ...job });
+      return {
+        made: parts.filter((part) => part.querySelector("h2")?.textContent === "What it made").length,
+        titles: parts.map((part) => part.querySelector("h2")?.textContent).filter(Boolean),
+        buttons: parts.flatMap((part) => [...part.querySelectorAll("a.btn")].map((a) => a.textContent)),
+        primary: parts.flatMap((part) => [...part.querySelectorAll("a.btn-primary")].map((a) => a.textContent)),
+        text: parts.map((part) => part.textContent).join(" | "),
+      };
+    };
+    const chain = drawn({ kind: "chain", result: { id: "ch1", links: [{}, {}], rate: rate(1, 2) }, links: { runs: ["r1", "r2"] } });
+    const stopped = drawn({ kind: "chain", status: "cancelled", result: { id: "ch1", links: [{}] }, links: { runs: ["r1"] } });
+    const validated = drawn({ kind: "validate", result: { refinement: "rf1", validation: "v1", forward: null, training: null, held_out: [] },
+      links: { experiments: ["e1"], runs: ["r1"] } });
+    const fork = drawn({ kind: "fork", links: { runs: ["r1"] } });
+    const batch = drawn({ kind: "batch", result: { task_id: "t/1", rate: rate(1, 3), not_counted: 2 }, links: { runs: Array.from({ length: 25 }, (_, i) => "run" + i) } });
+    return JSON.stringify({
+      proposedNothing: done("propose", { refinement: "r1", accepted: [] }),
+      proposed: done("propose", { refinement: "r1", accepted: [{}, {}] })?.text,
+      batch: done("batch", { task_id: "t/1" }, { runs: ["a", "b"] })?.text,
+      along: done("check-along", { task_id: "t/1" })?.href,
+      server: done("server-check")?.href,
+      test: done("screen", {}, { experiments: ["e1", "e2"] })?.text,
+      ab: done("ab", {}, { experiments: ["e1", "e2"] })?.href,
+      question: done("hold-console", { reply: {} }),
+      pages: ["#/runs/r/1?start=ab", "#/runs/r/scenario", "#/import/r/scenario", "#/connections", "#/batch", "#/divergence/t"].map((hash) => startedFrom(hash)),
+      words: ["batch", "divergence"].map((where) => startedBy({ started_by: { via: "web", page: where } }).text),
+      open: [["#/divergence/x%2F1", "#/divergence/x%2F10"], ["#/divergence/x%2F1", "#/divergence/x%2F1@abcd1234"],
+        ["#/runs/r/1?view=tokens", "#/runs/r/1?view=tokens&at=5"], ["#/connections", "#/connections"]].map(([href, hash]) => onPage(href, hash)),
+      probeNull: [probeNull.seen, probeNull.notes.length],
+      probeOpen: probeOpen.notes,
+      unfinished: unfinished.notes,
+      stepLeft: stepLeft.notes,
+      leftChip: leftChip?.title || null,
+      oneSample: found({ kind: "resample", result: sampled }).text,
+      twoCounted: [twoCounted.text, ...twoCounted.notes],
+      chain: [chain.made, chain.buttons],
+      stopped: stopped.buttons,
+      validated: [validated.titles, validated.primary, validated.buttons],
+      fork: [fork.buttons, fork.text.includes("1 run:")],
+      runs: [batch.text.includes("2 runs are not counted; each one's page says why."), batch.text.includes("and 5 more")],
+      logs: [
+        emptyLog({ kind: "resample", status: "done", seq: null, result: sampled, links: {} }),
+        emptyLog({ kind: "fork", status: "failed", seq: 4, error: { message: "it broke" }, links: {} }),
+        emptyLog({ kind: "fork", status: "cancelled", seq: null, links: {} }),
+        emptyLog({ kind: "batch", status: "running", seq: 0, links: {} }),
+      ],
+    });
+  })()`);
+  check(mapped === JSON.stringify({
+    proposedNothing: null, proposed: "2 proposals in refinement r1", batch: "t/1's runs", along: "#/divergence/t%2F1",
+    server: "#/connections", test: "test e1", ab: "#/experiments/e1", question: null,
+    pages: ["step", "make-scenario", "make-scenario", "connections", "batch", "divergence"],
+    words: ["you, from “Run a task”", "you, from “Where the runs diverge”"],
+    // The note when a job ends knows the page open: task x/1's runs are not x/10's.
+    open: [false, true, true, true],
+    // A probe that saw no flip says what it could have seen, as its own page does: no caution.
+    probeNull: ["With 8 continuations a token, only a token that changes about 5 of its 8 would show. A smaller shift can be real and go unseen.", 0],
+    // What a probe or a test leaves open, in its own page's words; what to do about it is said there.
+    probeOpen: ["Still undecided there. At [12], the run's own token led elsewhere more often than to its own behaviour, so a later token decided it."],
+    unfinished: [
+      "Not every wording drew what was planned. Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made.",
+      "1 fork of the original timed out, counted as a failure.",
+      "1 fork of p1 is not counted: something kept it from measuring the wording, or no check judged it.",
+      "2 forks of p1 timed out, counted as failures.",
+    ],
+    stepLeft: ["2 samples of p1 are not counted, because the call itself failed."],
+    leftChip: "1 fork of p1 is not counted: something kept it from measuring the wording, or no check judged it.",
+    oneSample: "One behaviour, in the one sample.",
+    twoCounted: ["One behaviour, in both samples counted.", "1 sample is not counted, because the call itself failed."],
+    // A chain's page leads to it once, stopped too; a validation leads with its own result, its
+    // experiment only to open; a fork's names its run once; a batch says what its rate leaves
+    // out, and every run it made can be reached.
+    chain: [1, ["See the chain, link by link"]],
+    stopped: ["See the chain, link by link"],
+    validated: [["What it found", "What it made", "What it was asked"], ["The approval checks, in the refinement"],
+      ["The approval checks, in the refinement", "Open the experiment"]],
+    fork: [["See the result"], false],
+    runs: [true, true],
+    // An ended job's empty log says why, and points to what the page shows above it.
+    logs: [
+      "Its log is not kept here: a proxy keeps only its latest jobs' logs, and only in memory. Its result is above.",
+      "It logged nothing along the way. What went wrong is above.",
+      "Its log is not kept here: a proxy keeps only its latest jobs' logs, and only in memory.",
+      "Nothing yet.",
+    ],
+  }), `what each kind of job made, what it found, why its log is empty and each page's name are worked out as the pages say them (${mapped})`);
+  await page.eval(`location.hash = "#/jobs/${resampleId}"`);
+  await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "See the result")`), "the job's page again");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/")`), "the experiment page");
   await until(() => page.eval(`!!document.querySelector(".groups .letter")`), "the distribution");
@@ -165,6 +307,10 @@ try {
   const variants = await api("/variants?skill=tally-report");
   check(variants.some((variant) => variant.name === variantName), "the variant was saved when the A/B started");
   await until(() => page.eval(`!!document.querySelector(".verdict-block.significant")`), "the verdict on the job page");
+  // The job's page says it in a line, with what it counts, and leaves the behaviours' table to the A/B's page.
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What you count"
+    && !document.querySelector(".table tr.is-target") && !document.querySelector(".diff-line")`),
+    "the A/B's job page says what it found and what it counts, and leaves the rest to the A/B's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/")`), "the A/B's page");
   const edit = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "The variant's edit")`;
@@ -271,6 +417,10 @@ try {
   const toEndId = await until(async () => jobIdIn(await page.eval("location.hash")), "the forks' job page");
   const toEnd = await finished(toEndId, 120000);
   check(toEnd.status === "done" && toEnd.result.counted === 2 && toEnd.result.passed === 0, "resampled to the end: 0/2 pass the check");
+  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "0 of 2 forks passed the task's check."`), "what the forks found, on their job's page");
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target-text")?.textContent === "the task's check passes"
+    && [...document.querySelectorAll(".panel")].find((p) => p.querySelector("h2")?.textContent === "What it found").querySelectorAll('a[href^="#/runs/"]').length === 2`),
+    "the forks' job page says how many passed the task's check, and links each fork: forks are in no list of runs");
 
   await openStepOf(page, launched, 1, "ab&reach=end");
   check(!(await page.eval(`!!document.querySelector(".target-picker legend")?.textContent.includes("What to count")`)), "to the end, the target is the task's check: no picker");
@@ -285,6 +435,9 @@ try {
   const abEnd = await finished(abEndId, 120000);
   check(abEnd.status === "done" && abEnd.result.original.passed === 0 && abEnd.result.variant.passed === 1,
     "an A/B to the end: the original fails the check, the variant passes");
+  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "")
+    === "No difference beyond chance: the variant's forks passed the check in 1 of 1, and the original's in 0 of 1."`), "what the A/B to the end found, on its job's page");
+  check(await page.eval(`!document.querySelector(".verdict-block.tone-ok, .verdict-block.tone-bad")`), "the same words as its own page, and no check's colour for a difference within chance");
   await page.eval(`location.hash = "#/experiments/${abEnd.links.experiments[0]}"`);
   await until(() => page.eval(`!!document.querySelector(".verdict-block .verdict-target-text")`), "the A/B to the end's page");
   check(await page.eval(`(() => {
@@ -336,6 +489,11 @@ try {
   check(cancelled.status === "cancelled", "the second click cancels it");
   const experiment = await api(`/experiments/${cancelled.links.experiments[0]}`);
   check(experiment.status === "cancelled" && experiment.partial.length === 1, "its experiment says it was cancelled, over the samples drawn");
+  await until(() => page.eval(`[...document.querySelectorAll(".banner-warn")].some((b) => b.textContent.startsWith("Cancelled."))`), "the cancelled job's page");
+  check(await page.eval(`(() => {
+    const title = [...document.querySelectorAll(".panel h2")].find((h2) => h2.textContent === "Progress");
+    return !!title && !title.closest("details") && document.querySelectorAll(".job-log .log-line").length > 0;
+  })()`), "a cancelled job keeps its log in sight");
 
   // --- 6. A scenario made in the page, a file uploaded into it, run as a batch --------------
   console.log("a scenario, made here and run");
@@ -435,6 +593,10 @@ try {
   await page.click("Sample it", `document.querySelector(".hold-tools .evidence")`);
   await until(() => page.eval(`(document.querySelector(".hold-tools .evidence")?.textContent || "").includes("The answer held here is behaviour A")`), "the samples, with the held answer placed", 60000);
   check(true, "sampling at a held call places the held answer among the sampled behaviours");
+  const sampledJob = (await api("/jobs")).find((job) => job.kind === "hold-sample");
+  const sampledNote = await until(() => page.eval(`[...document.querySelectorAll(".toast")]
+    .find((t) => t.textContent.startsWith("The job “Held call sampled” finished"))?.querySelector("a")?.getAttribute("href") || null`), "the note when the sampling ends");
+  check(sampledNote === `#/experiments/${sampledJob.links.experiments[0]}`, `the note when a job ends leads to what it made (${sampledNote})`);
   await page.type(`document.querySelector('.hold-tools .hypotheses [name="question"]')`, "Why did you choose those keys?");
   await until(() => page.eval(`[...document.querySelectorAll(".hold-tools .hypotheses button")].some((b) => b.textContent === "Ask" && !b.disabled)`), "Ask enabled");
   await page.click("Ask", `document.querySelector(".hold-tools .hypotheses")`);
@@ -455,6 +617,10 @@ try {
   const startedOn = (await api("/connections")).server.url;
   await page.click("Test the server");
   await until(() => page.eval(`[...document.querySelectorAll(".measured td .mono")].some((name) => name.textContent === "anthropic_messages")`), "the check's results", 60000);
+  const serverJob = (await api("/jobs")).find((job) => job.kind === "server-check");
+  const serverNote = await until(() => page.eval(`[...document.querySelectorAll(".toast")]
+    .find((t) => t.textContent.startsWith("The job “Server test” finished"))?.querySelector("a")?.getAttribute("href") || null`), "the note when the server test ends");
+  check(serverNote === `#/jobs/${serverJob.id}`, `what it found is the page already open: its note leads to the job (${serverNote})`);
   const checked = (await api("/connections")).server.checks.results;
   check(checked.streaming_tool_calls.support === "yes" && checked.anthropic_messages.support === "yes", "the server check measured both, and the page shows them");
   check(await page.eval(`(() => {
@@ -656,7 +822,11 @@ try {
   const forkJobId = await until(async () => jobIdIn(await page.eval("location.hash")), "the probe's job page");
   const forkJob = await finished(forkJobId, 120000);
   check(forkJob.status === "done" && forkJob.result.forking.flips === 1, "the probe found the token that decides the answer");
-  await until(() => page.eval(`[...document.querySelectorAll(".chip")].some((c) => c.textContent === "flips away")`), "the result, marked where it forks");
+  // Its job's page says so in a line, and hands off to the probe's own page for the rest.
+  await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 forced token changed what the model did"`), "what the probe found, on its job's page");
+  check(await page.eval(`!document.querySelector(".fork-position")`), "the probe's job page says what it found in a line, and leaves the positions to the probe's page");
+  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
+  await until(() => page.eval(`location.hash.startsWith("#/experiments/") && [...document.querySelectorAll(".chip")].some((c) => c.textContent === "flips away")`), "the result, marked where it forks");
   check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => c.textContent.startsWith("flips")).every((c) => c.classList.contains("tone-accent"))`),
     "a flip is the accent's colour, its direction in words: a result, not a check's red");
 
@@ -771,6 +941,13 @@ try {
   check(screenJob.status === "done" && screenJob.result.screen.complete && screenJob.result.screen.survivors.length === 1,
     "the screen: the wording that names the keys survives the correction, the other does not");
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal beat the original by more than chance would explain."`), "the verdict on the job's page");
+  // The job's page says it in a line, and hands off: the test's own page has the rest.
+  check(await page.eval(`!document.querySelector(".screen-table") && [...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "What it found")
+    && document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do"
+    && !document.querySelector(".verdict-block.tone-ok")`),
+    "the test's job page says what it found and what the model should do, in the accent, and leaves the table to the test's own page");
+  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
+  await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
   check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do"
     && [...document.querySelectorAll(".screen-table th")].some((th) => th.textContent === "did what it should")`),
     "a refinement's test at its step names what it counts as the refinement does: what the model should do");
@@ -784,8 +961,6 @@ try {
       [row.querySelector(".chip.tone-target, .chip.tone-not-target")?.textContent, row.children[1].textContent.includes("row_count")].join(":")).join(",");
   })()`);
   check(byArm.split(",").sort().join(",") === "matches:true,no match:false", `the screen's behaviours are badged as matching what is counted or not (${byArm})`);
-  await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
-  await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
   check(await page.eval(`[...document.querySelectorAll(".screen-table .chip")].map((c) => c.textContent).sort().join(",") === "beat the original,within chance"`), "the screen's page gives each proposal its verdict");
   check(await page.eval(`document.querySelector(".page-head").textContent.includes("refinement ${refinementId.slice(0, 8)}")`), "and names the refinement it belongs to");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Back to the refinement").click()`);
@@ -958,11 +1133,11 @@ try {
     started_by: { via: "mcp", client: "claude-code", version: "2.1.281" },
   });
   await finished(agentJob.id);
-  const chipIn = (scope) => page.eval(`[...document.querySelectorAll(${JSON.stringify(scope)})].some((c) => c.textContent === "from MCP · claude-code")`);
+  const saysAgent = (scope) => page.eval(`[...document.querySelectorAll(${JSON.stringify(scope)})].some((el) => el.textContent.includes("an agent over MCP · claude-code"))`);
   await page.eval(`location.hash = "#/jobs"`);
-  check(await until(() => chipIn(`tr[data-job="${agentJob.id}"] .chip`), "the chip on the Jobs list"), "the Jobs list names the agent that started a job");
+  check(await until(() => saysAgent(`tr[data-job="${agentJob.id}"] td`), "who started it, on the Jobs list"), "the Jobs list names the agent that started a job");
   await page.eval(`location.hash = "#/jobs/${agentJob.id}"`);
-  check(await until(() => chipIn(".page-head .chip"), "the chip on the job's page"), "so does the job's page");
+  check(await until(() => saysAgent(".page-head .sub"), "who started it, on the job's page"), "so does the job's page");
 
   // --- 14. A refinement to the trash, and back ------------------------------------------------
   console.log("a refinement goes to the trash from its page, and comes back");

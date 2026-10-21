@@ -140,8 +140,8 @@ shell command: it reads the reply (`reply_contains`, `reply_matches`), or it is 
 ## Jobs and limits
 
 Work that calls the model, or runs a harness, is a job inside `tuningfork serve`, sent through the
-proxy's gate like the person's own work, and shown on its Jobs page as "from MCP · *client*". A
-tool call returns the job's result if it ends within the call's wait, and otherwise its id, for
+proxy's gate like the person's own work, and shown on its Jobs page as started by "an agent over MCP ·
+*client*". A tool call returns the job's result if it ends within the call's wait, and otherwise its id, for
 `job_status`.
 
 | Limit | Default | Option of `tuningfork mcp` |

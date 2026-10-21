@@ -119,7 +119,7 @@ function hypotheses(hold, scope) {
   ], { className: "hypotheses" });
 }
 
-function replyCard(job) {
+export function replyCard(job) {
   const head = h("div", { class: "reply-head" }, chip("hypothesis", "warn"), h("span", { class: "muted small" }, job.params?.question || ""));
   if (job.status !== "done") return [head, h("div", { class: "error-box" }, job.error?.message || `the question ${job.status}`)];
   const reply = job.result.reply;

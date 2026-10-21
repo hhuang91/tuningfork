@@ -59,8 +59,8 @@ node tests/browser/jobs_ui.mjs
 ```
 
 It checks that a resample started from a step on the run's conversation runs through the
-proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter as its
-target, starts at one press of Start with the mouse, the name just typed still focused (the change
+proxy and links its result; that an A/B of a wording edited in the page, with a behaviour's letter
+as its target, starts at one press of Start with the mouse, the name just typed still focused (the change
 event as the focus leaves it once lost that click) — a form asking for its plan again when the page
 refreshes it, and not for an event that changes nothing — shows the known shift, saves the variant only
 when it starts, and leads its page with the
@@ -113,6 +113,18 @@ from its page — out of the Runs list, on the Trash page with what deleting it 
 restores it, and deletes it for good, the first click saying what goes; and two finished jobs
 ticked on the Jobs page go to the trash together. And a job started as an agent would over
 MCP — `started_by` naming its client — says so on the Jobs list and on its own page.
+
+The resample's job page, once done, says what it found in a line with its rate, leaves the whole
+to the experiment's page and folds its log, links the step it worked at, and says it was started
+from a step's page; the Jobs list names it "Measure · Resample", leads to its experiment and says
+who started it. The job pages of a probe, an A/B, a test at a step and forks run to the end each
+say what they found in a line, without the experiment's own views, and lead to them; a cancelled
+job keeps its log open. The note when a job ends leads to what it made — a held call's samples to
+their experiment — or to the job, where what it made is the page already open: a server test
+started on Connections. And what each kind of job made and found (a probe that saw no flip says
+what it could have seen, as its own page does), the cautions a probe or a test leaves open (a
+test's own page says what it left out of its count too), why an ended job's log is empty, the job pages of a chain, a fork, a batch and a validation, and each
+page's name are worked out as the list and the pages say them.
 
 Set `TUNINGFORK_UPLOAD` to a small CSV on the browser's machine to upload it through the
 page's own file picker; without it, the test types the file in as text instead.

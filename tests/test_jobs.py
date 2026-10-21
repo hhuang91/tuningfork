@@ -208,7 +208,14 @@ class TestAsking:
         assert record.started_by == asked and record.owner == runner.owner
         assert runner.list()[0]["started_by"] == asked
 
-    @pytest.mark.parametrize("asked", ["mcp", {"client": "x"}, {"via": 3}, {"via": "mcp", "client": "x" * 101}])
+    def test_the_web_ui_says_which_page_asked(self, runner, store):
+        asked = {"via": "web", "page": "step"}
+        job = runner.submit("count", {"steps": 1}, started_by=asked)
+        settled(runner, job["id"])
+        assert store.get_job(job["id"]).started_by == asked
+
+    @pytest.mark.parametrize("asked", ["mcp", {"client": "x"}, {"via": 3}, {"via": "mcp", "client": "x" * 101},
+                                       {"via": "web", "page": "x" * 101}])
     def test_who_asked_is_short_text_or_refused(self, runner, store, asked):
         with pytest.raises(OperationError) as refused:
             runner.submit("count", {"steps": 1}, started_by=asked)
