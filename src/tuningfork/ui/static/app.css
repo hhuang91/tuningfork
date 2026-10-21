@@ -3,13 +3,13 @@
 
    One meaning a colour (CLAUDE.md says the same, and the Guide in a line):
      --ok, --bad   green and red: a check's verdict — passed or failed, a gate met or not, an
-                   approval, a change in how often a task's check passes. Nowhere else, but for
-                   what every page means by them: a diff's added and removed lines, a button
-                   that deletes, a field to put right.
+                   approval, a change in how often a task's check passes. Never a rate, a pass
+                   rate included. Nowhere else, but for what every page means by them: a diff's
+                   added and removed lines, a button that deletes, a field to put right.
      --warn        amber: a caution — not counted, unfinished, paused, held, something missing
                    or gone wrong.
-     --accent      indigo: what can be acted on, what is current, a significant result, and
-                   the model's own answer.
+     --accent      indigo: what can be acted on, what is current, a significant result, every
+                   rate's bar (a variant's is teal), and the model's own answer.
      --skill       purple: a skill's own words.
      --change      teal, with a pencil: what a person or tuningfork changed — an edit at a
                    breakpoint, a variant swapped in. Chips, outlines and banners; never a step's
@@ -606,8 +606,6 @@ a.chip:hover { text-decoration: none; filter: brightness(0.97); }
 }
 .ci-band { position: absolute; top: -1px; bottom: -1px; border-radius: 4px; opacity: 0.35; background: var(--accent); }
 .ci-point { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; background: var(--accent); border-radius: 1px; }
-.ci-track.tone-ok .ci-band, .ci-track.tone-ok .ci-point { background: var(--ok); }
-.ci-track.tone-bad .ci-band, .ci-track.tone-bad .ci-point { background: var(--bad); }
 .ci-track.tone-change .ci-band, .ci-track.tone-change .ci-point { background: var(--change); }
 .ci-text { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 

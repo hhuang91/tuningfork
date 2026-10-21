@@ -431,9 +431,15 @@ try {
   const batchId = await until(async () => jobIdIn(await page.eval("location.hash")), "the batch's job page");
   const batch = await finished(batchId, 120000);
   check(batch.status === "done" && batch.result.rate.total === 2 && batch.result.rate.successes === 0, "the batch ran twice: 0/2, the known failure");
+  // A pass rate is a rate, never a verdict's green: the accent's, wherever it is drawn.
+  const madeBar = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What it made")?.querySelector(".ci-track")`;
+  await until(() => page.eval(`!!${madeBar}`), "the batch's pass rate on its page");
+  check(await page.eval(`${madeBar}.classList.contains("tone-accent")`), "a batch's pass rate on its page is the accent's");
   await page.eval(`location.hash = "#/runs"`);
   await until(() => page.eval(`[...document.querySelectorAll(".passes-when")].some((line) => line.textContent.includes("row_count"))`), "the task's check on the Runs page");
   check(true, "on the Runs page, the task says how its runs pass");
+  check(await page.eval(`(() => { const bars = [...document.querySelectorAll(".task-rate .ci-track")];
+    return bars.length > 0 && bars.every((bar) => bar.classList.contains("tone-accent")); })()`), "each task's pass rate on the Runs page is the accent's");
 
   await openStepOf(page, launched, 1, "fork");
   await planShows(page, "Stop at the step");
@@ -663,7 +669,8 @@ try {
   check(scenarioJob.status === "done" && scenarioJob.result.rate.total === 1, "the scenario ran as a batch");
   await page.eval(`location.hash = "#/scenarios"`);
   await until(() => page.eval(`[...document.querySelectorAll(".scenario-result")].some((row) => row.textContent.includes("tally-scenario/1"))`), "the scenario's result in the list");
-  check(true, "the list shows the scenario's pass rate");
+  check(await page.eval(`(() => { const bars = [...document.querySelectorAll(".scenario-result .ci-track")];
+    return bars.length > 0 && bars.every((bar) => bar.classList.contains("tone-accent")); })()`), "the list shows the scenario's pass rate, in the accent");
 
   // The check, tried before trusting it: on the run the batch just made, then on files written here.
   await page.eval(`location.hash = "#/scenarios/${scenarioName}"`);
@@ -1318,8 +1325,9 @@ try {
   check(await page.eval(`document.querySelector('input[name="skill_dir"]').value === ${JSON.stringify(skill.folders[0].path)}`), "its skill folder filled in");
   await page.eval(`location.hash = "#/skills/tally-report"`);
   await until(() => page.eval(`!!document.querySelector(".markdown .md-front")`), "back on the skill's page");
-  check(skill.versions.length >= 2 && await page.eval(`document.querySelectorAll(".condition-rate .ci").length >= 2`),
-    "each version with its pass rates, intervals drawn");
+  check(skill.versions.length >= 2 && await page.eval(`document.querySelectorAll(".condition-rate .ci").length >= 2
+    && [...document.querySelectorAll(".condition-rate .ci-track")].every((bar) => bar.classList.contains("tone-accent"))`),
+    "each version with its pass rates, intervals drawn, in the accent");
   check(skill.folders.some((folder) => folder.changelog && folder.history.length === 1), "the folder the approval wrote: its changelog and the old version beside it");
   check(await page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "Changelog")`), "and the page shows the changelog");
   const older = skill.versions[skill.versions.length - 1].fingerprint;

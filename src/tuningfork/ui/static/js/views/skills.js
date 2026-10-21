@@ -424,7 +424,7 @@ function versionsPanel(skill, show) {
           version.known_as.map((label) => h("div", null, chip(label, label.startsWith("its own file") ? "accent" : "skill")))),
         h("td", null, version.conditions.map((condition) => h("div", { class: "condition-rate" },
           h("span", { class: "muted small" }, [condition.task_id, condition.harness, condition.model].filter(Boolean).join(" · ")),
-          condition.passed ? rateBar(condition.passed, "ok") : h("span", { class: "faint small" }, " no verdicts"),
+          condition.passed ? rateBar(condition.passed) : h("span", { class: "faint small" }, " no verdicts"),
           condition.uncounted ? h("span", { class: "faint small" }, ` · ${condition.uncounted} not counted`) : null))),
         h("td", { class: "num" }, String(version.runs)),
         h("td", { class: "faint small", title: `${when(version.first)} – ${when(version.latest)}` }, ago(version.latest)),

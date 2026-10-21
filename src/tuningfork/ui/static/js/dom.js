@@ -236,7 +236,8 @@ export function rateText(rate) {
   return `${rate.successes}/${rate.total}  ${percent(rate.point)}  [${percent(rate.low)}–${percent(rate.high)}]`;
 }
 
-/** A rate as tuningfork always shows one: its count, with the interval drawn. */
+/** A rate as tuningfork always shows one: its count, with the interval drawn. In the accent, or
+ *  teal (`change`) for a variant's: never a verdict's green or red, a pass rate included. */
 export function rateBar(rate, tone = "accent") {
   const at = (x) => `${(x * 100).toFixed(2)}%`;
   return h(

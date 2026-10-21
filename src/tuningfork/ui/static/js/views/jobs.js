@@ -426,7 +426,7 @@ function madeView(job) {
       h("a", { class: own ? "btn" : "btn btn-primary", href: `#/experiments/${report}` }, job.status === "done" && !own ? "See the result" : "Open the experiment"),
       h("span", { class: "muted small" }, experiments.length > 1 ? `experiments ${experiments.map(short).join(", ")}` : `experiment ${short(report)}`)) : null,
     made ? madeRow(job, made) : null,
-    batch.rate ? h("div", null, h("span", { class: "muted" }, "passed  "), rateBar(batch.rate, "ok")) : null,
+    batch.rate ? h("div", null, h("span", { class: "muted" }, "passed  "), rateBar(batch.rate)) : null,
     left ? h("p", { class: "small warn-text" }, `${plural(left, "run")} ${left === 1 ? "is" : "are"} not counted; each one's page says why.`) : null,
     // A fork's one run is what it made: named once.
     made && runs.length === 1 && made.href === `#/runs/${enc(runs[0])}` ? null : runsLine(job),

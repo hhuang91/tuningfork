@@ -86,8 +86,8 @@ function groupView(group, kind) {
   return h("div", { class: "stack", style: { gap: "6px", marginBottom: "12px" } },
     h("div", null, h("strong", null, group.label), h("span", { class: "muted small" }, `  ${group.passed} passed, ${group.failed} failed`)),
     h("div", { class: "group-rates" },
-      split.passing ? h("span", null, h("span", { class: "what" }, `held ${when}, of the passing runs`), rateBar(split.passing, "ok")) : null,
-      split.failing ? h("span", null, h("span", { class: "what" }, `held ${when}, of the failing runs`), rateBar(split.failing, "bad")) : null),
+      split.passing ? h("span", null, h("span", { class: "what" }, `held ${when}, of the passing runs`), rateBar(split.passing)) : null,
+      split.failing ? h("span", null, h("span", { class: "what" }, `held ${when}, of the failing runs`), rateBar(split.failing)) : null),
     h("p", { class: "small" }, splitWords(split)),
     seen ? h("p", { class: "small" }, seen) : null,
     group.reference
