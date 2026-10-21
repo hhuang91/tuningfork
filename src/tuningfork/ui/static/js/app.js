@@ -332,10 +332,9 @@ function noteJobEnd(job) {
   // A check tried in the scenario editor is quick, and its verdict is shown where it began.
   if (job.kind === "check-trial") return;
   const [verb, tone] = ENDINGS[job.status] || [job.status, "accent"];
-  const label = {
-    resample: "A resample", ab: "An A/B", propose: "The proposing model", screen: "A test at a step",
-    "screen-to-end": "A test at a step, to the end", validate: "Full test runs",
-  }[job.kind] || `The job “${kindLabel(job)}”`;
+  // A kind without a short subject of its own is named by its label, quoted: the verbs are singular.
+  const label = { resample: "A resample", ab: "An A/B", propose: "The proposing model", screen: "A test at a step" }[job.kind]
+    || `The job “${kindLabel(job)}”`;
   toast(`${label} ${verb}`, { tone, href: `#/jobs/${job.id}`, action: "Show", timeout: job.status === "done" ? 8000 : 0 });
 }
 
