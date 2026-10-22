@@ -97,6 +97,15 @@ The first start downloads the model, about 19 GB; with the file already on disk,
 `curl -s http://127.0.0.1:8081/health` answers `{"status":"ok"}`. That is one slot of 131,072
 tokens, in about 24 GiB: Hermes Agent needs a context of at least 64,000.
 
+Qwen3.5 and Qwen3.6 take the same flags, with an 8-bit cache. Their 27B, dense like Gemma 4 31B,
+holds the same slot in about 21 GiB:
+
+```bash
+llama-server -hf unsloth/Qwen3.6-27B-GGUF:Q4_K_M --no-mmproj \
+  --alias qwen3.6-27b --host 127.0.0.1 --port 8081 \
+  -ngl 999 -c 131072 -np 1 -ctk q8_0 -ctv q8_0 --jinja --ctx-checkpoints 0 --no-cache-prompt
+```
+
 ### Numbers that repeat
 
 Keep these flags for any model. With them, a request gets the same numbers whatever the server
@@ -106,7 +115,7 @@ ran before it and whichever of its endpoints it goes to:
 |---|---|
 | `-np 1` | With two slots, a request computed beside another gets other numbers for the same prompt. One slot computes each request alone. |
 | `--no-cache-prompt` | llama-server answers a prompt from what it cached of an earlier one, and its Messages endpoint, which Claude Code uses, ignores a request asking it not to. A step's samples then share the first one's processing of the prompt, and so do forks whose prompts match — every fork, in the sandbox. |
-| `--ctx-checkpoints 0`, or `--swa-full` | For a model with sliding-window attention layers — Gemma 2, 3 and 4 among them — llama-server takes rollback checkpoints of their cache, which cut a prompt into batches at places that differ between the chat endpoint a harness talks to and the raw one tuningfork scores answers with. |
+| `--ctx-checkpoints 0`, or `--swa-full` | llama-server takes rollback checkpoints of a model's sliding-window attention layers (Gemma 2, 3 and 4 among others) and of layers that keep a running state (Qwen3.5 and 3.6). They cut a prompt into batches at places that differ between the chat endpoint a harness talks to and the raw one tuningfork scores answers with. `--swa-full` avoids them for sliding-window layers only. |
 
 What we measured without them:
 
@@ -119,6 +128,10 @@ What we measured without them:
 - **The endpoint.** With checkpoints taken, the same answer's deciding token had a chance of
   0.15 on the chat endpoint and 0.70 on the raw one. With `--ctx-checkpoints 0`, the two agree
   token for token.
+- **The endpoint, on Qwen3.5 27B.** With checkpoints taken, the raw endpoint's greedy answer to
+  a 20,000-token prompt parted from the chat endpoint's at its 45th token, and scored chances
+  differed from the chat endpoint's by up to 0.03. With `--ctx-checkpoints 0`, the greedy answers
+  agree token for token, and scoring gives the chat endpoint's chances exactly.
 
 What they cost: `--no-cache-prompt` makes every step process its whole prompt — about 1.5 s per
 14,000 tokens of Gemma 4 26B-A4B on one RTX 5090, about 4 s of Gemma 4 31B — so runs take
@@ -139,8 +152,8 @@ LM Studio, and any server that speaks OpenAI chat completions or Anthropic Messa
 recorded through and sampled at a step. `tuningfork connections check` measures what a server
 supports, and `tuningfork probe <url>` writes a full profile of it. Work at the level of tokens
 — scoring an answer, forking tokens — needs llama.cpp's own endpoints and a model whose raw
-output tuningfork reads: Gemma 4 today; keeping each sample's tokens in a resample needs the
-chat endpoint's logprobs. Features degrade on what was measured, not on a guess about which
+output tuningfork reads: Gemma 4, Qwen3.5 or Qwen3.6; keeping each sample's tokens in a resample
+needs the chat endpoint's logprobs. Features degrade on what was measured, not on a guess about which
 server is running: token work the check found a server without is greyed in the web UI, saying
 what was missing, and refused if started. A server without llama.cpp's `/props` has scoring and
 forking tokens greyed before any check: the proxy asks for it every half minute.

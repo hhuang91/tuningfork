@@ -119,6 +119,7 @@ def _written(value: Any) -> str:
 
 class Gemma4:
     name = "gemma4"
+    models = ("Gemma 4",)
     call_name_prefix = CALL_PREFIX[len(CALL):]
 
     def detect(self, template: str) -> bool:
@@ -128,10 +129,20 @@ class Gemma4:
     def thinking(self, prompt: str) -> bool:
         return "<|think|>" in prompt
 
-    def parse(self, text: str, *, tools: bool, parallel: bool = True) -> dict[str, Any]:
+    def parse(
+        self,
+        text: str,
+        *,
+        tools: bool,
+        parallel: bool = True,
+        thinking: bool | None = None,
+        offered: Sequence[dict[str, Any]] = (),
+    ) -> dict[str, Any]:
         """Mirrors the server's PEG parser: messages (a thought, then content) up to the first
         call, then the calls. Text between the last content and the first call that the
-        grammar skips is skipped here too; without tools, a call is content."""
+        grammar skips is skipped here too; without tools, a call is content. The model opens
+        its own thought channel and writes every argument's type, so neither `thinking` nor
+        the offered tools change what is read."""
         i = len(MODEL_TURN) if text.startswith(MODEL_TURN) else 0
         reasoning, content = "", ""
         stops = (CHANNEL, CHANNEL_END, CALL) if tools else (CHANNEL, CHANNEL_END)
@@ -185,7 +196,7 @@ class Gemma4:
             message["tool_calls"] = calls
         return message
 
-    def parts(self, pieces: Sequence[str]) -> list[tuple[str, int, int]]:
+    def parts(self, pieces: Sequence[str], *, thinking: bool | None = None) -> list[tuple[str, int, int]]:
         runs: list[tuple[str, int, int]] = []
 
         def mark(kind: str, position: int) -> None:
@@ -220,7 +231,7 @@ class Gemma4:
                 mark(state, position)
         return runs
 
-    def render(self, message: dict[str, Any], *, thinking: bool) -> str:
+    def render(self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()) -> str:
         text = ""
         reasoning = message.get("reasoning_content") or ""
         if reasoning or thinking:

@@ -11,8 +11,11 @@ import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
+from tuningfork.analysis.tokens import from_entries
 from tuningfork.backends.formats import get_format
 from tuningfork.backends.llamacpp.anthropic import to_chat
+from tuningfork.backends.llamacpp.raw import aligned
+from tuningfork.backends.raw import RawError
 from tuningfork.cli import app
 from tuningfork.config import EXPERIMENT_HEADER
 from tuningfork.endpoints import ProtectedEndpoint
@@ -171,6 +174,33 @@ class TestScoring:
         assert kind.parse({"run": "r", "step": "0"}).top_k == 8
         with pytest.raises(OperationError):
             kind.parse({"run": "r", "step": "0", "top_k": 21})
+
+
+def test_a_character_the_server_merged_is_its_tokens_again():
+    # llama.cpp b11108: Qwen3.5 writes " ≡" as tokens 20456 and 94, and reports them as one
+    # entry, the second's, holding both tokens' bytes
+    def entry(token, text, raw, logprob):
+        return {"id": token, "token": text, "bytes": raw, "logprob": logprob,
+                "top_logprobs": [{"id": token, "token": text, "bytes": raw, "logprob": logprob}]}
+
+    # the alternatives keep their own bytes, as the server reports them
+    merged = {**entry(94, " ≡", [32, 226, 137, 161], -0.2),
+              "top_logprobs": [{"id": 94, "token": "�", "bytes": [161], "logprob": -0.2}]}
+    entries = [entry(1, "a", [97], -0.1), merged, entry(2, "", [], -0.01)]
+    out = aligned(entries, [1, 20456, 94, 2])
+    assert [e["id"] for e in out] == [1, 20456, 94, 2]
+    assert out[1]["logprob"] is None and out[1]["top_logprobs"] == []  # nothing known of it
+    assert out[2]["bytes"] == [] and out[2]["logprob"] == -0.2  # its chance is its own; the bytes are not
+    stream = from_entries(out)
+    assert stream.pieces[94] == [161]  # its own piece, from its alternatives
+    assert stream.pieces[20456] == ""  # read again from the tokenizer, where scoring has it
+    stream.pieces[20456] = [32, 226, 137]
+    assert stream.text() == "a ≡"
+    # an entry for every token already is left as it is
+    assert aligned(entries[:1], [1]) == entries[:1]
+    # entries that follow no token are refused, never laid over the wrong ones
+    with pytest.raises(RawError, match="do not follow its tokens"):
+        aligned(entries, [1, 20456, 95, 2])
 
 
 def test_the_command_scores_then_shows(store, served, monkeypatch):

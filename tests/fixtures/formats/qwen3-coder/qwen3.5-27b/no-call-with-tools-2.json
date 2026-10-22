@@ -1,0 +1,94 @@
+{
+ "case": "no-call-with-tools",
+ "seed": 2,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": true,
+ "prompt_end": ". Do not call any tool.<|im_end|>\n<|im_start|>assistant\n<think>\n",
+ "finish_reason": "stop",
+ "completion_tokens": 57,
+ "pieces": [
+  "The",
+  " user",
+  " is",
+  " asking",
+  " me",
+  " to",
+  " just",
+  " say",
+  " hi",
+  " and",
+  " not",
+  " call",
+  " any",
+  " tool",
+  ".",
+  " This",
+  " is",
+  " a",
+  " simple",
+  " request",
+  " that",
+  " doesn",
+  "'t",
+  " require",
+  " any",
+  " function",
+  " calls",
+  ".",
+  " I",
+  " should",
+  " just",
+  " respond",
+  " with",
+  " a",
+  " friendly",
+  " greeting",
+  " without",
+  " using",
+  " any",
+  " of",
+  " the",
+  " available",
+  " tools",
+  ".",
+  "\n",
+  "</think>",
+  "\n\n",
+  "Hi",
+  " there",
+  "!",
+  " How",
+  " are",
+  " you",
+  " doing",
+  " today",
+  "?",
+  ""
+ ],
+ "message": {
+  "content": "Hi there! How are you doing today?",
+  "reasoning_content": "The user is asking me to just say hi and not call any tool. This is a simple request that doesn't require any function calls. I should just respond with a friendly greeting without using any of the available tools.\n",
+  "tool_calls": []
+ }
+}

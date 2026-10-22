@@ -12,7 +12,11 @@ into batches at places that differ between the chat endpoint and the raw one, so
 answer scores differently on each; with either, the two agree token for token. `--swa-full`
 costs memory (the 31B at 64k does not fit a 32 GB card with it); checkpoints off costs none,
 and a checkpoint is only ever used to roll back a cached prefix, which `--no-cache-prompt`
-never keeps. Start it with `--no-cache-prompt` too: otherwise a Claude Code step's
+never keeps. Qwen3.5 and 3.6, whose linear-attention layers keep a running state, need
+`--ctx-checkpoints 0` as much (`--swa-full` does nothing for them): with checkpoints, the raw
+endpoint's greedy answer to a 20,000-token prompt parted from the chat endpoint's at its 45th
+token; without, scoring gives the chat endpoint's numbers exactly. Start it with
+`--no-cache-prompt` too: otherwise a Claude Code step's
 samples share the first one's cached processing (its Messages endpoint ignores
 `cache_prompt`), and so do forks with matching prompts — every fork, in the sandbox. The
 server check measures it (`fresh_prompts`).
@@ -289,10 +293,16 @@ by `--repair`, unless the file changed since. Deleting for good what a refinemen
 so first (`refine.citations`); an approval keeps its evidence.
 
 Token-level work needs llama.cpp's own endpoints (`/apply-template`, `/tokenize`,
-`/completion`) and a model whose raw output tuningfork reads (`backends/formats/`: Gemma 4).
-Scoring rebuilds a recorded answer as the model's tokens and forces it after the step's
-exact prompt in one request (a grammar of token ids); the prompt must have the step's
-recorded token count, or it is refused. The forking-token probe forces tokens from a stored
+`/completion`) and a model whose raw output tuningfork reads (`backends/formats/`: Gemma 4;
+Qwen3.5 and 3.6, read as llama.cpp's Qwen3-Coder parser reads them — each argument typed by the
+tool's schema, `offered`, and the reasoning opened by the prompt, `thinking`, which a format
+reads from the answer where no prompt is at hand). Scoring rebuilds a recorded answer as the
+model's tokens and forces it after the step's exact prompt in one request (a grammar of token
+ids); the prompt must have the step's recorded token count, or it is refused. llama.cpp can give
+a character the model wrote in two tokens one entry, the last token's (Qwen3.5's ` ≡`; Gemma 4's
+byte tokens kept their own): the raw path gives each token its own again by the ids `/completion`
+returns, the ones merged away unknown (`backends.llamacpp.raw.aligned`), where a check of the
+entries' ids had failed every answer holding one. The forking-token probe forces tokens from a stored
 stream, and tests each alternative against its position's baseline, Holm-corrected over the
 family planned before sampling; each behaviour it reached says whether the target counts it and
 which tokens led to it (`ForkingReport.led_by`): a token can change what the model does and miss
@@ -586,7 +596,7 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     src/tuningfork/backends/   server capability profiles + runtime probe; raw.py, the raw path
                                (render, score, complete from token ids) and llamacpp/, its
                                llama.cpp implementation and the server's Messages conversion,
-                               mirrored; formats/, model output formats (Gemma 4)
+                               mirrored; formats/, model output formats (Gemma 4; Qwen3.5 and 3.6)
     src/tuningfork/harness/    harness adapters (hermes, claude-code, generic)
     src/tuningfork/store/      content-addressed blobs + SQLite message tree; token streams
     src/tuningfork/analysis/   normalizers, Wilson/Fisher/Holm, distributions, divergence;
@@ -599,7 +609,8 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     src/tuningfork/runner.py   batch runs and forks (fresh workspace + home per launch)
     src/tuningfork/specs.py    task specs (evals.json convention)
     tests/mock_server/        scriptable mock: OpenAI chat-completions and Anthropic Messages;
-                               toy.py, a toy llama.cpp (tokenizer, template, a model with forks)
+                               toy.py, a toy llama.cpp (tokenizer, template, a model with forks;
+                               QwenToy, the same writing Qwen3.5's format)
     tests/fixtures/formats/   raw output beside the server's parse of it; capture.py remakes them
     tests/fake_agent.py       a real agent process for end-to-end tests of batches and forks
     tests/browser/            opt-in browser tests (Edge/Chromium over DevTools) and demo servers

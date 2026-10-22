@@ -23,7 +23,7 @@ import httpx
 
 from tuningfork.analysis.normalize import outcome_for, recorded_outcome
 from tuningfork.analysis.tokens import from_entries, redact_stream
-from tuningfork.backends.formats import FormatError, format_for
+from tuningfork.backends.formats import FormatError, format_for, known_models
 from tuningfork.store.db import Store
 
 
@@ -86,8 +86,8 @@ async def score_answer(
     fmt = format_for(await raw.chat_template())
     if fmt is None:
         raise ScoringError(
-            "the server's chat template is not one tuningfork can read raw output of; it knows "
-            "Gemma 4's (backends/formats)"
+            "the server's chat template is not one tuningfork can read raw output of; it reads the "
+            f"output of {known_models()} (backends/formats)"
         )
     prompt = await raw.render(checkpoint.request, checkpoint.wire.name)
     recorded_prompt = (step.usage or {}).get("prompt_tokens")
@@ -97,8 +97,9 @@ async def score_answer(
             f"{recorded_prompt}: the model would be asked about a different context. The server's "
             "chat template or settings may have changed since the step was recorded."
         )
+    thinking = fmt.thinking(prompt.text)
     try:
-        text = fmt.render(message, thinking=fmt.thinking(prompt.text))
+        text = fmt.render(message, thinking=thinking, offered=prompt.offered)
     except FormatError as error:
         raise ScoringError(f"the recorded answer cannot be written back as raw text: {error}") from None
     pieces = await raw.pieces(text)
@@ -109,14 +110,14 @@ async def score_answer(
     for token, piece in pieces:
         if not stream.pieces.get(token):
             stream.pieces[token] = piece  # the per-token method may not have seen it among the top k
-    stream.mark_parts(fmt)
+    stream.mark_parts(fmt, thinking=thinking)
 
     recorded_answer = (step.usage or {}).get("completion_tokens")
     ended = finish in ("stop", "tool_calls")
     rebuilt = len(answer) + (1 if ended else 0)
     exact = None if recorded_answer is None else rebuilt == recorded_answer
     try:
-        parsed = fmt.parse(text, tools=prompt.tools, parallel=prompt.parallel)
+        parsed = fmt.parse(text, tools=prompt.tools, parallel=prompt.parallel, thinking=thinking, offered=prompt.offered)
         agrees = (
             outcome_for({"choices": [{"message": parsed, "finish_reason": finish}]}).key
             == outcome_for(store.response(step)).key
@@ -129,7 +130,7 @@ async def score_answer(
         "recorded_prompt_tokens": recorded_prompt,
         "answer_tokens": rebuilt,
         "recorded_answer_tokens": recorded_answer,
-        "thinking": fmt.thinking(prompt.text),
+        "thinking": thinking,
         "parse_agrees": agrees,
     }
     return store.add_token_stream(

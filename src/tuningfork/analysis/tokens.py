@@ -125,6 +125,9 @@ class TokenStream:
     redacted: list[tuple[int, int]] = field(default_factory=list)
     #: The output format that marked the parts (`tuningfork.backends.formats`), if one did.
     format: str | None = None
+    #: Whether the prompt turned the model's reasoning on, where it was known when the parts
+    #: were marked: a template that opens the reasoning itself starts the answer inside it.
+    thinking: bool | None = None
 
     def __len__(self) -> int:
         return len(self.ids)
@@ -143,11 +146,14 @@ class TokenStream:
         """A token's piece as text, by its id."""
         return _piece_bytes(self.piece(token_id)).decode("utf-8", "replace")
 
-    def mark_parts(self, fmt: Any) -> TokenStream:
-        """Mark what each position is, by an output format (`tuningfork.backends.formats`)."""
+    def mark_parts(self, fmt: Any, *, thinking: bool | None = None) -> TokenStream:
+        """Mark what each position is, by an output format (`tuningfork.backends.formats`).
+        `thinking`: whether the prompt turned reasoning on, when it is known."""
         if fmt is not None:
-            self.parts = fmt.parts([self.token_text(position) for position in range(len(self))])
+            pieces = [self.token_text(position) for position in range(len(self))]
+            self.parts = fmt.parts(pieces, thinking=thinking)
             self.format = fmt.name
+            self.thinking = thinking
         return self
 
     def text(self, start: int = 0, end: int | None = None) -> str:
@@ -185,7 +191,7 @@ class TokenStream:
         return self.ids[position] is None
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        data = {
             "v": VERSION,
             "k": self.top_k,
             "format": self.format,
@@ -197,6 +203,9 @@ class TokenStream:
             "parts": [list(part) for part in self.parts],
             "redacted": [list(span) for span in self.redacted],
         }
+        if self.thinking is not None:
+            data["thinking"] = self.thinking
+        return data
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> TokenStream:
@@ -210,6 +219,7 @@ class TokenStream:
             parts=[(kind, int(start), int(end)) for kind, start, end in data.get("parts") or []],
             redacted=[(int(start), int(end)) for start, end in data.get("redacted") or []],
             format=data.get("format"),
+            thinking=data.get("thinking"),
         )
 
 
@@ -224,9 +234,12 @@ def from_entries(entries: Sequence[dict[str, Any]], *, top_k: int | None = None)
         token_id = entry.get("id")
         if token_id is None:
             return None
-        if token_id not in pieces:
-            raw = entry.get("bytes")
-            pieces[token_id] = _as_piece(bytes(raw)) if isinstance(raw, list) else (entry.get("token") or "")
+        raw = entry.get("bytes")
+        piece = _as_piece(bytes(raw)) if isinstance(raw, list) else (entry.get("token") or "")
+        # An entry the server merged keeps no piece (`backends.llamacpp.raw.aligned`): the
+        # token's own, where another entry shows it, wins.
+        if token_id not in pieces or (piece and not pieces[token_id]):
+            pieces[token_id] = piece
         return token_id
 
     ids, logprobs, top_ids, top_logprobs = [], [], [], []
@@ -594,4 +607,5 @@ def redact_stream(stream: TokenStream, patterns: tuple[str, ...] = DEFAULT_REDAC
         parts=list(stream.parts),
         redacted=sorted(set(stream.redacted) | set(ranges)),
         format=stream.format,
+        thinking=stream.thinking,
     )

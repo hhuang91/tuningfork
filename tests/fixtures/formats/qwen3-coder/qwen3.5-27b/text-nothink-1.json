@@ -1,0 +1,20 @@
+{
+ "case": "text-nothink",
+ "seed": 1,
+ "tools": false,
+ "offered": [],
+ "parallel": true,
+ "thinking": false,
+ "prompt_end": "h, one word.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+ "finish_reason": "stop",
+ "completion_tokens": 2,
+ "pieces": [
+  "Bonjour",
+  ""
+ ],
+ "message": {
+  "content": "Bonjour",
+  "reasoning_content": "",
+  "tool_calls": []
+ }
+}

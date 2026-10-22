@@ -39,6 +39,54 @@ _ANSWER_ONLY = ("stream", "stream_options", "logprobs", "top_logprobs", "n", "se
 Send = Callable[[str, dict[str, Any]], Awaitable[httpx.Response]]
 
 
+def chat_body(request: dict[str, Any], wire: str) -> dict[str, Any]:
+    """The recorded request as the chat body the server renders its prompt from."""
+    if wire == "anthropic-messages":
+        from tuningfork.backends.llamacpp.anthropic import to_chat
+
+        body = to_chat(request)
+    else:
+        body = dict(request)
+    for key in _ANSWER_ONLY:
+        body.pop(key, None)
+    return body
+
+
+def offered_tools(request: dict[str, Any], wire: str) -> list[dict[str, Any]]:
+    """The tools a recorded request offered, as the chat-completions definitions the server
+    read its answer with; none where it offered none, or said not to call one."""
+    body = chat_body(request, wire)
+    if body.get("tool_choice") == "none":
+        return []
+    return [tool for tool in body.get("tools") or [] if isinstance(tool, dict)]
+
+
+def aligned(entries: list[dict[str, Any]], ids: list[int]) -> list[dict[str, Any]]:
+    """Per-token entries, one a token again. llama.cpp can give a character the model wrote in
+    two tokens or more one entry: the last token's, holding the whole character's bytes (b11108:
+    Qwen3.5 writes ` ≡` as two tokens; Gemma 4's byte tokens kept an entry each). Each token it
+    merged away gets an entry of its own, nothing known of it, and the merged entry loses the
+    bytes, which are not its token's alone — its piece is read again from the tokenizer, where
+    its caller has one. Entries that do not follow the tokens are refused, never laid over the
+    wrong ones."""
+    out: list[dict[str, Any]] = []
+    k, skipped = 0, False
+    for token in ids:
+        if k < len(entries) and entries[k].get("id") == token:
+            entry = entries[k]
+            k += 1
+            if skipped:
+                entry = {**entry, "token": "", "bytes": []}
+            out.append(entry)
+            skipped = False
+        else:
+            out.append({"id": token, "token": "", "bytes": [], "logprob": None, "top_logprobs": []})
+            skipped = True
+    if k < len(entries):
+        raise RawError(f"the server's probability entries do not follow its tokens, from entry {k}")
+    return out
+
+
 def _detail(response: httpx.Response) -> str:
     try:
         body = response.json()
@@ -104,20 +152,8 @@ class LlamaRaw:
         template = (await self.props()).get("chat_template")
         return template if isinstance(template, str) else None
 
-    def chat_body(self, request: dict[str, Any], wire: str) -> dict[str, Any]:
-        """The recorded request as the chat body the server renders its prompt from."""
-        if wire == "anthropic-messages":
-            from tuningfork.backends.llamacpp.anthropic import to_chat
-
-            body = to_chat(request)
-        else:
-            body = dict(request)
-        for key in _ANSWER_ONLY:
-            body.pop(key, None)
-        return body
-
     async def render(self, request: dict[str, Any], wire: str) -> Prompt:
-        body = self.chat_body(request, wire)
+        body = chat_body(request, wire)
         rendered = (await self._post("/apply-template", body)).get("prompt")
         if not isinstance(rendered, str):
             raise RawError("/apply-template answered without a prompt")
@@ -132,6 +168,7 @@ class LlamaRaw:
             parallel=bool(body.get("parallel_tool_calls", caps.get("supports_parallel_tool_calls", True))),
             sampling={key: body[key] for key in SAMPLING_FIELDS if body.get(key) is not None},
             stop=[stop] if isinstance(stop, str) else list(stop or []),
+            offered=offered_tools(request, wire),
         )
 
     async def _tokenize(self, text: str, *, bos: bool, pieces: bool = False) -> list[Any]:
@@ -169,6 +206,9 @@ class LlamaRaw:
                 raise
             return await self._score_per_token(prompt, answer, top_k)
         entries = data.get("completion_probabilities") or []
+        tokens = data.get("tokens")
+        if isinstance(tokens, list) and tokens:
+            entries = aligned(entries, tokens)
         if [entry.get("id") for entry in entries[: len(answer)]] != answer:
             raise RawError("the server did not keep to the forced answer")
         self.method = "grammar"
@@ -216,10 +256,17 @@ class LlamaRaw:
         if prompt.stop:
             body["stop"] = prompt.stop
         data = await self._post("/completion", body, model_call=True)
+        ids = list(data.get("tokens") or [])
+        entries = list(data.get("completion_probabilities") or [])
+        if ids and entries:
+            try:
+                entries = aligned(entries, ids)
+            except RawError:
+                pass  # kept for the continuation's stream only, which shows them as they came
         return Generation(
-            ids=list(data.get("tokens") or []),
+            ids=ids,
             text=data.get("content") or "",
             stop=data.get("stop_type") or "none",
-            entries=list(data.get("completion_probabilities") or []),
+            entries=entries,
             timings=data.get("timings") or {},
         )

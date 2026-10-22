@@ -5,10 +5,18 @@ Not a test. Run it against a llama.cpp server to (re)make the fixtures `tests/te
 checks a format against:
 
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py gemma4
+    TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py qwen3-coder/qwen3.6-27b
+
+The second form keeps a format's fixtures a folder for each model that writes it.
 
 Each case asks for an answer with logprobs, which cover every generated token — reasoning,
 channel markers and tool-call syntax included — so the joined tokens are the raw text. The
 server's parsed message comes in the same response. Protected endpoints are refused.
+
+A fixture keeps the tools the case offered, which a format that types each argument by its
+schema reads with, and the end of the rendered prompt, where a template that opens the
+reasoning itself does so. Whether the prompt turned reasoning on is the format's reading of
+the prompt, so a format is captured again once tuningfork knows it.
 """
 
 from __future__ import annotations
@@ -58,6 +66,10 @@ CASES = {
     "text-then-call": {"messages": [{"role": "user", "content": "First tell me in one sentence what you will do, then check the weather in Oslo."}],
                        "tools": [WEATHER]},
     "no-call-with-tools": {"messages": [{"role": "user", "content": "Just say hi. Do not call any tool."}], "tools": [WEATHER]},
+    "multiline": {"messages": [{"role": "user", "content": "Write the file notes.txt with three lines: alpha, beta and gamma, one a line."}],
+                  "tools": [WRITE]},
+    "call-nothink": {"messages": [{"role": "user", "content": "What's the weather in Lima right now?"}], "tools": [WEATHER],
+                     "chat_template_kwargs": {"enable_thinking": False}},
 }
 
 
@@ -67,15 +79,19 @@ def piece(entry: dict) -> str:
 
 
 async def capture(fmt: str, seeds: tuple[int, ...] = (1, 2)) -> None:
+    from tuningfork.backends.formats import format_for
+
     home = Path(os.environ.get("TUNINGFORK_HOME") or Path.home() / ".tuningfork")
     check_endpoint(ROOT, home=home, purpose="fixture capture")
     out = HERE / fmt
-    out.mkdir(exist_ok=True)
-    async with httpx.AsyncClient(timeout=600, event_hooks=guard_hooks(home=home)) as http:
+    out.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(timeout=1800, event_hooks=guard_hooks(home=home)) as http:
+        known = format_for((await http.get(f"{ROOT}/props")).json().get("chat_template"))
+        print(f"the server's format: {known.name if known else 'none tuningfork knows yet'}")
         for name, case in CASES.items():
             prompt = (await http.post(f"{ROOT}/apply-template", json=case)).json()["prompt"]
             for seed in seeds:
-                body = {**case, "max_tokens": 2048, "logprobs": True, "top_logprobs": 1, "seed": seed}
+                body = {**case, "max_tokens": 8192, "logprobs": True, "top_logprobs": 1, "seed": seed}
                 response = await http.post(f"{ROOT}/v1/chat/completions", json=body)
                 response.raise_for_status()
                 data = response.json()
@@ -86,8 +102,10 @@ async def capture(fmt: str, seeds: tuple[int, ...] = (1, 2)) -> None:
                     "case": name,
                     "seed": seed,
                     "tools": bool(case.get("tools")),
+                    "offered": case.get("tools") or [],
                     "parallel": bool(case.get("parallel_tool_calls", True)),
-                    "thinking": "<|think|>" in prompt,
+                    "thinking": known.thinking(prompt) if known else None,
+                    "prompt_end": prompt[-64:],
                     "finish_reason": choice.get("finish_reason"),
                     "completion_tokens": data["usage"]["completion_tokens"],
                     "pieces": [piece(entry) for entry in entries],

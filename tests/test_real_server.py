@@ -6,7 +6,8 @@ refused before anything is sent:
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run pytest -m real_server tests/test_real_server.py
 
 Each test is one thing the design relies on. The model must be one
-whose output format tuningfork reads (`tuningfork.backends.formats`): Gemma 4 today.
+whose output format tuningfork reads (`tuningfork.backends.formats`): Gemma 4, Qwen3.5 or
+Qwen3.6.
 """
 
 from __future__ import annotations
@@ -55,13 +56,25 @@ def joined(entries: list[dict]) -> str:
     return b"".join(bytes(e.get("bytes") or []) for e in entries).decode("utf-8", "replace")
 
 
+async def server_format(http):
+    from tuningfork.backends.formats import format_for
+
+    fmt = format_for((await http.get(ROOT + "/props")).json().get("chat_template"))
+    assert fmt is not None, "the model's output format is not one tuningfork reads"
+    return fmt
+
+
 async def test_chat_logprobs_cover_every_generated_token(http):
     """G1: reasoning, channel markers and tool-call syntax each carry an entry, with its id."""
+    fmt = await server_format(http)
     answer = await post(http, "/v1/chat/completions", {**BODY, "logprobs": True, "top_logprobs": 5})
     entries = answer["choices"][0]["logprobs"]["content"]
     assert len(entries) == answer["usage"]["completion_tokens"]
     assert all("id" in entry and "bytes" in entry for entry in entries)
-    assert "<|tool_call>" in joined(entries) or answer["choices"][0]["message"].get("content")
+    prompt = (await post(http, "/apply-template", BODY))["prompt"]
+    parsed = fmt.parse(joined(entries), tools=True, thinking=fmt.thinking(prompt), offered=BODY["tools"])
+    # the call's markers had entries: read back from them, the answer calls a tool as the server read it
+    assert bool(parsed.get("tool_calls")) == bool(answer["choices"][0]["message"].get("tool_calls"))
 
 
 async def test_the_raw_path_renders_the_chat_prompt_and_repeats_greedy_chat(http):
@@ -104,21 +117,45 @@ async def test_a_messages_request_renders_as_the_server_renders_it(http):
 async def test_the_output_format_reads_and_writes_as_the_server_does(http):
     """G4: raw output parsed as the server parsed it, and a parsed answer written back as the
     raw text the model generated."""
-    from tuningfork.backends.formats import format_for
-
-    template = (await http.get(ROOT + "/props")).json().get("chat_template")
-    fmt = format_for(template)
-    assert fmt is not None, "the model's output format is not one tuningfork reads"
+    fmt = await server_format(http)
     answer = await post(http, "/v1/chat/completions", {**BODY, "logprobs": True, "top_logprobs": 1, "seed": 7})
     raw = joined(answer["choices"][0]["logprobs"]["content"])
     message = answer["choices"][0]["message"]
-    parsed = fmt.parse(raw, tools=True)
+    prompt = (await post(http, "/apply-template", BODY))["prompt"]
+    thinking = fmt.thinking(prompt)
+    parsed = fmt.parse(raw, tools=True, thinking=thinking, offered=BODY["tools"])
     assert (parsed.get("content") or "") == (message.get("content") or "")
     assert (parsed.get("reasoning_content") or "") == (message.get("reasoning_content") or "")
     assert [c["function"]["arguments"] for c in parsed.get("tool_calls") or []] == [
         c["function"]["arguments"] for c in message.get("tool_calls") or []]
-    prompt = (await post(http, "/apply-template", BODY))["prompt"]
-    assert raw.startswith(fmt.render(message, thinking=fmt.thinking(prompt)))
+    assert raw.startswith(fmt.render(message, thinking=thinking, offered=BODY["tools"]))
+
+
+async def test_a_character_written_in_two_tokens_is_scored_token_by_token(http):
+    """G6: an answer holding a character the model writes in two tokens or more is scored an
+    entry a token. The server can give such a character one entry, the last token's (b11108,
+    Qwen3.5's ` ≡`; Gemma 4's byte tokens kept their own); the raw path gives each token its own
+    again, the ones merged away unknown."""
+    from tuningfork.backends.llamacpp.raw import LlamaRaw
+
+    raw = LlamaRaw(http, ROOT)
+    for char in ("≡", "⟦", "𝔸", "🜂"):
+        # a token that is no whole character comes back as bytes
+        if any(isinstance(piece, list) for _, piece in await raw.pieces(f" {char}")):
+            break
+    else:
+        pytest.skip("this model writes each candidate character whole")
+    prompt = await raw.render({"messages": [{"role": "user", "content": "Say hi."}]}, "openai-chat")
+    pieces = await raw.pieces(f"We have a {char} b.")
+    answer = [token for token, _ in pieces]
+    entries = await raw.score(prompt, answer, 3)
+    assert [entry["id"] for entry in entries[: len(answer)]] == answer
+    assert len(entries) == len(answer) + 1
+    # only the character's tokens but its last can have been merged away, nothing known of them
+    # (a forced token the server deems impossible has no chance either, but has its alternatives)
+    split = [i for i, (_, piece) in enumerate(pieces) if isinstance(piece, list)]
+    unknown = [i for i, entry in enumerate(entries[: len(answer)]) if entry["logprob"] is None and not entry["top_logprobs"]]
+    assert unknown in ([], split[:-1])  # none merged (Gemma 4), or every one but the last (Qwen3.5)
 
 
 async def test_a_grammar_forces_an_answer_and_scores_it_as_it_was_sampled(http):
