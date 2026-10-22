@@ -67,7 +67,7 @@ def style(p):
     .chip-ok {{ fill: {p['ok_soft']}; stroke: {p['ok']}; stroke-width: 1.2; }}
     .mark-bad {{ font-family: {SANS}; font-size: 13px; font-weight: 700; fill: {p['bad']}; }}
     .mark-ok {{ font-family: {SANS}; font-size: 13px; font-weight: 700; fill: {p['ok']}; }}
-    .rate {{ font-family: {SANS}; font-size: 15px; font-weight: 700; fill: {p['text']}; }}
+    .rate-bad {{ font-family: {SANS}; font-size: 15px; font-weight: 700; fill: {p['bad']}; }}
     .rate-ok {{ font-family: {SANS}; font-size: 15px; font-weight: 700; fill: {p['ok']}; }}
     .box {{ fill: {p['panel']}; stroke: {p['border']}; stroke-width: 1.2; }}
     .box-t {{ font-family: {SANS}; font-size: 12.5px; fill: {p['muted']}; }}
@@ -92,7 +92,8 @@ def style(p):
     .pie-other {{ fill: {p['faint']}; opacity: .55; }}
     .pie-edge {{ fill: none; stroke: {p['panel2']}; stroke-width: 1.5; }}
     .leader {{ stroke: {p['faint']}; stroke-width: 1; fill: none; }}
-    .word {{ font-family: {MONO}; font-size: 12.5px; font-weight: 700; fill: {p['text']}; }}
+    .token {{ fill: {p['warn_soft']}; stroke: {p['warn']}; stroke-width: 1.3; }}
+    .token-t {{ font-family: {MONO}; font-size: 12.5px; font-weight: 700; fill: {p['text']}; }}
     .word-other {{ font-family: {SANS}; font-size: 12.5px; fill: {p['muted']}; }}
     .after-bad {{ font-family: {SANS}; font-size: 12.5px; fill: {p['bad']}; }}
     .after-ok {{ font-family: {SANS}; font-size: 12.5px; fill: {p['ok']}; }}
@@ -100,7 +101,7 @@ def style(p):
     .arrowhead {{ fill: {p['faint']}; }}
     .diff {{ fill: {p['ok_soft']}; stroke: {p['ok']}; stroke-width: 1.2; }}
     .diff-t {{ font-family: {MONO}; font-size: 12.5px; fill: {p['ok']}; }}
-    .diff-em {{ font-weight: 700; text-decoration: underline; }}
+    .diff-em {{ font-weight: 700; }}
     .doc {{ fill: {p['panel']}; stroke: {p['border']}; stroke-width: 1.2; }}
     .doc-fold {{ fill: {p['frame']}; stroke: {p['border']}; stroke-width: 1.2; stroke-linejoin: round; }}
     .doc-line {{ stroke: {p['frame']}; stroke-width: 3; stroke-linecap: round; }}
@@ -213,10 +214,10 @@ def figure():
     out.append(lane(T1, "1", "Test a skill on your own model", "Only 4 of 10 runs pass: the skill is flaky."))
     c, end = chips(440, T1 + 4, RUNS)
     out += c
-    out.append(text(end + 26, T1 + 9, "rate", "4 / 10"))
+    out.append(text(end + 26, T1 + 9, "rate-bad", "4 / 10"))
 
     # 2 · the step where the runs split, paused and sent again; inside one answer, the next word's odds
-    out.append(lane(T2, "2", "Find the failed step and forking token", "At that step, only 4 of 20 tests pass."))
+    out.append(lane(T2, "2", "Find the failed step and forking token", "At the failed step, only 4 of 20 tests pass."))
     s, bottom = stack(84, T2 + 40, 170, ["System prompt", "User message", "Step 0: file not found", "Step 1"])
     out += s
     by, mid = bottom - 11, T2 + 100  # the breakpointed step's middle; the arrows' height
@@ -239,20 +240,22 @@ def figure():
     out += sl
     # said in words, so that the pie reads as the next word's odds and not as the twenty tests
     out.append(text(pcx, pcy + pr + 18, "note", "odds of the next word", "middle"))
-    lx = 664
+    lx, bw = 656, 84  # where the labels start; a word's box, in the blank's colours
     for (word, _, _, after, cls), m in zip(NEXT_WORD, mids):
         angle = m if m < 180 else 40  # a slice facing left is labelled from its top right
         ex, ey = rim(pcx, pcy, pr + 3, angle)
-        out.append(f'<path d="M {ex:.1f} {ey:.1f} L {lx - 8} {ey:.1f}" class="leader"/>')
+        out.append(f'<path d="M {ex:.1f} {ey:.1f} L {lx} {ey:.1f}" class="leader"/>')
         if after:
-            out.append(text(lx, ey + 4.5, "word", word))
-            out.append(arrow(lx + 80, ey, lx + 102))
-            out.append(text(lx + 108, ey + 4.5, cls, after))
+            out.append(f'<rect x="{lx}" y="{ey - 10:.1f}" width="{bw}" height="20" rx="4" class="token"/>')
+            out.append(text(lx + bw / 2, ey + 4.5, "token-t", word, "middle"))
+            out.append(arrow(lx + bw + 8, ey, lx + bw + 30))
+            out.append(text(lx + bw + 36, ey + 4.5, cls, after))
         else:
-            out.append(text(lx, ey + 4.5, "word-other", word))
+            out.append(text(lx + 8, ey + 4.5, "word-other", word))
 
     # 3 · one line of the skill, and the same step tested again
-    out.append(lane(T3, "3", "Tune the skill to guide the model", "With the edit, all 20 tests at that step pass."))
+    out.append(lane(T3, "3", "Tune the skill to guide the model",
+                    "With the edit, all 20 tests at the previously failed step now pass."))
     dy = T3 + 62  # the diff's top: the row's middle is 24 below it
     out.append(f'<rect x="84" y="{dy}" width="350" height="48" rx="7" class="diff"/>')
     out.append(text(96, dy + 20, "diff-t", "+ 1. Find the CSV file named in the request"))
@@ -266,7 +269,7 @@ def figure():
     out.append(text(814, T3 + 87, "note", "at step 1"))
 
     # 4 · ten full runs with the edit
-    out.append(lane(T4, "4", "Verify the new skill with full runs", "All 10 new runs pass, start to finish."))
+    out.append(lane(T4, "4", "Verify the edited skill", "All 10 new runs pass: the edited skill is reliable."))
     c, end = chips(440, T4 + 4, [True] * 10)
     out += c
     out.append(text(end + 26, T4 + 9, "rate-ok", "10 / 10"))
@@ -282,12 +285,12 @@ def svg(theme):
     p = PALETTES[theme]
     desc = ("The loop in four parts. 1, test a skill on your own model: only 4 of 10 runs pass, so the skill is "
             "flaky. 2, find the failed step and forking token: the run is paused at step 1, after a step 0 that "
-            "found no file, and that step is tested 20 times. The model gives up 16 times and searches for the file 4 "
+            "found no file, and step 1 is tested 20 times. The model gives up 16 times and searches for the file 4 "
             "times. A pie shows the model's odds at the forking token, the word after 'but it was not found': most "
             "likely 'According', which goes on 'say so and stop', and seldom 'Wait', which goes on 'search for it "
             "first?'. 3, tune the skill to guide the model: with one line of SKILL.md saying to find the file with "
-            "search_files, all 20 tests at that step pass. 4, verify the new skill with full runs: all 10 new runs "
-            "pass, start to finish.")
+            "search_files, all 20 tests at the previously failed step now pass. 4, verify the edited skill: all 10 "
+            "new runs pass, so the edited skill is reliable.")
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-labelledby="title desc">
   <title id="title">tuningfork, in one picture</title>
   <desc id="desc">{desc}</desc>

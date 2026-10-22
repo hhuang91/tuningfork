@@ -11,7 +11,7 @@ which fix works — on local LLMs.**
 <p>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
-  <img alt="The loop in four parts. 1, test a skill on your own model: only 4 of 10 runs pass, so the skill is flaky. 2, find the failed step and forking token: the run is paused at step 1, after a step 0 that found no file, and that step is tested 20 times. The model gives up 16 times and searches for the file 4 times. A pie shows the model's odds at the forking token, the word after 'but it was not found': most likely 'According', which goes on 'say so and stop', and seldom 'Wait', which goes on 'search for it first?'. 3, tune the skill to guide the model: with one line of SKILL.md saying to find the file with search_files, all 20 tests at that step pass. 4, verify the new skill with full runs: all 10 new runs pass, start to finish." src="docs/images/hero-light.svg">
+  <img alt="The loop in four parts. 1, test a skill on your own model: only 4 of 10 runs pass, so the skill is flaky. 2, find the failed step and forking token: the run is paused at step 1, after a step 0 that found no file, and step 1 is tested 20 times. The model gives up 16 times and searches for the file 4 times. A pie shows the model's odds at the forking token, the word after 'but it was not found': most likely 'According', which goes on 'say so and stop', and seldom 'Wait', which goes on 'search for it first?'. 3, tune the skill to guide the model: with one line of SKILL.md saying to find the file with search_files, all 20 tests at the previously failed step now pass. 4, verify the edited skill: all 10 new runs pass, so the edited skill is reliable." src="docs/images/hero-light.svg">
 </picture>
 </p>
 
