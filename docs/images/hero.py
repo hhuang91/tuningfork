@@ -2,8 +2,8 @@
 
 The runs are examples/find-the-file's: Gemma 4 31B through Hermes Agent, a tally-report skill told
 to stop if its file is not there, and data.csv in a subfolder. The example shows every number below
-with the command that made it, all but the newer probe's in 2. The figure shows counts alone; the
-example gives each rate its interval and its test.
+with the command that made it. The figure shows counts alone; the example gives each rate its
+interval and its test.
 
 1. Ten runs: 4 pass, drawn in the order they ran. Every run read the named path first (or scripted
    it) and found nothing; the 4 that then searched with search_files passed, the 6 that gave up
@@ -12,10 +12,8 @@ example gives each rate its interval and its test.
    gives up 16, searches 4. The pie is the model's own odds for the word after "...but it was not
    found." in a run that searched: "According" 80%, which in a run that gave up went on "...I
    should say so and stop."; "Wait" 7%, which in this run went on "...search for it first?"; any
-   other word 12%. "Wait" is a forking token there: forced 40 times each, the model searched 20
-   times after "Wait" and once after "According" (Fisher p = 1.1e-6, the one test declared before
-   sampling; on a newer llama.cpp build than the runs'). The example's section 4 shows an earlier
-   probe of 10 continuations a word, too few to tell the two apart.
+   other word 12%. "Wait" is a forking token there: given 40 continuations each, the model
+   searched in 30 after "Wait" and in none after a forced "According" (the example's section 4).
 3. One line in the skill: "Find the CSV file named in the request with search_files, then read
    it." At step 1: searched 4 times in 20 as written, 20 in 20 with the edit.
 4. Ten runs with the edit: all 10 pass.
