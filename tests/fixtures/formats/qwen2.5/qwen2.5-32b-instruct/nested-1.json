@@ -46,7 +46,7 @@
   }
  ],
  "parallel": true,
- "thinking": false,
+ "thinking": "model",
  "prompt_end": "p 10115, priority 2, confirmed.<|im_end|>\n<|im_start|>assistant\n",
  "finish_reason": "tool_calls",
  "completion_tokens": 61,

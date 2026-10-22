@@ -299,7 +299,7 @@ function head(view) {
       + "easily it could have gone another way. Click a token for the alternatives it had."),
     h("span", { class: "muted small" }, `stream ${short(stream.id)} · ${facts.filter(Boolean).join(" · ")} · ${when(stream.created_at)}`),
     stream.exact === true && alike > 1
-      ? h("p", { class: "muted small" }, `The server reads ${alike} texts as this answer, each with the run's number of tokens. `
+      ? h("p", { class: "muted small" }, `Of the texts the server reads as this answer, ${alike} have the run's number of tokens. `
           + `These are the tokens of the one the model finds ${which} where they part.`)
       : null,
     view.same_server === false

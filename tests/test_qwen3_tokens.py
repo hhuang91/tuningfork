@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 
 from tuningfork.backends.formats import get_format
 from tuningfork.cli import app
+from tuningfork.experiment.scoring import _chance
 from tuningfork.ops.forking import execute_forking, prepare_forking
 from tuningfork.ops.tokens import execute_score, prepare_score
 from tuningfork.wire import get_wire
@@ -64,13 +65,16 @@ def served(monkeypatch, mock_server):
     return serve(monkeypatch, mock_server, Qwen3Toy())
 
 
-def record(store, served, raw: str, *, request: dict = REQUEST, fmt=QWEN3, thinking: bool | None = None,
-           count: int | None = None) -> str:
-    """A step whose answer was `raw`, as the server parsed it, with the counts it reported."""
+def record(store, served, raw: str, *, request: dict = REQUEST, fmt=QWEN3, thinking: bool | str = "model",
+           count: int | None = None, counted: bool = True) -> str:
+    """A step whose answer was `raw`, as the server parsed it, with the counts it reported — or,
+    not `counted`, without the answer's."""
     message = fmt.parse(raw, tools=True, thinking=thinking, offered=TOOLS)
     finish = "tool_calls" if message.get("tool_calls") else "stop"
     answered = len(served.toy.tokenize(raw)) + 1 if count is None else count
     usage = {"prompt_tokens": served.toy.input_tokens(request), "completion_tokens": answered}
+    if not counted:
+        del usage["completion_tokens"]
     store.begin_run("qwen3", "t/1")
     wire = get_wire("openai-chat")
     store.record_step(request=request, response={**as_response(message, finish), "usage": usage},
@@ -92,9 +96,9 @@ async def test_an_answer_whose_reasoning_the_model_opened_is_scored_exactly(stor
     assert (record_.method, record_.exact) == ("grammar", True)
     assert record_.notes["format"] == "qwen3" and record_.notes["parse_agrees"] is True
     # the prompt left the reasoning to the model, whose answer shows it
-    assert record_.notes["thinking"] is None
+    assert record_.notes["thinking"] == "model"
     stream = found.view.stream
-    assert stream.text() == WRITE and stream.thinking is None
+    assert stream.text() == WRITE and stream.thinking == "model"
     assert stream.part(0) == "marker" and {part for part, _, _ in stream.parts} >= {"reasoning", "tool_call"}
     name = next(token for token in found.view.to_json()["tokens"] if token["text"] == "write_file")
     assert [text for text, _ in name["alternatives"]] == ["write_file", "read_file"]
@@ -126,12 +130,52 @@ async def test_calls_a_blank_line_apart_are_scored_as_the_model_wrote_them(store
     assert found.view.stream.text() == raw
 
 
+async def test_calls_a_line_apart_as_the_template_writes_them_keep_the_first_text(store, served):
+    raw = "<think>\nBoth.\n</think>\n\n" + call("read_file", '{"path": "a.csv"}') + "\n" + call("read_file", '{"path": "b.csv"}')
+    served.toy.answers = [(raw, 1.0)]
+    run_id = record(store, served, raw)
+
+    found = await score(store, run_id)
+
+    assert found.view.record.exact is True and found.view.record.notes["texts_alike"] == 2
+    assert found.view.stream.text() == raw
+
+
+async def test_a_tie_keeps_the_templates_own_spacing(store, served):
+    # where the model finds both alike, nothing says which it wrote: the template's own is kept
+    one, two = call("read_file", '{"path": "a.csv"}'), call("read_file", '{"path": "b.csv"}')
+    head = "<think>\nBoth.\n</think>\n\n"
+    served.toy.answers = [(head + one + "\n" + two, 0.5), (head + one + "\n\n" + two, 0.5)]
+    run_id = record(store, served, head + one + "\n\n" + two)
+
+    found = await score(store, run_id)
+
+    assert found.view.stream.text() == head + one + "\n" + two
+
+
+async def test_where_the_count_is_unknown_no_texts_are_said_alike(store, served):
+    raw = "<think>\nBoth.\n</think>\n\n" + call("read_file", '{"path": "a.csv"}') + "\n\n" + call("read_file", '{"path": "b.csv"}')
+    served.toy.answers = [(raw, 1.0)]
+    run_id = record(store, served, raw, counted=False)
+
+    found = await score(store, run_id)
+
+    # the likelier is still kept, and nothing is claimed of the count
+    assert found.view.record.exact is None and "texts_alike" not in found.view.record.notes
+    assert found.view.stream.text() == raw
+
+
+def test_a_token_outside_the_top_k_is_less_likely_than_any_inside_it():
+    entry = {"id": 1, "logprob": -2.0, "top_logprobs": [{"id": 2, "logprob": -0.5}, {"id": 1, "logprob": -2.0}]}
+    assert (_chance(entry, 1), _chance(entry, 2), _chance(entry, 3)) == (-2.0, -0.5, float("-inf"))
+
+
 async def test_an_answer_after_a_prompt_that_closed_the_reasoning_is_scored_exactly(store, served):
     # with reasoning off the prompt closes it, and the answer is the call alone
     closed = "<think>\n\n</think>\n\n"
     answer = call("write_file", '{"path": "report.json", "lines": 3}')
     served.toy.answers = [(closed + answer, 1.0)]
-    run_id = record(store, served, answer, request=OFF)
+    run_id = record(store, served, answer, request=OFF, thinking=False)
 
     found = await score(store, run_id)
 

@@ -23,7 +23,7 @@
   }
  ],
  "parallel": true,
- "thinking": null,
+ "thinking": "model",
  "prompt_end": "then check the weather in Oslo.<|im_end|>\n<|im_start|>assistant\n",
  "finish_reason": "tool_calls",
  "completion_tokens": 419,

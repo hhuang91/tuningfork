@@ -33,7 +33,7 @@
   }
  ],
  "parallel": true,
- "thinking": false,
+ "thinking": "model",
  "prompt_end": "ense of 61.50 USD with no note.<|im_end|>\n<|im_start|>assistant\n",
  "finish_reason": "tool_calls",
  "completion_tokens": 35,

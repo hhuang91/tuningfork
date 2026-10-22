@@ -23,7 +23,7 @@
   }
  ],
  "parallel": true,
- "thinking": false,
+ "thinking": "model",
  "prompt_end": "t say hi. Do not call any tool.<|im_end|>\n<|im_start|>assistant\n",
  "finish_reason": "stop",
  "completion_tokens": 8,

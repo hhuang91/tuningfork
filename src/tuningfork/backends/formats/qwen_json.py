@@ -25,13 +25,17 @@ Qwen2.5 has no reasoning to read.
 The server reads the prompt's own opening of the turn and the answer as one text, and finds one
 reasoning at most, at its start. So where the prompt opened the reasoning, the answer begins
 inside it; where the prompt closed it, the answer is read from its first character, space
-included, and a `<think>` in it is content. Where the prompt left it to the model:
+included, and a `<think>` in it is content. Where the prompt left it to the model — as Qwen2.5's
+does too, having no reasoning to read:
 
 - the space an answer begins with is skipped — but for Qwen2.5's content, kept where no tool is
   offered;
 - a reasoning is read only where the answer begins with `<think>`, after one newline, up to
   `</think>`, with the newline before it; up to two newlines after it are skipped. One cut off
   before its close is still reasoning; one that is blank is dropped.
+
+Where no prompt is at hand, an answer that closes a reasoning it never opened is read as one the
+prompt opened, and any other as one the prompt left to the model.
 
 Then, in every case:
 
@@ -62,6 +66,8 @@ CALL, CALL_END = "<tool_call>", "</tool_call>"
 CALL_OPEN = CALL + "\n"
 #: How a prompt that turns the reasoning off closes it.
 CLOSED = THINK + "\n\n" + THINK_END + "\n\n"
+#: What `thinking` says where the prompt left the reasoning to the model.
+MODEL = "model"
 ASSISTANT = "<|im_start|>assistant"
 #: The pieces of the special tokens that end an answer (empty in llama.cpp's logprobs).
 ENDS = ("", "<|im_end|>", "<|endoftext|>")
@@ -204,17 +210,17 @@ class QwenJson:
             return all(part in template for part in _REASONING_TEMPLATE)
         return "think>" not in template
 
-    def thinking(self, prompt: str) -> bool | None:
+    def thinking(self, prompt: str) -> bool | str:
         """What the prompt's last assistant turn did with the reasoning: opened it (True), as a
-        Qwen3-2507 Thinking template does; closed it (False), as Qwen3's does with reasoning off —
-        or had none to open, as Qwen2.5's; or neither (None), leaving it to the model."""
+        Qwen3-2507 Thinking template does; closed it (False), as Qwen3's does with reasoning off;
+        or neither (`MODEL`), leaving it to the model — as Qwen2.5's does, having none."""
         if not self.reasoning:
-            return False
+            return MODEL
         start = prompt.rfind(ASSISTANT)
         tail = prompt[start:] if start >= 0 else prompt
         if THINK_END in tail:
             return False
-        return True if THINK in tail else None
+        return True if THINK in tail else MODEL
 
     def parse(
         self,
@@ -222,7 +228,7 @@ class QwenJson:
         *,
         tools: bool,
         parallel: bool = True,
-        thinking: bool | None = None,
+        thinking: bool | str | None = None,
         offered: Sequence[dict[str, Any]] = (),
     ) -> dict[str, Any]:
         """Mirrors the parser the server builds from the template; see the module. A call to a
@@ -239,18 +245,16 @@ class QwenJson:
         *,
         tools: bool,
         parallel: bool,
-        thinking: bool | None,
+        thinking: bool | str | None,
         offered: Sequence[dict[str, Any]],
     ) -> tuple[dict[str, Any], list[str], FormatError | None]:
         """The message, what each character of `text` is — marker, reasoning, content or
         tool_call — and the error that stopped the reading, if one did. The prompt's own opening
         of the turn is read before the answer, as the server reads it."""
-        if thinking is None and _opened(text):
-            thinking = True
-        if not self.reasoning:
+        if thinking is None:  # no prompt at hand: read from the answer
+            thinking = True if _opened(text) else MODEL
+        if not self.reasoning or thinking == MODEL:
             opening = ""
-        elif thinking is None:
-            opening = ""  # left to the model
         else:
             opening = THINK + "\n" if thinking else CLOSED
         source = opening + text
@@ -350,7 +354,7 @@ class QwenJson:
         i = _expect(text, _skip_space(text, end), "}")
         return {"name": name, "arguments": arguments if arguments.startswith("{") else "{}"}, i
 
-    def parts(self, pieces: Sequence[str], *, thinking: bool | None = None) -> list[tuple[str, int, int]]:
+    def parts(self, pieces: Sequence[str], *, thinking: bool | str | None = None) -> list[tuple[str, int, int]]:
         """Each token's part, from what the server's reading makes of each character: a token
         takes the part of its first character that is not a marker's, and is a marker where all
         are. Read with tools offered, any tool's name, and calls in parallel: a stream does not
@@ -373,12 +377,12 @@ class QwenJson:
         return runs
 
     def render(
-        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
+        self, message: dict[str, Any], *, thinking: bool | str | None, offered: Sequence[dict[str, Any]] = ()
     ) -> str:
         return self.renderings(message, thinking=thinking, offered=offered)[0]
 
     def renderings(
-        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
+        self, message: dict[str, Any], *, thinking: bool | str | None, offered: Sequence[dict[str, Any]] = ()
     ) -> list[str]:
         """The raw texts the server reads as this message, the template's own first. What it
         skips leaves no trace in the message: a Qwen3 left to reason or not may have written an
@@ -390,9 +394,9 @@ class QwenJson:
         # the blank line the model writes after it.
         if not self.reasoning or thinking is False:
             heads = [""]  # no reasoning: none in the template, or the prompt closed it
-        elif thinking:
+        elif thinking is True:
             heads = [reasoning + THINK_END + "\n\n"]
-        elif reasoning:
+        elif reasoning:  # left to the model, or not known
             heads = [THINK + "\n" + reasoning + THINK_END + "\n\n"]
         else:
             heads = ["", THINK + "\n\n" + THINK_END + "\n\n"]

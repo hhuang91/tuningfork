@@ -127,8 +127,8 @@ class TokenStream:
     format: str | None = None
     #: What the prompt did with the model's reasoning, the format's `thinking`, where it was
     #: known when the parts were marked: a template that opens the reasoning itself starts the
-    #: answer inside it. None where the prompt left it to the model, or was not known.
-    thinking: bool | None = None
+    #: answer inside it. None where the prompt was not known.
+    thinking: bool | str | None = None
 
     def __len__(self) -> int:
         return len(self.ids)
@@ -147,7 +147,7 @@ class TokenStream:
         """A token's piece as text, by its id."""
         return _piece_bytes(self.piece(token_id)).decode("utf-8", "replace")
 
-    def mark_parts(self, fmt: Any, *, thinking: bool | None = None) -> TokenStream:
+    def mark_parts(self, fmt: Any, *, thinking: bool | str | None = None) -> TokenStream:
         """Mark what each position is, by an output format (`tuningfork.backends.formats`).
         `thinking`: what the prompt did with the reasoning, as the format reads it."""
         if fmt is not None:

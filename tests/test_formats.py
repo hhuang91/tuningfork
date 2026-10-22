@@ -213,15 +213,16 @@ class TestQwen3Coder:
     def test_the_known_models_are_named_once(self):
         assert known_models() == "Gemma 4, Qwen2.5, Qwen3, Qwen3.5 and Qwen3.6"
 
-    @pytest.mark.parametrize(("prompt", "on"), [
+    @pytest.mark.parametrize(("prompt", "state"), [
         ("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n", True),
         ("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n", False),
-        ("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n", False),
+        # Qwen3.5's template opens or closes it; another this parser reads may leave it to the model
+        ("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n", "model"),
         # an earlier turn's reasoning, closed, is history: only the last turn's opening counts
         ("<|im_start|>assistant\n<think>\nx\n</think>\n\nok<|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n", True),
     ])
-    def test_thinking_is_on_when_the_prompt_opens_it(self, prompt, on):
-        assert QWEN.thinking(prompt) is on
+    def test_thinking_reads_what_the_prompt_did_with_the_reasoning(self, prompt, state):
+        assert QWEN.thinking(prompt) == state and type(QWEN.thinking(prompt)) is type(state)
 
     def test_an_answer_starts_inside_the_reasoning_the_prompt_opened(self):
         text = "Plan it.\n</think>\n\nDone."
@@ -343,8 +344,6 @@ def first_arguments(text: str) -> str:
     return QWEN3.parse(text, tools=True)["tool_calls"][0]["function"]["arguments"]
 
 
-
-
 class TestQwenJson:
     def test_detected_by_the_template_lines_the_server_finds_the_markers_in(self):
         assert format_for(QWEN3_LINES).name == "qwen3"
@@ -359,7 +358,7 @@ class TestQwenJson:
         assert format_for(QWEN3_LINES.replace(" + '\\n</think>\\n\\n'", " + '</think>'")) is None
 
     @pytest.mark.parametrize(("end", "state"), [
-        ("", None),  # a hybrid Qwen3 opens it itself, or does not
+        ("", "model"),  # a hybrid Qwen3 opens it itself, or does not
         ("<think>\n", True),  # a Qwen3-2507 Thinking template opens it
         ("<think>\n\n</think>\n\n", False),  # reasoning off closes it
     ], ids=["left", "opened", "closed"])
@@ -368,8 +367,17 @@ class TestQwenJson:
         earlier = "<|im_start|>assistant\n<think>\nx\n</think>\n\nok<|im_end|>\n<|im_start|>user\nhi<|im_end|>\n"
         for history in ("", earlier, "<|im_start|>assistant\n<think>\n" + earlier):
             prompt = "<|im_start|>user\nhi<|im_end|>\n" + history + "<|im_start|>assistant\n" + end
-            assert QWEN3.thinking(prompt) is state
-            assert QWEN25.thinking(prompt) is False
+            assert QWEN3.thinking(prompt) == state and type(QWEN3.thinking(prompt)) is type(state)
+            # Qwen2.5's has no reasoning to open or close
+            assert QWEN25.thinking(prompt) == "model"
+
+    def test_a_prompt_that_left_the_reasoning_to_the_model_is_not_guessed_at(self):
+        # known to leave it to the model, an answer that closes a reasoning it never opened is
+        # content, as the server reads it; only where no prompt is at hand is it read as opened
+        text = "Plan.\n</think>\n\nHi"
+        assert QWEN3.parse(text, tools=False, thinking="model") == {"role": "assistant", "content": text}
+        unknown = QWEN3.parse(text, tools=False)
+        assert (unknown["reasoning_content"], unknown["content"]) == ("Plan.\n", "Hi")
 
     def test_a_reasoning_is_read_as_the_server_reads_it(self):
         # one newline after the opening, the one before the close kept, two after it skipped
@@ -425,7 +433,7 @@ class TestQwenJson:
         parsed = QWEN3.parse(text, tools=True, offered=[WEATHER])
         assert parsed["content"] == "Checking.\n"
         assert parsed["tool_calls"][0]["function"] == {"name": "get_weather", "arguments": '{"city": "Oslo"}'}
-        assert QWEN3.render(parsed, thinking=None, offered=[WEATHER]) == text
+        assert QWEN3.render(parsed, thinking="model", offered=[WEATHER]) == text
         # a call's marker cut off at the end is left out of the content
         assert QWEN3.parse("Checking.\n<tool_call>", tools=True)["content"] == "Checking.\n"
 
@@ -492,17 +500,17 @@ class TestQwenJson:
 
     def test_an_empty_reasoning_is_one_of_the_texts_read_alike(self):
         parsed = QWEN3.parse("<think>\n\n</think>\n\nHallo.", tools=False)
-        assert QWEN3.renderings(parsed, thinking=None) == ["Hallo.", "<think>\n\n</think>\n\nHallo."]
+        assert QWEN3.renderings(parsed, thinking="model") == ["Hallo.", "<think>\n\n</think>\n\nHallo."]
         # a reasoning the prompt opened is closed whatever it holds; one it closed, or Qwen2.5, writes none
         assert QWEN3.renderings({"content": "Hi."}, thinking=True) == ["</think>\n\nHi."]
         assert QWEN3.renderings({"content": "Hi."}, thinking=False) == ["Hi."]
-        assert QWEN25.renderings({"content": "Hi."}, thinking=None) == ["Hi."]
+        assert QWEN25.renderings({"content": "Hi."}, thinking="model") == ["Hi."]
 
     def test_calls_a_line_or_a_blank_line_apart_are_read_alike(self):
         one, two = json_call("a", "{}"), json_call("b", "{}")
         head = "<think>\nx\n</think>\n\n"
         parsed = QWEN3.parse(head + one + "\n\n" + two, tools=True)
-        assert QWEN3.renderings(parsed, thinking=None) == [head + one + "\n" + two, head + one + "\n\n" + two]
+        assert QWEN3.renderings(parsed, thinking="model") == [head + one + "\n" + two, head + one + "\n\n" + two]
 
     def test_arguments_written_again_are_written_as_the_template_writes_them(self):
         # a Messages step's arguments come back parsed; an empty text is no arguments
@@ -532,12 +540,26 @@ class TestQwenJson:
         assert [part for part, _, _ in parts] == ["marker", "tool_call", "marker"]
 
 
-class TestQwen3CoderClosed:
-    """Qwen3.5's prompt holds the turn's one reasoning, opened or closed: a `<think>` the model
-    writes is text."""
+class TestQwen3CoderReasoning:
+    """The parser finds one reasoning at most, at the start: Qwen3.5's prompt holds it, opened or
+    closed, so a `<think>` the model writes is text — but one a template left to the model it
+    begins its answer with is the reasoning."""
+
+    TEXT = "<think>\nfoo\n</think>\n\nbar"
+    PIECES = ["<think>", "\n", "foo", "\n", "</think>", "\n\n", "bar", ""]
 
     def test_after_a_prompt_that_closed_the_reasoning_a_think_is_content(self):
-        text = "<think>\nfoo\n</think>\n\nbar"
-        assert QWEN.parse(text, tools=False, thinking=False) == {"role": "assistant", "content": text}
-        pieces = ["<think>", "\n", "foo", "\n", "</think>", "\n\n", "bar", ""]
-        assert QWEN.parts(pieces, thinking=False) == [("content", 0, 7), ("marker", 7, 8)]
+        assert QWEN.parse(self.TEXT, tools=False, thinking=False) == {"role": "assistant", "content": self.TEXT}
+        assert QWEN.parts(self.PIECES, thinking=False) == [("content", 0, 7), ("marker", 7, 8)]
+
+    def test_where_the_prompt_left_it_to_the_model_the_one_an_answer_begins_with_is_read(self):
+        assert QWEN.thinking("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n") == "model"
+        parsed = QWEN.parse(self.TEXT, tools=False, thinking="model")
+        assert (parsed["reasoning_content"], parsed["content"]) == ("foo\n", "bar")
+        assert [part for part, _, _ in QWEN.parts(self.PIECES, thinking="model")] == [
+            "marker", "reasoning", "marker", "content", "marker"]
+        # a space before it, and it is text, as the parser looks for it at the start alone
+        assert QWEN.parse(" " + self.TEXT, tools=False, thinking="model")["content"] == self.TEXT
+        assert [part for part, _, _ in QWEN.parts(["Hi", " ", "<think>", "x", ""], thinking="model")] == ["content", "marker"]
+        # and the reasoning read is written back as the model wrote it, opening and all
+        assert QWEN.render(parsed, thinking="model") == self.TEXT

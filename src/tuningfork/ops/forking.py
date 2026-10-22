@@ -198,6 +198,9 @@ def prepare_forking(
             )
     if base.exact is False:
         warnings.append("the base was rebuilt approximately: its tokens are close to, not exactly, the run's own")
+    elif (base.notes or {}).get("texts_alike"):
+        warnings.append("the base is the likelier of texts the server reads as the run's answer: where they part, "
+                        "its token may not be the run's own")
     if any(c.part == "reasoning" for c in found):
         warnings.append("reasoning positions regenerate the rest of the reasoning: each continuation is long")
     if seed_base is None:

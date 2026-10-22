@@ -23,7 +23,7 @@
   }
  ],
  "parallel": true,
- "thinking": null,
+ "thinking": "model",
  "prompt_end": "ce for each city, both at once.<|im_end|>\n<|im_start|>assistant\n",
  "finish_reason": "tool_calls",
  "completion_tokens": 169,

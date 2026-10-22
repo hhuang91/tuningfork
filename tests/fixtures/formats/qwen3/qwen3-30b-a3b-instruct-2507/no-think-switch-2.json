@@ -4,7 +4,7 @@
  "tools": false,
  "offered": [],
  "parallel": true,
- "thinking": null,
+ "thinking": "model",
  "prompt_end": " in German, one word. /no_think<|im_end|>\n<|im_start|>assistant\n",
  "finish_reason": "stop",
  "completion_tokens": 2,
