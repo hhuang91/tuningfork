@@ -6,9 +6,10 @@ toy shows a model that is sure and wrong. This one shows a model that wavers: th
 runs part ways, how often it goes each way there, where its reasoning forks, and one line of the
 skill that tips it.
 
-Every output below is from one series of real runs of these commands, made on 2026-10-16. Paths
-are shortened to `/home/you`, and long outputs are trimmed where marked `...`. Your ids will
-differ, and since every number is a sample, yours may too.
+Every output below is from real runs of these commands: one series made on 2026-10-16, and the
+probe in section 4, made on 2026-10-22 against the same server. Paths are shortened to
+`/home/you`, and long outputs are trimmed where marked `...`. Your ids will differ, and since every
+number is a sample, yours may too.
 
 ## What is in this folder
 
@@ -246,49 +247,65 @@ reasoning went on "According to the skill, I should say so and stop." This run d
 on "…or if I should search for it first?", argued with itself, and searched.
 (`tuningfork tokens $RUN 1 --score` shows the run that gave up.)
 
-Does that one word decide it? Force each likely alternative there, and let the model go on:
+Does that one word change what the model does? Force the likeliest alternative there,
+"According", and let the model write the rest of its answer from it. The run's own "Wait" gets as
+many continuations: forty each, with a search by any pattern counted.
 
 ```bash
-tuningfork forking-tokens $PASS 1 --at 121
+tuningfork forking-tokens $PASS 1 --at 121 --alternatives 1 -n 40 --target-match search_files
 ```
 
 ```
 forking tokens at run 472253d6 step 1 — after the result of read_file
   base      stream 8a822bad (scored, 292 tokens)
-  target    the base's own behaviour: search_files(pattern='data.csv', target='files') (declared before 
-sampling)
-  arms      4 forced tokens × 10 = 40 continuations
+  target    behaviour matching /search_files/ (declared before sampling)
+  arms      2 forced tokens × 40 = 80 continuations
+  power     a forced token is found to change the outcome when about 6 of its 40 continuations change; smaller
+shifts need more (-n)
   ...
-  [121] reasoning 'Wait' 7% → 'According' 80% | 'Following' 5% | 'The' 3%
+  [121] reasoning 'Wait' 7% → 'According' 80%
 
-  121:'According'  1/10  The file `data.csv` was not found, so I cannot proceed with the … (+8 chars)  5.0s
+  121:'According'  1/40  The file `data.csv` was not found, so I cannot proceed with the … (+8 chars)  5.3s
+  ...
+  121:'Wait'  1/40  search_files(pattern='data.csv', target='files')  6.9s
   ...
 
-target (declared before sampling): the base's own behaviour: search_files(pattern='data.csv', target='files')
-  the baseline arms reached it 4/10  40% [17%-69%]
-  at [121] the step was still undecided: from there the run's own token led elsewhere more often than to its 
-behaviour, so a later token decided it (`tuningfork tokens` shows the tokens after, and --at probes them)
+target (declared before sampling): behaviour matching /search_files/
+  the baseline arms reached it 30/40  75% [60%-86%]
 
 [121] reasoning  … `data.csv` but it was not found.
 ⟦Wait⟧
-  as run  'Wait' 7%                4/10  40% [17%-69%]
-  forced  'According' 80%          1/10  10% [2%-40%]   p=0.303 → Holm 0.607
-  forced  'Following' 5%           0/10   0% [0%-28%]   p=0.087 → Holm 0.260
-  forced  'The' 3%                 2/10  20% [6%-51%]   p=0.628 → Holm 0.628
-  the chance of the target from here, weighted by each token's chance: 12%
+  as run  'Wait' 7%                30/40  75% [60%-86%]
+  forced  'According' 80%          0/40   0% [0%-9%]   p=1.9e-13 → Holm 1.9e-13  flips away from the target
+  the chance of the target from here, weighted by each token's chance: 6%
+
+behaviours, across the probe
+   count  rate  95% CI     target      behaviour                                                              
+A  29/80  36%   [27%-47%]  target      search_files(pattern='data.csv', target='files')                       
+B  25/80  31%   [22%-42%]  not target  The file `data.csv` was not found, so I cannot proceed with the        
+                                       summary.                                                               
 ...
+V  1/80   1%    [0%-7%]    target      search_files(pattern='*.csv', target='files')                          
+  the tokens whose continuations reached each, a line a position:
+  A  [121] 'Wait' as run 29
+  B  [121] 'Wait' as run 2, 'According' 23
+  ...
 
-No forced token decided what the model did (Holm-corrected over the 3 planned before sampling; α=0.05).
-With 10 continuations a token, only a token that changes about 6 of its 10 would show: a smaller shift can be 
-real and go unseen (-n draws more).
+1 of 1 forced tokens changed what the model did (Holm-corrected over the 1 planned before sampling; α=0.05).
 
-experiment d39bc626 · 4.1 min · `tuningfork experiment d39bc626` shows it again
+experiment 1aed5238 · 9.0 min · `tuningfork experiment 1aed5238` shows it again
 ```
 
-The word alone doesn't decide it. After "Wait", 4 continuations in 10 searched; after "According",
-1; after "Following", none. At ten continuations an arm, none of those differences is
-significant, and the probe says so: the step was still undecided there, and later words decided
-it. This is a step where the model wavers, the kind a few words of the skill can tip.
+It does. After "Wait", 30 continuations in 40 searched for the file; after "According", none.
+Putting "According" in its place changes what the model goes on to do: "Wait" is a forking token.
+"According", the likely word there at 80%, never led to a search. "Wait" made one likely without
+settling it: after it, 10 continuations in 40 still ended without a search. This is a step where
+the model wavers, the kind a few words of the skill can tip.
+
+An earlier probe of this token (d39bc626, made with the series on 2026-10-16), at the default of
+ten continuations a word and counting only the base's exact call, saw that call 4 times in 10 after
+"Wait" and once after "According". That is a difference of 3 in 10, and the smallest difference
+ten a word can show is about 6. The probe's `power` line says what its `-n` can see.
 
 ## 5. Test one line at that step
 
@@ -400,11 +417,13 @@ skill: a fingerprint of the skill files the runs were given. Intervals are Wilso
 
 ## How this page was measured
 
-One series, on 2026-10-16:
-- **Server:** llama-server b11108 serving Gemma 4 31B (Q4_K_M), started as the guide's §1 says.
-- **Proxy:** tuningfork 0.2.1, with `--max-output 8192`.
+One series, on 2026-10-16, and the probe in section 4, on 2026-10-22:
+- **Server:** llama-server b11108 serving Gemma 4 31B (Q4_K_M), started as the guide's §1 says,
+  both times.
+- **tuningfork:** 0.2.1 for the series, its proxy run with `--max-output 8192`; 0.4.0 for the
+  probe, which goes straight to the server.
 - **Harness:** Hermes Agent 0.18.2, every run in the sandbox.
 - **Before it:** the pilot without the planted sentence, described above. It was recorded in the
   same folder and moved to the trash afterwards, so no rate or comparison here counts it.
-- **Timings:** the ten runs took about five minutes, the resample 2.7, the probe 4.1, the A/B 5.4,
+- **Timings:** the ten runs took about five minutes, the resample 2.7, the probe 9.0, the A/B 5.4,
   and the ten runs with the edit about five and a half.
