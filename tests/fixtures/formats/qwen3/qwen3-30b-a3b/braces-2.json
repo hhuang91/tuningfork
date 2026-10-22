@@ -27,7 +27,7 @@
   }
  ],
  "parallel": true,
- "thinking": false,
+ "thinking": null,
  "prompt_end": ": [1, 2]}, \"note\": \"x: y, {z}\"}<|im_end|>\n<|im_start|>assistant\n",
  "finish_reason": "tool_calls",
  "completion_tokens": 476,

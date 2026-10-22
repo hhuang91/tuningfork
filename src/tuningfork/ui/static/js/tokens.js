@@ -290,12 +290,18 @@ export function heatmap(view, { onProbe = null, probeOff = null, marks = null, f
 function head(view) {
   const stream = view.stream;
   const facts = [stream.source, stream.method, `top ${view.top_k}`, plural(stream.tokens, "token")];
-  if (stream.exact === true) facts.push("rebuilt exactly");
+  const alike = stream.notes?.texts_alike || 0;
+  const which = alike === 2 ? "likelier" : "likeliest";
+  if (stream.exact === true) facts.push(alike > 1 ? `rebuilt as the ${which} of ${alike} texts the server reads alike` : "rebuilt exactly");
   if (stream.exact === false) facts.push("rebuilt approximately");
   return h("div", { class: "tk-head" },
     h("p", null, "Each token is shaded by how unsure the model was when it chose it: the stronger the shade, the more "
       + "easily it could have gone another way. Click a token for the alternatives it had."),
     h("span", { class: "muted small" }, `stream ${short(stream.id)} · ${facts.filter(Boolean).join(" · ")} · ${when(stream.created_at)}`),
+    stream.exact === true && alike > 1
+      ? h("p", { class: "muted small" }, `The server reads ${alike} texts as this answer, each with the run's number of tokens. `
+          + `These are the tokens of the one the model finds ${which} where they part.`)
+      : null,
     view.same_server === false
       ? h("div", { class: "banner banner-warn small" }, "Scored on a different server than the step ran on: the numbers are that server's.")
       : null,

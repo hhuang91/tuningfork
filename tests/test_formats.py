@@ -343,6 +343,8 @@ def first_arguments(text: str) -> str:
     return QWEN3.parse(text, tools=True)["tool_calls"][0]["function"]["arguments"]
 
 
+
+
 class TestQwenJson:
     def test_detected_by_the_template_lines_the_server_finds_the_markers_in(self):
         assert format_for(QWEN3_LINES).name == "qwen3"
@@ -352,15 +354,22 @@ class TestQwenJson:
         assert format_for(QWEN3_LINES.replace("<|im_start|>", "<|turn>")) is None
         # Qwen3.5's calls are XML, another format's
         assert format_for(QWEN3_LINES + "{{ '<function=' }}") is None
+        # every line counts: without a call's close, or the reasoning's, neither reading is the server's
+        assert format_for(QWEN3_LINES.replace("'}\\n</tool_call>'", "'}</tool_call>'")) is None
+        assert format_for(QWEN3_LINES.replace(" + '\\n</think>\\n\\n'", " + '</think>'")) is None
 
-    @pytest.mark.parametrize(("prompt", "on"), [
-        ("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n", False),  # a hybrid Qwen3 opens it itself
-        ("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n", True),  # a Qwen3-2507 Thinking template
-        ("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n", False),  # reasoning off
-    ])
-    def test_thinking_is_on_when_the_prompt_opens_it(self, prompt, on):
-        assert QWEN3.thinking(prompt) is on
-        assert QWEN25.thinking(prompt) is False
+    @pytest.mark.parametrize(("end", "state"), [
+        ("", None),  # a hybrid Qwen3 opens it itself, or does not
+        ("<think>\n", True),  # a Qwen3-2507 Thinking template opens it
+        ("<think>\n\n</think>\n\n", False),  # reasoning off closes it
+    ], ids=["left", "opened", "closed"])
+    def test_thinking_reads_the_prompts_last_turn(self, end, state):
+        # an earlier turn's reasoning, opened and closed, is history
+        earlier = "<|im_start|>assistant\n<think>\nx\n</think>\n\nok<|im_end|>\n<|im_start|>user\nhi<|im_end|>\n"
+        for history in ("", earlier, "<|im_start|>assistant\n<think>\n" + earlier):
+            prompt = "<|im_start|>user\nhi<|im_end|>\n" + history + "<|im_start|>assistant\n" + end
+            assert QWEN3.thinking(prompt) is state
+            assert QWEN25.thinking(prompt) is False
 
     def test_a_reasoning_is_read_as_the_server_reads_it(self):
         # one newline after the opening, the one before the close kept, two after it skipped
@@ -368,8 +377,9 @@ class TestQwenJson:
         assert (parsed["reasoning_content"], parsed["content"]) == ("Plan.\n", "\nHi.")
         # one the answer does not begin with is content
         assert QWEN3.parse("Hi. <think>\nx\n</think>", tools=False) == {"role": "assistant", "content": "Hi. <think>\nx\n</think>"}
-        # a blank one is dropped
+        # a blank one is dropped — blank as the server counts it, which a vertical tab is not
         assert QWEN3.parse("<think>\n\n</think>\n\nHi.", tools=False) == {"role": "assistant", "content": "Hi."}
+        assert QWEN3.parse("<think>\n\v</think>\n\nHi.", tools=False)["reasoning_content"] == "\v"
 
     def test_an_answer_starts_inside_the_reasoning_the_prompt_opened(self):
         text = "\nPlan it.\n</think>\n\nDone."
@@ -379,6 +389,18 @@ class TestQwenJson:
             assert (parsed["reasoning_content"], parsed["content"]) == ("\nPlan it.\n", "Done.")
         assert QWEN3.render(QWEN3.parse(text, tools=False, thinking=True), thinking=True) == text
 
+    def test_after_a_prompt_that_closed_the_reasoning_the_answer_is_read_from_its_first_character(self):
+        # the server read the prompt's closed reasoning: its space is behind it, and a <think> is content
+        assert QWEN3.parse("\nHello", tools=False, thinking=False) == {"role": "assistant", "content": "\nHello"}
+        text = "<think>\nfoo\n</think>\n\nbar"
+        assert QWEN3.parse(text, tools=False, thinking=False) == {"role": "assistant", "content": text}
+        parsed = QWEN3.parse("<think>\n" + json_call("get_weather", '{"city": "Oslo"}'), tools=True, thinking=False)
+        assert parsed["content"] == "<think>\n" and parsed["tool_calls"][0]["function"]["name"] == "get_weather"
+        with pytest.raises(FormatError):  # a call the server cannot read either
+            QWEN3.parse("<think>\n<tool_call>\n</think>\n\n", tools=True, thinking=False)
+        # and it is written back as it was, with no reasoning to write
+        assert QWEN3.renderings({"content": "\nHello"}, thinking=False) == ["\nHello"]
+
     def test_qwen25_reads_no_reasoning(self):
         text = "<think>\nPlan.\n</think>\n\nHi."
         assert QWEN25.parse(text, tools=False) == {"role": "assistant", "content": text}
@@ -387,22 +409,23 @@ class TestQwenJson:
         (QWEN3, False, "Hi."), (QWEN3, True, "Hi."), (QWEN25, True, "Hi."),
         (QWEN25, False, "\n\nHi."),  # Qwen2.5's content without tools: the whole answer
     ], ids=["qwen3", "qwen3-tools", "qwen2.5-tools", "qwen2.5"])
-    def test_the_space_an_answer_begins_with_is_skipped(self, fmt, tools, content):
+    def test_the_space_an_answer_left_to_reason_begins_with_is_skipped(self, fmt, tools, content):
         assert fmt.parse("\n\nHi.", tools=tools)["content"] == content
 
     def test_cut_off_while_thinking(self):
         for text, thinking in (("<think>\nstill going", None), ("still going", True)):
             parsed = QWEN3.parse(text, tools=True, thinking=thinking)
             assert (parsed["reasoning_content"], parsed["content"]) == ("still going", "")
-        # a close cut off is left out, as the server waits for the rest of it
+        # a close cut off is left out, as the server waits for the rest of it, and so is an opening
         assert QWEN3.parse("<think>\nstill</thi", tools=True)["reasoning_content"] == "still"
+        assert QWEN3.parse("\n<thi", tools=False) == {"role": "assistant", "content": ""}
 
     def test_content_runs_to_a_call_and_keeps_its_newline(self):
         text = "<think>\nx\n</think>\n\nChecking.\n" + json_call("get_weather", '{"city": "Oslo"}')
         parsed = QWEN3.parse(text, tools=True, offered=[WEATHER])
         assert parsed["content"] == "Checking.\n"
         assert parsed["tool_calls"][0]["function"] == {"name": "get_weather", "arguments": '{"city": "Oslo"}'}
-        assert QWEN3.render(parsed, thinking=False, offered=[WEATHER]) == text
+        assert QWEN3.render(parsed, thinking=None, offered=[WEATHER]) == text
         # a call's marker cut off at the end is left out of the content
         assert QWEN3.parse("Checking.\n<tool_call>", tools=True)["content"] == "Checking.\n"
 
@@ -419,7 +442,7 @@ class TestQwenJson:
         assert first_arguments(json_call("read_file", arguments)) == kept
 
     @pytest.mark.parametrize("arguments", [
-        '{"n": 01}', '{"n": NaN}', '{"s": "\\q"}', '{"n": 1,}', '{"n" 1}', "{'n': 1}", '{"s": "\\u12"}',
+        '{"n": 01}', '{"n": NaN}', '{"s": "\\q"}', '{"n": 1,}', '{"n" 1}', "{'n': 1}", '{"s": "\\u12G4"}',
     ])
     def test_arguments_that_are_no_json_are_an_error(self, arguments):
         with pytest.raises(FormatError):
@@ -436,7 +459,10 @@ class TestQwenJson:
         with pytest.raises(FormatError):
             QWEN3.parse(one, tools=True, parallel=False)
 
-    def test_a_tool_not_offered_is_read_with_its_name(self):
+    def test_a_tool_is_named_whole(self):
+        offered = [tool("read", {}), tool("read_file", {})]
+        assert QWEN3.parse(json_call("read_file", "{}"), tools=True, offered=offered)["tool_calls"][0]["function"]["name"] == "read_file"
+        # one not offered is read with its name
         parsed = QWEN3.parse(json_call("nope", "{}"), tools=True, offered=[WEATHER])
         assert parsed["tool_calls"][0]["function"] == {"name": "nope", "arguments": "{}"}
 
@@ -447,26 +473,42 @@ class TestQwenJson:
 
     @pytest.mark.parametrize("text", [
         json_call("a", "{}") + "\nDone.",  # nothing may follow the calls
-        '<tool_call>\n{"name": "a", "arguments": {"x": "cut',  # cut off inside a call
         '<tool_call>\n{"arguments": {}, "name": "a"}\n</tool_call>',  # the name comes first
-        '<tool_call>\n{"name": "a", "arguments": {}}\n',  # never closed
+        '<tool_call>\n{"name": "a", "arguments": {}}\n<tool_call>',  # a second marker where the close belongs
     ])
     def test_a_malformed_call_is_an_error(self, text):
         with pytest.raises(FormatError):
             QWEN3.parse(text, tools=True)
 
+    @pytest.mark.parametrize("text", [
+        '<tool_call>\n{"name": "a", "arguments": {"x": "cut',
+        '<tool_call>\n{"name": "a", "arguments": {}}\n',  # ended before its close
+        "<tool_call>\n",
+    ])
+    def test_a_call_cut_off_is_an_error_where_the_server_keeps_what_it_read(self, text):
+        # as the other formats do, tuningfork reads only calls the model finished
+        with pytest.raises(FormatError):
+            QWEN3.parse(text, tools=True)
+
     def test_an_empty_reasoning_is_one_of_the_texts_read_alike(self):
         parsed = QWEN3.parse("<think>\n\n</think>\n\nHallo.", tools=False)
-        assert QWEN3.renderings(parsed, thinking=False) == ["Hallo.", "<think>\n\n</think>\n\nHallo."]
-        # a reasoning the prompt opened is closed whatever it holds; Qwen2.5 writes none
+        assert QWEN3.renderings(parsed, thinking=None) == ["Hallo.", "<think>\n\n</think>\n\nHallo."]
+        # a reasoning the prompt opened is closed whatever it holds; one it closed, or Qwen2.5, writes none
         assert QWEN3.renderings({"content": "Hi."}, thinking=True) == ["</think>\n\nHi."]
-        assert QWEN25.renderings({"content": "Hi."}, thinking=False) == ["Hi."]
+        assert QWEN3.renderings({"content": "Hi."}, thinking=False) == ["Hi."]
+        assert QWEN25.renderings({"content": "Hi."}, thinking=None) == ["Hi."]
 
     def test_calls_a_line_or_a_blank_line_apart_are_read_alike(self):
         one, two = json_call("a", "{}"), json_call("b", "{}")
         head = "<think>\nx\n</think>\n\n"
         parsed = QWEN3.parse(head + one + "\n\n" + two, tools=True)
-        assert QWEN3.renderings(parsed, thinking=False) == [head + one + "\n" + two, head + one + "\n\n" + two]
+        assert QWEN3.renderings(parsed, thinking=None) == [head + one + "\n" + two, head + one + "\n\n" + two]
+
+    def test_arguments_written_again_are_written_as_the_template_writes_them(self):
+        # a Messages step's arguments come back parsed; an empty text is no arguments
+        calls = [{"function": {"name": "a", "arguments": {"x": 1, "y": "z"}}}, {"function": {"name": "b", "arguments": " "}}]
+        assert QWEN25.render({"tool_calls": calls}, thinking=False) == (
+            json_call("a", '{"x": 1, "y": "z"}') + "\n" + json_call("b", "{}"))
 
     def test_parts_follow_the_servers_reading(self):
         pieces = ["\n", "<think>", "\n", "Plan", ".\n", "</think>", "\n\n", "Hi", ".\n", "<tool_call>", "\n", '{"', "name",
@@ -477,6 +519,25 @@ class TestQwenJson:
         call = "".join(piece for piece, part in zip(pieces, kind) if part == "tool_call")
         assert call.startswith(QWEN3.call_name_prefix)
 
+    def test_a_token_takes_the_part_of_its_first_character_that_is_no_markers(self):
+        # the space the answer begins with is skipped; the word in the same token is content
+        assert [part for part, _, _ in QWEN3.parts([" Hello", ".", ""])] == ["content", "marker"]
+        # an end token's piece, written out, is the end, not text to read
+        assert [part for part, _, _ in QWEN3.parts(["Hi", ".", "<|im_end|>"])] == ["content", "marker"]
+        # after a prompt that closed the reasoning, the space is content too
+        assert QWEN3.parts(["\n", "Hi"], thinking=False) == [("content", 0, 2)]
+
     def test_parts_of_a_malformed_call_are_still_marked(self):
         parts = QWEN3.parts(["<tool_call>", "\n", "{", "oops", ""])
         assert [part for part, _, _ in parts] == ["marker", "tool_call", "marker"]
+
+
+class TestQwen3CoderClosed:
+    """Qwen3.5's prompt holds the turn's one reasoning, opened or closed: a `<think>` the model
+    writes is text."""
+
+    def test_after_a_prompt_that_closed_the_reasoning_a_think_is_content(self):
+        text = "<think>\nfoo\n</think>\n\nbar"
+        assert QWEN.parse(text, tools=False, thinking=False) == {"role": "assistant", "content": text}
+        pieces = ["<think>", "\n", "foo", "\n", "</think>", "\n\n", "bar", ""]
+        assert QWEN.parts(pieces, thinking=False) == [("content", 0, 7), ("marker", 7, 8)]

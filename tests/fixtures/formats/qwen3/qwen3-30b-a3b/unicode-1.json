@@ -27,7 +27,7 @@
   }
  ],
  "parallel": true,
- "thinking": false,
+ "thinking": null,
  "prompt_end": "ontent is: naïve résumé — 日本語 ✓<|im_end|>\n<|im_start|>assistant\n",
  "finish_reason": "tool_calls",
  "completion_tokens": 156,

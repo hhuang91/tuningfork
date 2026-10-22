@@ -20,8 +20,10 @@ class Format(Protocol):
     def detect(self, template: str) -> bool:
         """Whether a chat template is this format's."""
 
-    def thinking(self, prompt: str) -> bool:
-        """Whether a rendered prompt turns the model's reasoning on."""
+    def thinking(self, prompt: str) -> bool | None:
+        """What a rendered prompt did with the model's reasoning: True where it turned it on,
+        or opened it, so that the answer starts inside it; False where it turned it off, or
+        closed it; None where it left it to the model, whose answer shows."""
 
     def parse(
         self,
@@ -36,23 +38,25 @@ class Format(Protocol):
         and tool_calls, as the server's own parser gives them. Raises `FormatError`.
 
         `thinking` is `thinking(prompt)` where the prompt is known: a template that opens the
-        reasoning in the prompt itself leaves the answer starting inside it. None: read from
-        the text, where it can be. `offered` is the request's tools, as chat-completions
-        definitions, for a format that types each argument by its schema."""
+        reasoning in the prompt itself leaves the answer starting inside it. None, where the
+        prompt left it to the model or is not known: read from the text. `offered` is the
+        request's tools, as chat-completions definitions, for a format that types each argument
+        by its schema."""
 
     def parts(self, pieces: Sequence[str], *, thinking: bool | None = None) -> list[tuple[str, int, int]]:
         """What each token is — marker, reasoning, content or tool_call — as (kind, start,
         end) runs over positions, from the tokens' pieces. `thinking` as for `parse`."""
 
-    def render(self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()) -> str:
+    def render(
+        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
+    ) -> str:
         """A parsed assistant message as the raw text the model generated: the inverse of
         `parse`, given what `parse` is given. Without the end token, which the model adds
         itself."""
 
     def renderings(
-        self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()
+        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
     ) -> list[str]:
         """Every text the model may have generated for this message where the server reads
-        several the same, the likeliest — `render`'s — first. Scoring keeps the one with the
-        recorded number of tokens, and where several have it, the one the model finds
-        likeliest."""
+        several the same, `render`'s first. Scoring keeps the one with the recorded number of
+        tokens, and where several have it, the one the model finds likelier where they part."""

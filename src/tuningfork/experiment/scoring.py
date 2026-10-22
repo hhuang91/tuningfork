@@ -14,8 +14,10 @@ Two checks say whether that is the run's own answer, token for token, and both a
   the heatmap is still of this text, and says it was rebuilt approximately.
 
 Where the server reads several texts as the same answer — an empty reasoning it drops, a blank
-line between calls (`renderings`) — the one with the recorded number of tokens is scored, and
-where several have it, the one the model finds likeliest.
+line between calls (`renderings`) — the one with the recorded number of tokens is scored. Where
+several have it, the one the model finds likelier where they part is scored, and the record says
+how many there were (`texts_alike`): the heatmap is then of the likelier text, not surely the
+run's own.
 """
 
 from __future__ import annotations
@@ -64,17 +66,19 @@ async def raw_session(
         yield client, raw, server
 
 
-def _likelihood(entries: list[dict[str, Any]], length: int) -> float:
-    """How likely the model finds a scored answer: its tokens' log-probabilities, summed. A token
-    nothing is known of counts as no likelier than the least likely alternative seen there."""
-    total = 0.0
-    for entry in entries[:length]:
-        logprob = entry.get("logprob")
-        if logprob is None:
-            seen = [alt["logprob"] for alt in entry.get("top_logprobs") or [] if alt.get("logprob") is not None]
-            logprob = min(seen, default=0.0)
-        total += logprob
-    return total
+def _chance(entry: dict[str, Any], token: int) -> float:
+    """A token's log-probability at a scored position: the forced token's own, or an
+    alternative's among the top k. One not known there is less likely than any that is."""
+    if entry.get("id") == token and entry.get("logprob") is not None:
+        return entry["logprob"]
+    seen = {alt.get("id"): alt.get("logprob") for alt in entry.get("top_logprobs") or []}
+    found = seen.get(token)
+    return found if found is not None else float("-inf")
+
+
+def _parting(a: list[int], b: list[int]) -> int | None:
+    """The first position where two answers' tokens differ; None where one begins the other."""
+    return next((k for k, (x, y) in enumerate(zip(a, b)) if x != y), None)
 
 
 def recorded_message(store: Store, step: Any) -> tuple[dict[str, Any], str | None]:
@@ -122,18 +126,22 @@ async def score_answer(
     recorded_answer = (step.usage or {}).get("completion_tokens")
     ended = finish in ("stop", "tool_calls")
     # Where the server reads several texts as this answer, those with the recorded number of
-    # tokens; where that leaves more than one, or the number is unknown, the one the model finds
-    # likeliest — a blank line between two calls is a token as a newline is.
+    # tokens — every one, where the number is unknown, and the first where none has it. Of
+    # those, the one the model finds likelier where they part: a blank line between two calls
+    # is one token, as a newline is. The texts agree up to there, so one scoring weighs both.
     tokenized = [(candidate, await raw.pieces(candidate)) for candidate in texts]
     alike = [
         (candidate, found) for candidate, found in tokenized
         if recorded_answer is None or len(found) + ended == recorded_answer
     ] or tokenized[:1]
-    weighed = []
-    for candidate, found in alike:
-        scored = await raw.score(prompt, [token for token, _ in found], top_k)
-        weighed.append((_likelihood(scored, len(found)), candidate, found, scored))
-    _, text, pieces, entries = max(weighed, key=lambda each: each[0])  # the first of equals
+    text, pieces = alike[0]
+    entries = await raw.score(prompt, [token for token, _ in pieces], top_k)
+    for candidate, found in alike[1:]:
+        ours, theirs = [token for token, _ in pieces], [token for token, _ in found]
+        at = _parting(ours, theirs)
+        if at is not None and _chance(entries[at], theirs[at]) > _chance(entries[at], ours[at]):
+            text, pieces = candidate, found
+            entries = await raw.score(prompt, theirs, top_k)
     answer = [token for token, _ in pieces]
 
     stream = from_entries(entries, top_k=top_k)
@@ -161,8 +169,8 @@ async def score_answer(
         "thinking": thinking,
         "parse_agrees": agrees,
     }
-    if len(alike) > 1:
-        notes["texts_alike"] = len(alike)  # the likeliest kept
+    if recorded_answer is not None and len(alike) > 1:
+        notes["texts_alike"] = len(alike)  # with the recorded count; the likelier kept
     return store.add_token_stream(
         redact_stream(stream).to_json(),
         source="scored",

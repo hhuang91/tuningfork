@@ -201,15 +201,16 @@ class Qwen3Coder:
         thinking: bool | None = None,
         offered: Sequence[dict[str, Any]] = (),
     ) -> dict[str, Any]:
-        """Mirrors the server's PEG parser: an optional reasoning, then content up to the first
-        call, then the calls. A call to a tool not offered, or a parameter its schema does not
-        name, is read with any type — the server's grammar never lets one through, and what
-        the model wrote without it is still worth reading."""
+        """Mirrors the server's PEG parser: the reasoning the prompt opened, then content up to
+        the first call, then the calls. The prompt holds the turn's one reasoning, opened or
+        closed, so a `<think>` the model writes is text. A call to a tool not offered, or a
+        parameter its schema does not name, is read with any type — the server's grammar never
+        lets one through, and what the model wrote without it is still worth reading."""
         if thinking is None:
             thinking = _opened(text)
         source = (THINK + "\n" if thinking else "") + text
         i, reasoning = 0, ""
-        if source.startswith(THINK):
+        if thinking:
             start = _skip_space(source, len(THINK))
             stops = [at for at in (source.find(THINK_END, start), source.find(CALL, start)) if at >= 0]
             if not stops:  # cut off while thinking
@@ -286,10 +287,7 @@ class Qwen3Coder:
         # the server skips the space an answer begins with, as after each marker
         state, skipping = ("reasoning" if thinking else "content"), True
         for position, piece in enumerate(pieces):
-            if piece == THINK:
-                mark("marker", position)
-                state, skipping = "reasoning", True
-            elif piece == THINK_END:
+            if piece == THINK_END and state == "reasoning":  # a <think> the model writes is text
                 mark("marker", position)
                 state, skipping = "content", True
             elif piece == CALL:
@@ -307,7 +305,9 @@ class Qwen3Coder:
                 mark(state, position)
         return runs
 
-    def render(self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()) -> str:
+    def render(
+        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
+    ) -> str:
         # The server keeps the reasoning up to `</think>`, its last newline included, and skips
         # the space after it, which the model writes as a blank line.
         text = ""
@@ -336,7 +336,7 @@ class Qwen3Coder:
         return text
 
     def renderings(
-        self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()
+        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
     ) -> list[str]:
         return [self.render(message, thinking=thinking, offered=offered)]
 

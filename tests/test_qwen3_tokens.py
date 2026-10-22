@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from rich.console import Console
+from typer.testing import CliRunner
 
 from tuningfork.backends.formats import get_format
+from tuningfork.cli import app
 from tuningfork.ops.forking import execute_forking, prepare_forking
 from tuningfork.ops.tokens import execute_score, prepare_score
 from tuningfork.wire import get_wire
@@ -61,11 +64,13 @@ def served(monkeypatch, mock_server):
     return serve(monkeypatch, mock_server, Qwen3Toy())
 
 
-def record(store, served, raw: str, *, request: dict = REQUEST, fmt=QWEN3) -> str:
+def record(store, served, raw: str, *, request: dict = REQUEST, fmt=QWEN3, thinking: bool | None = None,
+           count: int | None = None) -> str:
     """A step whose answer was `raw`, as the server parsed it, with the counts it reported."""
-    message = fmt.parse(raw, tools=True, offered=TOOLS)
+    message = fmt.parse(raw, tools=True, thinking=thinking, offered=TOOLS)
     finish = "tool_calls" if message.get("tool_calls") else "stop"
-    usage = {"prompt_tokens": served.toy.input_tokens(request), "completion_tokens": len(served.toy.tokenize(raw)) + 1}
+    answered = len(served.toy.tokenize(raw)) + 1 if count is None else count
+    usage = {"prompt_tokens": served.toy.input_tokens(request), "completion_tokens": answered}
     store.begin_run("qwen3", "t/1")
     wire = get_wire("openai-chat")
     store.record_step(request=request, response={**as_response(message, finish), "usage": usage},
@@ -86,8 +91,10 @@ async def test_an_answer_whose_reasoning_the_model_opened_is_scored_exactly(stor
     record_ = found.view.record
     assert (record_.method, record_.exact) == ("grammar", True)
     assert record_.notes["format"] == "qwen3" and record_.notes["parse_agrees"] is True
+    # the prompt left the reasoning to the model, whose answer shows it
+    assert record_.notes["thinking"] is None
     stream = found.view.stream
-    assert stream.text() == WRITE and stream.thinking is False
+    assert stream.text() == WRITE and stream.thinking is None
     assert stream.part(0) == "marker" and {part for part, _, _ in stream.parts} >= {"reasoning", "tool_call"}
     name = next(token for token in found.view.to_json()["tokens"] if token["text"] == "write_file")
     assert [text for text, _ in name["alternatives"]] == ["write_file", "read_file"]
@@ -130,6 +137,52 @@ async def test_an_answer_after_a_prompt_that_closed_the_reasoning_is_scored_exac
 
     assert (found.view.record.exact, found.view.record.notes["parse_agrees"]) == (True, True)
     assert found.view.stream.text() == answer and found.view.stream.thinking is False
+
+
+async def test_an_answer_after_a_prompt_that_closed_the_reasoning_keeps_its_first_space(store, served):
+    # the server read the prompt's closed reasoning before the answer: the newline it begins
+    # with is content, not space to skip
+    answer = "\nI will write it."
+    served.toy.answers = [("<think>\n\n</think>\n\n" + answer, 1.0)]
+    run_id = record(store, served, answer, request=OFF, thinking=False)
+
+    found = await score(store, run_id)
+
+    assert (found.view.record.exact, found.view.record.notes["parse_agrees"]) == (True, True)
+    assert found.view.stream.text() == answer and found.view.stream.part(0) == "content"
+
+
+async def test_the_token_count_decides_before_the_likelihood(store, served):
+    # the model finds an empty reasoning likelier, but the run's count says it wrote none
+    served.toy.answers = [("<think>\n\n</think>\n\nHi.", 0.9), ("Hi.", 0.1)]
+    run_id = record(store, served, "Hi.")
+
+    found = await score(store, run_id)
+
+    assert found.view.record.exact is True and found.view.stream.text() == "Hi."
+    assert "texts_alike" not in found.view.record.notes
+
+
+async def test_where_no_text_has_the_recorded_count_the_templates_own_is_scored(store, served):
+    served.toy.answers = [("<think>\n\n</think>\n\nHi.", 0.9), ("Hi.", 0.1)]
+    run_id = record(store, served, "Hi.", count=99)
+
+    found = await score(store, run_id)
+
+    assert found.view.record.exact is False and found.view.stream.text() == "Hi."
+
+
+def test_the_command_says_which_text_it_scored(store, served, monkeypatch):
+    monkeypatch.setattr("tuningfork.cli.console", Console(width=220))
+    raw = "<think>\nBoth.\n</think>\n\n" + call("read_file", '{"path": "a.csv"}') + "\n\n" + call("read_file", '{"path": "b.csv"}')
+    served.toy.answers = [(raw, 1.0)]
+    run_id = record(store, served, raw)
+
+    shown = CliRunner().invoke(app, ["tokens", run_id[:8], "0", "--score", "--base-url", UPSTREAM, "--home", str(store.home)])
+
+    assert shown.exit_code == 0, shown.output
+    assert "rebuilt as the likelier of 2 texts the server reads alike" in shown.output
+    assert "rebuilt exactly" not in shown.output
 
 
 async def test_a_qwen25_answer_is_scored_exactly(store, monkeypatch, mock_server):

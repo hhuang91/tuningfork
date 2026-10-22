@@ -15,8 +15,9 @@ and a checkpoint is only ever used to roll back a cached prefix, which `--no-cac
 never keeps. Qwen3.5 and 3.6, whose linear-attention layers keep a running state, need
 `--ctx-checkpoints 0` as much (`--swa-full` does nothing for them): with checkpoints, the raw
 endpoint's greedy answer to a 20,000-token prompt parted from the chat endpoint's at its 45th
-token; without, scoring gives the chat endpoint's numbers exactly. Qwen3 and Qwen2.5, whose
-layers all attend to the whole prompt, score exactly with checkpoints or without. Start it with
+token; without, scoring gives the chat endpoint's numbers exactly. The server takes no
+checkpoints of a model with neither kind of layer (Qwen3, Qwen2.5): the flag changes nothing
+there. Start it with
 `--no-cache-prompt` too: otherwise a Claude Code step's
 samples share the first one's cached processing (its Messages endpoint ignores
 `cache_prompt`), and so do forks with matching prompts — every fork, in the sandbox. The
@@ -296,12 +297,14 @@ so first (`refine.citations`); an approval keeps its evidence.
 Token-level work needs llama.cpp's own endpoints (`/apply-template`, `/tokenize`,
 `/completion`) and a model whose raw output tuningfork reads (`backends/formats/`: Gemma 4;
 Qwen3.5 and 3.6, read as llama.cpp's Qwen3-Coder parser reads them — each argument typed by the
-tool's schema, `offered`, and the reasoning opened by the prompt, `thinking`, which a format
-reads from the answer where no prompt is at hand; Qwen3 and Qwen2.5, read as the parser llama.cpp
-builds from their templates reads them — a call's JSON kept as written. Where the server reads
-several texts as one answer — an empty reasoning it drops, a blank line between calls — a format
-gives each (`renderings`), and scoring keeps the one with the recorded token count, else the one
-the model finds likeliest). Scoring rebuilds a recorded answer as the
+tool's schema, `offered`; Qwen3 and Qwen2.5, read as the parser llama.cpp builds from their
+templates reads them — a call's JSON kept as written). The server reads the prompt's opening of
+the turn with the answer, so a format is told what the prompt did with the reasoning (`thinking`:
+opened it, closed it, or left it to the model) and reads it from the answer where no prompt is at
+hand. Where the server reads several texts as one answer — an empty reasoning it drops, a blank
+line between calls — a format gives each (`renderings`): scoring keeps the one with the recorded
+token count, and of several, the one the model finds likelier where they part, saying so
+(`texts_alike`). Scoring rebuilds a recorded answer as the
 model's tokens and forces it after the step's exact prompt in one request (a grammar of token
 ids); the prompt must have the step's recorded token count, or it is refused. llama.cpp can give
 a character the model wrote in two tokens one entry, the last token's (Qwen3.5's ` ≡`; Gemma 4's

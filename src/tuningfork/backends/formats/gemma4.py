@@ -231,7 +231,9 @@ class Gemma4:
                 mark(state, position)
         return runs
 
-    def render(self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()) -> str:
+    def render(
+        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
+    ) -> str:
         text = ""
         reasoning = message.get("reasoning_content") or ""
         if reasoning or thinking:
@@ -251,6 +253,6 @@ class Gemma4:
         return text
 
     def renderings(
-        self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()
+        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
     ) -> list[str]:
         return [self.render(message, thinking=thinking, offered=offered)]

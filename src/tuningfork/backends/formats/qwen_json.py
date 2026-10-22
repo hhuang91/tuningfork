@@ -19,20 +19,30 @@ a Qwen3 answer:
 
 then an end token. A hybrid Qwen3 opens its reasoning itself, and with reasoning off the prompt
 closes it (`<think>\\n\\n</think>\\n\\n`); a Qwen3-2507 Thinking template opens it in the prompt
-(`<think>\\n`); an Instruct model never reasons; Qwen2.5 has no reasoning to read.
+(`<think>\\n`) — where one does not, the model opens it itself; an Instruct model never reasons;
+Qwen2.5 has no reasoning to read.
 
-How the server reads it, its parser's own steps:
+The server reads the prompt's own opening of the turn and the answer as one text, and finds one
+reasoning at most, at its start. So where the prompt opened the reasoning, the answer begins
+inside it; where the prompt closed it, the answer is read from its first character, space
+included, and a `<think>` in it is content. Where the prompt left it to the model:
 
 - the space an answer begins with is skipped — but for Qwen2.5's content, kept where no tool is
   offered;
 - a reasoning is read only where the answer begins with `<think>`, after one newline, up to
   `</think>`, with the newline before it; up to two newlines after it are skipped. One cut off
-  before its close is still reasoning; one that is blank is dropped;
-- the content runs up to `<tool_call>` and a newline, its own last newline kept;
+  before its close is still reasoning; one that is blank is dropped.
+
+Then, in every case:
+
+- the content runs up to `<tool_call>` and a newline, its own last newline kept — to the end,
+  where no tool is offered;
 - each call is a JSON object, the name before the arguments, any space between its tokens,
   between a pair of markers — several to a pair, separated by commas, where calls may run in
   parallel; the pairs are space apart, and nothing may follow them. The arguments are kept as the
   model wrote them: the JSON text, spacing and all, `{}` where they are not an object.
+- a call cut off before its close is an error here, where the server keeps what it read of it:
+  as the other formats do, tuningfork reads only calls the model finished.
 
 `<think>`, `</think>`, `<tool_call>` and `</tool_call>` are single tokens; a call's JSON is
 ordinary text.
@@ -50,6 +60,8 @@ THINK, THINK_END = "<think>", "</think>"
 CALL, CALL_END = "<tool_call>", "</tool_call>"
 #: A call opens with its marker and a newline: the server waits for both.
 CALL_OPEN = CALL + "\n"
+#: How a prompt that turns the reasoning off closes it.
+CLOSED = THINK + "\n\n" + THINK_END + "\n\n"
 ASSISTANT = "<|im_start|>assistant"
 #: The pieces of the special tokens that end an answer (empty in llama.cpp's logprobs).
 ENDS = ("", "<|im_end|>", "<|endoftext|>")
@@ -86,7 +98,8 @@ def _until(text: str, i: int, delimiter: str) -> int:
 
 def _opened(text: str) -> bool:
     """Whether an answer read without its prompt started inside the reasoning: it closes a
-    reasoning it never opened."""
+    reasoning it never opened. One cut off before it closed reads as content — where the server,
+    which saw the prompt open it, reads it as reasoning."""
     end = text.find(THINK_END)
     return end >= 0 and THINK not in text[:end]
 
@@ -191,14 +204,17 @@ class QwenJson:
             return all(part in template for part in _REASONING_TEMPLATE)
         return "think>" not in template
 
-    def thinking(self, prompt: str) -> bool:
-        """Whether the prompt opened the reasoning: its assistant turn opens `<think>` and never
-        closes it, as a Qwen3-2507 Thinking template does."""
+    def thinking(self, prompt: str) -> bool | None:
+        """What the prompt's last assistant turn did with the reasoning: opened it (True), as a
+        Qwen3-2507 Thinking template does; closed it (False), as Qwen3's does with reasoning off —
+        or had none to open, as Qwen2.5's; or neither (None), leaving it to the model."""
         if not self.reasoning:
             return False
         start = prompt.rfind(ASSISTANT)
         tail = prompt[start:] if start >= 0 else prompt
-        return THINK in tail and THINK_END not in tail
+        if THINK_END in tail:
+            return False
+        return True if THINK in tail else None
 
     def parse(
         self,
@@ -227,10 +243,16 @@ class QwenJson:
         offered: Sequence[dict[str, Any]],
     ) -> tuple[dict[str, Any], list[str], FormatError | None]:
         """The message, what each character of `text` is — marker, reasoning, content or
-        tool_call — and the error that stopped the reading, if one did."""
-        if thinking is None:
-            thinking = self.reasoning and _opened(text)
-        opening = THINK + "\n" if thinking and self.reasoning else ""
+        tool_call — and the error that stopped the reading, if one did. The prompt's own opening
+        of the turn is read before the answer, as the server reads it."""
+        if thinking is None and _opened(text):
+            thinking = True
+        if not self.reasoning:
+            opening = ""
+        elif thinking is None:
+            opening = ""  # left to the model
+        else:
+            opening = THINK + "\n" if thinking else CLOSED
         source = opening + text
         kinds = ["marker"] * len(source)
 
@@ -350,28 +372,30 @@ class QwenJson:
                 runs.append((kind, position, position + 1))
         return runs
 
-    def render(self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()) -> str:
+    def render(
+        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
+    ) -> str:
         return self.renderings(message, thinking=thinking, offered=offered)[0]
 
     def renderings(
-        self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()
+        self, message: dict[str, Any], *, thinking: bool | None, offered: Sequence[dict[str, Any]] = ()
     ) -> list[str]:
-        """The raw texts the server reads as this message, the likeliest first. What it skips
-        leaves no trace in the message: a Qwen3 that chose not to reason may have written an
+        """The raw texts the server reads as this message, the template's own first. What it
+        skips leaves no trace in the message: a Qwen3 left to reason or not may have written an
         empty reasoning, which only the answer's number of tokens tells; and calls are a line
         apart as the template writes them, or a blank line, as Qwen3-2507 Thinking writes them —
         one token either way, which only the model's own likelihood tells."""
         reasoning = message.get("reasoning_content") or ""
         # The server keeps the reasoning up to `</think>`, its last newline included, and skips
         # the blank line the model writes after it.
-        if thinking and self.reasoning:
+        if not self.reasoning or thinking is False:
+            heads = [""]  # no reasoning: none in the template, or the prompt closed it
+        elif thinking:
             heads = [reasoning + THINK_END + "\n\n"]
-        elif reasoning and self.reasoning:
+        elif reasoning:
             heads = [THINK + "\n" + reasoning + THINK_END + "\n\n"]
-        elif self.reasoning:
-            heads = ["", THINK + "\n\n" + THINK_END + "\n\n"]
         else:
-            heads = [""]
+            heads = ["", THINK + "\n\n" + THINK_END + "\n\n"]
         apart = ("\n", "\n\n") if len(message.get("tool_calls") or []) > 1 else ("\n",)
         return [head + self._body(message, between) for head in heads for between in apart]
 

@@ -125,8 +125,9 @@ class TokenStream:
     redacted: list[tuple[int, int]] = field(default_factory=list)
     #: The output format that marked the parts (`tuningfork.backends.formats`), if one did.
     format: str | None = None
-    #: Whether the prompt turned the model's reasoning on, where it was known when the parts
-    #: were marked: a template that opens the reasoning itself starts the answer inside it.
+    #: What the prompt did with the model's reasoning, the format's `thinking`, where it was
+    #: known when the parts were marked: a template that opens the reasoning itself starts the
+    #: answer inside it. None where the prompt left it to the model, or was not known.
     thinking: bool | None = None
 
     def __len__(self) -> int:
@@ -148,7 +149,7 @@ class TokenStream:
 
     def mark_parts(self, fmt: Any, *, thinking: bool | None = None) -> TokenStream:
         """Mark what each position is, by an output format (`tuningfork.backends.formats`).
-        `thinking`: whether the prompt turned reasoning on, when it is known."""
+        `thinking`: what the prompt did with the reasoning, as the format reads it."""
         if fmt is not None:
             pieces = [self.token_text(position) for position in range(len(self))]
             self.parts = fmt.parts(pieces, thinking=thinking)
