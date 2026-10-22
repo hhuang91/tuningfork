@@ -258,7 +258,7 @@ class Qwen3Coder:
             found = None if admitted == {"string"} else _json_value(text, i, admitted)
             if found is None:
                 if "string" not in admitted:
-                    raise FormatError(f"{name}'s {key} is not the JSON its schema asks for, at {i}")
+                    raise FormatError(f"{name}'s {key} is no JSON, which its schema asks for, at {i}")
                 close = text.find(ARG_CLOSE, i)
                 if close < 0:
                     raise FormatError(f"{name}'s {key} is never closed")
@@ -339,8 +339,8 @@ class Qwen3Coder:
 def _members(arguments: Any) -> list[tuple[str, Any, str]]:
     """A call's arguments as (name, value, the value's JSON as it stands in the arguments, which
     on chat completions keep it as the model wrote it). A Messages step's arguments were written
-    again from the parsed input (`wire.anthropic`), their spacing and escapes lost: such a value
-    is rebuilt approximately, and scoring says so."""
+    again from the parsed input (`wire.anthropic`): escapes added, the model's spacing lost. Such
+    a value is rebuilt approximately, which scoring says where the token count changes."""
     if isinstance(arguments, dict):
         arguments = json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
     text = arguments if isinstance(arguments, str) and arguments.strip() else "{}"

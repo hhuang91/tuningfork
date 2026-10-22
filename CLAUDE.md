@@ -609,7 +609,8 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     src/tuningfork/runner.py   batch runs and forks (fresh workspace + home per launch)
     src/tuningfork/specs.py    task specs (evals.json convention)
     tests/mock_server/        scriptable mock: OpenAI chat-completions and Anthropic Messages;
-                               toy.py, a toy llama.cpp (tokenizer, template, a model with forks)
+                               toy.py, a toy llama.cpp (tokenizer, template, a model with forks;
+                               QwenToy, the same writing Qwen3.5's format)
     tests/fixtures/formats/   raw output beside the server's parse of it; capture.py remakes them
     tests/fake_agent.py       a real agent process for end-to-end tests of batches and forks
     tests/browser/            opt-in browser tests (Edge/Chromium over DevTools) and demo servers
