@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tuningfork.backends.formats import known_models
 from tuningfork.config import read_home_config, write_home_config
 from tuningfork.ops.common import OperationError
 
@@ -416,9 +417,9 @@ MEASURES: dict[str, tuple[str, str]] = {
 #: from the chat endpoint's logprobs.
 TOKEN_WORK: dict[str, tuple[str, tuple[str, ...], str]] = {
     "score": ("Scoring an answer", ("raw_completion", "prompt_equivalence", "known_output_format"),
-              "llama.cpp's server running a model tuningfork reads (Gemma 4)"),
+              f"llama.cpp's server running a model tuningfork reads ({known_models()})"),
     "forking": ("Forking tokens", ("raw_completion", "known_output_format"),
-                "llama.cpp's server running a model tuningfork reads (Gemma 4)"),
+                f"llama.cpp's server running a model tuningfork reads ({known_models()})"),
     "logprobs": ("Keeping each sample's tokens", ("logprobs",), "a server whose chat endpoint returns logprobs, as llama.cpp's does"),
 }
 

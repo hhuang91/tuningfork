@@ -58,7 +58,9 @@ class TokensView:
                     "i": position,
                     "text": text if position == start else "",
                     "part": stream.part(position),
-                    "p": _round(probability(stream.logprobs[position]), 6),
+                    # nothing known: a token the server's entries merged into the next one's
+                    "p": None if stream.logprobs[position] is None and not stream.top_logprobs[position]
+                    else _round(probability(stream.logprobs[position]), 6),
                     "entropy": _round(entropy),
                     "margin": _round(margin),
                     "heat": heat(entropy),

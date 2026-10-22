@@ -1,0 +1,114 @@
+{
+ "case": "one-call",
+ "seed": 1,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": true,
+ "prompt_end": "her in Paris right now?<|im_end|>\n<|im_start|>assistant\n<think>\n",
+ "finish_reason": "tool_calls",
+ "completion_tokens": 72,
+ "pieces": [
+  "The",
+  " user",
+  " is",
+  " asking",
+  " about",
+  " the",
+  " current",
+  " weather",
+  " in",
+  " Paris",
+  ".",
+  " I",
+  " have",
+  " access",
+  " to",
+  " a",
+  " get",
+  "_weather",
+  " function",
+  " that",
+  " can",
+  " provide",
+  " weather",
+  " information",
+  " for",
+  " a",
+  " city",
+  ".",
+  " I",
+  " need",
+  " to",
+  " call",
+  " this",
+  " function",
+  " with",
+  " \"",
+  "Paris",
+  "\"",
+  " as",
+  " the",
+  " city",
+  " parameter",
+  ".",
+  "\n",
+  "</think>",
+  "\n\n",
+  "<tool_call>",
+  "\n",
+  "<",
+  "function",
+  "=get",
+  "_weather",
+  ">",
+  "\n",
+  "<",
+  "parameter",
+  "=",
+  "city",
+  ">",
+  "\n",
+  "Paris",
+  "\n",
+  "</",
+  "parameter",
+  ">",
+  "\n",
+  "</",
+  "function",
+  ">",
+  "\n",
+  "</tool_call>",
+  ""
+ ],
+ "message": {
+  "content": "",
+  "reasoning_content": "The user is asking about the current weather in Paris. I have access to a get_weather function that can provide weather information for a city. I need to call this function with \"Paris\" as the city parameter.\n",
+  "tool_calls": [
+   {
+    "name": "get_weather",
+    "arguments": "{\"city\":\"Paris\"}"
+   }
+  ]
+ }
+}

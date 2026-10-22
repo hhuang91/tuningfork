@@ -564,7 +564,8 @@ async def probe_output_format(ctx: ProbeContext) -> list[CapabilityResult]:
     if found is None:
         return [CapabilityResult(Capability.KNOWN_OUTPUT_FORMAT, Support.NO,
                                  "the chat template is not one tuningfork reads raw output of")]
-    return [CapabilityResult(Capability.KNOWN_OUTPUT_FORMAT, Support.YES, f"{found.name}")]
+    return [CapabilityResult(Capability.KNOWN_OUTPUT_FORMAT, Support.YES,
+                             f"{found.name} ({', '.join(found.models)})")]
 
 
 async def probe_fresh_prompts(ctx: ProbeContext) -> list[CapabilityResult]:

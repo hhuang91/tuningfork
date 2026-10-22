@@ -35,6 +35,9 @@ class Prompt:
     sampling: dict[str, Any] = field(default_factory=dict)
     #: Stop strings the request set.
     stop: list[str] = field(default_factory=list)
+    #: The tools offered, as chat-completions definitions, while `tools`: a format that types
+    #: each argument by its schema reads an answer with them, as the server did.
+    offered: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)

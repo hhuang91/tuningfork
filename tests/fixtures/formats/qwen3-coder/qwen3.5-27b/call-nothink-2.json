@@ -1,0 +1,69 @@
+{
+ "case": "call-nothink",
+ "seed": 2,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": false,
+ "prompt_end": "a right now?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+ "finish_reason": "tool_calls",
+ "completion_tokens": 27,
+ "pieces": [
+  "<tool_call>",
+  "\n",
+  "<",
+  "function",
+  "=get",
+  "_weather",
+  ">",
+  "\n",
+  "<",
+  "parameter",
+  "=",
+  "city",
+  ">",
+  "\n",
+  "L",
+  "ima",
+  "\n",
+  "</",
+  "parameter",
+  ">",
+  "\n",
+  "</",
+  "function",
+  ">",
+  "\n",
+  "</tool_call>",
+  ""
+ ],
+ "message": {
+  "content": "",
+  "reasoning_content": "",
+  "tool_calls": [
+   {
+    "name": "get_weather",
+    "arguments": "{\"city\":\"Lima\"}"
+   }
+  ]
+ }
+}

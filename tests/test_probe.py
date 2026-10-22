@@ -313,7 +313,10 @@ class TestTokenLevel:
     async def test_the_output_format(self, mock_server, probe_ctx):
         mock_server.props = toy_props()
         (result,) = await probe_output_format(probe_ctx)
-        assert (result.support, result.detail) == (Support.YES, "gemma4")
+        assert (result.support, result.detail) == (Support.YES, "gemma4 (Gemma 4)")
+        mock_server.props = {"chat_template": "{{ '<tool_call>\\n<function=' }}{{ '<parameter=' }}"}
+        (result,) = await probe_output_format(probe_ctx)
+        assert (result.support, result.detail) == (Support.YES, "qwen3-coder (Qwen3.5, Qwen3.6)")
         mock_server.props = {"chat_template": "<|im_start|>"}
         (result,) = await probe_output_format(probe_ctx)
         assert result.support is Support.NO

@@ -173,6 +173,7 @@ async def run_forking(store: Store, plan: ForkingPlan, *, progress: Any = None) 
                 f"the prompt renders to {len(prompt.ids)} tokens here, and the step's had {recorded}: "
                 "the model would be asked about a different context"
             )
+        thinking = fmt.thinking(prompt.text)
         server_defaults, notes = await check_parity(
             client, plan.base_url, Anchor.of(checkpoint), SamplingPlan(n=1, max_tokens=plan.max_tokens)
         )
@@ -215,7 +216,8 @@ async def run_forking(store: Store, plan: ForkingPlan, *, progress: Any = None) 
                 finish = "length" if generation.stop == "limit" else None
                 usage = {"completion_tokens": position + 1 + len(generation.ids)}
                 try:
-                    message = fmt.parse(text, tools=prompt.tools, parallel=prompt.parallel)
+                    message = fmt.parse(text, tools=prompt.tools, parallel=prompt.parallel,
+                                        thinking=thinking, offered=prompt.offered)
                     finish = finish or ("tool_calls" if message.get("tool_calls") else "stop")
                     stored = {"choices": [{"index": 0, "message": message, "finish_reason": finish}], "usage": usage}
                 except FormatError as unreadable:

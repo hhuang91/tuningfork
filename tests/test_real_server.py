@@ -6,7 +6,8 @@ refused before anything is sent:
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run pytest -m real_server tests/test_real_server.py
 
 Each test is one thing the design relies on. The model must be one
-whose output format tuningfork reads (`tuningfork.backends.formats`): Gemma 4 today.
+whose output format tuningfork reads (`tuningfork.backends.formats`): Gemma 4, Qwen3.5 or
+Qwen3.6.
 """
 
 from __future__ import annotations
@@ -55,13 +56,24 @@ def joined(entries: list[dict]) -> str:
     return b"".join(bytes(e.get("bytes") or []) for e in entries).decode("utf-8", "replace")
 
 
+async def server_format(http):
+    from tuningfork.backends.formats import format_for
+
+    fmt = format_for((await http.get(ROOT + "/props")).json().get("chat_template"))
+    assert fmt is not None, "the model's output format is not one tuningfork reads"
+    return fmt
+
+
 async def test_chat_logprobs_cover_every_generated_token(http):
     """G1: reasoning, channel markers and tool-call syntax each carry an entry, with its id."""
+    fmt = await server_format(http)
     answer = await post(http, "/v1/chat/completions", {**BODY, "logprobs": True, "top_logprobs": 5})
     entries = answer["choices"][0]["logprobs"]["content"]
     assert len(entries) == answer["usage"]["completion_tokens"]
     assert all("id" in entry and "bytes" in entry for entry in entries)
-    assert "<|tool_call>" in joined(entries) or answer["choices"][0]["message"].get("content")
+    prompt = (await post(http, "/apply-template", BODY))["prompt"]
+    parsed = fmt.parse(joined(entries), tools=True, thinking=fmt.thinking(prompt), offered=BODY["tools"])
+    assert parsed.get("tool_calls") or parsed.get("content")
 
 
 async def test_the_raw_path_renders_the_chat_prompt_and_repeats_greedy_chat(http):
@@ -104,21 +116,37 @@ async def test_a_messages_request_renders_as_the_server_renders_it(http):
 async def test_the_output_format_reads_and_writes_as_the_server_does(http):
     """G4: raw output parsed as the server parsed it, and a parsed answer written back as the
     raw text the model generated."""
-    from tuningfork.backends.formats import format_for
-
-    template = (await http.get(ROOT + "/props")).json().get("chat_template")
-    fmt = format_for(template)
-    assert fmt is not None, "the model's output format is not one tuningfork reads"
+    fmt = await server_format(http)
     answer = await post(http, "/v1/chat/completions", {**BODY, "logprobs": True, "top_logprobs": 1, "seed": 7})
     raw = joined(answer["choices"][0]["logprobs"]["content"])
     message = answer["choices"][0]["message"]
-    parsed = fmt.parse(raw, tools=True)
+    prompt = (await post(http, "/apply-template", BODY))["prompt"]
+    thinking = fmt.thinking(prompt)
+    parsed = fmt.parse(raw, tools=True, thinking=thinking, offered=BODY["tools"])
     assert (parsed.get("content") or "") == (message.get("content") or "")
     assert (parsed.get("reasoning_content") or "") == (message.get("reasoning_content") or "")
     assert [c["function"]["arguments"] for c in parsed.get("tool_calls") or []] == [
         c["function"]["arguments"] for c in message.get("tool_calls") or []]
-    prompt = (await post(http, "/apply-template", BODY))["prompt"]
-    assert raw.startswith(fmt.render(message, thinking=fmt.thinking(prompt)))
+    assert raw.startswith(fmt.render(message, thinking=thinking))
+
+
+async def test_a_character_written_in_two_tokens_is_scored_token_by_token(http):
+    """G6: the server gives a character the model wrote in two tokens one entry, the last
+    token's; the raw path gives each token its own again, the one merged away unknown."""
+    from tuningfork.backends.llamacpp.raw import LlamaRaw
+
+    raw = LlamaRaw(http, ROOT)
+    for char in ("≡", "⟦", "𝔸", "🜂"):
+        if len(await raw.pieces(f" {char}")) > 1:
+            break
+    else:
+        pytest.skip("this model writes each candidate character as one token")
+    prompt = await raw.render({"messages": [{"role": "user", "content": "Say hi."}]}, "openai-chat")
+    answer = await raw.tokenize(f"We have a {char} b.")
+    entries = await raw.score(prompt, answer, 3)
+    assert [entry["id"] for entry in entries[: len(answer)]] == answer
+    assert len(entries) == len(answer) + 1
+    assert any(entry["logprob"] is None for entry in entries[: len(answer)])
 
 
 async def test_a_grammar_forces_an_answer_and_scores_it_as_it_was_sampled(http):

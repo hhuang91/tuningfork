@@ -173,8 +173,11 @@ def prepare_forking(
         normalizers = lens
     if declared is None:
         # The base's own behaviour, read by the same parser that reads every continuation.
+        from tuningfork.backends.llamacpp.raw import offered_tools
+
+        offered = offered_tools(checkpoint.request, checkpoint.wire.name)
         try:
-            parsed = fmt.parse(tokens.text(), tools=bool(checkpoint.request.get("tools")))
+            parsed = fmt.parse(tokens.text(), tools=bool(offered), thinking=tokens.thinking, offered=offered)
         except FormatError as error:
             raise OperationError(f"the base answer cannot be read back: {error}") from None
         finish = "tool_calls" if parsed.get("tool_calls") else "stop"
