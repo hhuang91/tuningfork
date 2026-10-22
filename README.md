@@ -1,7 +1,6 @@
 # Tuning Fork
 
-**Find the step where your agent's skill goes wrong, test rewordings right there, and measure
-which fix works — on local LLMs.**
+**Tune agent skills to your own model.**
 
 [![tests](https://github.com/hhuang91/tuningfork/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/hhuang91/tuningfork/actions/workflows/tests.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
