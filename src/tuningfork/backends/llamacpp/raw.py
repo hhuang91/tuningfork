@@ -65,10 +65,10 @@ def aligned(entries: list[dict[str, Any]], ids: list[int]) -> list[dict[str, Any
     """Per-token entries, one a token again. llama.cpp can give a character the model wrote in
     two tokens or more one entry: the last token's, holding the whole character's bytes (b11108:
     Qwen3.5 writes ` ≡` as two tokens; Gemma 4's byte tokens kept an entry each). Each token it
-    merged away gets an entry of its own,
-    nothing known of it, and the merged entry loses the bytes, which are not its token's alone —
-    its piece is read again from the tokenizer, where its caller has one. Entries that do not
-    follow the tokens are refused, never laid over the wrong ones."""
+    merged away gets an entry of its own, nothing known of it, and the merged entry loses the
+    bytes, which are not its token's alone — its piece is read again from the tokenizer, where
+    its caller has one. Entries that do not follow the tokens are refused, never laid over the
+    wrong ones."""
     out: list[dict[str, Any]] = []
     k, skipped = 0, False
     for token in ids:

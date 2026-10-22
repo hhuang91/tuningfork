@@ -109,10 +109,9 @@ async def test_a_token_whose_entry_the_server_folded_into_the_next_is_scored_unk
 async def test_a_continuation_cut_off_while_reasoning_is_read_as_reasoning(store, served):
     # the prompt opened the reasoning: a continuation that stops before closing it is still
     # reasoning — read from its text alone, it would be a reply
-    write = "I will write it.\n</think>\n\n" + call("write_file", path="42", lines="3")
     read = "I will read it.\n</think>\n\n" + call("read_file", path="data.csv")
-    served.toy.answers = [("<think>\n" + write, 0.6), ("<think>\n" + read, 0.4)]
-    run_id = record(store, served, write)
+    served.toy.answers = [("<think>\n" + WRITE, 0.6), ("<think>\n" + read, 0.4)]
+    run_id = record(store, served, WRITE)
     await score(store, run_id)
 
     # forked at " write", two tokens allowed past it
@@ -121,7 +120,9 @@ async def test_a_continuation_cut_off_while_reasoning_is_read_as_reasoning(store
     (candidate,) = plan.candidates
     assert (candidate.chosen.text, candidate.part) == (" write", "reasoning")
     result = await execute_forking(store, plan)
-    for sample in store.samples(result.experiment.id):
+    samples = store.samples(result.experiment.id)
+    assert len(samples) == plan.planned
+    for sample in samples:
         choice = store.sample_response(sample)["choices"][0]
         assert choice["finish_reason"] == "length"
         assert choice["message"]["content"] == "" and choice["message"]["reasoning_content"].startswith("I will ")
