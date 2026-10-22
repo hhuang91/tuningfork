@@ -11,7 +11,7 @@ which fix works — on local LLMs.**
 <p>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
-  <img alt="Ten runs of a skill pass 4 times in 10: every run that searched for its file passed, every run that gave up when its read found nothing failed. That step, sent to the model twenty times with its history held fixed: it gives up 16 times and searches 4. Its reasoning forks after 'but it was not found': 'According' (80%) leads on to 'I should say so and stop', 'Wait' (7%) to 'search for it first?'. One line in the skill, find the file with search_files, then read it: at that step the model then searches 20 times in 20, and ten full runs pass 10 times in 10, Fisher's exact p = 0.011 against 4 in 10." src="docs/images/hero-light.svg">
+  <img alt="The loop in four parts. 1, test a skill on your own model: only 4 of 10 runs pass, so the skill is flaky. 2, find the failed step and forking token: the run is paused at step 1, after a step 0 that found no file, and that step is tested 20 times. The model gives up 16 times and searches for the file 4 times. A pie shows the model's odds at the forking token, the word after 'but it was not found': most likely 'According', which goes on 'say so and stop', and seldom 'Wait', which goes on 'search for it first?'. 3, tune the skill to guide the model: with one line of SKILL.md saying to find the file with search_files, all 20 tests at that step pass. 4, verify the new skill with full runs: all 10 new runs pass, start to finish." src="docs/images/hero-light.svg">
 </picture>
 </p>
 
