@@ -1,0 +1,47 @@
+{
+ "case": "no-call-with-tools",
+ "seed": 1,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": false,
+ "prompt_end": "t say hi. Do not call any tool.<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "stop",
+ "completion_tokens": 10,
+ "pieces": [
+  "Hello",
+  "!",
+  " How",
+  " can",
+  " I",
+  " assist",
+  " you",
+  " today",
+  "?",
+  ""
+ ],
+ "message": {
+  "content": "Hello! How can I assist you today?",
+  "reasoning_content": "",
+  "tool_calls": []
+ }
+}

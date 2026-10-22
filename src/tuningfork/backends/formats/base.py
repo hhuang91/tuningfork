@@ -48,3 +48,11 @@ class Format(Protocol):
         """A parsed assistant message as the raw text the model generated: the inverse of
         `parse`, given what `parse` is given. Without the end token, which the model adds
         itself."""
+
+    def renderings(
+        self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()
+    ) -> list[str]:
+        """Every text the model may have generated for this message where the server reads
+        several the same, the likeliest — `render`'s — first. Scoring keeps the one with the
+        recorded number of tokens, and where several have it, the one the model finds
+        likeliest."""

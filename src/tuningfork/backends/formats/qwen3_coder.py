@@ -335,6 +335,11 @@ class Qwen3Coder:
             text += FUNCTION_END + "\n" + CALL_END
         return text
 
+    def renderings(
+        self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()
+    ) -> list[str]:
+        return [self.render(message, thinking=thinking, offered=offered)]
+
 
 def _members(arguments: Any) -> list[tuple[str, Any, str]]:
     """A call's arguments as (name, value, the value's JSON as it stands in the arguments, which

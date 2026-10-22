@@ -6,6 +6,7 @@ checks a format against:
 
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py gemma4
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py qwen3-coder/qwen3.6-27b
+    TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py qwen3/qwen3-30b-a3b
 
 The second form keeps a format's fixtures a folder for each model that writes it.
 
@@ -70,6 +71,8 @@ CASES = {
                   "tools": [WRITE]},
     "call-nothink": {"messages": [{"role": "user", "content": "What's the weather in Lima right now?"}], "tools": [WEATHER],
                      "chat_template_kwargs": {"enable_thinking": False}},
+    # A hybrid Qwen3 told so in the turn writes an empty reasoning, which the server drops.
+    "no-think-switch": {"messages": [{"role": "user", "content": "Say hello in German, one word. /no_think"}]},
 }
 
 

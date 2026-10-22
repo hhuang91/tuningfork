@@ -12,6 +12,10 @@ Two checks say whether that is the run's own answer, token for token, and both a
 - **the answer**: rebuilt, it must have the recorded number of tokens (plus the end token the
   model added). If it does not — a number written differently, a secret the recording masked —
   the heatmap is still of this text, and says it was rebuilt approximately.
+
+Where the server reads several texts as the same answer — an empty reasoning it drops, a blank
+line between calls (`renderings`) — the one with the recorded number of tokens is scored, and
+where several have it, the one the model finds likeliest.
 """
 
 from __future__ import annotations
@@ -60,6 +64,19 @@ async def raw_session(
         yield client, raw, server
 
 
+def _likelihood(entries: list[dict[str, Any]], length: int) -> float:
+    """How likely the model finds a scored answer: its tokens' log-probabilities, summed. A token
+    nothing is known of counts as no likelier than the least likely alternative seen there."""
+    total = 0.0
+    for entry in entries[:length]:
+        logprob = entry.get("logprob")
+        if logprob is None:
+            seen = [alt["logprob"] for alt in entry.get("top_logprobs") or [] if alt.get("logprob") is not None]
+            logprob = min(seen, default=0.0)
+        total += logprob
+    return total
+
+
 def recorded_message(store: Store, step: Any) -> tuple[dict[str, Any], str | None]:
     response = store.response(step) or {}
     choices = response.get("choices") or []
@@ -99,12 +116,25 @@ async def score_answer(
         )
     thinking = fmt.thinking(prompt.text)
     try:
-        text = fmt.render(message, thinking=thinking, offered=prompt.offered)
+        texts = fmt.renderings(message, thinking=thinking, offered=prompt.offered)
     except FormatError as error:
         raise ScoringError(f"the recorded answer cannot be written back as raw text: {error}") from None
-    pieces = await raw.pieces(text)
+    recorded_answer = (step.usage or {}).get("completion_tokens")
+    ended = finish in ("stop", "tool_calls")
+    # Where the server reads several texts as this answer, those with the recorded number of
+    # tokens; where that leaves more than one, or the number is unknown, the one the model finds
+    # likeliest — a blank line between two calls is a token as a newline is.
+    tokenized = [(candidate, await raw.pieces(candidate)) for candidate in texts]
+    alike = [
+        (candidate, found) for candidate, found in tokenized
+        if recorded_answer is None or len(found) + ended == recorded_answer
+    ] or tokenized[:1]
+    weighed = []
+    for candidate, found in alike:
+        scored = await raw.score(prompt, [token for token, _ in found], top_k)
+        weighed.append((_likelihood(scored, len(found)), candidate, found, scored))
+    _, text, pieces, entries = max(weighed, key=lambda each: each[0])  # the first of equals
     answer = [token for token, _ in pieces]
-    entries = await raw.score(prompt, answer, top_k)
 
     stream = from_entries(entries, top_k=top_k)
     for token, piece in pieces:
@@ -112,8 +142,6 @@ async def score_answer(
             stream.pieces[token] = piece  # the per-token method may not have seen it among the top k
     stream.mark_parts(fmt, thinking=thinking)
 
-    recorded_answer = (step.usage or {}).get("completion_tokens")
-    ended = finish in ("stop", "tool_calls")
     rebuilt = len(answer) + (1 if ended else 0)
     exact = None if recorded_answer is None else rebuilt == recorded_answer
     try:
@@ -133,6 +161,8 @@ async def score_answer(
         "thinking": thinking,
         "parse_agrees": agrees,
     }
+    if len(alike) > 1:
+        notes["texts_alike"] = len(alike)  # the likeliest kept
     return store.add_token_stream(
         redact_stream(stream).to_json(),
         source="scored",

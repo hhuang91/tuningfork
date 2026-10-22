@@ -249,3 +249,8 @@ class Gemma4:
                     raise FormatError(f"a call's arguments are not JSON: {error}") from None
             text += CALL_PREFIX + (function.get("name") or "") + _written(arguments or {}) + CALL_END
         return text
+
+    def renderings(
+        self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()
+    ) -> list[str]:
+        return [self.render(message, thinking=thinking, offered=offered)]
