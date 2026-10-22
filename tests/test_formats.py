@@ -77,7 +77,8 @@ def test_there_are_fixtures_for_every_case(name):
     assert {load(path)["case"] for path in FIXTURES[name]} >= {"text", "parallel", "braces", "unicode", "text-nothink"}
 
 
-@pytest.mark.parametrize(("name", "path"), CASES, ids=lambda case: getattr(case, "stem", case))
+@pytest.mark.parametrize(("name", "path"), CASES,
+                         ids=lambda case: f"{case.parent.name}/{case.stem}" if isinstance(case, Path) else case)
 class TestFixtures:
     """Each format against the server's parse of real output: read as the server read it, the
     same behaviour, written back as the model wrote it, each token's part."""
@@ -100,7 +101,8 @@ class TestFixtures:
     def test_renders_back_to_the_raw_text(self, name, path):
         fixture = load(path)
         fmt = get_format(name)
-        rendered = fmt.render(read(fmt, fixture, thinking=fixture["thinking"]), thinking=fixture["thinking"])
+        rendered = fmt.render(read(fmt, fixture, thinking=fixture["thinking"]), thinking=fixture["thinking"],
+                              offered=fixture.get("offered") or ())
         # the model's end token has an empty piece: the rest is the text rendered back
         assert fixture["pieces"][-1] == ""
         assert rendered == "".join(fixture["pieces"][:-1])
@@ -189,11 +191,14 @@ def arguments(text: str, offered: list, **known) -> str:
 
 class TestQwen3Coder:
     def test_detected_by_the_servers_own_rule(self):
-        template = "{{ '<tool_call>\n<function=' + name + '>\n' }}{{ '<parameter=' + key + '>\n' }}"
+        coder = "{{ '<tool_call>\n<function=' + name + '>\n' }}{{ '<parameter=' + key + '>\n' }}"
+        template = "{{ '<think>\n' }}" + coder
         assert format_for(template).name == "qwen3-coder"
         # the variant with no newline between its tags is another parser's
         assert format_for(template + "{{ '<tool_call><function=' ~ tool_call.name ~ '>' }}") is None
         assert format_for("{{ '<tool_call>' }}{\"name\": ...}") is None
+        # Qwen3-Coder's own template, which never reasons, the server reads otherwise: not this format
+        assert format_for(coder) is None
         assert get_format("qwen3-coder").name == "qwen3-coder"
 
     def test_the_known_models_are_named_once(self):
@@ -230,7 +235,16 @@ class TestQwen3Coder:
         ({"type": ["string", "null"]}, "null", "null"),
         ({"type": ["string", "null"]}, "none", '"none"'),
         ({"anyOf": [{"type": "integer"}, {"type": "string"}]}, "7", "7"),
+        # any number, where an integer is admitted beside a string: the server's alternative is a number
+        ({"anyOf": [{"type": "integer"}, {"type": "string"}]}, "7.5", "7.5"),
         ({"anyOf": [{"type": "integer"}, {"type": "string"}]}, "seven", '"seven"'),
+        ({"type": ["number", "string"]}, "NaN", '"NaN"'),  # no JSON number
+        ({"type": ["object", "string"]}, '{"a": "x\ty"}', '{"a": "x\ty"}'),  # a string holds any character
+        # where no string is admitted the parser takes any JSON; the grammar keeps to the schema
+        ({"type": "integer"}, '"7"', '"7"'),
+        ({"type": "integer"}, "7.5", "7.5"),
+        ({"format": "uri"}, "42", "42"),  # a format llama.cpp does not read says nothing
+        ({"format": "date"}, "2026", '"2026"'),
         # a JSON string is never one of the alternatives: the text is the string
         ({"type": ["string", "integer"]}, '"7"', '"\\"7\\""'),
         ({"type": "object"}, '{"city": "Berlin"}', '{"city": "Berlin"}'),
@@ -246,16 +260,17 @@ class TestQwen3Coder:
         text = call("f", x=raw)
         assert arguments(text, offered) == "{\"x\":" + written + "}"
         # and written back as the model wrote it
-        assert QWEN.render(QWEN.parse(text, tools=True, offered=offered), thinking=False) == text
+        assert QWEN.render(QWEN.parse(text, tools=True, offered=offered), thinking=False, offered=offered) == text
 
     def test_a_parameter_or_tool_not_offered_is_read_with_any_type(self):
         offered = [tool("f", {"x": {"type": "string"}})]
         assert arguments(call("f", y="true", x="1"), offered) == '{"y":true,"x":"1"}'
         assert arguments(call("g", n="3"), offered) == '{"n":3}'
 
-    def test_a_value_that_is_not_the_json_its_schema_asks_for_is_an_error(self):
-        with pytest.raises(FormatError):
-            QWEN.parse(call("f", n="three"), tools=True, offered=[tool("f", {"n": {"type": "integer"}})])
+    def test_a_value_that_is_no_json_where_the_schema_asks_for_json_is_an_error(self):
+        for raw in ("three", "NaN"):
+            with pytest.raises(FormatError):
+                QWEN.parse(call("f", n=raw), tools=True, offered=[tool("f", {"n": {"type": "integer"}})])
 
     def test_content_before_a_call_keeps_its_blank_line(self):
         text = "Checking.\n\n" + call("get_weather", city="Oslo")
@@ -283,9 +298,11 @@ class TestQwen3Coder:
             QWEN.parse(text, tools=True)
 
     def test_parts_mark_the_space_the_server_skips(self):
-        pieces = ["Plan", ".\n", "</think>", "\n\n", "Hi", "<tool_call>", "\n", "<", "function", "=", "a", ">\n",
+        pieces = ["\n", "Plan", ".\n", "</think>", "\n\n", "Hi", "<tool_call>", "\n", "<", "function", "=", "a", ">\n",
                   "</function>", "\n", "</tool_call>", "\n", "<tool_call>", "\n", "</tool_call>", ""]
         parts = QWEN.parts(pieces, thinking=True)
         kind = {position: part for part, start, end in parts for position in range(start, end)}
-        assert [kind[i] for i in range(5)] == ["reasoning", "reasoning", "marker", "marker", "content"]
-        assert kind[6] == "tool_call" and kind[15] == "marker" and kind[19] == "marker"
+        # the space an answer begins with is skipped as the space after a marker is
+        assert [kind[i] for i in range(6)] == ["marker", "reasoning", "reasoning", "marker", "marker", "content"]
+        assert kind[7] == "tool_call" and kind[16] == "marker" and kind[20] == "marker"
+        assert QWEN.parse("".join(pieces[:5]), tools=False, thinking=True)["reasoning_content"] == "Plan.\n"

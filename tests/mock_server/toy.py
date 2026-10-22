@@ -7,6 +7,9 @@ the answers that begin with those tokens, by the token each has next; an answer 
 ends with its end token. So a test decides exactly where the model wavers: two answers that
 share a beginning and part at one token make a fork at that token, and forcing either side
 there leads to that answer.
+
+`QwenToy` is the same model writing Qwen3.5's format: its template opens the reasoning in the
+prompt, so its answers begin with that opening, as what follows the turn.
 """
 
 from __future__ import annotations
@@ -26,11 +29,14 @@ EOG = {1, 50, 106}
 MODEL_TURN = "<|turn>model\n"
 #: What `/props` serves as the chat template: detected as Gemma 4, as llama.cpp detects it.
 TEMPLATE = "{# a toy Gemma 4 template #}{{ '<|tool_call>call:' }}"
-_TOKEN = re.compile(
-    "|".join(re.escape(s) for s in sorted(SPECIALS, key=len, reverse=True))
-    + r"|[ \t]?[A-Za-z0-9_]+|\n|[ \t]+|.",
-    re.DOTALL,
-)
+
+
+def _token_pattern(specials: dict[str, int]) -> re.Pattern[str]:
+    return re.compile(
+        "|".join(re.escape(s) for s in sorted(specials, key=len, reverse=True))
+        + r"|[ \t]?[A-Za-z0-9_]+|\n|[ \t]+|.",
+        re.DOTALL,
+    )
 
 
 def _text(content: Any) -> str:
@@ -40,22 +46,31 @@ def _text(content: Any) -> str:
 
 
 class ToyLlama:
+    specials = SPECIALS
+    eog = EOG
+    turn = MODEL_TURN
+    template = TEMPLATE
+    _token = _token_pattern(SPECIALS)
+
     def __init__(self) -> None:
-        self.vocab: dict[str, int] = dict(SPECIALS)
-        self.pieces: dict[int, str] = {token: piece for piece, token in SPECIALS.items()}
+        self.vocab: dict[str, int] = dict(self.specials)
+        self.pieces: dict[int, str] = {token: piece for piece, token in self.specials.items()}
         #: (raw answer text, weight): the model. Empty: it only ever ends at once.
         self.answers: list[tuple[str, float]] = []
         #: Every /completion body received, for asserting on what was forced.
         self.completions: list[dict[str, Any]] = []
         #: Answer a grammar with an error, as a server without token grammars would.
         self.refuse_grammar = False
+        #: Tokens whose /completion entry is folded into the next token's, as llama.cpp folds
+        #: a character the model wrote in two tokens into the last one's entry.
+        self.merged: set[int] = set()
         self._last_prompt: list[int] = []
 
     # --- tokens ---------------------------------------------------------------------------
 
     def tokenize(self, text: str) -> list[int]:
         ids = []
-        for match in _TOKEN.finditer(text):
+        for match in self._token.finditer(text):
             piece = match.group(0)
             if piece not in self.vocab:
                 self.vocab[piece] = 1000 + len(self.vocab)
@@ -64,7 +79,7 @@ class ToyLlama:
         return ids
 
     def piece(self, token: int) -> str:
-        return "" if token in EOG else self.pieces.get(token, "")
+        return "" if token in self.eog else self.pieces.get(token, "")
 
     # --- the chat template ----------------------------------------------------------------
 
@@ -95,16 +110,20 @@ class ToyLlama:
 
     # --- the model ------------------------------------------------------------------------
 
+    def end_token(self, answer: str) -> int:
+        """The end token after an answer: <|tool_response> after a call, the turn's end after text."""
+        return 50 if answer.endswith("<tool_call|>") else 106
+
     def distribution(self, generated: list[int]) -> dict[int, float]:
         weights: dict[int, float] = {}
         for text, weight in self.answers:
             ids = self.tokenize(text)
             if len(generated) > len(ids) or ids[: len(generated)] != generated:
                 continue
-            nxt = ids[len(generated)] if len(generated) < len(ids) else (50 if text.endswith("<tool_call|>") else 106)
+            nxt = ids[len(generated)] if len(generated) < len(ids) else self.end_token(text)
             weights[nxt] = weights.get(nxt, 0.0) + weight
         if not weights:
-            return {106: 1.0}
+            return {self.end_token(""): 1.0}
         total = sum(weights.values())
         return {token: weight / total for token, weight in weights.items()}
 
@@ -117,7 +136,7 @@ class ToyLlama:
         self.completions.append(body)
         prompt = body.get("prompt")
         ids = list(prompt) if isinstance(prompt, list) else [2, *self.tokenize(str(prompt or ""))]
-        turn = self.tokenize(MODEL_TURN)
+        turn = self.tokenize(self.turn)
         starts = [i + len(turn) for i in range(len(ids) - len(turn) + 1) if ids[i : i + len(turn)] == turn]
         prefix = ids[starts[-1]:] if starts else ids
         forced = [int(found) for found in re.findall(r"<\[(\d+)\]>", body.get("grammar") or "")]
@@ -126,13 +145,14 @@ class ToyLlama:
         rng = random.Random(body.get("seed", 0))
         generated: list[int] = []
         entries = []
+        held: dict[str, Any] | None = None  # a merged token's entry, waiting for the next
         for step in range(int(body.get("n_predict") or 64)):
             dist = self.distribution(prefix + generated)
             if body.get("grammar"):
                 if step < len(forced):
                     chosen = forced[step]
                 else:  # a finished grammar allows only an end token
-                    chosen = max((t for t in dist if t in EOG), key=lambda t: dist[t], default=106)
+                    chosen = max((t for t in dist if t in self.eog), key=lambda t: dist[t], default=self.end_token(""))
             elif temperature is not None and temperature <= 0:
                 chosen = max(dist, key=lambda t: (dist[t], -t))
             else:
@@ -142,8 +162,14 @@ class ToyLlama:
                 ranked = sorted(dist.items(), key=lambda item: (-item[1], item[0]))[:n_probs]
                 entry = self._entry(chosen, dist.get(chosen, 0.0))
                 entry["top_logprobs"] = [self._entry(t, p) for t, p in ranked]
-                entries.append(entry)
-            if chosen in EOG:
+                if held is not None:
+                    entry = {**entry, "token": held["token"] + entry["token"], "bytes": held["bytes"] + entry["bytes"]}
+                    held = None
+                if chosen in self.merged:
+                    held = entry
+                else:
+                    entries.append(entry)
+            if chosen in self.eog:
                 break
         cached = 0
         for a, b in zip(ids, self._last_prompt):
@@ -153,7 +179,7 @@ class ToyLlama:
         self._last_prompt = ids
         result = {
             "content": "".join(self.piece(t) for t in generated),
-            "stop_type": "eos" if generated and generated[-1] in EOG else "limit",
+            "stop_type": "eos" if generated and generated[-1] in self.eog else "limit",
             "tokens": generated if body.get("return_tokens") else [],
             "tokens_evaluated": len(ids),
             "tokens_predicted": len(generated),
@@ -178,10 +204,47 @@ class ToyLlama:
         return {"content": "".join(self.pieces.get(t, "") for t in body.get("tokens") or [])}
 
 
-def props(**extra: Any) -> dict[str, Any]:
-    """A `/props` as llama.cpp serves it, with the toy's Gemma 4 template."""
+QWEN_SPECIALS = {
+    "<|endoftext|>": 1, "<bos>": 2, "<|im_start|>": 3, "<|im_end|>": 4, "<think>": 5, "</think>": 6,
+    "<tool_call>": 7, "</tool_call>": 8,
+}
+
+
+class QwenToy(ToyLlama):
+    """The toy writing Qwen3.5's format: the prompt opens the reasoning, a call is XML, and every
+    answer ends with the turn's end."""
+
+    specials = QWEN_SPECIALS
+    eog = {1, 4}
+    turn = "<|im_start|>assistant\n"
+    template = "{# a toy Qwen3.5 template #}{{ '<think>' }}{{ '<tool_call>\\n<function=' }}{{ '<parameter=' }}"
+    _token = _token_pattern(QWEN_SPECIALS)
+
+    def end_token(self, answer: str) -> int:
+        return 4
+
+    def apply_template(self, body: dict[str, Any]) -> str:
+        messages = [m for m in body.get("messages") or [] if isinstance(m, dict)]
+        thinking = (body.get("chat_template_kwargs") or {}).get("enable_thinking", True)
+        tools = [
+            (tool.get("function") or {}).get("name", "")
+            for tool in body.get("tools") or []
+            if isinstance(tool, dict)
+        ]
+        prompt = f"<|im_start|>system\ntools: {','.join(tools)}<|im_end|>\n" if tools else ""
+        for message in messages:
+            text = _text(message.get("content"))
+            for call in message.get("tool_calls") or []:
+                function = call.get("function") or {}
+                text += f"<tool_call>{function.get('name')}{function.get('arguments')}</tool_call>"
+            prompt += f"<|im_start|>{message.get('role')}\n{text}<|im_end|>\n"
+        return prompt + self.turn + ("<think>\n" if thinking else "<think>\n\n</think>\n\n")
+
+
+def props(template: str = TEMPLATE, **extra: Any) -> dict[str, Any]:
+    """A `/props` as llama.cpp serves it, with a toy's template: Gemma 4's unless named."""
     return {
-        "chat_template": TEMPLATE,
+        "chat_template": template,
         "chat_template_caps": {"supports_parallel_tool_calls": True},
         "default_generation_settings": {"n_ctx": 65536, "params": {"temperature": 1.0, "top_p": 0.95, "top_k": 64, "min_p": 0.05}},
         "build_info": "toy",
@@ -189,4 +252,4 @@ def props(**extra: Any) -> dict[str, Any]:
     }
 
 
-__all__ = ["EOG", "SPECIALS", "TEMPLATE", "ToyLlama", "props"]
+__all__ = ["EOG", "SPECIALS", "TEMPLATE", "QwenToy", "ToyLlama", "props"]

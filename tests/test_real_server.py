@@ -73,7 +73,8 @@ async def test_chat_logprobs_cover_every_generated_token(http):
     assert all("id" in entry and "bytes" in entry for entry in entries)
     prompt = (await post(http, "/apply-template", BODY))["prompt"]
     parsed = fmt.parse(joined(entries), tools=True, thinking=fmt.thinking(prompt), offered=BODY["tools"])
-    assert parsed.get("tool_calls") or parsed.get("content")
+    # the call's markers had entries: read back from them, the answer calls a tool as the server read it
+    assert bool(parsed.get("tool_calls")) == bool(answer["choices"][0]["message"].get("tool_calls"))
 
 
 async def test_the_raw_path_renders_the_chat_prompt_and_repeats_greedy_chat(http):
@@ -127,26 +128,34 @@ async def test_the_output_format_reads_and_writes_as_the_server_does(http):
     assert (parsed.get("reasoning_content") or "") == (message.get("reasoning_content") or "")
     assert [c["function"]["arguments"] for c in parsed.get("tool_calls") or []] == [
         c["function"]["arguments"] for c in message.get("tool_calls") or []]
-    assert raw.startswith(fmt.render(message, thinking=thinking))
+    assert raw.startswith(fmt.render(message, thinking=thinking, offered=BODY["tools"]))
 
 
 async def test_a_character_written_in_two_tokens_is_scored_token_by_token(http):
-    """G6: the server gives a character the model wrote in two tokens one entry, the last
-    token's; the raw path gives each token its own again, the one merged away unknown."""
+    """G6: an answer holding a character the model writes in two tokens or more is scored an
+    entry a token. The server can give such a character one entry, the last token's (b11108,
+    Qwen3.5's ` ≡`; Gemma 4's byte tokens kept their own); the raw path gives each token its own
+    again, the ones merged away unknown."""
     from tuningfork.backends.llamacpp.raw import LlamaRaw
 
     raw = LlamaRaw(http, ROOT)
     for char in ("≡", "⟦", "𝔸", "🜂"):
-        if len(await raw.pieces(f" {char}")) > 1:
+        # a token that is no whole character comes back as bytes
+        if any(isinstance(piece, list) for _, piece in await raw.pieces(f" {char}")):
             break
     else:
-        pytest.skip("this model writes each candidate character as one token")
+        pytest.skip("this model writes each candidate character whole")
     prompt = await raw.render({"messages": [{"role": "user", "content": "Say hi."}]}, "openai-chat")
-    answer = await raw.tokenize(f"We have a {char} b.")
+    pieces = await raw.pieces(f"We have a {char} b.")
+    answer = [token for token, _ in pieces]
     entries = await raw.score(prompt, answer, 3)
     assert [entry["id"] for entry in entries[: len(answer)]] == answer
     assert len(entries) == len(answer) + 1
-    assert any(entry["logprob"] is None for entry in entries[: len(answer)])
+    # only the character's tokens but its last can have been merged away, nothing known of them
+    # (a forced token the server deems impossible has no chance either, but has its alternatives)
+    split = [i for i, (_, piece) in enumerate(pieces) if isinstance(piece, list)]
+    unknown = [i for i, entry in enumerate(entries[: len(answer)]) if entry["logprob"] is None and not entry["top_logprobs"]]
+    assert unknown in ([], split[:-1])  # none merged (Gemma 4), or every one but the last (Qwen3.5)
 
 
 async def test_a_grammar_forces_an_answer_and_scores_it_as_it_was_sampled(http):

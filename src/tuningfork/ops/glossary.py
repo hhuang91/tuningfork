@@ -77,7 +77,9 @@ TERMS: tuple[Term, ...] = (
          "places that differ between the chat endpoint a harness talks to and the raw one tuningfork scores answers "
          "with: one answer's deciding token had a chance of 0.15 on the first and 0.70 on the second. With either, "
          "the two agree token for token. Checkpoints off cost nothing when prompts are not cached; --swa-full keeps "
-         "the whole sliding-window cache, at a cost in memory. tuningfork cannot see whether either is on.",
+         "the whole sliding-window cache, at a cost in memory. A model whose layers keep a running state, Qwen3.5 "
+         "and 3.6 among them, needs --ctx-checkpoints 0 too, and --swa-full does not help it: with checkpoints, two "
+         "greedy answers to one long prompt parted at the 45th token. tuningfork cannot see whether either is on.",
          "recording", aka=("--swa-full", "swa-full", "SWA", "--ctx-checkpoints", "ctx-checkpoints"),
          see=("server", "score", "prompt cache"),
          where="llama-server's command line: --ctx-checkpoints 0, or --swa-full"),

@@ -97,8 +97,8 @@ The first start downloads the model, about 19 GB; with the file already on disk,
 `curl -s http://127.0.0.1:8081/health` answers `{"status":"ok"}`. That is one slot of 131,072
 tokens, in about 24 GiB: Hermes Agent needs a context of at least 64,000.
 
-Qwen3.5 and Qwen3.6 take the same flags. Their 27B, dense like Gemma 4 31B, holds the same slot
-in about 21 GiB with an 8-bit cache:
+Qwen3.5 and Qwen3.6 take the same flags, with an 8-bit cache. Their 27B, dense like Gemma 4 31B,
+holds the same slot in about 21 GiB:
 
 ```bash
 llama-server -hf unsloth/Qwen3.6-27B-GGUF:Q4_K_M --no-mmproj \
@@ -115,7 +115,7 @@ ran before it and whichever of its endpoints it goes to:
 |---|---|
 | `-np 1` | With two slots, a request computed beside another gets other numbers for the same prompt. One slot computes each request alone. |
 | `--no-cache-prompt` | llama-server answers a prompt from what it cached of an earlier one, and its Messages endpoint, which Claude Code uses, ignores a request asking it not to. A step's samples then share the first one's processing of the prompt, and so do forks whose prompts match — every fork, in the sandbox. |
-| `--ctx-checkpoints 0`, or `--swa-full` | For a model with sliding-window attention layers — Gemma 2, 3 and 4 among them — or with layers that keep a running state — Qwen3.5 and 3.6 — llama-server takes rollback checkpoints of them, which cut a prompt into batches at places that differ between the chat endpoint a harness talks to and the raw one tuningfork scores answers with. `--swa-full` avoids them for sliding-window layers only. |
+| `--ctx-checkpoints 0`, or `--swa-full` | llama-server takes rollback checkpoints of a model's sliding-window attention layers (Gemma 2, 3 and 4 among others) and of layers that keep a running state (Qwen3.5 and 3.6). They cut a prompt into batches at places that differ between the chat endpoint a harness talks to and the raw one tuningfork scores answers with. `--swa-full` avoids them for sliding-window layers only. |
 
 What we measured without them:
 

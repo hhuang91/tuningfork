@@ -15,6 +15,7 @@ from tuningfork.analysis.tokens import from_entries
 from tuningfork.backends.formats import get_format
 from tuningfork.backends.llamacpp.anthropic import to_chat
 from tuningfork.backends.llamacpp.raw import aligned
+from tuningfork.backends.raw import RawError
 from tuningfork.cli import app
 from tuningfork.config import EXPERIMENT_HEADER
 from tuningfork.endpoints import ProtectedEndpoint
@@ -197,6 +198,9 @@ def test_a_character_the_server_merged_is_its_tokens_again():
     assert stream.text() == "a ≡"
     # an entry for every token already is left as it is
     assert aligned(entries[:1], [1]) == entries[:1]
+    # entries that follow no token are refused, never laid over the wrong ones
+    with pytest.raises(RawError, match="do not follow its tokens"):
+        aligned(entries, [1, 20456, 95, 2])
 
 
 def test_the_command_scores_then_shows(store, served, monkeypatch):

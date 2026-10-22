@@ -177,11 +177,13 @@ function setup(runs, scenarios, connections) {
 // of an earlier one, so a step's samples share one state and a screen favours its proposals. For a
 // sliding-window model, without --ctx-checkpoints 0 or --swa-full, it cuts a prompt into batches at
 // places that differ between its chat endpoint and its raw one, so an answer scores differently
-// from how it was sampled.
+// from how it was sampled; so it does for a model whose layers keep a running state, where only
+// --ctx-checkpoints 0 helps.
 function serverNote() {
   return h("div", { class: "banner banner-warn" }, h("strong", null, "Strongly recommended: "), "start llama-server with ",
-    h("code", null, "--no-cache-prompt"), " and, for a model with sliding-window layers (Gemma 2, 3, 4), ",
-    h("code", null, "--ctx-checkpoints 0"), " or ", h("code", null, "--swa-full"),
+    h("code", null, "--no-cache-prompt"), " and with ", h("code", null, "--ctx-checkpoints 0"),
+    " for a model with sliding-window layers (Gemma 2, 3, 4; ", h("code", null, "--swa-full"),
+    " serves too) or layers that keep a running state (Qwen3.5, 3.6)",
     ". Without the first, a step's behaviour can depend on what the server ran before: Claude Code's samples and every fork share one cached state, and a test at a step favours its proposals (",
     h("a", { href: "#/words?term=prompt%20cache" }, "why"),
     "). Without the second, an answer scores differently on the raw endpoint than on the chat one it was sampled on (",

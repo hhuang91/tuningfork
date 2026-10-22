@@ -1,8 +1,10 @@
 """Qwen3.5's output format, as llama.cpp reads it (`common/parsers/qwen3-coder.cpp`, b11108).
 
 llama.cpp names the parser after Qwen3-Coder, which wrote the format first, and reads Qwen3.6,
-Nemotron Nano 3 and StepFun-3.5-Flash with it too. The raw text of an answer, after a prompt
-that opened the reasoning — the template's default, `<think>\\n` closing the prompt:
+Nemotron Nano 3 and StepFun-3.5-Flash with it too. Qwen3-Coder's own template has no reasoning,
+and the parser reads its calls differently — one may begin without `<tool_call>` — so this
+format takes only a template that reasons. The raw text of an answer, after a prompt that
+opened the reasoning — the template's default, `<think>\\n` closing the prompt:
 
     …reasoning…
     </think>
@@ -20,9 +22,9 @@ that opened the reasoning — the template's default, `<think>\\n` closing the p
 then an end token. With reasoning off the prompt closes the reasoning too
 (`<think>\\n\\n</think>\\n\\n`), and the answer is the content and the calls. A value is typed
 by the tool's schema, as the server types it: raw text where the parameter can only be a
-string, JSON where it can be no string, and otherwise JSON where it reads as one of the
-schema's other types, else text. The server builds the arguments from the values as written —
-a string escaped into JSON, anything else kept as the model wrote it.
+string, any JSON where it can be no string, and otherwise JSON where it reads as a number or
+one of the schema's other types, else text. The server builds the arguments from the values as
+written — a string escaped into JSON, anything else kept as the model wrote it.
 
 `<think>`, `</think>`, `<tool_call>` and `</tool_call>` are single tokens; the rest of a call is
 ordinary text.
@@ -43,9 +45,19 @@ ASSISTANT = "<|im_start|>assistant"
 #: The pieces of the special tokens that end an answer (empty in llama.cpp's logprobs).
 ENDS = ("", "<|im_end|>", "<|endoftext|>")
 
-_SPACE = " \t\n\r"
+_SPACE = " \t\n\r\v\f"  # std::isspace's
 _ALL = frozenset({"string", "number", "integer", "boolean", "null", "array", "object"})
-_JSON = json.JSONDecoder()
+#: The formats llama.cpp reads as a string's (`get_format`); any other format says nothing.
+_STRING_FORMATS = ("date", "time", "date-time", "uuid", "uuid1", "uuid2", "uuid3", "uuid4", "uuid5")
+
+
+def _no_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not JSON")
+
+
+#: JSON as llama.cpp's parser reads it: a string may hold any character, and NaN and Infinity
+#: are no numbers.
+_JSON = json.JSONDecoder(strict=False, parse_constant=_no_constant)
 
 
 def _skip_space(text: str, i: int) -> int:
@@ -117,7 +129,7 @@ def _types(schema: Any, root: dict[str, Any], seen: frozenset[str] = frozenset()
             return every(schema["allOf"])
         if "items" in schema or "prefixItems" in schema:
             return frozenset({"array"})
-        if any(key in schema for key in ("pattern", "minLength", "maxLength", "format")):
+        if any(key in schema for key in ("pattern", "minLength", "maxLength")) or schema.get("format") in _STRING_FORMATS:
             return frozenset({"string"})
         return _ALL
     if kind in ("object", "string") and "allOf" in schema and not (kind == "object" and has_properties):
@@ -142,16 +154,21 @@ def _parameters(offered: Sequence[dict[str, Any]], name: str) -> tuple[dict[str,
 
 
 def _json_value(text: str, i: int, admitted: frozenset[str]) -> tuple[str, int] | None:
-    """A JSON value of one of the admitted types at `i`, followed by the argument's close: its
-    text as written, and where the close starts."""
+    """The JSON value at `i`, followed by the argument's close: its text as written, and where
+    the close starts. Where the schema admits a string, the server tries only the other types
+    first — any number where it admits a number or an integer — and reads the rest as text;
+    where it admits none, its parser takes any JSON (the grammar keeps to the schema)."""
     try:
         value, end = _JSON.raw_decode(text, i)
     except ValueError:
         return None
-    kind = _json_type(value)
-    allowed = kind in admitted or (kind == "integer" and "number" in admitted)
-    if not allowed or kind == "string" or not text.startswith(ARG_CLOSE, end):
+    if not text.startswith(ARG_CLOSE, end):
         return None
+    if "string" in admitted:
+        kind = _json_type(value)
+        number = kind in ("integer", "number") and bool(admitted & {"integer", "number"})
+        if kind == "string" or not (number or kind in admitted):
+            return None
     return text[i:end], end
 
 
@@ -161,10 +178,11 @@ class Qwen3Coder:
     call_name_prefix = "\n" + FUNCTION
 
     def detect(self, template: str) -> bool:
-        # llama.cpp's own rule for choosing this parser.
+        # llama.cpp's own rule for choosing this parser, for a template that reasons.
         return (
             CALL in template and FUNCTION in template and PARAMETER in template
             and "'<tool_call><function=' ~ tool_call.name ~ '>'" not in template
+            and THINK in template
         )
 
     def thinking(self, prompt: str) -> bool:
@@ -265,7 +283,8 @@ class Qwen3Coder:
 
         if thinking is None:
             thinking = _opened("".join(pieces))
-        state, skipping = ("reasoning" if thinking else "content"), False
+        # the server skips the space an answer begins with, as after each marker
+        state, skipping = ("reasoning" if thinking else "content"), True
         for position, piece in enumerate(pieces):
             if piece == THINK:
                 mark("marker", position)
@@ -288,7 +307,7 @@ class Qwen3Coder:
                 mark(state, position)
         return runs
 
-    def render(self, message: dict[str, Any], *, thinking: bool) -> str:
+    def render(self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()) -> str:
         # The server keeps the reasoning up to `</think>`, its last newline included, and skips
         # the space after it, which the model writes as a blank line.
         text = ""
@@ -303,25 +322,32 @@ class Qwen3Coder:
         text += content if isinstance(content, str) else ""
         for k, call in enumerate(message.get("tool_calls") or []):
             function = call.get("function") or {}
+            name = function.get("name") or ""
+            properties, root = _parameters(offered, name) or ({}, {})
             if k:
                 text += "\n"
-            text += CALL + "\n" + FUNCTION + (function.get("name") or "") + ">\n"
-            for key, value in _members(function.get("arguments")):
-                text += PARAMETER + key + ">\n" + value + ARG_CLOSE
+            text += CALL + "\n" + FUNCTION + name + ">\n"
+            for key, value, written in _members(function.get("arguments")):
+                # a string the model wrote as text, unless its parameter takes none: then it was JSON
+                admitted = _types(properties[key], root) if key in properties else _ALL
+                raw = value if isinstance(value, str) and "string" in admitted else written
+                text += PARAMETER + key + ">\n" + raw + ARG_CLOSE
             text += FUNCTION_END + "\n" + CALL_END
         return text
 
 
-def _members(arguments: Any) -> list[tuple[str, str]]:
-    """A call's arguments as (name, value as the model wrote it): a JSON string's text, any
-    other value as it stands in the arguments, which keep it as written."""
+def _members(arguments: Any) -> list[tuple[str, Any, str]]:
+    """A call's arguments as (name, value, the value's JSON as it stands in the arguments, which
+    on chat completions keep it as the model wrote it). A Messages step's arguments were written
+    again from the parsed input (`wire.anthropic`), their spacing and escapes lost: such a value
+    is rebuilt approximately, and scoring says so."""
     if isinstance(arguments, dict):
         arguments = json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
     text = arguments if isinstance(arguments, str) and arguments.strip() else "{}"
     i = _skip_space(text, 0)
     if not text.startswith("{", i):
         raise FormatError("a call's arguments are not a JSON object")
-    members: list[tuple[str, str]] = []
+    members: list[tuple[str, Any, str]] = []
     i = _skip_space(text, i + 1)
     while not text.startswith("}", i):
         try:
@@ -333,7 +359,7 @@ def _members(arguments: Any) -> list[tuple[str, str]]:
             value, end = _JSON.raw_decode(text, i)
         except ValueError as error:
             raise FormatError(f"a call's arguments are not JSON: {error}") from None
-        members.append((str(key), value if isinstance(value, str) else text[i:end]))
+        members.append((str(key), value, text[i:end]))
         i = _skip_space(text, end)
         if text.startswith(",", i):
             i = _skip_space(text, i + 1)

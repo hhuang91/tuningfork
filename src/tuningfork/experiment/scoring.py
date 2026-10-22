@@ -86,8 +86,8 @@ async def score_answer(
     fmt = format_for(await raw.chat_template())
     if fmt is None:
         raise ScoringError(
-            "the server's chat template is not one tuningfork can read raw output of; it reads "
-            f"{known_models()}'s (backends/formats)"
+            "the server's chat template is not one tuningfork can read raw output of; it reads the "
+            f"output of {known_models()} (backends/formats)"
         )
     prompt = await raw.render(checkpoint.request, checkpoint.wire.name)
     recorded_prompt = (step.usage or {}).get("prompt_tokens")
@@ -99,7 +99,7 @@ async def score_answer(
         )
     thinking = fmt.thinking(prompt.text)
     try:
-        text = fmt.render(message, thinking=thinking)
+        text = fmt.render(message, thinking=thinking, offered=prompt.offered)
     except FormatError as error:
         raise ScoringError(f"the recorded answer cannot be written back as raw text: {error}") from None
     pieces = await raw.pieces(text)

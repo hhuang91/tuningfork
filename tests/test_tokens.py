@@ -91,11 +91,16 @@ class TestStream:
     def test_round_trips_through_json(self):
         stream = self.stream()
         stream.parts = [(CONTENT, 0, 2), (MARKER, 2, 3)]
+        stream.thinking = True
         again = TokenStream.from_json(json.loads(json.dumps(stream.to_json())))
         assert again.ids == stream.ids
         assert again.pieces == stream.pieces
         assert again.parts == stream.parts
         assert again.top_ids == stream.top_ids
+        assert again.thinking is True
+        # what was never known stays unknown, and is not written
+        stream.thinking = None
+        assert "thinking" not in stream.to_json() and TokenStream.from_json(stream.to_json()).thinking is None
         # rounded to 5 places when stored: far finer than any heatmap shows
         assert again.logprobs == pytest.approx(stream.logprobs, abs=1e-5)
 

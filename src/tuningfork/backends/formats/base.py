@@ -44,6 +44,7 @@ class Format(Protocol):
         """What each token is — marker, reasoning, content or tool_call — as (kind, start,
         end) runs over positions, from the tokens' pieces. `thinking` as for `parse`."""
 
-    def render(self, message: dict[str, Any], *, thinking: bool) -> str:
+    def render(self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()) -> str:
         """A parsed assistant message as the raw text the model generated: the inverse of
-        `parse`. Without the end token, which the model adds itself."""
+        `parse`, given what `parse` is given. Without the end token, which the model adds
+        itself."""

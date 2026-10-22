@@ -66,7 +66,8 @@ def aligned(entries: list[dict[str, Any]], ids: list[int]) -> list[dict[str, Any
     two tokens or more one entry: the last token's, holding the whole character's bytes (b11108:
     Qwen3.5 writes ` ≡` as two tokens). Each token it merged away gets an entry of its own,
     nothing known of it, and the merged entry loses the bytes, which are not its token's alone —
-    its piece is read again from the tokenizer, where its caller has one."""
+    its piece is read again from the tokenizer, where its caller has one. Entries that do not
+    follow the tokens are refused, never laid over the wrong ones."""
     out: list[dict[str, Any]] = []
     k, skipped = 0, False
     for token in ids:
@@ -80,6 +81,8 @@ def aligned(entries: list[dict[str, Any]], ids: list[int]) -> list[dict[str, Any
         else:
             out.append({"id": token, "token": "", "bytes": [], "logprob": None, "top_logprobs": []})
             skipped = True
+    if k < len(entries):
+        raise RawError(f"the server's probability entries do not follow its tokens, from entry {k}")
     return out
 
 
@@ -254,10 +257,15 @@ class LlamaRaw:
         data = await self._post("/completion", body, model_call=True)
         ids = list(data.get("tokens") or [])
         entries = list(data.get("completion_probabilities") or [])
+        if ids and entries:
+            try:
+                entries = aligned(entries, ids)
+            except RawError:
+                pass  # kept for the continuation's stream only, which shows them as they came
         return Generation(
             ids=ids,
             text=data.get("content") or "",
             stop=data.get("stop_type") or "none",
-            entries=aligned(entries, ids) if ids and entries else entries,
+            entries=entries,
             timings=data.get("timings") or {},
         )

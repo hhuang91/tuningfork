@@ -298,10 +298,11 @@ Qwen3.5 and 3.6, read as llama.cpp's Qwen3-Coder parser reads them — each argu
 tool's schema, `offered`, and the reasoning opened by the prompt, `thinking`, which a format
 reads from the answer where no prompt is at hand). Scoring rebuilds a recorded answer as the
 model's tokens and forces it after the step's exact prompt in one request (a grammar of token
-ids); the prompt must have the step's recorded token count, or it is refused. llama.cpp gives a
-character the model wrote in two tokens one entry, the last token's: the raw path gives each
-token its own again, the one merged away unknown (`backends.llamacpp.raw.aligned`), where a
-check of the ids alone failed every answer holding one. The forking-token probe forces tokens from a stored
+ids); the prompt must have the step's recorded token count, or it is refused. llama.cpp can give
+a character the model wrote in two tokens one entry, the last token's (Qwen3.5's ` ≡`; Gemma 4's
+byte tokens kept their own): the raw path gives each token its own again by the ids `/completion`
+returns, the ones merged away unknown (`backends.llamacpp.raw.aligned`), where a check of the
+entries' ids had failed every answer holding one. The forking-token probe forces tokens from a stored
 stream, and tests each alternative against its position's baseline, Holm-corrected over the
 family planned before sampling; each behaviour it reached says whether the target counts it and
 which tokens led to it (`ForkingReport.led_by`): a token can change what the model does and miss
