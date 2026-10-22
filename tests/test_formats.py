@@ -563,3 +563,8 @@ class TestQwen3CoderReasoning:
         assert [part for part, _, _ in QWEN.parts(["Hi", " ", "<think>", "x", ""], thinking="model")] == ["content", "marker"]
         # and the reasoning read is written back as the model wrote it, opening and all
         assert QWEN.render(parsed, thinking="model") == self.TEXT
+
+    def test_with_no_prompt_at_hand_an_answer_not_begun_inside_a_reasoning_follows_a_closed_one(self):
+        # Qwen3.5's prompts open the reasoning or close it: one that did not open it closed it
+        assert QWEN.parse(self.TEXT, tools=False) == {"role": "assistant", "content": self.TEXT}
+        assert QWEN.parts(self.PIECES) == [("content", 0, 7), ("marker", 7, 8)]

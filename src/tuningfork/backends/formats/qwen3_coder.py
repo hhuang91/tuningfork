@@ -20,15 +20,19 @@ opened the reasoning — the template's default, `<think>\\n` closing the prompt
     </tool_call>
 
 then an end token. With reasoning off the prompt closes the reasoning too
-(`<think>\\n\\n</think>\\n\\n`), and the answer is the content and the calls. The parser finds one
-reasoning at most, at the start of the prompt's opening of the turn and the answer read as one:
-the prompt's own, where it opened or closed one — Qwen3.5's and Qwen3.6's always do — so that a
-`<think>` the model writes is text; where a template leaves it to the model, one the answer
-begins with. A value is typed
-by the tool's schema, as the server types it: raw text where the parameter can only be a
-string, any JSON where it can be no string, and otherwise JSON where it reads as a number or
-one of the schema's other types, else text. The server builds the arguments from the values as
-written — a string escaped into JSON, anything else kept as the model wrote it.
+(`<think>\\n\\n</think>\\n\\n`), and the answer is the content and the calls.
+
+The parser reads the prompt's opening of the turn and the answer as one text, and finds one
+reasoning at most, at its start. Qwen3.5's and Qwen3.6's prompts always open or close one, so a
+`<think>` the model writes is text. Where another template leaves the reasoning to the model, a
+`<think>` the answer begins with is the reasoning. Where no prompt is at hand, an answer that
+closes a reasoning it never opened is read as one the prompt opened, and any other as one it
+closed, as these models' prompts do.
+
+A value is typed by the tool's schema, as the server types it: raw text where the parameter can
+only be a string, any JSON where it can be no string, and otherwise JSON where it reads as a
+number or one of the schema's other types, else text. The server builds the arguments from the
+values as written — a string escaped into JSON, anything else kept as the model wrote it.
 
 `<think>`, `</think>`, `<tool_call>` and `</tool_call>` are single tokens; the rest of a call is
 ordinary text.
@@ -215,7 +219,7 @@ class Qwen3Coder:
         parameter its schema does not name, is read with any type — the server's grammar never
         lets one through, and what the model wrote without it is still worth reading."""
         if thinking is None:  # no prompt at hand: read from the answer
-            thinking = True if _opened(text) else MODEL
+            thinking = _opened(text)  # opened, or else closed, as these models leave it
         source = (THINK + "\n" if thinking is True else "") + text
         i, reasoning = 0, ""
         if thinking is True or (thinking == MODEL and source.startswith(THINK)):
@@ -291,7 +295,7 @@ class Qwen3Coder:
                 runs.append((kind, position, position + 1))
 
         if thinking is None:  # no prompt at hand: read from the answer
-            thinking = True if _opened("".join(pieces)) else MODEL
+            thinking = _opened("".join(pieces))
         # the server skips the space an answer begins with, as after each marker
         state, skipping = ("reasoning" if thinking is True else "content"), True
         for position, piece in enumerate(pieces):

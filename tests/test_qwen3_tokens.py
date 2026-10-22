@@ -141,6 +141,18 @@ async def test_calls_a_line_apart_as_the_template_writes_them_keep_the_first_tex
     assert found.view.stream.text() == raw
 
 
+async def test_a_probe_of_a_base_chosen_among_texts_read_alike_says_so(store, served):
+    head, first = "<think>\nBoth.\n</think>\n\n", call("read_file", '{"path": "a.csv"}')
+    raw = head + first + "\n\n" + call("read_file", '{"path": "b.csv"}')
+    served.toy.answers = [(raw, 0.6), (head + first + "\n\n" + call("read_file", '{"path": "c.csv"}'), 0.4)]
+    run_id = record(store, served, raw)
+    await score(store, run_id)
+
+    plan = prepare_forking(store, run_id, "0", n=1, base_url=UPSTREAM)
+
+    assert any("the likelier of texts the server reads" in warning for warning in plan.warnings)
+
+
 async def test_a_tie_keeps_the_templates_own_spacing(store, served):
     # where the model finds both alike, nothing says which it wrote: the template's own is kept
     one, two = call("read_file", '{"path": "a.csv"}'), call("read_file", '{"path": "b.csv"}')
