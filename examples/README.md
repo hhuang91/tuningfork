@@ -494,9 +494,9 @@ tuningfork connections check
   known_output_format    yes — gemma4
   prompt_equivalence     yes — rendered 68 tokens, the chat endpoint's prompt has 68
   raw_completion         yes — 2 tokens forced by a grammar of ids, with their top alternatives
-  logprobs               yes — 47 token entries
+  logprobs               yes — 24 token entries
   top_logprobs           yes — top_logprobs present
-  logprobs_all_tokens    yes — 47 entries for 47 generated tokens
+  logprobs_all_tokens    yes — 24 entries for 24 generated tokens
 ```
 
 A batch or a fork refuses to start a harness against a server that lacks what it needs —
@@ -525,14 +525,14 @@ d.get('row_count')==4 and abs(float(d.get('amount_total',0))-61.5)<0.01 else 1)"
   skill:  examples/tally-report
   sandbox: every run works in /home/user/project, its home /home/user
 
-  run 0  fail  28.7s
-  run 1  fail  28.5s
-  run 2  fail  30.3s
-  run 3  fail  30.6s
-  run 4  fail  32.0s
-  run 5  fail  34.5s
-  run 6  fail  28.6s
-  run 7  fail  27.2s
+  run 0  fail  31.9s
+  run 1  fail  31.1s
+  run 2  fail  28.5s
+  run 3  fail  28.3s
+  run 4  fail  27.8s
+  run 5  fail  26.6s
+  run 6  fail  27.9s
+  run 7  fail  29.9s
 
 0/8  0%  [0%-32%] passed
 
@@ -540,26 +540,28 @@ d.get('row_count')==4 and abs(float(d.get('amount_total',0))-61.5)<0.01 else 1)"
   agreed for 0 step(s), diverged at step 0
 
 step 0
-   count  rate  95% CI     behaviour                                               then passed
-A  3/8    38%   [14%-69%]  Skill(args='data.csv report.json',                      0/3  0%  [0%-56%]
-                           skill='tally-report')
-B  2/8    25%   [7%-59%]   Skill(args='input=data.csv output=report.json',         0/2  0%  [0%-66%]
-                           skill='tally-report')
-C  1/8    12%   [2%-47%]   Bash(command='ls data.csv')                             0/1  0%  [0%-79%]
-D  1/8    12%   [2%-47%]   Skill(args='summarize data.csv into report.json',       0/1  0%  [0%-79%]
-                           skill='tally-report'… (+1 chars)
-E  1/8    12%   [2%-47%]   Skill(skill='tally-report')                             0/1  0%  [0%-79%]
+   count  rate  95% CI    behaviour                                                then passed
+A  2/8    25%   [7%-59%]  Skill(args='data.csv report.json',                       0/2  0%  [0%-66%]
+                          skill='tally-report')
+B  2/8    25%   [7%-59%]  Skill(skill='tally-report')                              0/2  0%  [0%-66%]
+C  1/8    12%   [2%-47%]  Skill(args='data.csv -> report.json',                    0/1  0%  [0%-79%]
+                          skill='tally-report')
+D  1/8    12%   [2%-47%]  Skill(args='data.csv, report.json',                      0/1  0%  [0%-79%]
+                          skill='tally-report')
+E  1/8    12%   [2%-47%]  Skill(args='data.csv,report.json',                       0/1  0%  [0%-79%]
+                          skill='tally-report')
+F  1/8    12%   [2%-47%]  Skill(args='summarize data.csv into report.json',        0/1  0%  [0%-79%]
+                          skill='tally-report'… (+1 chars)
 
 Intervals are Wilson 95%. With this many runs they are wide; separating 60% from 80% takes about 82
 runs per arm.
 ```
 
-Every run failed, and the same way. Seven loaded the skill first, and one checked the file
-was there with `ls data.csv` before it; they gave the skill different arguments, and *then
-passed* says none of that made a difference. Then every run read `data.csv` and wrote
-`report.json` with `Write`, with the keys `count` and `total` — the skill's own words, "just
-the count and the total". The check wants `row_count` and `amount_total`: the failure the
-skill was made for.
+Every run failed, and the same way. All eight loaded the skill first; they gave it different
+arguments, or none, and *then passed* says none of that made a difference. Then every run read
+`data.csv` and wrote `report.json` with `Write`, with the keys `count` and `total` — the
+skill's own words, "just the count and the total". The check wants `row_count` and
+`amount_total`: the failure the skill was made for.
 
 #### With Hermes Agent
 
@@ -620,37 +622,39 @@ tuningfork show $RUN
 ```
 
 ```
-run 22d9eec8  tally-report/1#c1e9dd10.7
+run bab1892f  tally-report/1#2cc8149f.7
   task    tally-report/1
   model   gemma-4-31b
-  started 10-11 11:21:06
+  started 10-23 03:21:51
   harness claude-code
   sandbox /home/user/project, its home /home/user
   skills  c417ecd4 (1 file(s))
- k  outcome                                                      finish      ms       tokens  think
- 0  Skill(skill='tally-report')                                  tool_calls  5147.2   13754   89
- 1  Read(file_path='data.csv')                                   tool_calls  6880.08  13983   329
- 2  Write(content='{"count":4,"total":61.5}',                    tool_calls  8244.24  14265   246
+ k  outcome                                         finish      ms       tokens  think  changed
+ 0  Skill(args='data.csv -> report.json',           tool_calls  7405.44  13855   413
+    skill='tally-report')
+ 1  Read(file_path='data.csv')                      tool_calls  6549.54  13991   264
+ 2  Write(content='{"count":4,"total":61.5}',       tool_calls  8780.68  14294   262    report.json
     file_path='report.json')
- 3  I have summarized `data.csv` into `report.json`. - **Item    stop        6289.18  14429   160
-    Count:** 4 -… (+24 chars)
+ 3  The data from `data.csv` has been summarized    stop        6628.7   14462   171
+    into `report.json`. - **L… (+40 chars)
 ```
 
 This run is the batch in small: it loaded the skill, read the file, wrote the report with
-`count` and `total`, and answered. The write is where the keys were chosen. Its number
-depends on the path a run took — the run that checked for the file first wrote at step 3 —
-so name the step by the tool the model called there instead: `Write` is the first step where
-it called Write.
+`count` and `total`, and answered. The write is where the keys were chosen. It is step 2 in
+every run here, but its number depends on the path a run took — a run that first checked the
+file was there would write at step 3 — so name the step by the tool the model called there
+instead: `Write` is the first step where it called Write.
 
 *think* is the length of the model's reasoning before each answer, in characters; this run
 reasoned before every one. `none` would mark a tool call made with no reasoning at all, in a
-run that reasons at other steps.
+run that reasons at other steps. *changed* lists the files each call changed in the
+workspace: the write made `report.json`.
 
 ```bash
 tuningfork step $RUN Write
 ```
 
-```
+````
 context
   [0] system: x-anthropic-billing-header: cc_version=2.1.281.606; cc_entrypoint=sdk-cli; You are a
 Claude agent, b…
@@ -662,28 +666,30 @@ directory: /ho…
   [4] tool: Launching skill: tally-report
   [5] user: Base directory for this skill: /home/user/.claude/skills/tally-report  # Tally report
 Use this when…
-  [6] system: <total_tokens>14986246 tokens left</total_tokens>
+  [6] system: <total_tokens>14986145 tokens left</total_tokens>
   [7] assistant: tool_calls(Read)
   [8] tool: 1   id,item,amount 2        1,widget,10.00 3        2,gadget,25.50 4
 3,widget,6.00 5 4,doohickey,20.00 6
-  [9] system: <total_tokens>14986017 tokens left</total_tokens>
+  [9] system: <total_tokens>14986009 tokens left</total_tokens>
 
 response
-  reasoning_content: The CSV `data.csv` has the following content:
-`id,item,amount`
-`1,widget,10.00`
-`2,gadget,25.50`
-`3,widget,6.00`
-`4,doohickey,20.00`
-
+  reasoning_content: The `data.csv` content is:
+```csv
+id,item,amount
+1,widget,10.00
+2,gadget,25.50
+3,widget,6.00
+4,doohickey,20.00
+```
 Line items count: 4
+Amounts: 10.00, 25.50, 6.00, 20.00
 Total amount: 10.00 + 25.50 + 6.00 + 20.00 = 61.50
 
-Now I will write this to `report.json`.
+I will now write this to `report.json`.
 
-  tool_call Write({"content": "{\n  \"count\": 4,\n  \"total\": 61.50\n}\n", "file_path":
-"/home/user/project/report.json"})
-```
+  tool_call Write({"content":"{\n  \"count\": 4,\n  \"total\":
+61.50\n}\n","file_path":"/home/user/project/report.json"})
+````
 
 (The header lines above the context are left out here.) Message 5 is the skill as the model
 read it: after `Base directory for this skill:`, the body of `SKILL.md`, frontmatter stripped,
@@ -699,7 +705,7 @@ tuningfork files $RUN Write
 ```
 
 ```
-run 22d9eec8 before step 2  (snapshot 4eb56754)
+run bab1892f before step 2  (snapshot 4f8a9930)
    file      bytes
    data.csv  77
 ```
@@ -726,15 +732,17 @@ run 5aa33251  tally-report/1#7afee5f1.6
   harness hermes
   sandbox /home/user/project, its home /home/user
   skills  c417ecd4 (1 file(s))
- k  outcome                                                     finish      ms        tokens  think
- 0  execute_code(code='<ast:d1e4a258>')                         tool_calls  15485.46  14256   629
- 1  read_file(path='data.csv')                                  tool_calls  7217.61   14253   461
- 2  read_file(path='data.csv')                                  tool_calls  6048.02   14288   230
- 3  terminal(command='cat data.csv')                            tool_calls  10436.39  14598   1029
- 4  write_file(content='{"count":4,"total":61.5}',              tool_calls  10101.0   14674   581
+ k  outcome                                        finish      ms        tokens  think  changed
+ 0  execute_code: def tally_report(): try: result  tool_calls  15485.46  14256   629
+    = read_file('data.csv') … (+106 chars)
+ 1  read_file(path='data.csv')                     tool_calls  7217.61   14253   461
+ 2  read_file(path='data.csv')                     tool_calls  6048.02   14288   230
+ 3  terminal(command='cat data.csv')               tool_calls  10436.39  14598   1029
+ 4  write_file(content='{"count":4,"total":61.5}…  tool_calls  10101.0   14674   581    report.json
     path='report.json')
- 5  I have summarized `data.csv` into `report.json` as          stop        5705.57   14589   -
-    requested. - **Line… (+92 chars)
+ 5  I have summarized `data.csv` into              stop        5705.57   14589   -
+    `report.json` as requested. - **Line… (+92
+    chars)
 ```
 
 Its report came at step 4. The script at step 0 printed nothing. Hermes answered the two reads
@@ -798,23 +806,23 @@ tuningfork resample $RUN Write -n 20
 ```
 
 ```
-run 22d9eec8 step 2 — 20 samples from http://127.0.0.1:8081
+run bab1892f step 2 — 20 samples from http://127.0.0.1:8081
   context   10 messages, after the result of Read
   sampling  the recorded conditions (the request's own parameters, else server defaults)
   budget    max_tokens 4096, concurrency 1
-  estimate  the recorded step took 8.2s; at most ~2.7 min
+  estimate  the recorded step took 8.8s; at most ~2.9 min
 
     1/20  Write(content='{"count":4,"total":61.5}', file_path='report.json… (+2 chars)  9.0s
     2/20  Write(content='{"count":4,"total":61.5}', file_path='report.json… (+2 chars)  8.8s
-    3/20  Write(content='{"count":4,"total":61.5}', file_path='report.json… (+2 chars)  8.6s
+    3/20  Write(content='{"count":4,"total":61.5}', file_path='report.json… (+2 chars)  8.2s
     ...
-   20/20  Write(content='{"count":4,"total":61.5}', file_path='report.json… (+2 chars)  8.6s
+   20/20  Write(content='{"count":4,"total":61.5}', file_path='report.json… (+2 chars)  8.3s
 
 step 2, after the result of Read — 20 samples
    count  rate  95% CI      behaviour
 A  20/20  100%  [84%-100%]  Write(content='{"count":4,"total":61.5}', file_path='report.json')
 
-experiment 7f72a08c · 2.8 min · 8.5s per sample · use `tuningfork ab 22d9eec8 2 --target <letter>
+experiment 87dd1e7e · 2.8 min · 8.5s per sample · use `tuningfork ab bab1892f 2 --target <letter>
 --variant <file>` to test a wording change
 ```
 
@@ -875,13 +883,13 @@ tuningfork ab $RUN Write --variant examples/variants/tally-report/SKILL.v2.md \
 ```
 
 ```
-run 22d9eec8 step 2 — 20 samples per arm from http://127.0.0.1:8081
+run bab1892f step 2 — 20 samples per arm from http://127.0.0.1:8081
   context   10 messages, after the result of Read
   sampling  the recorded conditions (the request's own parameters, else server defaults)
   budget    max_tokens 4096, concurrency 1
-  estimate  the recorded step took 8.2s; at most ~5.5 min
+  estimate  the recorded step took 8.8s; at most ~5.9 min
   swapping
-/home/you/tuningfork-guide/batches/c1e9dd10/skill-snapshot/tally-report/SKILL.md →
+/home/you/tuningfork-guide/batches/2cc8149f/skill-snapshot/tally-report/SKILL.md →
 examples/variants/tally-report/SKILL.v2.md
             found: body, lines 6-16, in message 3 (user), part 1 at chars 71-411
   target    a behaviour that calls Write, and mentions "row_count" (declared before sampling)
@@ -889,12 +897,12 @@ examples/variants/tally-report/SKILL.v2.md
   original   1/20  Write(content='{"count":4,"total":61.5}', file_path='report.json… (+2 chars)
 8.5s
   original   2/20  Write(content='{"count":4,"total":61.5}', file_path='report.json… (+2 chars)
-7.9s
+8.6s
   ...
   variant    1/20  Write(content='{"amount_total":61.5,"row_count":4}', file_path='… (+13 chars)
-7.8s
+8.4s
   variant    2/20  Write(content='{"amount_total":61.5,"row_count":4}', file_path='… (+13 chars)
-8.9s
+8.2s
   ...
 
    behaviour                                   original               variant                p adj.
@@ -912,7 +920,7 @@ target (declared before sampling): a behaviour that calls Write, and mentions "r
 
 The 2 model-written message(s) before this step were generated under the original wording, and both
 arms inherit them. A checkpoint A/B is a fast screen; confirm a winner with full runs.
-experiments 0fb79204 (original) and c8d283da (variant) · 5.5 min
+experiments 1cdf64c9 (original) and c1d686e0 (variant) · 5.7 min
 ```
 
 tuningfork found the skill in the recorded request — the body, lines 6–16 of the file, where
@@ -1000,25 +1008,25 @@ tuningfork ab $RUN Write --variant examples/variants/tally-report/SKILL.v2.md --
 ```
 
 ```
-run 22d9eec8 from step 2 — 20 forks per arm through http://127.0.0.1:8787
+run bab1892f from step 2 — 20 forks per arm through http://127.0.0.1:8787
   context   after the result of Read
   replays   2 recorded call(s), answered from the recording; live from step 2
   harness   claude-code, model gemma-4-31b
   sandbox   every fork works in /home/user/project, its home /home/user, as its source did
   swapping
-/home/you/tuningfork-guide/batches/c1e9dd10/skill-snapshot/tally-report/SKILL.md →
+/home/you/tuningfork-guide/batches/2cc8149f/skill-snapshot/tally-report/SKILL.md →
 examples/variants/tally-report/SKILL.v2.md, from step 2 on
             found: body, lines 6-16, in message 3 (user), part 1 at chars 71-411
   target    the task's check passes (declared by the task, before any fork ran)
 
-  original   1/20 c55c840a  fail  14.6s  Write(content='{"count":4,"total":61.5}',
+  original   1/20 9aa88d1a  fail  15.7s  Write(content='{"count":4,"total":61.5}',
 file_path='report.… (+6 chars)
-  original   2/20 d4fbb55f  fail  15.8s  Write(content='{"count":4,"total":61.5}',
+  original   2/20 49b3402e  fail  14.7s  Write(content='{"count":4,"total":61.5}',
 file_path='report.… (+6 chars)
   ...
-  variant    1/20 54d26278  pass  15.1s  Write(content='{"amount_total":61.5,"row_count":4}',
+  variant    1/20 49201e92  pass  15.5s  Write(content='{"amount_total":61.5,"row_count":4}',
 file_pa… (+17 chars)
-  variant    2/20 0f43798a  pass  15.5s  Write(content='{"amount_total":61.5,"row_count":4}',
+  variant    2/20 059d0f1c  pass  15.5s  Write(content='{"amount_total":61.5,"row_count":4}',
 file_pa… (+17 chars)
   ...
 
@@ -1039,7 +1047,7 @@ A  20/20  100%  [84%-100%]  Write(content='{"amount_total":61.5,"row_count":4}',
 Steps before 2 were answered from the recording in every fork — the same history, generated under
 the original wording; from step 2 to the end each fork ran live, with each arm's wording, and the
 task's check decided. An edit that would also change earlier steps still needs full runs to confirm.
-experiments 2a46d47f (original) and 33e001e7 (variant) · 10.5 min
+experiments 251f1693 (original) and d9c50c88 (variant) · 10.7 min
 ```
 
 Every original fork wrote `count` and `total`, and failed. Every variant fork wrote
@@ -1055,7 +1063,7 @@ bubblewrap a fork runs in folders of its own, whose names are in every request i
 A fork whose harness asks for something the recording never answered — its history has
 changed — is left out of the rates, and says where it left the recording; none did here.
 Each fork is a run of its own, kept out of `tuningfork runs` and of the task's pass rates:
-`tuningfork show 54d26278` lists its steps, the first two marked as answered from the
+`tuningfork show 49201e92` lists its steps, the first two marked as answered from the
 recording.
 
 #### With Hermes Agent
@@ -1130,14 +1138,14 @@ d.get('row_count')==4 and abs(float(d.get('amount_total',0))-61.5)<0.01 else 1)"
   skill:  examples/tally-report  SKILL.md replaced by examples/variants/tally-report/SKILL.v2.md
   sandbox: every run works in /home/user/project, its home /home/user
 
-  run 0  pass  28.9s
-  run 1  pass  30.0s
-  run 2  pass  31.4s
-  run 3  pass  30.8s
-  run 4  pass  29.4s
-  run 5  pass  27.4s
-  run 6  pass  30.9s
-  run 7  pass  31.0s
+  run 0  pass  29.5s
+  run 1  pass  32.0s
+  run 2  pass  31.6s
+  run 3  pass  30.2s
+  run 4  pass  29.6s
+  run 5  pass  31.5s
+  run 6  pass  32.0s
+  run 7  pass  26.5s
 
 8/8  100%  [68%-100%] passed
 ...
@@ -1202,8 +1210,8 @@ tuningfork fork $RUN Write
 ```
 
 ```
-breakpoint c203477d — after the model: Write on *.json
-run 22d9eec8 from step 2 — 1 fork through http://127.0.0.1:8787
+breakpoint c7fe9cd0 — after the model: Write on *.json
+run bab1892f from step 2 — 1 fork through http://127.0.0.1:8787
   context   after the result of Read
   replays   2 recorded call(s), answered from the recording; live from step 2
   harness   claude-code, model gemma-4-31b
@@ -1220,31 +1228,32 @@ tuningfork hold wait
 ```
 
 ```
-hold 99fdb6ef — after the model, run a6c4b02b step 2, held 0.3s
+hold 01624076 — after the model, run 59722e24 step 2, held 0.5s
   reason  after the model: Write on *.json
   … 7 earlier message(s)
   assistant: tool_calls(Read)
   tool: 1       id,item,amount 2        1,widget,10.00 3        2,gadget,25.50 4
 3,widget,6.00 5 4,doohickey,20.00 6
-  system: <total_tokens>14986017 tokens left</total_tokens>
+  system: <total_tokens>14986009 tokens left</total_tokens>
 
 the model answered
-  reasoning_content: The `data.csv` file contains:
-- Header: `id,item,amount`
-- Line 1: `1,widget,10.00`
-- Line 2: `2,gadget,25.50`
-- Line 3: `3,widget,6.00`
-- Line 4: `4,doohickey,20.00`
+  reasoning_content: The CSV content is:
+id,item,amount
+1,widget,10.00
+2,gadget,25.50
+3,widget,6.00
+4,doohickey,20.00
 
-Count of line items: 4
-Total amount: 10.00 + 25.50 + 6.00 + 20.00 = 61.50
+Line items count: 4
+Amounts: 10.00 + 25.50 + 6.00 + 20.00 = 61.50
 
-I will now write this to `report.json`.
-  tool_call Write({"content": "{\n  \"count\": 4,\n  \"total\": 61.50\n}\n", "file_path":
-"/home/user/project/report.json"})
+I will now write the result to `report.json`.
 
-tuningfork hold continue 99fdb6ef · step · drop — to edit the response: hold show 99fdb6ef --json >
-f.json, edit, hold continue 99fdb6ef --edited f.json
+  tool_call Write({"content":"{\n  \"count\": 4,\n  \"total\":
+61.50\n}\n","file_path":"/home/user/project/report.json"})
+
+tuningfork hold continue 01624076 · step · drop — to edit the response: hold show 01624076 --json >
+f.json, edit, hold continue 01624076 --edited f.json
 ```
 
 ```bash
@@ -1263,21 +1272,21 @@ tuningfork hold continue $HOLD --edited held.json
 ```
 
 ```
-99fdb6ef: continue with your edit
+01624076: continue with your edit
 ```
 
 Claude Code writes your version, and the fork passes — reported as not counted, because the
 edit, not the skill, made it pass. Back in the third terminal:
 
 ```
-  a6c4b02b  pass  16.3s  Write(content='{"count":4,"total":61.5}', file_path='report.… (+6 chars)
+  59722e24  pass  15.7s  Write(content='{"count":4,"total":61.5}', file_path='report.… (+6 chars)
 edited at a breakpoint (step 2) — not counted
 
-`tuningfork show a6c4b02b` for the fork's steps; its first 2 were answered from the recording.
+`tuningfork show 59722e24` for the fork's steps; its first 2 were answered from the recording.
 ```
 
-The line shows what the model did at the write, before your edit. `tuningfork show a6c4b02b`
-marks steps 0 and 1 as replayed and step 2 as edited, and `tuningfork files a6c4b02b end`
+The line shows what the model did at the write, before your edit. `tuningfork show 59722e24`
+marks steps 0 and 1 as replayed and step 2 as edited, and `tuningfork files 59722e24 end`
 finds the report you wrote. Remove the breakpoint with `tuningfork break list` and
 `tuningfork break rm <id>`. Then compare the two wordings, each with its own rate — never
 one pooled across them:
@@ -1451,24 +1460,26 @@ tuningfork tokens $RUN Write --score
 ```
 
 ````
-scoring step 2's answer (183 tokens) on http://127.0.0.1:8081…
-run 22d9eec8 step 2  stream 1174b06e
-  scored · grammar · top 8 · 183 tokens · rebuilt exactly
-  choice of tool, at token [134]: Write 100%  the model's own chance of each, under the step's
+scoring step 2's answer (204 tokens) on http://127.0.0.1:8081…
+run bab1892f step 2  stream 6c535367
+  scored · grammar · top 8 · 204 tokens · rebuilt exactly
+  choice of tool, at token [155]: Write 100%  the model's own chance of each, under the step's
 sampler
 
 reasoning
-  The CSV `data.csv` has the following content:
-  `id,item,amount`
-  `1,widget,10.00`
-  `2,gadget,25.50`
-  `3,widget,6.00`
-  `4,doohickey,20.00`
-
+  The `data.csv` content is:
+  ```csv
+  id,item,amount
+  1,widget,10.00
+  2,gadget,25.50
+  3,widget,6.00
+  4,doohickey,20.00
+  ```
   Line items count: 4
+  Amounts: 10.00, 25.50, 6.00, 20.00
   Total amount: 10.00 + 25.50 + 6.00 + 20.00 = 61.50
 
-  Now I will write this to `report.json`.
+  I will now write this to `report.json`.
 
 tool call
   call:Write{content:<|"|>{
@@ -1478,10 +1489,10 @@ tool call
   <|"|>,file_path:<|"|>/home/user/project/report.json<|"|>}
 
 where the step's sampler could most easily have drawn another token
-  [5] reasoning ' `' 6% | ' content' 79% | ' file' 9%  H 1.17 bits  runner-up drawn 85%
-  [16] reasoning '`' 11% | '-' 66% | '```' 12% | 'Line' 6%  H 1.63 bits  runner-up drawn 69%
-  [10] reasoning ' has' 35% | ' contains' 60%  H 1.19 bits  runner-up drawn 63%
-  [76] reasoning ' count' 41% | ':' 58%  H 1.09 bits  runner-up drawn 58%
+  [4] reasoning ' `' 20% | ' CSV' 63% | ' file' 13%  H 1.46 bits  runner-up drawn 66%
+  [103] reasoning ' amount' 15% | ':' 64% | ' =' 21%  H 1.33 bits  runner-up drawn 64%
+  [139] reasoning 'I' 36% | 'Now' 64%  H 0.97 bits  runner-up drawn 64%
+  [9] reasoning ' content' 37% | ' file' 59%  H 1.22 bits  runner-up drawn 61%
   ...
 
 Entropy counts the probability beyond the top 8 as one outcome: a lower bound. The runner-up's
@@ -1495,13 +1506,13 @@ text the model generated, reasoning and tool-call syntax and all, has as many to
 run reported. (That raw text is how Gemma 4 writes a call: `<|"|>` fences each string.) In a
 terminal, the text is shaded by entropy.
 
-The answer is short — 183 tokens, two thirds of them reasoning — and the reasoning works out
-the count and the total without naming a key. The places where the step's sampler could most
-easily have drawn another token are all in it — how to lay out the file's lines, "has" or
-"contains" — and none touches the keys. The call was settled by then. *Choice of tool* is the
-model's own chance of each tool at the first token of the call's name: `Write`, 100%. And
-`tuningfork tokens $RUN Write --json` puts the first key's `count` at 99.8% and `total` at
-100%; the nearest the model came to the check's key, among the eight tokens it weighed for
+The answer is short — 204 tokens, nearly three quarters of them reasoning — and the reasoning
+works out the count and the total without naming a key. The places where the step's sampler
+could most easily have drawn another token are all in it — what to call the file, "I" or "Now"
+to begin the last sentence — and none touches the keys. The call was settled by then. *Choice
+of tool* is the model's own chance of each tool at the first token of the call's name: `Write`,
+100%. And `tuningfork tokens $RUN Write --json` puts the first key's `count` at 99.86% and
+`total` at 100%; the nearest the model came to the check's key, among the eight tokens it weighed for
 the first, was `rowCount`, at about one in a million. No amount of resampling this step would
 find `row_count` — Part 2 §5 drew twenty and got none — so the wording has to change, as
 Part 2 §6 found.
@@ -1873,19 +1884,19 @@ tuningfork refine start $RUN Write --target-rules '[{"if": "calls", "value": "Wr
 ```
 
 ```
-refinement 832f0fce — open
-  checkpoint  run 22d9eec8 step 2 (task tally-report/1)
+refinement 21eac8bc — open
+  checkpoint  run bab1892f step 2 (task tally-report/1)
   skill       tally-report, as the run was given it:
-              /home/you/tuningfork-guide/batches/c1e9dd10/skill-snapshot/tally-report/SKILL.md
+              /home/you/tuningfork-guide/batches/2cc8149f/skill-snapshot/tally-report/SKILL.md
   its file    examples/tally-report/SKILL.md
   target      a behaviour that calls Write, and mentions "row_count", and mentions "amount_total"
               declared before anything was proposed
   started by  a person
 
 next: ask for proposals — or give your own wording — then screen them:
-  tuningfork refine propose 832f0fce --builtin
-  tuningfork refine propose 832f0fce --file SKILL.md --why '…'
-  tuningfork refine screen 832f0fce
+  tuningfork refine propose 21eac8bc --builtin
+  tuningfork refine propose 21eac8bc --file SKILL.md --why '…'
+  tuningfork refine screen 21eac8bc
 ```
 
 It keeps its own copy of the skill as the run was given it, and every proposal edits that
@@ -1925,7 +1936,7 @@ tuningfork refine show $REF --packet
 
 ```
 {
-  "sha": "18ba4acdafccd377",
+  "sha": "368361ce624aa424",
   "target": {
     "description": "a behaviour that calls Write, and mentions \"row_count\", and mentions \"amount_total\""
   },
@@ -2026,24 +2037,24 @@ proposer  the proxy's own server — through the proxy for a job, gated and neve
   temperature  0.8
   key          not set
 the built-in proposer — 3 proposals
-  sends     the packet — 10 KB of recorded prompts, answers and the skill — to 127.0.0.1:8081
+  sends     the packet — 9 KB of recorded prompts, answers and the skill — to 127.0.0.1:8081
   model     the server default (openai-chat, max_tokens 32768)
-  packet    18ba4acdafccd377
+  packet    368361ce624aa424
   asking…
-  answered in 32s, 1473 tokens · kept in proposer/20261011T161133-ce6d4b
-  proposal 90950deb: 1 line changed
-    why  The agent consistently used 'count' and 'total' as keys, but the task's validation check
-requires 'row_count' and 'amount_total'. Explicitly naming the keys in the final instruction should
-correct this.
-  proposal eb535d21: 1 line changed
-    why  By introducing the specific key names during the calculation step, the agent is more likely
-to carry those names over into the final JSON output.
-  proposal 4726c7d9: 1 line changed
-    why  The failure occurs at the Write step where the agent chooses the wrong keys. Adding the
-requirement directly to the Write step is the most direct way to ensure the target keys are used.
+  answered in 41s, 1949 tokens · kept in proposer/20261023T074651-8aa80e
+  proposal f02d62c6: 1 line changed
+    why  The agent consistently uses 'count' and 'total' as keys, likely because the skill's final
+line uses those words. Specifying the exact required keys 'row_count' and 'amount_total' here will
+correct the naming.
+  proposal 1938ffaf: 1 line changed
+    why  Adding the specific key requirements to the step where the file is written ensures the
+agent uses the correct schema during the final action.
+  proposal 8bb443cf: 1 line changed
+    why  By associating the calculation step directly with the target key names, the agent is more
+likely to carry those specific names forward into the output.
 
-hypotheses until screened: `tuningfork refine screen 832f0fce --proposals
-90950deb,eb535d21,4726c7d9`
+hypotheses until screened: `tuningfork refine screen 21eac8bc --proposals
+f02d62c6,1938ffaf,8bb443cf`
 ```
 
 The proposer is sent the skill and the packet as data, with rules: at most three edits, each
@@ -2098,34 +2109,34 @@ tuningfork refine screen $REF -n 20
 ```
 
 ```
-run 22d9eec8 step 2 — 20 samples per arm from http://127.0.0.1:8081
+run bab1892f step 2 — 20 samples per arm from http://127.0.0.1:8081
   context   10 messages, after the result of Read
   sampling  the recorded conditions (the request's own parameters, else server defaults)
   budget    max_tokens 4096, concurrency 1
-  estimate  the recorded step took 8.2s; at most ~11.0 min
+  estimate  the recorded step took 8.8s; at most ~11.7 min
   target    a behaviour that calls Write, and mentions "row_count", and mentions "amount_total"
             declared when the refinement began
-  arm       90950deb: 1 line changed
-  arm       eb535d21: 1 line changed
-  arm       4726c7d9: 1 line changed
-  survives  with at least 7 of 20 — the step did it 0 times in 20 in resample 7f72a08c
+  arm       f02d62c6: 1 line changed
+  arm       1938ffaf: 1 line changed
+  arm       8bb443cf: 1 line changed
+  survives  with at least 7 of 20 — the step did it 0 times in 20 in resample 87dd1e7e
             Holm over 3 proposals, α=0.05
   samples   80 in all: the original first, then each arm
 
   original   1/20  Write(content='{"count":4,"total":61.5}', file_path='report.json… (+2 chars)
-9.5s
+8.7s
 ...
 target (declared before sampling): a behaviour that calls Write, and mentions "row_count", and
 mentions "amount_total"
           target                 p        Holm
 original  0/20   0% [0%-16%]
-90950deb  20/20 100% [84%-100%]  1.5e-11  4.4e-11  survives
-eb535d21  20/20 100% [84%-100%]  1.5e-11  4.4e-11  survives
-4726c7d9  20/20 100% [84%-100%]  1.5e-11  4.4e-11  survives
+f02d62c6  20/20 100% [84%-100%]  1.5e-11  4.4e-11  survives
+1938ffaf  20/20 100% [84%-100%]  1.5e-11  4.4e-11  survives
+8bb443cf  20/20 100% [84%-100%]  1.5e-11  4.4e-11  survives
 p: Fisher's exact test of each proposal against the original arm; Holm: corrected over the 3 planned
 before sampling (α=0.05).
 A screen at one step is evidence, not proof: confirm a survivor with full runs.
-screen e6d08857 · 11.3 min · `tuningfork refine show 832f0fce` shows every proposal with its
+screen 152c4ea6 · 11.4 min · `tuningfork refine show 21eac8bc` shows every proposal with its
 verdicts
 ```
 
@@ -2141,56 +2152,56 @@ tuningfork refine show $REF
 ```
 
 ```
-refinement 832f0fce — open
-  checkpoint  run 22d9eec8 step 2 (task tally-report/1)
+refinement 21eac8bc — open
+  checkpoint  run bab1892f step 2 (task tally-report/1)
   skill       tally-report, as the run was given it:
-              /home/you/tuningfork-guide/batches/c1e9dd10/skill-snapshot/tally-report/SKILL.md
+              /home/you/tuningfork-guide/batches/2cc8149f/skill-snapshot/tally-report/SKILL.md
   its file    examples/tally-report/SKILL.md
   target      a behaviour that calls Write, and mentions "row_count", and mentions "amount_total"
               declared before anything was proposed
   started by  a person
 
 proposals (3) — hypotheses until a screen tests them
-  90950deb  1 line changed · the built-in proposer, gemma-4-31b at 127.0.0.1:8081 · packet 18ba4acdafccd377
-    why  The agent consistently used 'count' and 'total' as keys, but the task's validation check
-requires 'row_count' and 'amount_total'. Explicitly naming the keys in the final instruction should
-correct this.
+  f02d62c6  1 line changed · the built-in proposer, gemma-4-31b at 127.0.0.1:8081 · packet 368361ce624aa424
+    why  The agent consistently uses 'count' and 'total' as keys, likely because the skill's final
+line uses those words. Specifying the exact required keys 'row_count' and 'amount_total' here will
+correct the naming.
     @@ line 14 @@
       3. Write the results to `report.json` in the working directory.
 
     - Keep the report small — just the count and the total.
-    + Keep the report small, using the keys `row_count` and `amount_total`.
-    screened  survives — 20/20 against the original's 0/20, Holm p 4.4e-11 (screen e6d08857)
-  eb535d21  1 line changed · the built-in proposer, gemma-4-31b at 127.0.0.1:8081 · packet 18ba4acdafccd377
-    why  By introducing the specific key names during the calculation step, the agent is more likely
-to carry those names over into the final JSON output.
-    @@ line 11 @@
-
-      1. Read the CSV file named in the request.
-    - 2. Work out how many line items it contains, and the total of the amount column.
-    + 2. Work out the `row_count` (number of line items) and the `amount_total` (sum of the amount column).
-      3. Write the results to `report.json` in the working directory.
-
-    screened  survives — 20/20 against the original's 0/20, Holm p 4.4e-11 (screen e6d08857)
-  4726c7d9  1 line changed · the built-in proposer, gemma-4-31b at 127.0.0.1:8081 · packet 18ba4acdafccd377
-    why  The failure occurs at the Write step where the agent chooses the wrong keys. Adding the
-requirement directly to the Write step is the most direct way to ensure the target keys are used.
+    + Keep the report small — use the keys "row_count" and "amount_total".
+    screened  survives — 20/20 against the original's 0/20, Holm p 4.4e-11 (screen 152c4ea6)
+  1938ffaf  1 line changed · the built-in proposer, gemma-4-31b at 127.0.0.1:8081 · packet 368361ce624aa424
+    why  Adding the specific key requirements to the step where the file is written ensures the
+agent uses the correct schema during the final action.
     @@ line 12 @@
       1. Read the CSV file named in the request.
       2. Work out how many line items it contains, and the total of the amount column.
     - 3. Write the results to `report.json` in the working directory.
-    + 3. Write the results to `report.json` in the working directory, using the keys `row_count` and `amount_total`.
+    + 3. Write the results to `report.json` in the working directory using the keys "row_count" and "amount_total".
 
       Keep the report small — just the count and the total.
-    screened  survives — 20/20 against the original's 0/20, Holm p 4.4e-11 (screen e6d08857)
+    screened  survives — 20/20 against the original's 0/20, Holm p 4.4e-11 (screen 152c4ea6)
+  8bb443cf  1 line changed · the built-in proposer, gemma-4-31b at 127.0.0.1:8081 · packet 368361ce624aa424
+    why  By associating the calculation step directly with the target key names, the agent is more
+likely to carry those specific names forward into the output.
+    @@ line 11 @@
+
+      1. Read the CSV file named in the request.
+    - 2. Work out how many line items it contains, and the total of the amount column.
+    + 2. Work out the row count (row_count) and the total of the amount column (amount_total).
+      3. Write the results to `report.json` in the working directory.
+
+    screened  survives — 20/20 against the original's 0/20, Holm p 4.4e-11 (screen 152c4ea6)
 
 screens (1)
-  e6d08857  done  3 proposals, n=20 an arm — 4726c7d9, 90950deb, eb535d21 survived
+  152c4ea6  done  3 proposals, n=20 an arm — 1938ffaf, 8bb443cf, f02d62c6 survived
 ```
 
-All three survive, each twenty times in twenty. `90950deb` names the keys in the skill's last
+All three survive, each twenty times in twenty. `f02d62c6` names the keys in the skill's last
 line, in place of "just the count and the total" — the very words of the model's keys.
-`eb535d21` names them in the step that works the values out, and `4726c7d9` in the step that
+`8bb443cf` names them in the step that works the values out, and `1938ffaf` in the step that
 writes the file, leaving the last line as it was.
 
 #### With Hermes Agent
@@ -2306,13 +2317,13 @@ Its runs go through the proxy from Part 2 §2, so leave that running. Take a sur
 from `refine show` and look at the plan first:
 
 ```bash
-PROPOSAL=90950deb
+PROPOSAL=f02d62c6
 tuningfork refine validate $REF $PROPOSAL --dry-run
 ```
 
 ```
-validate proposal 90950deb of refinement 832f0fce — tally-report/1, at step 2
-  screened  survived screen e6d08857: 20/20 against the original's 0/20, Holm p 4.4e-11
+validate proposal f02d62c6 of refinement 21eac8bc — tally-report/1, at step 2
+  screened  survived screen 152c4ea6: 20/20 against the original's 0/20, Holm p 4.4e-11
   forward   5 forks an arm from step 2 to the end, the original first
   training  5 full runs an arm of tally-report/1, the edit from the first step
   held out  5 full runs an arm of each of: 2 — only their verdicts are kept,
@@ -2331,27 +2342,27 @@ tuningfork refine validate $REF $PROPOSAL
 ```
 ...
 forward — forks from step 2 to the end
-  original   1/5 01d20618  fail  14.7s  Write(content='{"count":4,"total":61.5}',
+  original   1/5 68687560  fail  16.1s  Write(content='{"count":4,"total":61.5}',
 file_path='report.… (+6 chars)
 ...
-  edit       5/5 4b54e00b  pass  15.4s  Write(content='{"amount_total":61.5,"row_count":4}',
+  edit       5/5 91c92cc0  pass  14.9s  Write(content='{"amount_total":61.5,"row_count":4}',
 file_pa… (+17 chars)
 
 training — full runs of tally-report/1
-  original   1/5 1e84cf37  fail  29.4s
+  original   1/5 d7bedd47  fail  28.3s
 ...
-  edit       5/5 4afad9cc  pass  28.9s
+  edit       5/5 600c7aad  pass  35.3s
 
 held out 2 — verdicts only
   original   1/5  ended
 ...
   edit       5/5  ended
 
-  1306a84e  done  proposal 90950deb — meets the gate
+  7b6c07e0  done  proposal f02d62c6 — meets the gate
     forward   edit 5/5 (100%, 95% CI 57–100%); original 0/5 (0%, 95% CI 0–43%)
     training  edit 5/5 (100%, 95% CI 57–100%); original 0/5 (0%, 95% CI 0–43%)
     held out 2: edit 5/5 (100%, 95% CI 57–100%); original 0/5 (0%, 95% CI 0–43%)
-    G0 met     survived a screen: it survived screen e6d08857
+    G0 met     survived a screen: it survived screen 152c4ea6, its latest
     G1 met     a held-out task was validated: 1 held-out task(s) validated
     G2 met     finished, with enough runs: every arm ran its runs on one server
     G3 met     its own task succeeds from the target forward: with the edit 5/5 forks passed, without it 0/5
@@ -2361,7 +2372,7 @@ held out 2 — verdicts only
     G7 met     the refinement is open, and nothing in it is approved: open
     G8 met     held-out task 2 improves where the original fails: with the edit 5/5, without it 0/5
 
-it meets the gate: `tuningfork refine approve 832f0fce 90950deb` shows what approving writes
+it meets the gate: `tuningfork refine approve 21eac8bc f02d62c6` shows what approving writes
 ```
 
 Every check keeps its counts and the name of the rule that judged it. The edit passed every
@@ -2458,14 +2469,14 @@ tuningfork refine approve $REF $PROPOSAL
 ```
 
 ```
-approve proposal 90950deb of refinement 832f0fce, on validation 1306a84e
+approve proposal f02d62c6 of refinement 21eac8bc, on validation 7b6c07e0
   writes     /home/you/tuningfork/examples/tally-report/SKILL.md
              \\wsl.localhost\Ubuntu\home\you\tuningfork\examples\tally-report\SKILL.md
   keeps      LF line endings
   file before → /home/you/tuningfork/examples/tally-report.history/
   changelog   → /home/you/tuningfork/examples/tally-report.changelog.md
   the gate   every check met:
-    G0 met     survived a screen: it survived screen e6d08857
+    G0 met     survived a screen: it survived screen 152c4ea6, its latest
     G1 met     a held-out task was validated: 1 held-out task(s) validated
     G2 met     finished, with enough runs: every arm ran its runs on one server
     G3 met     its own task succeeds from the target forward: with the edit 5/5 forks passed, without it 0/5
@@ -2479,12 +2490,12 @@ approve proposal 90950deb of refinement 832f0fce, on validation 1306a84e
       3. Write the results to `report.json` in the working directory.
 
     - Keep the report small — just the count and the total.
-    + Keep the report small, using the keys `row_count` and `amount_total`.
+    + Keep the report small — use the keys "row_count" and "amount_total".
 
-  code  c632c165
-Type the code to write it (anything else writes nothing): c632c165
+  code  314729eb
+Type the code to write it (anything else writes nothing): 314729eb
 written: /home/you/tuningfork/examples/tally-report/SKILL.md
-  the file before  /home/you/tuningfork/examples/tally-report.history/SKILL.20261011T163907Z-c3dd28e9.md
+  the file before  /home/you/tuningfork/examples/tally-report.history/SKILL.20261023T081256Z-c3dd28e9.md
   changelog        /home/you/tuningfork/examples/tally-report.changelog.md
   to undo, copy the file before back over it
 ```
@@ -2603,15 +2614,15 @@ Part 4 §6.
 Not digit for digit. The model samples at temperature 1.0 from a fresh random seed each time —
 a harness sends none, and tuningfork draws new ones for every experiment — so counts wobble
 between tries and between machines, and so do the runs `--called` picks: here every Claude Code
-run wrote its report with `Write`, seven at step 2 and one, after an `ls`, at step 3, and four
-of the eight Hermes runs with `write_file`, three at step 1 and one at step 4. What reproduces
+run wrote its report with `Write` at step 2, and four of the eight Hermes runs with
+`write_file`, three at step 1 and one at step 4. What reproduces
 is the shape: the original wording fails every time, by writing `count` and `total`; resampling
 the write never gives `row_count`; the A/B separates the wordings by a wide, significant margin
 at the write, and so does following it to the end of the run; and full runs with the variant
 pass nearly every time. Our batches of the original wording on this model have all come out at
-zero, every report with `count` and `total`: 0/8 twice with Claude Code and 0/8 twice with
-Hermes. The variant's full runs passed 8/8 with Claude Code and 8/8 with Hermes. The step-0
-split varies the most, and matters least.
+zero, every report with `count` and `total`: 0/8 three times with Claude Code and 0/8 twice
+with Hermes. The variant's full runs passed 8/8 twice with Claude Code and 8/8 with Hermes. The
+step-0 split varies the most, and matters least.
 
 Without bubblewrap, each run works in folders of its own, whose names are in its prompt, so
 on your machine every run is asked something slightly different — and to a model that can
