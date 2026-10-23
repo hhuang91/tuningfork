@@ -14,7 +14,7 @@
 </picture>
 </p>
 
-[See it work](#see-it-work) walks through the figure's example, command by command.
+[See it work](#see-it-work) tells the story behind the figure.
 
 Tuning Fork (`tuningfork`) sits between your agent and your LLM, allowing you to record and experiment on every call the agent
 makes. When a skill fails, `tuningfork` helps to find the step where the execution goes wrong, and shows how the
@@ -96,12 +96,12 @@ make the `tuningfork` command available.
 python tests/browser/demo.py lab /tmp/tuningfork-lab 8790    # made-up runs, a scripted model
 ```
 
-Open the web UI at the address it prints. The runs are made up, nine of the example task with a
+Open the web UI at the address it prints. The runs are made up, nine of the guide's example task, tally-report, with a
 resample and an A/B, but tuningfork's own proxy serves them, in front of a scripted model that
-answers at once, so every button works. To make the A/B above, open run `tally-report/1#demo.2`,
+answers at once, so every button works. To make the A/B shown under [See it work](#see-it-work), open run `tally-report/1#demo.2`,
 its step 1, and *A/B a wording…*. The scripted model writes the keys the check wants only for a
 wording that names them in these exact words: `row_count and amount_total`
-([step by step](docs/images/README.md#the-gif-step-by-step)).
+([step by step](docs/images/README.md#the-gif)).
 [Part 1 of the guide](examples/README.md#part-1--tuningfork-without-a-model) tours runs like these
 from the terminal, then stops a live call at a breakpoint and changes it, still with no model.
 
