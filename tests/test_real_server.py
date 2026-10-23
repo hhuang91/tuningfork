@@ -7,7 +7,7 @@ refused before anything is sent:
 
 Each test is one thing the design relies on. The model must be one
 whose output format tuningfork reads (`tuningfork.backends.formats`): Gemma 4, Qwen2.5, Qwen3,
-Qwen3.5 or Qwen3.6.
+Qwen3.5, Qwen3.6 or Qwen3-Coder.
 """
 
 from __future__ import annotations

@@ -60,3 +60,20 @@ class Format(Protocol):
         """Every text the model may have generated for this message where the server reads
         several the same, `render`'s first. Scoring keeps the one with the recorded number of
         tokens, and where several have it, the one the model finds likelier where they part."""
+
+
+def token_parts(pieces: Sequence[str], kinds: Sequence[str]) -> list[tuple[str, int, int]]:
+    """`parts` from what each character of the joined pieces is (`kinds`; any past its end are
+    markers): a token takes the part of its first character that is not a marker's, and is a
+    marker where all are."""
+    runs: list[tuple[str, int, int]] = []
+    at = 0
+    for position, piece in enumerate(pieces):
+        own = kinds[at : at + len(piece)]
+        at += len(piece)
+        kind = next((each for each in own if each != "marker"), "marker")
+        if runs and runs[-1][0] == kind and runs[-1][2] == position:
+            runs[-1] = (kind, runs[-1][1], position + 1)
+        else:
+            runs.append((kind, position, position + 1))
+    return runs

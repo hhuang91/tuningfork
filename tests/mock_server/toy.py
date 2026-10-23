@@ -11,6 +11,7 @@ there leads to that answer.
 `QwenToy` is the same model writing Qwen3.5's format: its template opens the reasoning in the
 prompt, so its answers begin with that opening, as what follows the turn. `Qwen3Toy` writes
 Qwen3's, whose model opens its reasoning itself — or Qwen2.5's, which has none.
+`Qwen3CoderToy` writes Qwen3-Coder's: Qwen3.5's calls, and no reasoning.
 """
 
 from __future__ import annotations
@@ -284,6 +285,16 @@ class Qwen3Toy(QwenToy):
         return prompt + self.turn + ("" if thinking or not self.reasoning else "<think>\n\n</think>\n\n")
 
 
+class Qwen3CoderToy(QwenToy):
+    """The toy writing Qwen3-Coder's format: Qwen3.5's calls, with a template that has no
+    reasoning, so its prompt opens nothing and its answers are content and calls."""
+
+    template = "{# a toy Qwen3-Coder template #}<|im_start|>{{ '<tool_call>\\n<function=' }}{{ '<parameter=' }}"
+
+    def apply_template(self, body: dict[str, Any]) -> str:
+        return super().apply_template(body).removesuffix("<think>\n\n</think>\n\n").removesuffix("<think>\n")
+
+
 def props(template: str = TEMPLATE, **extra: Any) -> dict[str, Any]:
     """A `/props` as llama.cpp serves it, with a toy's template: Gemma 4's unless named."""
     return {
@@ -295,4 +306,4 @@ def props(template: str = TEMPLATE, **extra: Any) -> dict[str, Any]:
     }
 
 
-__all__ = ["EOG", "SPECIALS", "TEMPLATE", "Qwen3Toy", "QwenToy", "ToyLlama", "props"]
+__all__ = ["EOG", "SPECIALS", "TEMPLATE", "Qwen3CoderToy", "Qwen3Toy", "QwenToy", "ToyLlama", "props"]

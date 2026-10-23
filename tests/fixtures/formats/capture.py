@@ -5,14 +5,16 @@ Not a test. Run it against a llama.cpp server to (re)make the fixtures `tests/te
 checks a format against:
 
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py gemma4
-    TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py qwen3-coder/qwen3.6-27b
+    TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py qwen3.5/qwen3.6-27b
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py qwen3/qwen3-30b-a3b
 
 The second form keeps a format's fixtures a folder for each model that writes it.
 
 Each case asks for an answer with logprobs, which cover every generated token — reasoning,
 channel markers and tool-call syntax included — so the joined tokens are the raw text. The
-server's parsed message comes in the same response. Protected endpoints are refused.
+server's parsed message comes in the same response. Protected endpoints are refused. A case
+named for some formats only runs for them: one that bans a marker token, so that the model
+writes what it sometimes writes without it — Qwen3-Coder's first call with no `<tool_call>`.
 
 A fixture keeps the tools the case offered, which a format that types each argument by its
 schema reads with, and the end of the rendered prompt, where a template that opens the
@@ -74,6 +76,11 @@ CASES = {
                      "chat_template_kwargs": {"enable_thinking": False}},
     # A hybrid Qwen3 told so in the turn writes an empty reasoning, which the server drops.
     "no-think-switch": {"messages": [{"role": "user", "content": "Say hello in German, one word. /no_think"}]},
+    # Qwen3-Coder sometimes opens its first call without its marker, which the server reads alike.
+    "no-marker": {"messages": [{"role": "user", "content": "What's the weather in Rome right now?"}], "tools": [WEATHER],
+                  "ban": ["<tool_call>"], "formats": ["qwen3-coder"]},
+    "text-then-no-marker": {"messages": [{"role": "user", "content": "First tell me in one sentence what you will do, then check the weather in Kyiv."}],
+                            "tools": [WEATHER], "ban": ["<tool_call>"], "formats": ["qwen3-coder"]},
 }
 
 
@@ -93,9 +100,19 @@ async def capture(fmt: str, seeds: tuple[int, ...] = (1, 2)) -> None:
         known = format_for((await http.get(f"{ROOT}/props")).json().get("chat_template"))
         print(f"the server's format: {known.name if known else 'none tuningfork knows yet'}")
         for name, case in CASES.items():
+            if fmt.split("/")[0] not in case.get("formats", [fmt.split("/")[0]]):
+                continue
+            ban = case.get("ban", [])
+            case = {key: value for key, value in case.items() if key not in ("ban", "formats")}
+            bias = {}
+            for text in ban:  # a marker is one token: banned, the model cannot write it
+                (token,) = (await http.post(f"{ROOT}/tokenize", json={"content": text, "parse_special": True})).json()["tokens"]
+                bias[str(token)] = -100
             prompt = (await http.post(f"{ROOT}/apply-template", json=case)).json()["prompt"]
             for seed in seeds:
                 body = {**case, "max_tokens": 8192, "logprobs": True, "top_logprobs": 1, "seed": seed}
+                if bias:
+                    body["logit_bias"] = bias
                 response = await http.post(f"{ROOT}/v1/chat/completions", json=body)
                 response.raise_for_status()
                 data = response.json()

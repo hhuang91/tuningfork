@@ -314,3 +314,23 @@ class TestToolChoice:
         assert tool_choice(reply, Sampler(), tools=self.TOOLS, prefix="call:") is None
         unmarked = from_entries([entry(48, "<|tool_call>", 1.0), entry(5, "call", 1.0), entry(6, ":", 1.0), entry(7, "write", 1.0)])
         assert tool_choice(unmarked, Sampler(), tools=self.TOOLS, prefix="call:") is None
+
+    def test_the_name_is_found_after_the_prefix_by_its_text(self):
+        # A Qwen3.5 stream scored before the newline after <tool_call> was the marker's keeps
+        # its parts: its call's part begins with that newline. And a token carries the
+        # prefix's end with the name's start.
+        from tuningfork.analysis.tokens import tool_choice
+
+        stream = from_entries([
+            entry(1, "<tool_call>", 1.0), entry(2, "\n", 1.0), entry(3, "<", 1.0), entry(4, "function", 1.0),
+            entry(5, "=write", 0.7, [(6, "=read", 0.3)]), entry(7, "_file", 1.0), entry(8, ">\n", 1.0),
+            entry(9, "</function>", 1.0), entry(50, "", 1.0),
+        ])
+        for start in (1, 2):  # the newline the part's, or the marker's
+            stream.parts = [("marker", 0, start), ("tool_call", start, 8), ("marker", 8, 9)]
+            found = tool_choice(stream, Sampler(), tools=self.TOOLS, prefix="<function=")
+            assert found is not None and (found.position, found.chosen) == (4, "write_file")
+            assert found.chance == {"write_file": pytest.approx(0.7), "read_file": pytest.approx(0.3)}
+        # a part without the prefix has no name to find
+        stream.parts = [("marker", 0, 4), ("tool_call", 4, 8), ("marker", 8, 9)]
+        assert tool_choice(stream, Sampler(), tools=self.TOOLS, prefix="<function=") is None

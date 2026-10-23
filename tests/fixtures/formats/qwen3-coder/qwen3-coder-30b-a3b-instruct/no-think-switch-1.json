@@ -1,0 +1,21 @@
+{
+ "case": "no-think-switch",
+ "seed": 1,
+ "tools": false,
+ "offered": [],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": " in German, one word. /no_think<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "stop",
+ "completion_tokens": 3,
+ "pieces": [
+  "Hall",
+  "ó",
+  ""
+ ],
+ "message": {
+  "content": "Halló",
+  "reasoning_content": "",
+  "tool_calls": []
+ }
+}

@@ -19,7 +19,7 @@ from tests.helpers import as_response
 from tests.mock_server.toy import QwenToy, props as toy_props
 
 UPSTREAM = "http://upstream.test"
-QWEN = get_format("qwen3-coder")
+QWEN = get_format("qwen3.5")
 TOOLS = [
     {"type": "function", "function": {"name": "write_file", "parameters": {"type": "object", "properties": {
         "path": {"type": "string"}, "lines": {"type": "integer"}}}}},

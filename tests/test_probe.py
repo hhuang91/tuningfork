@@ -316,6 +316,9 @@ class TestTokenLevel:
         assert (result.support, result.detail) == (Support.YES, "gemma4")
         mock_server.props = {"chat_template": "{{ '<think>' }}{{ '<tool_call>\\n<function=' }}{{ '<parameter=' }}"}
         (result,) = await probe_output_format(probe_ctx)
+        assert (result.support, result.detail) == (Support.YES, "qwen3.5")
+        mock_server.props = {"chat_template": "{{ '<tool_call>\\n<function=' }}{{ '<parameter=' }}"}
+        (result,) = await probe_output_format(probe_ctx)
         assert (result.support, result.detail) == (Support.YES, "qwen3-coder")
         mock_server.props = {"chat_template": "<|im_start|>"}
         (result,) = await probe_output_format(probe_ctx)
