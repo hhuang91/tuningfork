@@ -473,8 +473,9 @@ def _members(arguments: Any) -> list[tuple[str, Any, str]]:
     arguments are the text the server sent, which keeps a value as the model wrote it: on chat
     completions, and in a streamed Messages answer (`wire.anthropic`; scoring reads an older
     step's again from its stream). A Messages answer that was not streamed came parsed, and its
-    arguments were written again from the input: escapes added, the model's spacing lost. Such a
-    value is rebuilt approximately, which scoring says where the token count changes."""
+    arguments were written again from the input: escapes added, numbers normalized, the model's
+    spacing lost. Such a value is rebuilt approximately, which scoring says where the token count
+    changes."""
     if isinstance(arguments, dict):
         arguments = json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
     text = arguments if isinstance(arguments, str) and arguments.strip() else "{}"
