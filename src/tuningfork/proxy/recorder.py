@@ -349,12 +349,10 @@ class Recorder:
         if output_cap:
             params["output_cap"] = output_cap
 
-        async with self._in_order:
-            raw_blob = None
-            if raw_response is not None:
-                raw_blob = await asyncio.to_thread(self._store_raw, raw_response)
-            step = await asyncio.to_thread(
-                self.store.record_step,
+        def record_step(raw_blob: str | None) -> Any:
+            # Redacted in the worker thread, as the step is stored: redaction reads every
+            # payload whole, its JSON escapes read too, and the event loop has calls to serve.
+            return self.store.record_step(
                 request=clean(request_payload),
                 response=clean(response_json) if response_json else None,
                 raw_response_blob=raw_blob,
@@ -377,6 +375,12 @@ class Recorder:
                 # A fork's replayed answer came from the server its source was recorded on.
                 server_id=served_by or self.server_id,
             )
+
+        async with self._in_order:
+            raw_blob = None
+            if raw_response is not None:
+                raw_blob = await asyncio.to_thread(self._store_raw, raw_response)
+            step = await asyncio.to_thread(record_step, raw_blob)
             if holds and step is not None:
                 # What was sampled at these holds is filed under this step from now on.
                 await asyncio.to_thread(

@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from tuningfork.config import DEFAULT_REDACTIONS, REDACTED, redact
+from tuningfork.config import DEFAULT_REDACTIONS, REDACTED, redact, redact_json
 from tuningfork.store.blobs import BlobStore
 
 
@@ -120,3 +120,69 @@ class TestRedaction:
         assert "sk-abcdefghij" not in result
         assert "ghp_abcdefghij" not in result
         assert result.count(REDACTED) == 2
+
+
+class TestRedactionReadsJsonAsItReads:
+    """Found in the 0.5.0 review: storage matched the patterns against JSON as it is written,
+    where a newline is a backslash and an `n`. A key on a line of its own then followed a
+    letter, which an `sk-` key must not, and was stored in clear in every harness's payloads.
+    A call's arguments, or a tool's JSON result inside a message, escape their quotes, which
+    `api_key: …` never matched."""
+
+    KEY = "sk-a1B2c3D4e5F6g7H8i9J0"
+
+    def stored(self, payload):
+        return json.dumps(redact_json(payload), ensure_ascii=False)
+
+    @pytest.mark.parametrize("before", ["\n", "\t", "\r\n"])
+    def test_a_key_on_a_line_of_its_own(self, before):
+        assert self.KEY not in self.stored({"role": "tool", "content": "first line" + before + self.KEY})
+
+    def test_a_key_after_a_newline_in_a_calls_arguments(self):
+        arguments = json.dumps({"path": ".env", "content": "# keys\n" + self.KEY + "\n"})
+        message = {"role": "assistant", "tool_calls": [{"function": {"name": "write_file", "arguments": arguments}}]}
+        assert self.KEY not in self.stored({"messages": [message]})
+
+    def test_a_key_after_a_newline_in_a_tools_json_result(self):
+        result = json.dumps({"output": "export done\n" + self.KEY, "exit_code": 0})
+        assert self.KEY not in self.stored({"messages": [{"role": "tool", "content": result}]})
+
+    def test_a_key_in_a_json_file_a_tool_showed(self):
+        # Hermes's terminal result is JSON, and the file it shows is JSON too: the key's newline
+        # is escaped three times in the stored request.
+        shown = json.dumps({"note": "keys below\n" + self.KEY})
+        result = json.dumps({"output": shown, "exit_code": 0})
+        assert self.KEY not in self.stored({"messages": [{"role": "tool", "content": result}]})
+
+    def test_an_assignment_inside_a_json_string(self):
+        result = json.dumps({"api_key": "abcdefghijklmnop"})
+        stored = self.stored({"messages": [{"role": "tool", "content": result}]})
+        assert "abcdefghijklmnop" not in stored
+        assert "api_key" in stored
+
+    def test_a_key_written_with_an_escape_inside_it_is_masked_whole(self):
+        # The model's own JSON, as a Qwen3 answer or a streamed Messages call keeps it.
+        escape = "\\" + "u0044"  # a D, as JSON may write one
+        arguments = '{"command":"echo sk-a1B2c3' + escape + 'e5F6g7H8i9J0K1"}'
+        stored = self.stored({"tool_calls": [{"function": {"name": "terminal", "arguments": arguments}}]})
+        assert "a1B2c3" not in stored and "e5F6g7H8i9J0K1" not in stored
+
+    def test_a_stream_kept_as_text(self):
+        # The recorder keeps a streamed answer's bytes, redacted as text.
+        delta = {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "here:\n" + self.KEY}}
+        text = "event: content_block_delta\ndata: " + json.dumps(delta) + "\n\n"
+        assert self.KEY not in redact(text)
+
+    def test_the_rest_is_kept_and_still_parses(self):
+        content = "line\n" + self.KEY + '\nnext line "quoted" é'
+        payload = {"tool_calls": [{"function": {"arguments": json.dumps({"content": content})}}]}
+        arguments = redact_json(payload)["tool_calls"][0]["function"]["arguments"]
+        assert json.loads(arguments)["content"] == content.replace(self.KEY, REDACTED)
+
+    def test_text_without_a_secret_is_kept_byte_for_byte(self):
+        text = json.dumps({"content": json.dumps({"output": 'a\nb\t"c" \\ é'})})
+        assert redact(text) == text
+
+    def test_a_word_on_a_line_of_its_own_is_still_a_word(self):
+        text = json.dumps({"content": "plan:\ntask-management-system"})
+        assert redact(text) == text
