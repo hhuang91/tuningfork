@@ -160,11 +160,12 @@ def replay_problems(store: Store, run: Run, step: int) -> list[str]:
         if recorded.error or (recorded.status or 200) >= 400:
             problems.append(f"{where} failed ({recorded.error or recorded.status}), so there is no answer to replay")
             continue
+        if (recorded.params or {}).get("raw_redacted"):
+            # Its bytes were written again around a secret, or not kept (`recorder.stream_without_secrets`).
+            problems.append(f"{where}'s answer had a secret redacted from it, so it cannot be replayed as it was")
+            continue
         if not recorded.raw_response_blob:
-            if (recorded.params or {}).get("raw_redacted"):
-                problems.append(f"{where}'s answer had a secret redacted from it, so it cannot be replayed as it was")
-            else:
-                problems.append(f"{where} has no raw response recorded to replay")
+            problems.append(f"{where} has no raw response recorded to replay")
             continue
         raw = store.blobs.get(recorded.raw_response_blob)
         if REDACTED.encode() in raw:

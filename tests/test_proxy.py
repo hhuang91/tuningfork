@@ -677,6 +677,7 @@ class TestRedaction:
         kept, step, _ = await self.keep(settings, recorder, CHAT, simple_request(stream=True, logprobs=True),
                                         f"data: {json.dumps(chunk)}\n\n", openai_chunk({}, "stop"), b"data: [DONE]\n\n")
         assert b"a1B2c3" not in kept and b"D4e5F6g7H8i9J0" not in kept
+        assert "logprobs" not in reassemble(kept)["choices"][0]  # their bytes spell it too
         assert step.params["raw_redacted"] == "rendered"
 
     async def test_a_key_in_a_claude_code_calls_streamed_input(self, settings, recorder):

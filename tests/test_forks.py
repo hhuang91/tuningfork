@@ -191,14 +191,17 @@ class TestBookkeeping:
             prepare_fork(stack.store, source.run_id, "2", base_url=f"{stack.url}/v1")
         assert "step 0 has no raw response" in refused.value.detail
 
-    def test_a_step_whose_bytes_were_not_kept_for_a_secret_says_so(self, stack):
-        # The recorder keeps no bytes of an answer it could not write again around a secret.
+    @pytest.mark.parametrize("how", ["rendered", "dropped"])
+    def test_a_step_whose_bytes_were_redacted_beyond_the_text_says_so(self, stack, how):
+        # The recorder wrote its bytes again around a secret, or kept none: a fork refuses it on
+        # that word alone, whatever bytes are kept.
         source = stack.record()
         first = stack.store.steps(source.run_id)[0]
-        params = json.dumps({**first.params, "raw_redacted": "dropped"})
+        params = json.dumps({**first.params, "raw_redacted": how})
+        blob = first.raw_response_blob if how == "rendered" else None
         with stack.store._lock:
             stack.store._conn.execute(
-                "UPDATE steps SET raw_response_blob = NULL, params = ? WHERE id = ?", (params, first.id)
+                "UPDATE steps SET raw_response_blob = ?, params = ? WHERE id = ?", (blob, params, first.id)
             )
             stack.store._conn.commit()
 
