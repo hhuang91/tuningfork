@@ -10,7 +10,7 @@ Copyright (c) 2023-2026 The ggml authors
   src/tuningfork/backends/llamacpp/anthropic.py follows, rule for rule, how llama.cpp's server
   converts an Anthropic Messages request into a chat-completions one
   (tools/server/server-chat.cpp, build b11108). Three modules in src/tuningfork/backends/formats/
-  follow how it reads a model's output: gemma4.py its parser of Gemma 4's
+  follow how it reads a model's output, at the same build: gemma4.py its parser of Gemma 4's
   (common/parsers/gemma4.cpp); qwen3_coder.py its parser of Qwen3.5's and Qwen3-Coder's
   (common/parsers/qwen3-coder.cpp), with the types it reads a call's values as
   (common/json-schema.cpp); and qwen_json.py the parser its autoparser builds for Qwen3's and

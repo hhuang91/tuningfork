@@ -16,10 +16,10 @@ wrote, and the README opens in plainer words.
   Qwen2.5's parser from the server, and is named `qwen2.5`.
 - **Qwen3-Coder** (`qwen3-coder`), read by the same parser of llama.cpp's as Qwen3.5, in its
   other setting: no reasoning, and a first call with its `<tool_call>` or without it.
-- **Texts the server reads alike.** For Qwen3 and Qwen2.5, an empty reasoning and none, or a
-  newline and a blank line between calls, give the same parsed answer; for Qwen3-Coder, a first
-  call with its `<tool_call>` and one without. Scoring keeps the text with the recorded number of
-  tokens, and where several have it, the one the model finds likelier where they part.
+- **Texts the server reads alike** give the same parsed answer: for Qwen3, an empty reasoning
+  and none; for Qwen3 and Qwen2.5, a newline and a blank line between calls; for Qwen3-Coder, a
+  first call with its `<tool_call>` and one without. Scoring keeps the text with the recorded
+  number of tokens, and where several have it, the one the model finds likelier where they part.
   `tuningfork tokens` and a step's *Tokens* view then say "rebuilt as the likelier of 2 texts the
   server reads alike", and a forking probe from it warns.
 - **Checked on real servers:** Qwen3.5 27B and Qwen3.6 27B; Qwen3-30B-A3B,
@@ -63,8 +63,8 @@ Changed:
   parsed arguments, so none of them changes.
 - **Redaction meets a Claude Code call's arguments as the server sent them**, as it always met
   Hermes's. An `sk-` key right after a character outside ASCII is now masked, where its escaped
-  form hid it. One the model wrote with a JSON escape inside it is no longer masked: the stored
-  text keeps the escape.
+  form hid it. A key the model wrote with a JSON escape inside it is now masked only up to the
+  escape, if at all: the stored text keeps the escape, where the parsed input had it decoded.
 
 Nothing already in the recordings folder changes: no new columns, nothing to migrate.
 
