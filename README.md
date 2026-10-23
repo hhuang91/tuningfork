@@ -85,10 +85,10 @@ the steps, and a way to keep the checkout on Windows instead.
 git clone https://github.com/hhuang91/tuningfork.git
 cd tuningfork
 uv sync
+source .venv/bin/activate
 ```
 
-Then use `source .venv/bin/activate` to activate the environment and
-make the `tuningfork` command available.
+The last line activates the environment, so that `tuningfork` and `python` are the environment's own.
 
 ### Try it without a GPU (five-minute UI walkthrough)
 
@@ -389,9 +389,6 @@ In the web UI, an A/B is a few clicks from a run's step (here on the demo's scri
 answers at once; [the quickstart](#try-it-without-a-gpu-five-minute-ui-walkthrough) starts it):
 
 ![Opening a run in the web UI, working from its write step beside the run, and A/B-testing an edited wording there: the original arm at 0 of 20, the edit at 20 of 20, with their intervals and Fisher's test](docs/images/ui-demo.gif)
-
-The [step-by-step guide](examples/README.md) walks through every part of the tool on another toy
-skill, with Claude Code beside Hermes, and every output in it is from a real run.
 
 ## Guides
 
