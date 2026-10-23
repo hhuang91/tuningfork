@@ -40,8 +40,10 @@ number or one of the schema's other types, else text. The server builds the argu
 values as written — a string escaped into JSON, anything else kept as the model wrote it.
 
 Where the text ends partway into a marker or a function's opening, the server leaves that part
-out of what it reads. A call cut off after its opening is an error here, where the server keeps
-what it read of it: as the other formats do, tuningfork reads only calls the model finished.
+out of what it reads. It also leaves out what follows the calls, and a call it cannot read, with
+all after it. A call cut off after its opening, or one that cannot be read, is an error here:
+as the other formats do, tuningfork reads only calls the model finished, and says where one
+went wrong.
 
 `<think>`, `</think>`, `<tool_call>` and `</tool_call>` are single tokens; the rest of a call is
 ordinary text.
@@ -370,7 +372,7 @@ class Qwen3Coder:
         except FormatError as error:
             mark("tool_call", i, len(source))
             return done(error)
-        if calls:  # text after the calls, which the server would refuse, is read as text
+        if calls:  # text after the calls, which the server leaves out, is the model's text
             mark("content", i, len(source))
         return done()
 

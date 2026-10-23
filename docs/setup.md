@@ -124,6 +124,10 @@ llama-server -hf unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M \
   -ngl 999 -c 131072 -np 1 -ctk q8_0 -ctv q8_0 --jinja --ctx-checkpoints 0 --no-cache-prompt
 ```
 
+Qwen3-Coder-Next is read the same way. At 80 billion parameters, about 48 GB in Qwen's own Q4_K_M,
+it fits one 32 GB GPU only with some of its experts in system memory: `--n-cpu-moe 26` keeps those
+of 26 of its 48 layers there, and with `-c 65536` the rest takes about 24 GiB of the GPU.
+
 llama-server holds a slot to the context a model's file says it was trained on, whatever `-c`
 asks, and files of the same model say different things. unsloth's Qwen3-30B-A3B says 40,960
 tokens and bartowski's Qwen2.5-32B-Instruct 32,768: Hermes Agent refused both. Extend such a
@@ -138,7 +142,7 @@ ran before it and whichever of its endpoints it goes to:
 |---|---|
 | `-np 1` | With two slots, a request computed beside another gets other numbers for the same prompt. One slot computes each request alone. |
 | `--no-cache-prompt` | llama-server answers a prompt from what it cached of an earlier one, and its Messages endpoint, which Claude Code uses, ignores a request asking it not to. A step's samples then share the first one's processing of the prompt, and so do forks whose prompts match — every fork, in the sandbox. |
-| `--ctx-checkpoints 0`, or `--swa-full` | llama-server takes rollback checkpoints of a model's sliding-window attention layers (Gemma 2, 3 and 4 among others) and of layers that keep a running state (Qwen3.5 and 3.6). They cut a prompt into batches at places that differ between the chat endpoint a harness talks to and the raw one tuningfork scores answers with. `--swa-full` avoids them for sliding-window layers only. llama-server takes none for a model with neither kind of layer, Qwen3, Qwen2.5 and Qwen3-Coder 30B-A3B among them, so the flag changes nothing there. |
+| `--ctx-checkpoints 0`, or `--swa-full` | llama-server takes rollback checkpoints of a model's sliding-window attention layers (Gemma 2, 3 and 4 among others) and of layers that keep a running state (Qwen3.5, 3.6 and Qwen3-Coder-Next). They cut a prompt into batches at places that differ between the chat endpoint a harness talks to and the raw one tuningfork scores answers with. `--swa-full` avoids them for sliding-window layers only. llama-server takes none for a model with neither kind of layer, Qwen3, Qwen2.5 and Qwen3-Coder 30B-A3B among them, so the flag changes nothing there. |
 
 What we measured without them:
 
@@ -159,6 +163,9 @@ What we measured without them:
   `--ctx-checkpoints 0` or llama.cpp's default, which takes none for it, scoring answers to the
   same prompt gave the chat endpoint's chances exactly, and the greedy answers agreed token for
   token.
+- **The endpoint, on Qwen3-Coder-Next,** whose running state llama.cpp checkpoints as Qwen3.5's.
+  On the same prompt, scoring gave the chat endpoint's chances exactly with checkpoints taken
+  and without, and the greedy answers agreed token for token. The flag costs nothing, so keep it.
 
 What they cost: `--no-cache-prompt` makes every step process its whole prompt — about 1.5 s per
 14,000 tokens of Gemma 4 26B-A4B on one RTX 5090, about 4 s of Gemma 4 31B — so runs take

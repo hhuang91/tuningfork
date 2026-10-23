@@ -307,6 +307,7 @@ class TestQwen35:
         "<tool_call>\n<function=a>\n<parameter=x>\n1\n</function>\n</tool_call>",  # never closed
         "<tool_call>\n<function=a>\n<parameter=x>\n1\n</parameter>\n</tool_call>",  # no </function>
         "<tool_call>\n<function=a>x\n</function>\n</tool_call>",  # the name's line goes on
+        "<tool_call>\n<function=a>x>\n</function>\n</tool_call>",  # the same, a second '>' after it
         "<tool_call>\n<function=a>\n</function>\n",  # no </tool_call>
         "<tool_call>\n<function=a",
         "<tool_call>\n",  # opened, and nothing of the call
@@ -316,12 +317,21 @@ class TestQwen35:
             QWEN.parse(text, tools=True)
 
     def test_a_marker_or_a_reasoning_cut_off_is_left_out_as_the_server_leaves_it(self):
-        # the server waits for the rest of a marker the text ends partway into
-        for text in ("Hi<tool_call>", "Hi<tool_", "Hi<"):
-            assert QWEN.parse(text, tools=True, thinking=False) == {"role": "assistant", "content": "Hi"}
-        assert QWEN.parse("Plan.\n</thi", tools=True, thinking=True)["reasoning_content"] == "Plan.\n"
+        # the server waits for the rest of a marker the text ends partway into — the last "<" only
+        for text, content in (("Hi<tool_call>", "Hi"), ("Hi<tool_", "Hi"), ("Hi<", "Hi"), ("a < b <tool_", "a < b "),
+                              ("Plan.\n</think>\n\n<", "Plan.\n</think>\n\n")):
+            assert QWEN.parse(text, tools=True, thinking=False) == {"role": "assistant", "content": content}
+        for text in ("Plan.\n</thi", "Plan.\n<"):
+            assert QWEN.parse(text, tools=True, thinking=True) == {
+                "role": "assistant", "content": "", "reasoning_content": "Plan.\n"}
         # without tools the content is the rest, whatever it holds
         assert QWEN.parse("Hi<tool_", tools=False, thinking=False)["content"] == "Hi<tool_"
+
+    def test_a_reasoning_a_call_begins_without_closing_it_ends_there(self):
+        # the parser reads <tool_call> as a reasoning's end, as </think> is
+        parsed = QWEN.parse("Plan.\n" + call("read", path="a"), tools=True, thinking=True)
+        assert (parsed["reasoning_content"], parsed["content"]) == ("Plan.\n", "")
+        assert parsed["tool_calls"][0]["function"] == {"name": "read", "arguments": '{"path":"a"}'}
 
     def test_parts_mark_the_space_the_server_skips(self):
         pieces = ["\n", "Plan", ".\n", "</think>", "\n\n", "Hi", "<tool_call>", "\n", "<", "function", "=", "a", ">\n",
@@ -628,7 +638,7 @@ class TestQwen3Coder:
         assert len(CODER.parse(twice, tools=True, offered=[self.WEATHER])["tool_calls"]) == 2
         assert CODER.renderings(CODER.parse(twice, tools=True, offered=[self.WEATHER]), thinking="model",
                                 offered=[self.WEATHER])[1] == twice
-        # a second without it is no call: the server refuses such an answer, and the call before is read
+        # a second without it is no call: the server reads the call before it and leaves the rest out
         assert len(CODER.parse(self.BARE + "\n" + self.BARE, tools=True, offered=[self.WEATHER])["tool_calls"]) == 1
         # one call only, where parallel calls are off
         assert len(CODER.parse(twice, tools=True, parallel=False, offered=[self.WEATHER])["tool_calls"]) == 1
@@ -641,6 +651,8 @@ class TestQwen3Coder:
     def test_an_opening_cut_off_is_left_out_as_the_server_leaves_it(self):
         for text in ("Hi <function=get_we", "Hi <function=", "Hi <tool_call>", "Hi <"):
             assert CODER.parse(text, tools=True, offered=[self.WEATHER]) == {"role": "assistant", "content": "Hi "}
+        # the text's last "<" only: one before it is text
+        assert CODER.parse("</tool_call>\n<", tools=True, offered=[self.WEATHER])["content"] == "</tool_call>\n"
         # an opening no tool offered begins is text — where none is known, any is an opening
         assert CODER.parse("Hi <function=x", tools=True, offered=[self.WEATHER])["content"] == "Hi <function=x"
         assert CODER.parse("Hi <function=x", tools=True)["content"] == "Hi "
@@ -657,3 +669,22 @@ class TestQwen3Coder:
             assert [part for part, _, _ in parts] == ["content", *(["marker"] if opening else []), "tool_call", "marker"]
             start, end = next((start, end) for part, start, end in parts if part == "tool_call")
             assert "".join(pieces[start:end]).startswith(CODER.call_name_prefix)
+
+    def test_parts_after_the_calls_and_of_a_call_that_cannot_be_read(self):
+        # text after the calls, which the server leaves out, is the model's text; the end token
+        # is a marker
+        pieces = ["<tool_call>", "\n", "<", "function", "=a", ">\n", "</", "function", ">\n", "</tool_call>", "\n",
+                  "Done", "<|im_end|>"]
+        assert CODER.parts(pieces) == [("marker", 0, 2), ("tool_call", 2, 9), ("marker", 9, 11), ("content", 11, 12),
+                                       ("marker", 12, 13)]
+        # a call that cannot be read is a call to the end
+        broken = ["<tool_call>", "\n", "<", "function", "=a", ">\n", "oops", ""]
+        assert CODER.parts(broken) == [("marker", 0, 2), ("tool_call", 2, 7), ("marker", 7, 8)]
+
+
+def test_the_shared_reading_of_parts_takes_a_tokens_first_character_that_is_no_markers():
+    from tuningfork.backends.formats.base import token_parts
+
+    assert token_parts(["abc", "d", ""], ["marker", "content", "tool_call", "tool_call"]) == [
+        ("content", 0, 1), ("tool_call", 1, 2), ("marker", 2, 3)]
+    assert token_parts(["  ", "x"], ["marker", "marker", "content"]) == [("marker", 0, 1), ("content", 1, 2)]

@@ -538,12 +538,12 @@ def tool_choice(
     if part is None:
         return None
     start, end = part
-    # The name starts after the prefix, found by its text: a part may begin with space before
-    # it, as one scored before its format left the space to the marker did.
+    # The name starts right after the prefix, which the part begins with — after the space a
+    # part may begin with, as one scored before its format left that space to the marker did.
     pieces = [stream.token_text(i) for i in range(start, end)]
     text = "".join(pieces)
-    found = text.find(prefix.lstrip())
-    if found < 0:
+    found = len(text) - len(text.lstrip())
+    if not text.startswith(prefix.lstrip(), found):
         return None
     name_at = found + len(prefix.lstrip())
     offset, position = 0, None
