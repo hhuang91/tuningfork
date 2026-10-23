@@ -252,6 +252,12 @@ class TestLogprobsAndRedaction:
         (start, end), = redact_spans(text)
         assert text[start:end] == "sk-a1B2c3D4e5F6g7H8i9J0"
 
+    def test_a_key_the_model_wrote_with_an_escape_inside_it_is_masked_whole(self):
+        key = "sk-a1B2c3" + "\\" + "u0044" + "e5F6g7H8i9J0K1"  # a D, written as JSON may write it
+        text = '{"name": "terminal", "arguments": {"command": "echo ' + key + '"}}'
+        (start, end), = redact_spans(text)
+        assert text[start:end] == key
+
     def test_nothing_to_mask(self):
         stream = from_entries([entry(1, "hello", 1.0)])
         assert redact_stream(stream) is stream

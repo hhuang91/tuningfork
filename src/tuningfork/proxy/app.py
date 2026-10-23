@@ -595,7 +595,9 @@ def create_app(
         if assignment is not None and launch is not None:
             workspace_commit = await asyncio.to_thread(take_snapshot, launch, assignment)
         if assignment is not None and launch is not None and launch.replay is not None:
-            decision = launch.replay.decide(payload, wire, assignment)
+            # In a worker thread: deciding redacts the whole request, its JSON escapes read,
+            # and the event loop has other calls to serve. The decision itself is locked.
+            decision = await asyncio.to_thread(launch.replay.decide, payload, wire, assignment)
             if decision.served is not None:
                 return await serve_recorded(
                     request, path, wire, payload, assignment, launch, decision.served,

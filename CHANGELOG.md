@@ -5,8 +5,8 @@
 Token-level work — scoring an answer, forking tokens, a resample's kept tokens marked by part,
 the model's own odds of each tool — reads Qwen3.5 and 3.6, Qwen3, Qwen2.5 and Qwen3-Coder now,
 beside Gemma 4, each as llama.cpp reads it. A Claude Code step is scored on the tokens the model
-wrote, a key on a line of its own is no longer stored in clear, and the README opens in plainer
-words.
+wrote, and a recorded request or answer no longer keeps a key on a line of its own in clear. The
+README opens in plainer words.
 
 - **Qwen3.5 and Qwen3.6** (`qwen3.5`, as the server check names the format), read as llama.cpp's
   Qwen3-Coder parser reads them: an answer can begin inside a reasoning its prompt opened, and
@@ -58,12 +58,14 @@ Changed:
 
 - **Redaction reads stored text as it reads.** It matched its patterns against JSON as written,
   where a newline is a backslash and an `n`: an `sk-` key on a line of its own, or after a tab,
-  then followed a letter, and was stored in clear in every harness's recordings. Nor did
-  `api_key: …` match inside a call's arguments or a tool's JSON result, where its quotes are
-  escaped. The patterns now also run over the text with its JSON escapes read, three levels deep:
-  a payload, the arguments or JSON result in it, and a JSON file that result shows. A key with an
-  escape inside it is masked whole, in a Claude Code call's arguments too. A token stream reads
-  the model's own escapes the same way. Recordings made before keep what they stored.
+  then followed a letter, and was stored in clear in every harness's recordings. Nor did an
+  assignment whose value is in double quotes, such as `api_key = "…"` or `"token": "…"`, match
+  inside a message, a call's arguments or a tool's result, where JSON escapes every quote. The
+  patterns now also run over the text with its JSON escapes read, three levels deep: a payload,
+  the arguments or JSON result in it, and a JSON file that result shows. A key with an escape
+  inside it is masked whole, in a Claude Code call's arguments too. A token stream reads the
+  model's own escapes the same way. Recordings made before keep what they stored, and a streamed
+  answer's raw bytes, kept beside it, can still hold a key the server sent in pieces.
 - **A Claude Code step's arguments read as the server sent them** wherever they are printed as
   text: `tuningfork step` and `timeline`, a held call, and MCP's `show_step`. Before, they read as
   Python's `json.dumps` of the input, with a space after each `:` and `,`, characters outside
