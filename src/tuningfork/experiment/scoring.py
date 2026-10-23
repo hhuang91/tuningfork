@@ -13,6 +13,10 @@ Two checks say whether that is the run's own answer, token for token, and both a
   model added). If it does not — a number written differently, a secret the recording masked —
   the heatmap is still of this text, and says it was rebuilt approximately.
 
+A call's arguments are written back as the server sent them: where the step kept its raw
+stream, read again from it (`recorded_message`), since a Messages step recorded before its wire
+kept that text has its calls' inputs only parsed.
+
 Where the server reads several texts as the same answer — an empty reasoning it drops, a blank
 line between calls (`renderings`) — the one with the recorded number of tokens is scored. Where
 several have it, the one the model finds likelier where they part is scored, and the record says
@@ -22,6 +26,7 @@ run's own.
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
@@ -82,10 +87,62 @@ def _parting(a: list[int], b: list[int]) -> int | None:
 
 
 def recorded_message(store: Store, step: Any) -> tuple[dict[str, Any], str | None]:
+    """The step's recorded answer in the common shape, and how it finished."""
     response = store.response(step) or {}
     choices = response.get("choices") or []
     choice = choices[0] if choices and isinstance(choices[0], dict) else {}
-    return choice.get("message") or {}, choice.get("finish_reason")
+    return _as_streamed(store, step, choice.get("message") or {}), choice.get("finish_reason")
+
+
+def _as_streamed(store: Store, step: Any, message: dict[str, Any]) -> dict[str, Any]:
+    """The message with each call's arguments as the server streamed them, read again from the
+    raw stream the step keeps, wherever they read as the same values. A Messages step recorded
+    before its wire kept that text stored its calls' inputs written again from the parsed object
+    (`wire.anthropic`): the model's own text is in the stream alone."""
+    calls = message.get("tool_calls")
+    if not calls or not step.raw_response_blob or not (step.params or {}).get("streamed"):
+        return message
+    from tuningfork.wire import get_wire
+
+    wire = get_wire(step.wire)
+    raw = store.blobs.get(step.raw_response_blob)
+    try:
+        native = wire.parse(raw, True)
+        again = wire.canonical_response(native, stream=raw) if native else {}
+        choices = again.get("choices") or [{}]
+        texts = [
+            (call.get("function") or {}).get("arguments")
+            for call in (choices[0].get("message") or {}).get("tool_calls") or []
+        ]
+    except Exception:  # noqa: BLE001 - a stream that cannot be read leaves the message as stored
+        return message
+    if len(texts) != len(calls):
+        return message
+    kept = []
+    for call, text in zip(calls, texts):
+        function = call.get("function") or {}
+        if isinstance(text, str) and _values(text) is not None and _values(text) == _values(function.get("arguments")):
+            call = {**call, "function": {**function, "arguments": text}}
+        kept.append(call)
+    return {**message, "tool_calls": kept}
+
+
+def _values(arguments: Any) -> Any:
+    """A call's arguments as values, or None where they are no JSON text, or name a key twice:
+    then the values hide part of what the text says, which may be what a redaction masked."""
+    if not isinstance(arguments, str):
+        return None
+    try:
+        return json.loads(arguments, object_pairs_hook=_once)
+    except (ValueError, RecursionError):
+        return None
+
+
+def _once(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """A JSON object's pairs as a dict, refusing an object that names a key twice."""
+    if len({key for key, _ in pairs}) < len(pairs):
+        raise ValueError("a key named twice")
+    return dict(pairs)
 
 
 async def score_answer(

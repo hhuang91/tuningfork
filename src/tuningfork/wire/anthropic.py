@@ -5,6 +5,12 @@ Verified against Claude Code 2.1.281 talking to llama.cpp's native `/v1/messages
 content blocks; tool results come back as `tool_result` blocks inside a user message; and
 Claude Code also sends `role: "system"` messages mid-conversation (a beta), which are kept
 as they are.
+
+A tool call's input streams as JSON text (`input_json_delta`), the text the server read the
+model's call into; the message keeps it parsed. In the common shape a call's arguments are
+that text, read again from the stream where it came as one: written again from the parsed
+input, the model's spacing, escapes and numbers would be lost, and with them its tokens
+(`experiment.scoring`).
 """
 
 from __future__ import annotations
@@ -131,6 +137,15 @@ class MessageAssembler:
             message["error"] = self.error  # kept beside what arrived before it, visibly
         return message
 
+    def arguments(self) -> list[str | None]:
+        """Each tool call's input as the stream sent it, the text `input` is parsed from, in
+        the order of the message's tool_use blocks; None for one whose input never streamed."""
+        return [
+            self._partial_json.get(index)
+            for index in sorted(self.blocks)
+            if self.blocks[index].get("type") == "tool_use"
+        ]
+
 
 def _without_cache_control(value: Any) -> Any:
     if isinstance(value, dict):
@@ -221,18 +236,45 @@ def _text(content: Any) -> str:
     return ""
 
 
-def _assistant_view(blocks: list[Any]) -> dict[str, Any]:
-    """Assistant content blocks as one OpenAI-style assistant message."""
+def _streamed(stream: bytes | None) -> list[str | None]:
+    """Each tool call's input as `stream` sent it, in order (`MessageAssembler.arguments`)."""
+    if not stream:
+        return []
+    assembler = MessageAssembler()
+    try:
+        for event in SSEParser().feed(stream):
+            assembler.add_event(event)
+    except Exception:  # noqa: BLE001 - an unreadable stream leaves the inputs to be written again
+        return []
+    return assembler.arguments()
+
+
+def _arguments(value: Any, text: str | None) -> str:
+    """A call's arguments as JSON text: as the server streamed them, where that text reads as
+    the input; else the input written again."""
+    if text is not None:
+        try:
+            if json.loads(text) == (value or {}):
+                return text
+        except (ValueError, RecursionError):
+            pass
+    return json.dumps(value or {})
+
+
+def _assistant_view(blocks: list[Any], streamed: list[str | None] | None = None) -> dict[str, Any]:
+    """Assistant content blocks as one OpenAI-style assistant message. `streamed` is each
+    call's input as the stream sent it, in order, where the message came as one."""
     reasoning = [_string(b.get("thinking")) for b in blocks if b.get("type") == "thinking"]
     text = [_string(b.get("text")) for b in blocks if b.get("type") == "text"]
+    uses = [b for b in blocks if b.get("type") == "tool_use"]
+    texts = list(streamed or []) + [None] * len(uses)
     calls = [
         {
             "id": b.get("id"),
             "type": "function",
-            "function": {"name": b.get("name"), "arguments": json.dumps(b.get("input") or {})},
+            "function": {"name": b.get("name"), "arguments": _arguments(b.get("input"), texts[k])},
         }
-        for b in blocks
-        if b.get("type") == "tool_use"
+        for k, b in enumerate(uses)
     ]
     message: dict[str, Any] = {"role": "assistant", "content": "\n\n".join(text)}
     if reasoning:
@@ -297,7 +339,7 @@ class AnthropicMessages:
 
     # --- responses ------------------------------------------------------------------
 
-    def canonical_response(self, native: dict[str, Any]) -> dict[str, Any]:
+    def canonical_response(self, native: dict[str, Any], *, stream: bytes | None = None) -> dict[str, Any]:
         if _is_error(native):
             # Not an answer, so no choices — as an OpenAI error body has none — and no
             # outcome to count as behaviour. The error itself stays, to be read.
@@ -308,6 +350,10 @@ class AnthropicMessages:
                 "choices": [],
                 "error": native.get("error") or native,
             }
+        blocks = _blocks(native.get("content"))
+        # Only a call's arguments are taken from the stream, so it is read again only for an
+        # answer with a call.
+        calls = any(block.get("type") == "tool_use" for block in blocks)
         canonical: dict[str, Any] = {
             "id": native.get("id"),
             "object": "chat.completion",
@@ -315,7 +361,7 @@ class AnthropicMessages:
             "choices": [
                 {
                     "index": 0,
-                    "message": _assistant_view(_blocks(native.get("content"))),
+                    "message": _assistant_view(blocks, _streamed(stream) if calls else None),
                     "finish_reason": _finish_reason(native.get("stop_reason")),
                 }
             ],

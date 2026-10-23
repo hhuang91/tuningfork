@@ -44,7 +44,8 @@ class MockTurn:
 
     content: str = ""
     reasoning: str = ""
-    # Each entry: {"name": str, "arguments": dict, "id": str | None}
+    # Each entry: {"name": str, "arguments": dict, "id": str | None}, and on Anthropic
+    # Messages "arguments_text": the JSON text a stream sends the input as (default: dumped).
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     finish_reason: str | None = None
     usage: dict[str, Any] | None = None
@@ -217,10 +218,11 @@ class MockServer:
         start["usage"] = {k: v for k, v in message["usage"].items() if k != "output_tokens"}
         yield event("message_start", {"type": "message_start", "message": start})
         yield event("ping", {"type": "ping"})
+        texts = iter(call.get("arguments_text") for call in turn.tool_calls)
         for index, block in enumerate(message["content"]):
             if block["type"] == "tool_use":
                 opening = {**block, "input": {}}
-                raw = json.dumps(block["input"])
+                raw = next(texts) or json.dumps(block["input"])
                 # Split mid-JSON, as servers do: only the whole is parseable.
                 deltas = [
                     {"type": "input_json_delta", "partial_json": raw[: len(raw) // 2]},

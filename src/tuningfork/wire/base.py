@@ -76,9 +76,12 @@ class WireFormat(Protocol):
         behaviour, however much of an answer arrived before it.
         """
 
-    def canonical_response(self, native: dict[str, Any]) -> dict[str, Any]:
+    def canonical_response(self, native: dict[str, Any], *, stream: bytes | None = None) -> dict[str, Any]:
         """The response in the common shape: an OpenAI `chat.completion`. An error body
-        has no choices, and keeps its error under `error`."""
+        has no choices, and keeps its error under `error`. `stream` is the raw event stream
+        the response was read from, where it came as one. A format whose message keeps some of
+        the answer as parsed values alone — Anthropic's tool inputs — takes the server's text
+        for it from the stream."""
 
     def native_response(
         self, canonical: dict[str, Any], original: dict[str, Any] | None

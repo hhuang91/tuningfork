@@ -647,7 +647,9 @@ Server- and harness-specific knowledge lives behind the `backends/`, `harness/` 
 seams, never in the core. Supporting another harness or inference server must not require
 editing anything under `proxy/`. A request is stored in its own wire format, exactly as
 sent; responses are also kept in one common shape (an OpenAI `chat.completion`), which is
-what outcomes, conditions and the UI read. Features degrade on a probed capability rather
+what outcomes, conditions and the UI read. There a streamed call's arguments are the text the server
+sent, which scoring writes back as the model's tokens: Anthropic Messages keeps a tool input parsed, so
+its text is taken from the stream (`canonical_response`'s `stream`). Features degrade on a probed capability rather
 than on a hardcoded assumption about which server is running.
 
 ## Conventions

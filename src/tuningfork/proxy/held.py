@@ -378,9 +378,12 @@ class BreakpointPath:
         # `produced` is in the call's own format. Conditions, holds and edits work on the
         # common shape; an edit is turned back into the harness's format to be delivered.
         try:
-            produced, stream = _parse(wire, raw, event_stream) if parse else (None, None)
-            common = wire.canonical_response(produced) if produced is not None else None
-            failure = wire.failure(upstream.status_code, produced, stream)
+            produced, assembler = _parse(wire, raw, event_stream) if parse else (None, None)
+            common = (
+                wire.canonical_response(produced, stream=raw if event_stream else None)
+                if produced is not None else None
+            )
+            failure = wire.failure(upstream.status_code, produced, assembler)
         except Exception as exc:  # noqa: BLE001 - the harness still gets the model's answer
             # Nothing can be held or edited without reading it; it goes on as it came, and
             # is recorded raw.

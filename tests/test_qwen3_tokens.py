@@ -15,15 +15,18 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from tuningfork.backends.formats import get_format
+from tuningfork.backends.llamacpp.anthropic import to_chat
 from tuningfork.cli import app
-from tuningfork.experiment.scoring import _chance
+from tuningfork.experiment.scoring import _chance, recorded_message
 from tuningfork.ops.forking import execute_forking, prepare_forking
 from tuningfork.ops.tokens import execute_score, prepare_score
 from tuningfork.wire import get_wire
-from tests.helpers import as_response
+from tuningfork.wire.anthropic import AnthropicMessages
+from tests.helpers import as_response, messages_stream
 from tests.mock_server.toy import Qwen3Toy, props as toy_props
 
 UPSTREAM = "http://upstream.test"
+ANTHROPIC = AnthropicMessages()
 QWEN3, QWEN25 = get_format("qwen3"), get_format("qwen2.5")
 TOOLS = [
     {"type": "function", "function": {"name": "write_file", "parameters": {"type": "object", "properties": {
@@ -257,6 +260,99 @@ async def test_a_qwen25_answer_is_scored_exactly(store, monkeypatch, mock_server
     assert (record_.exact, record_.notes["format"], record_.notes["parse_agrees"]) == (True, "qwen2.5", True)
     assert {part for part, _, _ in found.view.stream.parts} == {"content", "marker", "tool_call"}
     assert found.view.to_json()["choice"]["chance"] == {"read_file": pytest.approx(1.0)}
+
+
+#: The task as Claude Code sends it, over Anthropic Messages.
+MESSAGES = {"model": "m", "max_tokens": 4096, "stream": True,
+            "system": [{"type": "text", "text": "You are an agent."}],
+            "tools": [{"name": t["function"]["name"], "input_schema": t["function"]["parameters"]} for t in TOOLS],
+            "messages": [{"role": "user", "content": [{"type": "text", "text": "Summarize data.csv into report.json."}]}]}
+#: What the model wrote: its characters unescaped, as the server streamed them.
+WRITTEN = '{"path": "café.json", "lines": 3}'
+STREAMED = messages_stream(("write_file", [WRITTEN[:12], WRITTEN[12:]]), text="Writing it.\n")
+
+
+def record_messages(store, served, *, stream_kept: bool) -> str:
+    """A Messages step stored as tuningfork stored one before its wire kept the streamed text:
+    each call's input written again, escaped — with the raw stream beside it, or not."""
+    answer = "Writing it.\n" + call("write_file", WRITTEN)
+    served.toy.answers = [(answer, 1.0)]
+    stored = ANTHROPIC.canonical_response(ANTHROPIC.parse(STREAMED, event_stream=True))
+    assert stored["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] != WRITTEN
+    usage = {"prompt_tokens": served.toy.input_tokens(to_chat(MESSAGES)),
+             "completion_tokens": len(served.toy.tokenize(answer)) + 1}
+    store.begin_run("messages", "t/1")
+    wire = get_wire("anthropic-messages")
+    store.record_step(request=MESSAGES, response={**stored, "usage": usage},
+                      raw_response_blob=store.blobs.put(STREAMED) if stream_kept else None,
+                      params={"streamed": stream_kept}, wire=wire.name, normalize=wire.normalize_message)
+    return store.get_run("messages").id
+
+
+async def test_a_messages_steps_arguments_are_scored_as_the_server_streamed_them(store, monkeypatch, mock_server):
+    served = serve(monkeypatch, mock_server, Qwen3Toy(reasoning=False))
+    run_id = record_messages(store, served, stream_kept=True)
+
+    found = await score(store, run_id)
+
+    # read again from the stream the step kept, they are the model's own text
+    assert found.view.record.exact is True
+    assert found.view.stream.text() == "Writing it.\n" + call("write_file", WRITTEN)
+
+
+def stored_step(store, raw: bytes, *, arguments: list[str] | None = None):
+    """A Messages step stored as before its wire kept the streamed text, its raw stream beside
+    it — or, given `arguments`, with these as its calls' stored arguments."""
+    stored = ANTHROPIC.canonical_response(ANTHROPIC.parse(raw, event_stream=True))
+    for call_, text in zip(stored["choices"][0]["message"]["tool_calls"], arguments or []):
+        call_["function"]["arguments"] = text
+    store.begin_run("messages", "t/1")
+    wire = get_wire("anthropic-messages")
+    store.record_step(request=MESSAGES, response=stored, raw_response_blob=store.blobs.put(raw),
+                      params={"streamed": True}, wire=wire.name, normalize=wire.normalize_message)
+    return store.step(store.get_run("messages").id, 0)
+
+
+def test_each_call_takes_its_own_streamed_text(store):
+    texts = ['{"path": "café.json", "lines": 3}', '{"path": "naïve.csv"}']
+    step = stored_step(store, messages_stream(("write_file", [texts[0]]), ("read_file", [texts[1]]), text="Both.\n"))
+
+    message, _ = recorded_message(store, step)
+
+    assert [c["function"]["arguments"] for c in message["tool_calls"]] == texts
+
+
+#: A call whose text names a key twice: its values are the last's, and the text says more.
+TWICE = messages_stream(("write_file", ['{"path": "sk-not-for-the-stream", "path": "café.json", "lines": 3}']))
+
+
+def test_a_streamed_text_naming_a_key_twice_is_not_taken(store):
+    # what the text says beyond its values may be what a redaction masked in the stored call
+    message, _ = recorded_message(store, stored_step(store, TWICE))
+    assert message["tool_calls"][0]["function"]["arguments"] == '{"path": "caf\\u00e9.json", "lines": 3}'
+
+
+def test_a_streamed_text_naming_a_key_twice_is_not_taken_for_stored_arguments_that_are_no_json(store):
+    message, _ = recorded_message(store, stored_step(store, TWICE, arguments=["not JSON"]))
+    assert message["tool_calls"][0]["function"]["arguments"] == "not JSON"
+
+
+def test_a_streamed_text_that_reads_otherwise_than_the_stored_call_is_not_taken(store):
+    # the stored answer is the one scored: a stream that says something else does not replace it
+    step = stored_step(store, STREAMED, arguments=['{"path": "[masked]", "lines": 3}'])
+
+    message, _ = recorded_message(store, step)
+
+    assert message["tool_calls"][0]["function"]["arguments"] == '{"path": "[masked]", "lines": 3}'
+
+
+async def test_a_messages_step_without_its_stream_is_scored_with_its_input_written_again(store, monkeypatch, mock_server):
+    served = serve(monkeypatch, mock_server, Qwen3Toy(reasoning=False))
+    run_id = record_messages(store, served, stream_kept=False)
+
+    found = await score(store, run_id)
+
+    assert found.view.record.exact is False
 
 
 async def test_forking_reads_each_continuation_as_the_server_would(store, served):

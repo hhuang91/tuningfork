@@ -331,7 +331,7 @@ class Recorder:
             return None
         wire = wire or DEFAULT_WIRE
         if response_json:
-            response_json = wire.canonical_response(response_json)
+            response_json = wire.canonical_response(response_json, stream=raw_response if streamed else None)
         if delivered_response is not None:
             delivered_response = wire.canonical_response(delivered_response)
         # A harness that asked for logprobs gets them; they are stored as the step's tokens,
