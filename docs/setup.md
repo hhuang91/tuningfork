@@ -164,8 +164,9 @@ What we measured without them:
   same prompt gave the chat endpoint's chances exactly, and the greedy answers agreed token for
   token.
 - **The endpoint, on Qwen3-Coder-Next,** whose running state llama.cpp checkpoints as Qwen3.5's.
-  On the same prompt, scoring gave the chat endpoint's chances exactly with checkpoints taken
-  and without, and the greedy answers agreed token for token. The flag costs nothing, so keep it.
+  On the same prompt, scoring gave the chat endpoint's chances exactly with `--ctx-checkpoints 0`
+  and with llama.cpp's default, which takes them for it, and the greedy answers agreed token for
+  token. The flag costs nothing, so keep it.
 
 What they cost: `--no-cache-prompt` makes every step process its whole prompt — about 1.5 s per
 14,000 tokens of Gemma 4 26B-A4B on one RTX 5090, about 4 s of Gemma 4 31B — so runs take

@@ -40,10 +40,10 @@ number or one of the schema's other types, else text. The server builds the argu
 values as written — a string escaped into JSON, anything else kept as the model wrote it.
 
 Where the text ends partway into a marker or a function's opening, the server leaves that part
-out of what it reads. It also leaves out what follows the calls, and a call it cannot read, with
-all after it. A call cut off after its opening, or one that cannot be read, is an error here:
-as the other formats do, tuningfork reads only calls the model finished, and says where one
-went wrong.
+out of what it reads. It also leaves out what follows the calls, and a malformed call or one to a
+tool it did not offer, with all after it; of a call cut off, it keeps what it read. Here a call
+cut off or malformed is an error — as the other formats do, tuningfork reads only calls the
+model finished, and says where one went wrong — and a call to a tool not offered is read.
 
 `<think>`, `</think>`, `<tool_call>` and `</tool_call>` are single tokens; the rest of a call is
 ordinary text.

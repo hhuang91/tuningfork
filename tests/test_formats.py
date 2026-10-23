@@ -308,6 +308,7 @@ class TestQwen35:
         "<tool_call>\n<function=a>\n<parameter=x>\n1\n</parameter>\n</tool_call>",  # no </function>
         "<tool_call>\n<function=a>x\n</function>\n</tool_call>",  # the name's line goes on
         "<tool_call>\n<function=a>x>\n</function>\n</tool_call>",  # the same, a second '>' after it
+        "<tool_call>\n<function=a> </function>\n</tool_call>",  # a space where the name's line ends
         "<tool_call>\n<function=a>\n</function>\n",  # no </tool_call>
         "<tool_call>\n<function=a",
         "<tool_call>\n",  # opened, and nothing of the call
