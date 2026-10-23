@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.5.0 — Qwen models, token by token
+
+Token-level work — scoring an answer, forking tokens, a resample's kept tokens marked by part,
+the model's own odds of each tool — reads Qwen's models now, beside Gemma 4, each as llama.cpp
+reads it. A Claude Code step is scored on the tokens the model wrote, and the README opens in
+plainer words.
+
+- **Qwen3.5 and Qwen3.6**, read as llama.cpp's Qwen3-Coder parser reads them: an answer can
+  begin inside a reasoning its prompt opened, and each argument is typed by the tool's schema, as
+  the server types it. The server check names this format `qwen3.5`.
+- **Qwen3, the 2507 updates included, and Qwen2.5** (`qwen3`, `qwen2.5`), whose calls are JSON
+  inside `<tool_call>`, read as the parser llama.cpp builds from their templates reads them.
+- **Qwen3-Coder** (`qwen3-coder`), read with Qwen3.5's parser in its other setting: no
+  reasoning, and a first call with its `<tool_call>` or without it.
+- **Texts the server reads alike.** An empty reasoning and none, or a newline and a blank line
+  between calls, give the same parsed answer. Scoring keeps the text with the recorded number of
+  tokens, and where several have it, the one the model finds likelier where they part. The CLI
+  and the token page then say "rebuilt as the likelier of 2 texts the server reads alike", and a
+  forking probe from it warns.
+- **Checked on real servers:** Qwen3.5 27B and Qwen3.6 27B; Qwen3-30B-A3B,
+  Qwen3-30B-A3B-Instruct-2507 and Qwen3-4B-Thinking-2507; Qwen2.5-32B-Instruct;
+  Qwen3-Coder-30B-A3B-Instruct and Qwen3-Coder-Next. On each, the server's own answers were read
+  as it read them and written back token for token, and the real-server tests
+  (`tests/test_real_server.py`) pass.
+- **A character written in two tokens.** llama.cpp can report it as one probability entry, which
+  holds the whole character. Qwen does this, and scoring refused every answer holding such a
+  character, saying the server did not keep to the forced answer. Each token gets its own entry
+  again; one merged away has no probability of its own, shown as "—".
+- **Setting up a server for them** (`docs/setup.md`): a command for Qwen3.6 27B,
+  Qwen3-30B-A3B-Instruct-2507 and Qwen3-Coder-30B-A3B, how Qwen3-Coder-Next fits one 32 GB GPU,
+  and how to extend a model file whose context is too short for Hermes Agent. Qwen3.5 and 3.6
+  need `--ctx-checkpoints 0`, and `--swa-full`, an alternative for Gemma 4, does not help them.
+  The glossary and the Guide's banner say so.
+- **A Claude Code step is scored on the tokens the model wrote.** A streamed tool call's
+  arguments are kept as the server sent them. They were written again from the parsed input, with
+  characters outside ASCII escaped, numbers normalized (`61.50` became `61.5`) and the model's
+  spacing lost, so scoring could rebuild other tokens than the model's, and said "rebuilt
+  approximately". A step recorded before is scored from the stream the server sent, which the
+  recording kept. An answer that was not streamed comes parsed, and its arguments are still
+  written from it.
+- **The README** opens in plain words, and its quickstart comes early: install, a five-minute
+  walkthrough without a GPU, then your own agent. Its figure is redrawn as the loop in four steps,
+  with counts only, and its tagline is now "Tune agent skills to your own model." The worked
+  example comes last.
+- **find-the-file's forking token, measured again** on the runs' own server, with 40
+  continuations a word: after "Wait", 30 searched for the file, and after "According", none
+  (p = 1.9 × 10⁻¹³). Its section 4 now calls "Wait" a forking token.
+- **The examples guide's Claude Code steps**, recorded again with the arguments kept as sent.
+
+Changed:
+
+- **A Claude Code step's arguments read as the server sent them**, in `tuningfork step` and in a
+  held call. Before, they read as Python's `json.dumps` of the input, with a space after each `:`
+  and `,` and characters outside ASCII escaped. Steps recorded before keep what they stored. A
+  behaviour, a target and a breakpoint read the parsed arguments, so none of them changes.
+
+Nothing already in the recordings folder changes: no new columns, nothing to migrate.
+
+QwQ is not read yet: llama.cpp reads it with a parser of its own.
+
 ## 0.4.0 — the web UI, redesigned
 
 The web UI, page by page, after a review of it: a sidebar in the loop's order, plainer words, one
