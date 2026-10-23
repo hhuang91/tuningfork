@@ -300,17 +300,48 @@ async def test_a_messages_steps_arguments_are_scored_as_the_server_streamed_them
     assert found.view.stream.text() == "Writing it.\n" + call("write_file", WRITTEN)
 
 
-def test_a_streamed_text_that_reads_otherwise_than_the_stored_call_is_not_taken(store):
-    # the stored answer is the one scored: a stream that says something else does not replace it
-    stored = ANTHROPIC.canonical_response(ANTHROPIC.parse(STREAMED, event_stream=True))
-    function = stored["choices"][0]["message"]["tool_calls"][0]["function"]
-    function["arguments"] = '{"path": "[masked]", "lines": 3}'
+def stored_step(store, raw: bytes, *, arguments: list[str] | None = None):
+    """A Messages step stored as before its wire kept the streamed text, its raw stream beside
+    it — or, given `arguments`, with these as its calls' stored arguments."""
+    stored = ANTHROPIC.canonical_response(ANTHROPIC.parse(raw, event_stream=True))
+    for call_, text in zip(stored["choices"][0]["message"]["tool_calls"], arguments or []):
+        call_["function"]["arguments"] = text
     store.begin_run("messages", "t/1")
     wire = get_wire("anthropic-messages")
-    store.record_step(request=MESSAGES, response=stored, raw_response_blob=store.blobs.put(STREAMED),
+    store.record_step(request=MESSAGES, response=stored, raw_response_blob=store.blobs.put(raw),
                       params={"streamed": True}, wire=wire.name, normalize=wire.normalize_message)
+    return store.step(store.get_run("messages").id, 0)
 
-    message, _ = recorded_message(store, store.step(store.get_run("messages").id, 0))
+
+def test_each_call_takes_its_own_streamed_text(store):
+    texts = ['{"path": "café.json", "lines": 3}', '{"path": "naïve.csv"}']
+    step = stored_step(store, messages_stream(("write_file", [texts[0]]), ("read_file", [texts[1]]), text="Both.\n"))
+
+    message, _ = recorded_message(store, step)
+
+    assert [c["function"]["arguments"] for c in message["tool_calls"]] == texts
+
+
+#: A call whose text names a key twice: its values are the last's, and the text says more.
+TWICE = messages_stream(("write_file", ['{"path": "sk-not-for-the-stream", "path": "café.json", "lines": 3}']))
+
+
+def test_a_streamed_text_naming_a_key_twice_is_not_taken(store):
+    # what the text says beyond its values may be what a redaction masked in the stored call
+    message, _ = recorded_message(store, stored_step(store, TWICE))
+    assert message["tool_calls"][0]["function"]["arguments"] == '{"path": "caf\\u00e9.json", "lines": 3}'
+
+
+def test_a_streamed_text_naming_a_key_twice_is_not_taken_for_stored_arguments_that_are_no_json(store):
+    message, _ = recorded_message(store, stored_step(store, TWICE, arguments=["not JSON"]))
+    assert message["tool_calls"][0]["function"]["arguments"] == "not JSON"
+
+
+def test_a_streamed_text_that_reads_otherwise_than_the_stored_call_is_not_taken(store):
+    # the stored answer is the one scored: a stream that says something else does not replace it
+    step = stored_step(store, STREAMED, arguments=['{"path": "[masked]", "lines": 3}'])
+
+    message, _ = recorded_message(store, step)
 
     assert message["tool_calls"][0]["function"]["arguments"] == '{"path": "[masked]", "lines": 3}'
 

@@ -153,9 +153,10 @@ class TestAnthropicResponses:
         native["content"][0]["input"] = {"path": "b.csv"}  # not what the stream sent
         (call,) = ANTHROPIC.canonical_response(native, stream=raw)["choices"][0]["message"]["tool_calls"]
         assert call["function"]["arguments"] == '{"path": "b.csv"}'
-        # a stream that cannot be read gives no text at all
-        (call,) = ANTHROPIC.canonical_response(native, stream=b"\xff\xfe no events")["choices"][0]["message"]["tool_calls"]
-        assert call["function"]["arguments"] == '{"path": "b.csv"}'
+        # a stream of no events gives no text, and neither does one that cannot be read
+        for stream in (b"\xff\xfe no events", b"event: content_block_delta\ndata: " + b"[" * 100_000 + b"\n\n"):
+            (call,) = ANTHROPIC.canonical_response(native, stream=stream)["choices"][0]["message"]["tool_calls"]
+            assert call["function"]["arguments"] == '{"path": "b.csv"}'
 
     def test_an_input_sent_whole_is_written_again(self):
         # a server may open a tool_use block with its input and stream none of it

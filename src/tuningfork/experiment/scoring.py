@@ -128,13 +128,20 @@ def _as_streamed(store: Store, step: Any, message: dict[str, Any]) -> dict[str, 
 
 
 def _values(arguments: Any) -> Any:
-    """A call's arguments as values, or None where they are no JSON text."""
+    """A call's arguments as values, or None where they are no JSON text, or name a key twice:
+    then the values hide part of what the text says, which may be what a redaction masked."""
     if not isinstance(arguments, str):
         return None
     try:
-        return json.loads(arguments)
+        return json.loads(arguments, object_pairs_hook=_once)
     except (ValueError, RecursionError):
         return None
+
+
+def _once(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    if len({key for key, _ in pairs}) < len(pairs):
+        raise ValueError("a key named twice")
+    return dict(pairs)
 
 
 async def score_answer(

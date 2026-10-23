@@ -350,6 +350,9 @@ class AnthropicMessages:
                 "choices": [],
                 "error": native.get("error") or native,
             }
+        blocks = _blocks(native.get("content"))
+        # the stream is read again only for an answer with a call to take the text of
+        calls = any(block.get("type") == "tool_use" for block in blocks)
         canonical: dict[str, Any] = {
             "id": native.get("id"),
             "object": "chat.completion",
@@ -357,7 +360,7 @@ class AnthropicMessages:
             "choices": [
                 {
                     "index": 0,
-                    "message": _assistant_view(_blocks(native.get("content")), _streamed(stream)),
+                    "message": _assistant_view(blocks, _streamed(stream) if calls else None),
                     "finish_reason": _finish_reason(native.get("stop_reason")),
                 }
             ],

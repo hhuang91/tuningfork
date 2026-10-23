@@ -103,10 +103,10 @@ Responses stream as standard Anthropic events. llama.cpp maps Gemma's reasoning 
 **`thinking` blocks**, which Claude Code sends back in later requests.
 
 A tool call's input streams as JSON text (`input_json_delta`), and tuningfork keeps that text
-as the call's arguments, as the server sent it. Parsed and written again, the model's spacing,
-characters and numbers would change, and scoring the answer would rebuild other tokens than the
-model's. Every step keeps its raw stream, so a step recorded before tuningfork kept the text is
-scored with it too.
+as the call's arguments, as the server sent it. Written again from the parsed input, the
+arguments would lose the model's spacing, characters and numbers, and scoring the answer would
+rebuild other tokens than the model's. Every call the model answered keeps the stream it sent,
+so a step recorded before tuningfork kept the text is scored with it too.
 
 ### The last message is re-encoded on every call
 
