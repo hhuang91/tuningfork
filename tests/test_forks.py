@@ -191,6 +191,21 @@ class TestBookkeeping:
             prepare_fork(stack.store, source.run_id, "2", base_url=f"{stack.url}/v1")
         assert "step 0 has no raw response" in refused.value.detail
 
+    def test_a_step_whose_bytes_were_not_kept_for_a_secret_says_so(self, stack):
+        # The recorder keeps no bytes of an answer it could not write again around a secret.
+        source = stack.record()
+        first = stack.store.steps(source.run_id)[0]
+        params = json.dumps({**first.params, "raw_redacted": "dropped"})
+        with stack.store._lock:
+            stack.store._conn.execute(
+                "UPDATE steps SET raw_response_blob = NULL, params = ? WHERE id = ?", (params, first.id)
+            )
+            stack.store._conn.commit()
+
+        with pytest.raises(OperationError) as refused:
+            prepare_fork(stack.store, source.run_id, "2", base_url=f"{stack.url}/v1")
+        assert "step 0's answer had a secret redacted from it" in refused.value.detail
+
     def test_a_run_recorded_before_launches_needs_its_spec(self, stack):
         from tests.helpers import record_pilot
 
