@@ -22,9 +22,11 @@ from starlette.routing import Route
 from tuningfork.analysis.normalize import outcome_for
 from tuningfork.analysis.tokens import TokenStream
 from tuningfork.breakpoints import Breakpoint
-from tuningfork.config import EXPERIMENT_HEADER, Settings
+from tuningfork.config import DEFAULT_REDACTIONS, EXPERIMENT_HEADER, REDACTED, Settings, redact
 from tuningfork.proxy.app import create_app, upstream_url
-from tuningfork.proxy.sse import CUT_OFF, ChunkAssembler
+from tuningfork.proxy.recorder import stream_without_secrets
+from tuningfork.proxy.sse import CUT_OFF, ChunkAssembler, reassemble
+from tuningfork.wire.anthropic import AnthropicMessages
 from tests.helpers import all_steps, only_step
 from tests.mock_server import MockTurn
 from tests.test_wire import (
@@ -32,6 +34,7 @@ from tests.test_wire import (
     MESSAGE_STOP,
     OVERLOADED,
     claude_code_request,
+    event,
     message_start,
     text_block,
 )
@@ -48,6 +51,20 @@ def openai_chunk(delta: dict, finish_reason: str | None = None) -> bytes:
     body = {"id": "c1", "object": "chat.completion.chunk", "model": "m",
             "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}]}
     return f"data: {json.dumps(body)}\n\n".encode()
+
+
+def tool_block(name: str, partials: list[str], index: int = 0) -> str:
+    """A Messages tool_use block whose input streams in these pieces."""
+    opening = {"type": "tool_use", "id": "toolu_1", "name": name, "input": {}}
+    return (
+        event("content_block_start", {"type": "content_block_start", "index": index, "content_block": opening})
+        + "".join(
+            event("content_block_delta", {"type": "content_block_delta", "index": index,
+                                          "delta": {"type": "input_json_delta", "partial_json": piece}})
+            for piece in partials
+        )
+        + event("content_block_stop", {"type": "content_block_stop", "index": index})
+    )
 
 
 def upstream_sending(
@@ -579,6 +596,89 @@ class TestRedaction:
         assert secret not in json.dumps(stored)
         assert "<redacted>" in stored["messages"][0]["content"]
         assert stored["model"] == "m"
+
+    async def test_a_key_streamed_in_pieces_is_not_kept_in_the_raw_bytes(self, settings, recorder):
+        """Found in the 0.5.0 review: a model writes a key a token an event, and no pattern sees
+        the pieces whole in the bytes kept beside the answer, which read as the key again — for
+        scoring and for a fork. What is kept reads as the masked answer."""
+        pieces = ["my key:\n", "sk", "-a1B2c3", "D4e5F6g7", "H8i9J0", " is set"]
+        upstream = upstream_sending(
+            *(openai_chunk({"content": piece}) for piece in pieces), openai_chunk({}, "stop"), b"data: [DONE]\n\n"
+        )
+        async with proxy_before(upstream, settings, recorder) as (_, harness):
+            relayed = await harness.post(CHAT, json=simple_request(stream=True))
+
+        assert relayed.content == upstream.state.body  # the harness got its answer as it came
+        step = only_step(recorder.store)
+        kept = recorder.store.blobs.get(step.raw_response_blob)
+        assert reassemble(kept)["choices"][0]["message"]["content"] == f"my key:\n{REDACTED} is set"
+        assert recorder.store.response(step)["choices"][0]["message"]["content"] == f"my key:\n{REDACTED} is set"
+        assert REDACTED.encode() in kept  # so a fork past it is refused (`replay_problems`)
+
+    async def test_a_key_in_a_claude_code_calls_streamed_input(self, settings, recorder):
+        partials = ['{"command":"echo ', "sk", "-a1B2c3D4", 'e5F6g7H8i9J0"}']
+        upstream = upstream_sending(message_start(), tool_block("Bash", partials), MESSAGE_DELTA, MESSAGE_STOP)
+        async with proxy_before(upstream, settings, recorder) as (_, harness):
+            await harness.post(MESSAGES, json=claude_code_request())
+
+        step = only_step(recorder.store)
+        kept = AnthropicMessages().parse(recorder.store.blobs.get(step.raw_response_blob), True)
+        assert kept["content"][0]["input"] == {"command": f"echo {REDACTED}"}
+        arguments = recorder.store.response(step)["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+        assert json.loads(arguments) == {"command": f"echo {REDACTED}"}
+
+    async def test_a_key_within_one_event_is_masked_where_it_stands(self, settings, recorder):
+        # Nothing to read whole that the events do not show: the server's own bytes are kept.
+        chunks = [openai_chunk({"content": "my key: sk-a1B2c3D4e5F6g7H8i9J0"}), openai_chunk({"content": " is set"}),
+                  openai_chunk({}, "stop"), b"data: [DONE]\n\n"]
+        upstream = upstream_sending(*chunks)
+        async with proxy_before(upstream, settings, recorder) as (_, harness):
+            await harness.post(CHAT, json=simple_request(stream=True))
+
+        step = only_step(recorder.store)
+        assert recorder.store.blobs.get(step.raw_response_blob) == redact(upstream.state.body.decode()).encode()
+
+    class Wire:
+        """A wire whose reading and writing a test sets."""
+
+        def __init__(self, read=None, render_fails=False, parse_fails=False):
+            self.read, self.render_fails, self.parse_fails = read, render_fails, parse_fails
+
+        def parse(self, raw, event_stream):
+            if self.parse_fails:
+                raise ValueError("unreadable")
+            return self.read if self.read is not None else reassemble(raw)
+
+        def canonical_response(self, native, *, stream=None):
+            return native
+
+        def native_response(self, canonical, original):
+            return canonical
+
+        def render(self, native, *, request):
+            if self.render_fails:
+                raise ValueError("no")
+            return b"rendered"
+
+    PIECES = b"".join([openai_chunk({"content": "sk"}), openai_chunk({"content": "-a1B2c3D4e5F6g7H8i9J0"}),
+                       openai_chunk({}, "stop")])
+
+    def test_bytes_that_cannot_be_written_again_are_not_kept(self):
+        request = simple_request(stream=True)
+        assert stream_without_secrets(self.PIECES, self.Wire(render_fails=True), request, DEFAULT_REDACTIONS) is None
+        # A stream with nothing to mask is kept as it came, never written again.
+        quiet = b"".join([openai_chunk({"content": "hello"}), openai_chunk({}, "stop")])
+        assert stream_without_secrets(quiet, self.Wire(render_fails=True), request, DEFAULT_REDACTIONS) == quiet
+
+    def test_an_answer_that_masking_leaves_unreadable_is_not_kept(self):
+        # Masked bare, a number breaks the answer's JSON: written again, it would be an empty answer.
+        read = {"choices": [{"message": {"content": "x"}}], "session_token": 12345678901234567}
+        assert stream_without_secrets(self.PIECES, self.Wire(read=read), simple_request(stream=True),
+                                      DEFAULT_REDACTIONS) is None
+
+    def test_a_stream_that_cannot_be_read_is_kept_as_it_came(self):
+        assert stream_without_secrets(self.PIECES, self.Wire(parse_fails=True), simple_request(stream=True),
+                                      DEFAULT_REDACTIONS) == self.PIECES
 
 
 class TestGate:

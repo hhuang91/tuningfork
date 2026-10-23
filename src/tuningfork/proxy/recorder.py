@@ -258,6 +258,37 @@ async def _read_props(client: httpx.AsyncClient, root: str) -> tuple[dict[str, A
     return (body if isinstance(body, dict) else None), response.status_code
 
 
+def stream_without_secrets(
+    body: bytes, wire: WireFormat, request: dict[str, Any], patterns: tuple[str, ...]
+) -> bytes | None:
+    """A stream's bytes, redacted as text, with no secret left in what they read as.
+
+    A model's answer streams about a token an event, so a key it writes arrives in pieces that
+    no pattern sees whole; read back — for scoring, for a fork — they are the key again. Bytes
+    that still read as a secret are replaced by the answer written again (`wire.render`) from
+    its masked form, which a fork then refuses to replay as it would any redacted answer. Where
+    it cannot be written again, nothing is kept: losing the bytes beats storing the secret. A
+    stream tuningfork cannot read is kept as it was.
+    """
+    try:
+        native = wire.parse(body, True)
+        # Logprobs are stored apart, redacted token by token (`split_logprobs`).
+        read = split_logprobs(wire.canonical_response(native, stream=body))[0] if native else None
+    except Exception:  # noqa: BLE001 - unread, as before
+        return body
+    if read is None:
+        return body
+    masked = redact_json(read, patterns)
+    if masked == read:
+        return body
+    if "tuningfork_error" in masked:
+        return None  # masked, the answer no longer reads: rendered, it would be an empty one
+    try:
+        return wire.render(wire.native_response(masked, native), request={**request, "stream": True})
+    except Exception:  # noqa: BLE001 - see above
+        return None
+
+
 def _answered(response: httpx.Response) -> str:
     """A refusal as the server put it: its status, and its own message if it gave one."""
     message = ""
@@ -379,7 +410,7 @@ class Recorder:
         async with self._in_order:
             raw_blob = None
             if raw_response is not None:
-                raw_blob = await asyncio.to_thread(self._store_raw, raw_response)
+                raw_blob = await asyncio.to_thread(self._store_raw, raw_response, wire, streamed, request_payload)
             step = await asyncio.to_thread(record_step, raw_blob)
             if holds and step is not None:
                 # What was sampled at these holds is filed under this step from now on.
@@ -401,13 +432,15 @@ class Recorder:
             method="chat-logprobs",
         )
 
-    def _store_raw(self, raw: bytes) -> str:
+    def _store_raw(self, raw: bytes, wire: WireFormat, streamed: bool, request: dict[str, Any]) -> str | None:
         from tuningfork.config import redact
 
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
             return self.store.blobs.put(raw)
-        return self.store.blobs.put(
-            redact(text, self.settings.redaction_patterns).encode()
-        )
+        patterns = self.settings.redaction_patterns
+        body: bytes | None = redact(text, patterns).encode()
+        if streamed and body is not None:
+            body = stream_without_secrets(body, wire, request, patterns)
+        return self.store.blobs.put(body) if body is not None else None
