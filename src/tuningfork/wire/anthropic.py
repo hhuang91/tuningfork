@@ -351,7 +351,8 @@ class AnthropicMessages:
                 "error": native.get("error") or native,
             }
         blocks = _blocks(native.get("content"))
-        # the stream is read again only for an answer with a call to take the text of
+        # Only a call's arguments are taken from the stream, so it is read again only for an
+        # answer with a call.
         calls = any(block.get("type") == "tool_use" for block in blocks)
         canonical: dict[str, Any] = {
             "id": native.get("id"),

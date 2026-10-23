@@ -139,6 +139,7 @@ def _values(arguments: Any) -> Any:
 
 
 def _once(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """A JSON object's pairs as a dict, refusing an object that names a key twice."""
     if len({key for key, _ in pairs}) < len(pairs):
         raise ValueError("a key named twice")
     return dict(pairs)
