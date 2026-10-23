@@ -58,7 +58,7 @@ import json
 import re
 from typing import Any, Sequence
 
-from tuningfork.backends.formats.base import FormatError
+from tuningfork.backends.formats.base import FormatError, token_parts
 
 THINK, THINK_END = "<think>", "</think>"
 CALL, CALL_END = "<tool_call>", "</tool_call>"
@@ -362,19 +362,8 @@ class QwenJson:
         ends = len(pieces)
         while ends and pieces[ends - 1] in ENDS[1:]:
             ends -= 1
-        text = "".join(pieces[:ends])
-        _, kinds, _ = self._read(text, tools=True, parallel=True, thinking=thinking, offered=())
-        runs: list[tuple[str, int, int]] = []
-        at = 0
-        for position, piece in enumerate(pieces):
-            own = kinds[at : at + len(piece)] if position < ends else []
-            at += len(piece) if position < ends else 0
-            kind = next((each for each in own if each != "marker"), "marker")
-            if runs and runs[-1][0] == kind and runs[-1][2] == position:
-                runs[-1] = (kind, runs[-1][1], position + 1)
-            else:
-                runs.append((kind, position, position + 1))
-        return runs
+        _, kinds, _ = self._read("".join(pieces[:ends]), tools=True, parallel=True, thinking=thinking, offered=())
+        return token_parts(pieces, kinds)
 
     def render(
         self, message: dict[str, Any], *, thinking: bool | str | None, offered: Sequence[dict[str, Any]] = ()

@@ -1,0 +1,29 @@
+{
+ "case": "text",
+ "seed": 1,
+ "tools": false,
+ "offered": [],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": "? Answer in one short sentence.<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "stop",
+ "completion_tokens": 11,
+ "pieces": [
+  "1",
+  "7",
+  " times",
+  " ",
+  "3",
+  " equals",
+  " ",
+  "5",
+  "1",
+  ".",
+  ""
+ ],
+ "message": {
+  "content": "17 times 3 equals 51.",
+  "reasoning_content": "",
+  "tool_calls": []
+ }
+}

@@ -269,8 +269,8 @@ where it called that tool.
 
 ### Which token decided it?
 
-These need llama.cpp, and a model whose raw output tuningfork reads: Gemma 4, Qwen2.5, Qwen3, Qwen3.5 or
-Qwen3.6.
+These need llama.cpp, and a model whose raw output tuningfork reads: Gemma 4, Qwen2.5, Qwen3, Qwen3.5,
+Qwen3.6 or Qwen3-Coder.
 
 | Command | What it tells you |
 |---|---|
@@ -392,7 +392,7 @@ self-improvement loop, on the same local model.
 |---|---|
 | **Harnesses** | Hermes Agent and Claude Code, which tuningfork launches, forks and validates. Any other harness that takes a custom base URL is recorded as it runs. Hermes Agent's session files and exports import as runs. |
 | **Inference servers** | llama.cpp's `llama-server`, for everything. LM Studio, and other servers that speak OpenAI chat completions or Anthropic Messages, for recording and experiments at a step; `tuningfork connections check` measures what yours supports. A hosted model's API, for recording only: tuningfork sends no API key of its own ([cloud models](docs/setup.md#cloud-models)). |
-| **Token-level work** | llama.cpp, with a model whose raw output tuningfork reads: Gemma 4, Qwen2.5, Qwen3, Qwen3.5 or Qwen3.6. |
+| **Token-level work** | llama.cpp, with a model whose raw output tuningfork reads: Gemma 4, Qwen2.5, Qwen3, Qwen3.5, Qwen3.6 or Qwen3-Coder. |
 | **Systems** | Linux, natively or under WSL 2 on Windows, with Python 3.12, 3.13 or 3.14. macOS is untested, and the sandbox needs Linux. |
 
 What is particular to a harness or a server lives behind an adapter, never in the core:

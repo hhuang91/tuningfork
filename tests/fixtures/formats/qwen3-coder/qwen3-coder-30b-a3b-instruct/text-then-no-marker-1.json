@@ -1,0 +1,98 @@
+{
+ "case": "text-then-no-marker",
+ "seed": 1,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": "then check the weather in Kyiv.<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "tool_calls",
+ "completion_tokens": 56,
+ "pieces": [
+  "I",
+  " will",
+  " first",
+  " explain",
+  " my",
+  " action",
+  " in",
+  " one",
+  " sentence",
+  ",",
+  " and",
+  " then",
+  " I",
+  " will",
+  " check",
+  " the",
+  " weather",
+  " in",
+  " Ky",
+  "iv",
+  ".",
+  " \n\n",
+  "Now",
+  ",",
+  " I",
+  " will",
+  " proceed",
+  " to",
+  " check",
+  " the",
+  " weather",
+  " in",
+  " Ky",
+  "iv",
+  ".\n",
+  "<",
+  "function",
+  "=get",
+  "_weather",
+  ">\n",
+  "<",
+  "parameter",
+  "=",
+  "city",
+  ">\n",
+  "Ky",
+  "iv",
+  "\n",
+  "</",
+  "parameter",
+  ">\n",
+  "</",
+  "function",
+  ">\n",
+  "</tool_call>",
+  ""
+ ],
+ "message": {
+  "content": "I will first explain my action in one sentence, and then I will check the weather in Kyiv. \n\nNow, I will proceed to check the weather in Kyiv.\n",
+  "reasoning_content": "",
+  "tool_calls": [
+   {
+    "name": "get_weather",
+    "arguments": "{\"city\":\"Kyiv\"}"
+   }
+  ]
+ }
+}

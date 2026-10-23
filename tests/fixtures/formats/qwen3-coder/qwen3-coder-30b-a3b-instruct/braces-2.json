@@ -1,0 +1,101 @@
+{
+ "case": "braces",
+ "seed": 2,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "write_file",
+    "description": "Write a file",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      },
+      "content": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path",
+      "content"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": ": [1, 2]}, \"note\": \"x: y, {z}\"}<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "tool_calls",
+ "completion_tokens": 55,
+ "pieces": [
+  "<tool_call>",
+  "\n",
+  "<",
+  "function",
+  "=",
+  "write",
+  "_file",
+  ">\n",
+  "<",
+  "parameter",
+  "=path",
+  ">\n",
+  "config",
+  ".json",
+  "\n",
+  "</",
+  "parameter",
+  ">\n",
+  "<",
+  "parameter",
+  "=",
+  "content",
+  ">\n",
+  "{\"",
+  "a",
+  "\":",
+  " {\"",
+  "b",
+  "\":",
+  " [",
+  "1",
+  ",",
+  " ",
+  "2",
+  "]},",
+  " \"",
+  "note",
+  "\":",
+  " \"",
+  "x",
+  ":",
+  " y",
+  ",",
+  " {",
+  "z",
+  "}\"",
+  "}\n",
+  "</",
+  "parameter",
+  ">\n",
+  "</",
+  "function",
+  ">\n",
+  "</tool_call>",
+  ""
+ ],
+ "message": {
+  "content": "",
+  "reasoning_content": "",
+  "tool_calls": [
+   {
+    "name": "write_file",
+    "arguments": "{\"path\":\"config.json\",\"content\":\"{\\\"a\\\": {\\\"b\\\": [1, 2]}, \\\"note\\\": \\\"x: y, {z}\\\"}\"}"
+   }
+  ]
+ }
+}

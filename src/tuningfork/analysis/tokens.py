@@ -538,16 +538,23 @@ def tool_choice(
     if part is None:
         return None
     start, end = part
-    consumed, position = "", None
-    for i in range(start, end):
-        piece = stream.token_text(i)
-        if len(consumed) + len(piece) > len(prefix):
+    # The name starts right after the prefix, which the part begins with — after the space a
+    # part may begin with, as one scored before its format left that space to the marker did.
+    pieces = [stream.token_text(i) for i in range(start, end)]
+    text = "".join(pieces)
+    found = len(text) - len(text.lstrip())
+    if not text.startswith(prefix.lstrip(), found):
+        return None
+    name_at = found + len(prefix.lstrip())
+    offset, position = 0, None
+    for i, piece in zip(range(start, end), pieces):
+        if offset + len(piece) > name_at:
             position = i
             break
-        consumed += piece
+        offset += len(piece)
     if position is None or stream.ids[position] is None or not stream.top_ids[position]:
         return None
-    head = prefix[len(consumed):]  # what is left of the prefix, if this token carries it too
+    head = text[offset:name_at]  # what is left of the prefix, if this token carries it too
 
     def tool_of(text: str, chosen: bool = False) -> str | None:
         if head and text.startswith(head):

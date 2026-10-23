@@ -7,7 +7,7 @@ refused before anything is sent:
 
 Each test is one thing the design relies on. The model must be one
 whose output format tuningfork reads (`tuningfork.backends.formats`): Gemma 4, Qwen2.5, Qwen3,
-Qwen3.5 or Qwen3.6.
+Qwen3.5, Qwen3.6 or Qwen3-Coder.
 """
 
 from __future__ import annotations
@@ -116,7 +116,8 @@ async def test_a_messages_request_renders_as_the_server_renders_it(http):
 
 async def test_the_output_format_reads_and_writes_as_the_server_does(http):
     """G4: raw output parsed as the server parsed it, and a parsed answer written back as the
-    raw text the model generated."""
+    raw text the model generated — one of the texts the server reads alike, where it reads
+    several as one answer."""
     fmt = await server_format(http)
     answer = await post(http, "/v1/chat/completions", {**BODY, "logprobs": True, "top_logprobs": 1, "seed": 7})
     raw = joined(answer["choices"][0]["logprobs"]["content"])
@@ -128,7 +129,7 @@ async def test_the_output_format_reads_and_writes_as_the_server_does(http):
     assert (parsed.get("reasoning_content") or "") == (message.get("reasoning_content") or "")
     assert [c["function"]["arguments"] for c in parsed.get("tool_calls") or []] == [
         c["function"]["arguments"] for c in message.get("tool_calls") or []]
-    assert raw.startswith(fmt.render(message, thinking=thinking, offered=BODY["tools"]))
+    assert any(raw.startswith(text) for text in fmt.renderings(message, thinking=thinking, offered=BODY["tools"]))
 
 
 async def test_a_character_written_in_two_tokens_is_scored_token_by_token(http):

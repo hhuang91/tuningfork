@@ -1,0 +1,83 @@
+{
+ "case": "multiline",
+ "seed": 1,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "write_file",
+    "description": "Write a file",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      },
+      "content": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path",
+      "content"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": "ha, beta and gamma, one a line.<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "tool_calls",
+ "completion_tokens": 37,
+ "pieces": [
+  "<tool_call>",
+  "\n",
+  "<",
+  "function",
+  "=",
+  "write",
+  "_file",
+  ">\n",
+  "<",
+  "parameter",
+  "=path",
+  ">\n",
+  "notes",
+  ".txt",
+  "\n",
+  "</",
+  "parameter",
+  ">\n",
+  "<",
+  "parameter",
+  "=",
+  "content",
+  ">\n",
+  "alpha",
+  "\n",
+  "beta",
+  "\n",
+  "gamma",
+  "\n",
+  "</",
+  "parameter",
+  ">\n",
+  "</",
+  "function",
+  ">\n",
+  "</tool_call>",
+  ""
+ ],
+ "message": {
+  "content": "",
+  "reasoning_content": "",
+  "tool_calls": [
+   {
+    "name": "write_file",
+    "arguments": "{\"path\":\"notes.txt\",\"content\":\"alpha\\nbeta\\ngamma\"}"
+   }
+  ]
+ }
+}

@@ -102,6 +102,10 @@ async def test_an_answer_whose_reasoning_the_model_opened_is_scored_exactly(stor
     assert stream.part(0) == "marker" and {part for part, _, _ in stream.parts} >= {"reasoning", "tool_call"}
     name = next(token for token in found.view.to_json()["tokens"] if token["text"] == "write_file")
     assert [text for text, _ in name["alternatives"]] == ["write_file", "read_file"]
+    # the tool's name is found after the prefix the call's part begins with, newline and all
+    choice = found.view.to_json()["choice"]
+    assert choice["chosen"] == "write_file"
+    assert choice["chance"] == {"write_file": pytest.approx(0.6), "read_file": pytest.approx(0.4)}
 
 
 async def test_an_empty_reasoning_is_scored_with_the_tokens_the_model_wrote(store, served):
@@ -252,6 +256,7 @@ async def test_a_qwen25_answer_is_scored_exactly(store, monkeypatch, mock_server
     record_ = found.view.record
     assert (record_.exact, record_.notes["format"], record_.notes["parse_agrees"]) == (True, "qwen2.5", True)
     assert {part for part, _, _ in found.view.stream.parts} == {"content", "marker", "tool_call"}
+    assert found.view.to_json()["choice"]["chance"] == {"read_file": pytest.approx(1.0)}
 
 
 async def test_forking_reads_each_continuation_as_the_server_would(store, served):

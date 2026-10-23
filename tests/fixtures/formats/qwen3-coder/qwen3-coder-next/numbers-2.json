@@ -1,0 +1,99 @@
+{
+ "case": "numbers",
+ "seed": 2,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "record_expense",
+    "description": "Record an expense",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "amount": {
+       "type": "number"
+      },
+      "currency": {
+       "type": "string"
+      },
+      "note": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "amount",
+      "currency"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": "ense of 61.50 USD with no note.<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "tool_calls",
+ "completion_tokens": 47,
+ "pieces": [
+  "<tool_call>",
+  "\n",
+  "<",
+  "function",
+  "=",
+  "record",
+  "_exp",
+  "ense",
+  ">\n",
+  "<",
+  "parameter",
+  "=",
+  "amount",
+  ">\n",
+  "6",
+  "1",
+  ".",
+  "5",
+  "\n",
+  "</",
+  "parameter",
+  ">\n",
+  "<",
+  "parameter",
+  "=",
+  "currency",
+  ">\n",
+  "USD",
+  "\n",
+  "</",
+  "parameter",
+  ">\n",
+  "<",
+  "parameter",
+  "=",
+  "note",
+  ">\n",
+  "null",
+  "\n",
+  "</",
+  "parameter",
+  ">\n",
+  "</",
+  "function",
+  ">\n",
+  "</tool_call>",
+  ""
+ ],
+ "message": {
+  "content": "",
+  "reasoning_content": "",
+  "tool_calls": [
+   {
+    "name": "record_expense",
+    "arguments": "{\"amount\":61.5,\"currency\":\"USD\",\"note\":null}"
+   }
+  ]
+ }
+}

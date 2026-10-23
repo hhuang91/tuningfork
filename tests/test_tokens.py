@@ -314,3 +314,36 @@ class TestToolChoice:
         assert tool_choice(reply, Sampler(), tools=self.TOOLS, prefix="call:") is None
         unmarked = from_entries([entry(48, "<|tool_call>", 1.0), entry(5, "call", 1.0), entry(6, ":", 1.0), entry(7, "write", 1.0)])
         assert tool_choice(unmarked, Sampler(), tools=self.TOOLS, prefix="call:") is None
+
+    def test_the_name_is_found_after_the_prefix_by_its_text(self):
+        # A Qwen3.5 stream scored before the newline after <tool_call> was the marker's keeps
+        # its parts: its call's part begins with that newline. And a token carries the
+        # prefix's end with the name's start.
+        from tuningfork.analysis.tokens import tool_choice
+
+        stream = from_entries([
+            entry(1, "<tool_call>", 1.0), entry(2, "\n", 1.0), entry(3, "<", 1.0), entry(4, "function", 1.0),
+            entry(5, "=write", 0.7, [(6, "=read", 0.3)]), entry(7, "_file", 1.0), entry(8, ">\n", 1.0),
+            entry(9, "</function>", 1.0), entry(50, "", 1.0),
+        ])
+        for start in (1, 2):  # the newline the part's, or the marker's
+            stream.parts = [("marker", 0, start), ("tool_call", start, 8), ("marker", 8, 9)]
+            found = tool_choice(stream, Sampler(), tools=self.TOOLS, prefix="<function=")
+            assert found is not None and (found.position, found.chosen) == (4, "write_file")
+            assert found.chance == {"write_file": pytest.approx(0.7), "read_file": pytest.approx(0.3)}
+        # a part without the prefix has no name to find
+        stream.parts = [("marker", 0, 4), ("tool_call", 4, 8), ("marker", 8, 9)]
+        assert tool_choice(stream, Sampler(), tools=self.TOOLS, prefix="<function=") is None
+
+    def test_the_prefix_is_found_where_the_part_begins_only(self):
+        # A bare call's "<" can sit in the content's last token (".<" is one of Qwen's tokens):
+        # the part then begins past it, and an opening further on is no name of this call.
+        from tuningfork.analysis.tokens import tool_choice
+
+        stream = from_entries([
+            entry(1, "Checking", 1.0), entry(2, ".<", 1.0), entry(3, "function", 1.0), entry(4, "=get", 0.9, [(5, "=read", 0.1)]),
+            entry(6, "_weather", 1.0), entry(7, ">\n<", 1.0), entry(8, "parameter=city>\n<", 1.0), entry(9, "function", 1.0),
+            entry(5, "=read", 0.6, [(4, "=get", 0.4)]), entry(10, "_file", 1.0), entry(11, "</tool_call>", 1.0), entry(50, "", 1.0),
+        ])
+        stream.parts = [("content", 0, 2), ("tool_call", 2, 10), ("marker", 10, 12)]
+        assert tool_choice(stream, Sampler(), tools=self.TOOLS, prefix="<function=") is None

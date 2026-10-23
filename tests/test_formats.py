@@ -15,13 +15,13 @@ import pytest
 from tuningfork.analysis.normalize import outcome_for
 from tuningfork.backends.formats import FormatError, format_for, get_format, known_models
 from tuningfork.backends.formats.gemma4 import Gemma4
-from tuningfork.backends.formats.qwen3_coder import Qwen3Coder
 
 HERE = Path(__file__).parent / "fixtures" / "formats"
 #: Each format's fixtures: Gemma 4's from one model; the Qwen formats' from each model that
 #: writes them, a folder each.
 FIXTURES = {
     "gemma4": sorted((HERE / "gemma4").glob("*.json")),
+    "qwen3.5": sorted((HERE / "qwen3.5").glob("*/*.json")),
     "qwen3-coder": sorted((HERE / "qwen3-coder").glob("*/*.json")),
     "qwen3": sorted((HERE / "qwen3").glob("*/*.json")),
     "qwen2.5": sorted((HERE / "qwen2.5").glob("*/*.json")),
@@ -29,13 +29,14 @@ FIXTURES = {
 #: The pieces each format marks as markers wherever they stand.
 MARKERS = {
     "gemma4": ("<|channel>", "<channel|>", "<|tool_call>", "<tool_call|>", ""),
-    "qwen3-coder": ("<think>", "</think>", "<tool_call>", "</tool_call>", ""),
+    "qwen3.5": ("<think>", "</think>", "<tool_call>", "</tool_call>", ""),
+    "qwen3-coder": ("<tool_call>", "</tool_call>", ""),
     "qwen3": ("<think>", "</think>", "<tool_call>", "</tool_call>", ""),
     "qwen2.5": ("<tool_call>", "</tool_call>", ""),
 }
 CASES = [(name, path) for name, paths in FIXTURES.items() for path in paths]
 GEMMA = Gemma4()
-QWEN = Qwen3Coder()
+QWEN, CODER = get_format("qwen3.5"), get_format("qwen3-coder")
 
 
 def load(path: Path) -> dict:
@@ -110,9 +111,11 @@ class TestFixtures:
         renderings = fmt.renderings(message, **known)
         assert renderings[0] == fmt.render(message, **known)
         # the model's end token has an empty piece: the rest is the text rendered back — or, where
-        # the server reads several texts alike, one of them, which the token count picks
-        assert fixture["pieces"][-1] == ""
-        assert "".join(fixture["pieces"][:-1]) in renderings
+        # the server reads several texts alike, one of them, which the token count picks. An
+        # answer cut at its limit has none.
+        written = fixture["pieces"] if fixture["finish_reason"] == "length" else fixture["pieces"][:-1]
+        assert fixture["finish_reason"] == "length" or fixture["pieces"][-1] == ""
+        assert "".join(written) in renderings
 
     @pytest.mark.parametrize("told", [True, False], ids=["told", "inferred"])
     def test_parts_follow_the_markers(self, name, path, told):
@@ -128,7 +131,8 @@ class TestFixtures:
             # reasoning up to its close alone (Qwen3's): the joined reasoning below says which.
             if piece in MARKERS[name] and kind[position] != "reasoning":
                 assert kind[position] == "marker", (position, piece)
-        assert kind[len(pieces) - 1] == "marker"  # the end token
+        if fixture["finish_reason"] != "length":  # cut at its limit, an answer has no end token
+            assert kind[len(pieces) - 1] == "marker"
         reasoning = "".join(p for i, p in enumerate(pieces) if kind[i] == "reasoning")
         assert reasoning == fixture["message"]["reasoning_content"]
         if fixture["message"]["tool_calls"]:
@@ -198,20 +202,21 @@ def arguments(text: str, offered: list, **known) -> str:
     return QWEN.parse(text, tools=True, offered=offered, **known)["tool_calls"][0]["function"]["arguments"]
 
 
-class TestQwen3Coder:
+class TestQwen35:
     def test_detected_by_the_servers_own_rule(self):
         coder = "{{ '<tool_call>\n<function=' + name + '>\n' }}{{ '<parameter=' + key + '>\n' }}"
         template = "{{ '<think>\n' }}" + coder
-        assert format_for(template).name == "qwen3-coder"
+        assert format_for(template).name == "qwen3.5"
         # the variant with no newline between its tags is another parser's
         assert format_for(template + "{{ '<tool_call><function=' ~ tool_call.name ~ '>' }}") is None
+        assert format_for(coder + "{{ '<tool_call><function=' ~ tool_call.name ~ '>' }}") is None
         assert format_for("{{ '<tool_call>' }}{\"name\": ...}") is None
-        # Qwen3-Coder's own template, which never reasons, the server reads otherwise: not this format
-        assert format_for(coder) is None
-        assert get_format("qwen3-coder").name == "qwen3-coder"
+        # Qwen3-Coder's own template, which never reasons, the server reads without a reasoning
+        assert format_for(coder).name == "qwen3-coder"
+        assert get_format("qwen3.5").name == "qwen3.5"
 
     def test_the_known_models_are_named_once(self):
-        assert known_models() == "Gemma 4, Qwen2.5, Qwen3, Qwen3.5 and Qwen3.6"
+        assert known_models() == "Gemma 4, Qwen2.5, Qwen3, Qwen3.5, Qwen3.6 and Qwen3-Coder"
 
     @pytest.mark.parametrize(("prompt", "state"), [
         ("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n", True),
@@ -301,11 +306,33 @@ class TestQwen3Coder:
         "<tool_call><function=a>\n</function>\n</tool_call>",  # the line after the opening is missing
         "<tool_call>\n<function=a>\n<parameter=x>\n1\n</function>\n</tool_call>",  # never closed
         "<tool_call>\n<function=a>\n<parameter=x>\n1\n</parameter>\n</tool_call>",  # no </function>
+        "<tool_call>\n<function=a>x\n</function>\n</tool_call>",  # the name's line goes on
+        "<tool_call>\n<function=a>x>\n</function>\n</tool_call>",  # the same, a second '>' after it
+        "<tool_call>\n<function=a> </function>\n</tool_call>",  # a space where the name's line ends
+        "<tool_call>\n<function=a>\n</function>\n",  # no </tool_call>
         "<tool_call>\n<function=a",
+        "<tool_call>\n",  # opened, and nothing of the call
     ])
     def test_a_malformed_call_is_an_error(self, text):
         with pytest.raises(FormatError):
             QWEN.parse(text, tools=True)
+
+    def test_a_marker_or_a_reasoning_cut_off_is_left_out_as_the_server_leaves_it(self):
+        # the server waits for the rest of a marker the text ends partway into — the last "<" only
+        for text, content in (("Hi<tool_call>", "Hi"), ("Hi<tool_", "Hi"), ("Hi<", "Hi"), ("a < b <tool_", "a < b "),
+                              ("Plan.\n</think>\n\n<", "Plan.\n</think>\n\n")):
+            assert QWEN.parse(text, tools=True, thinking=False) == {"role": "assistant", "content": content}
+        for text in ("Plan.\n</thi", "Plan.\n<"):
+            assert QWEN.parse(text, tools=True, thinking=True) == {
+                "role": "assistant", "content": "", "reasoning_content": "Plan.\n"}
+        # without tools the content is the rest, whatever it holds
+        assert QWEN.parse("Hi<tool_", tools=False, thinking=False)["content"] == "Hi<tool_"
+
+    def test_a_reasoning_a_call_begins_without_closing_it_ends_there(self):
+        # the parser reads <tool_call> as a reasoning's end, as </think> is
+        parsed = QWEN.parse("Plan.\n" + call("read", path="a"), tools=True, thinking=True)
+        assert (parsed["reasoning_content"], parsed["content"]) == ("Plan.\n", "")
+        assert parsed["tool_calls"][0]["function"] == {"name": "read", "arguments": '{"path":"a"}'}
 
     def test_parts_mark_the_space_the_server_skips(self):
         pieces = ["\n", "Plan", ".\n", "</think>", "\n\n", "Hi", "<tool_call>", "\n", "<", "function", "=", "a", ">\n",
@@ -314,7 +341,8 @@ class TestQwen3Coder:
         kind = {position: part for part, start, end in parts for position in range(start, end)}
         # the space an answer begins with is skipped as the space after a marker is
         assert [kind[i] for i in range(6)] == ["marker", "reasoning", "reasoning", "marker", "marker", "content"]
-        assert kind[7] == "tool_call" and kind[16] == "marker" and kind[20] == "marker"
+        # the newline after <tool_call> is the marker's: a call's own text begins at its function
+        assert kind[7] == "marker" and kind[8] == "tool_call" and kind[16] == "marker" and kind[20] == "marker"
         assert QWEN.parse("".join(pieces[:5]), tools=False, thinking=True)["reasoning_content"] == "Plan.\n"
 
 
@@ -540,7 +568,7 @@ class TestQwenJson:
         assert [part for part, _, _ in parts] == ["marker", "tool_call", "marker"]
 
 
-class TestQwen3CoderReasoning:
+class TestQwen35Reasoning:
     """The parser finds one reasoning at most, at the start: Qwen3.5's prompt holds it, opened or
     closed, so a `<think>` the model writes is text — but one a template left to the model it
     begins its answer with is the reasoning."""
@@ -568,3 +596,96 @@ class TestQwen3CoderReasoning:
         # Qwen3.5's prompts open the reasoning or close it: one that did not open it closed it
         assert QWEN.parse(self.TEXT, tools=False) == {"role": "assistant", "content": self.TEXT}
         assert QWEN.parts(self.PIECES) == [("content", 0, 7), ("marker", 7, 8)]
+
+
+class TestQwen3Coder:
+    """Qwen3-Coder's template has no reasoning: the server reads none, ends the content where a
+    call opens — at its marker, or at the opening of a tool it offered — and reads the first call
+    either way."""
+
+    WEATHER = tool("get_weather", {"city": {"type": "string"}})
+    #: A call without its marker, which the model sometimes writes first.
+    BARE = "<function=get_weather>\n<parameter=city>\nOslo\n</parameter>\n</function>\n</tool_call>"
+
+    def test_there_is_no_reasoning_to_read(self):
+        prompt = "<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n"
+        assert CODER.thinking(prompt) == "model" and CODER.thinking(prompt + "<think>\n") == "model"
+        text = "<think>\nfoo\n</think>\n\nbar"  # a <think> it writes is text
+        for thinking in ("model", True, None):
+            assert CODER.parse(text, tools=False, thinking=thinking) == {"role": "assistant", "content": text}
+        assert [part for part, _, _ in CODER.parts(["<think>", "\n", "foo", ""], thinking=True)] == ["content", "marker"]
+
+    def test_a_first_call_without_its_marker_is_read_as_one_with_it(self):
+        marked, bare = "Checking.\n\n" + call("get_weather", city="Oslo"), "Checking.\n\n" + self.BARE
+        parsed = CODER.parse(bare, tools=True, offered=[self.WEATHER])
+        assert parsed == CODER.parse(marked, tools=True, offered=[self.WEATHER])
+        assert parsed["content"] == "Checking.\n\n"
+        assert parsed["tool_calls"][0]["function"] == {"name": "get_weather", "arguments": '{"city":"Oslo"}'}
+        # both written back, the template's own first: only the answer's number of tokens tells
+        assert CODER.renderings(parsed, thinking="model", offered=[self.WEATHER]) == [marked, bare]
+        assert CODER.render(parsed, thinking="model", offered=[self.WEATHER]) == marked
+
+    def test_the_content_ends_only_at_the_opening_of_a_tool_offered(self):
+        text = "See <function=other>\n</function>\n</tool_call>"
+        assert CODER.parse(text, tools=True, offered=[self.WEATHER]) == {"role": "assistant", "content": text}
+        # where no tool is known, at any
+        parsed = CODER.parse(text, tools=True)
+        assert parsed["content"] == "See " and parsed["tool_calls"][0]["function"]["name"] == "other"
+        # and without tools nowhere
+        assert CODER.parse(self.BARE, tools=False) == {"role": "assistant", "content": self.BARE}
+
+    def test_every_later_call_has_its_marker(self):
+        twice = self.BARE + "\n" + call("get_weather", city="Rome")
+        assert len(CODER.parse(twice, tools=True, offered=[self.WEATHER])["tool_calls"]) == 2
+        assert CODER.renderings(CODER.parse(twice, tools=True, offered=[self.WEATHER]), thinking="model",
+                                offered=[self.WEATHER])[1] == twice
+        # a second without it is no call: the server reads the call before it and leaves the rest out
+        assert len(CODER.parse(self.BARE + "\n" + self.BARE, tools=True, offered=[self.WEATHER])["tool_calls"]) == 1
+        # one call only, where parallel calls are off
+        assert len(CODER.parse(twice, tools=True, parallel=False, offered=[self.WEATHER])["tool_calls"]) == 1
+
+    def test_a_call_without_its_marker_is_text_to_qwen35(self):
+        assert QWEN.parse(self.BARE, tools=True, thinking=False, offered=[self.WEATHER]) == {
+            "role": "assistant", "content": self.BARE}
+        assert len(QWEN.renderings(QWEN.parse(call("a"), tools=True, thinking=False), thinking=False)) == 1
+
+    def test_an_opening_cut_off_is_left_out_as_the_server_leaves_it(self):
+        for text in ("Hi <function=get_we", "Hi <function=", "Hi <tool_call>", "Hi <"):
+            assert CODER.parse(text, tools=True, offered=[self.WEATHER]) == {"role": "assistant", "content": "Hi "}
+        # the text's last "<" only: one before it is text
+        assert CODER.parse("</tool_call>\n<", tools=True, offered=[self.WEATHER])["content"] == "</tool_call>\n"
+        # an opening no tool offered begins is text — where none is known, any is an opening
+        assert CODER.parse("Hi <function=x", tools=True, offered=[self.WEATHER])["content"] == "Hi <function=x"
+        assert CODER.parse("Hi <function=x", tools=True)["content"] == "Hi "
+        # a call cut off after its opening is an error, as in every format
+        with pytest.raises(FormatError):
+            CODER.parse("Hi <function=get_weather>\n<parameter=city>\nOs", tools=True, offered=[self.WEATHER])
+
+    def test_a_calls_part_begins_at_its_function_with_or_without_its_marker(self):
+        body = ["<", "function", "=", "get", "_weather", ">\n", "<", "parameter", "=", "city", ">\n", "Oslo", "\n",
+                "</", "parameter", ">\n", "</", "function", ">\n", "</tool_call>", ""]
+        for opening in ([], ["<tool_call>", "\n"]):
+            pieces = ["Checking", ".\n\n", *opening, *body]
+            parts = CODER.parts(pieces)
+            assert [part for part, _, _ in parts] == ["content", *(["marker"] if opening else []), "tool_call", "marker"]
+            start, end = next((start, end) for part, start, end in parts if part == "tool_call")
+            assert "".join(pieces[start:end]).startswith(CODER.call_name_prefix)
+
+    def test_parts_after_the_calls_and_of_a_call_that_cannot_be_read(self):
+        # text after the calls, which the server leaves out, is the model's text; the end token
+        # is a marker
+        pieces = ["<tool_call>", "\n", "<", "function", "=a", ">\n", "</", "function", ">\n", "</tool_call>", "\n",
+                  "Done", "<|im_end|>"]
+        assert CODER.parts(pieces) == [("marker", 0, 2), ("tool_call", 2, 9), ("marker", 9, 11), ("content", 11, 12),
+                                       ("marker", 12, 13)]
+        # a call that cannot be read is a call to the end
+        broken = ["<tool_call>", "\n", "<", "function", "=a", ">\n", "oops", ""]
+        assert CODER.parts(broken) == [("marker", 0, 2), ("tool_call", 2, 7), ("marker", 7, 8)]
+
+
+def test_the_shared_reading_of_parts_takes_a_tokens_first_character_that_is_no_markers():
+    from tuningfork.backends.formats.base import token_parts
+
+    assert token_parts(["abc", "d", ""], ["marker", "content", "tool_call", "tool_call"]) == [
+        ("content", 0, 1), ("tool_call", 1, 2), ("marker", 2, 3)]
+    assert token_parts(["  ", "x"], ["marker", "marker", "content"]) == [("marker", 0, 1), ("content", 1, 2)]

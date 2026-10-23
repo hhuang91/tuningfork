@@ -22,7 +22,8 @@ FORMATS: tuple[Format, ...] = (
     Gemma4(),
     QwenJson("qwen2.5", ("Qwen2.5",), reasoning=False),
     QwenJson("qwen3", ("Qwen3",), reasoning=True),
-    Qwen3Coder(),
+    Qwen3Coder("qwen3.5", ("Qwen3.5", "Qwen3.6"), reasoning=True),
+    Qwen3Coder("qwen3-coder", ("Qwen3-Coder",), reasoning=False),
 )
 
 
