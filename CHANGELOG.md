@@ -64,7 +64,8 @@ Changed:
 - **Redaction meets a Claude Code call's arguments as the server sent them**, as it always met
   Hermes's. An `sk-` key right after a character outside ASCII is now masked, where its escaped
   form hid it. A key the model wrote with a JSON escape inside it is now masked only up to the
-  escape, if at all: the stored text keeps the escape, where the parsed input had it decoded.
+  escape, if at all: the stored text keeps the escape, where the text written from the parsed
+  input had it decoded.
 
 Nothing already in the recordings folder changes: no new columns, nothing to migrate.
 
