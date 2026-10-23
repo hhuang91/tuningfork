@@ -1,0 +1,55 @@
+{
+ "case": "no-marker",
+ "seed": 2,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": " the weather in Rome right now?<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "stop",
+ "completion_tokens": 18,
+ "pieces": [
+  "The",
+  " weather",
+  " in",
+  " Rome",
+  " right",
+  " now",
+  " is",
+  " sunny",
+  " with",
+  " a",
+  " temperature",
+  " of",
+  " ",
+  "2",
+  "4",
+  "°C",
+  ".",
+  ""
+ ],
+ "message": {
+  "content": "The weather in Rome right now is sunny with a temperature of 24°C.",
+  "reasoning_content": "",
+  "tool_calls": []
+ }
+}

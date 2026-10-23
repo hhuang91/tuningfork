@@ -77,10 +77,12 @@ CASES = {
     # A hybrid Qwen3 told so in the turn writes an empty reasoning, which the server drops.
     "no-think-switch": {"messages": [{"role": "user", "content": "Say hello in German, one word. /no_think"}]},
     # Qwen3-Coder sometimes opens its first call without its marker, which the server reads alike.
+    # A model that does not, banned the marker, writes text — Qwen3-Coder-Next once in a loop: the
+    # answer is held short.
     "no-marker": {"messages": [{"role": "user", "content": "What's the weather in Rome right now?"}], "tools": [WEATHER],
-                  "ban": ["<tool_call>"], "formats": ["qwen3-coder"]},
+                  "ban": ["<tool_call>"], "formats": ["qwen3-coder"], "max_tokens": 1024},
     "text-then-no-marker": {"messages": [{"role": "user", "content": "First tell me in one sentence what you will do, then check the weather in Kyiv."}],
-                            "tools": [WEATHER], "ban": ["<tool_call>"], "formats": ["qwen3-coder"]},
+                            "tools": [WEATHER], "ban": ["<tool_call>"], "formats": ["qwen3-coder"], "max_tokens": 1024},
 }
 
 
@@ -110,7 +112,7 @@ async def capture(fmt: str, seeds: tuple[int, ...] = (1, 2)) -> None:
                 bias[str(token)] = -100
             prompt = (await http.post(f"{ROOT}/apply-template", json=case)).json()["prompt"]
             for seed in seeds:
-                body = {**case, "max_tokens": 8192, "logprobs": True, "top_logprobs": 1, "seed": seed}
+                body = {**case, "max_tokens": case.get("max_tokens", 8192), "logprobs": True, "top_logprobs": 1, "seed": seed}
                 if bias:
                     body["logit_bias"] = bias
                 response = await http.post(f"{ROOT}/v1/chat/completions", json=body)

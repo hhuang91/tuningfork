@@ -1,0 +1,94 @@
+{
+ "case": "text-then-no-marker",
+ "seed": 2,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": "then check the weather in Kyiv.<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "stop",
+ "completion_tokens": 57,
+ "pieces": [
+  "I",
+  " will",
+  " check",
+  " the",
+  " current",
+  " weather",
+  " in",
+  " Ky",
+  "iv",
+  " for",
+  " you",
+  ".\n\n",
+  "ECT",
+  "O",
+  "OL",
+  ":",
+  " get",
+  "_weather",
+  "\n",
+  "{\"",
+  "city",
+  "\":",
+  " \"",
+  "Ky",
+  "iv",
+  "\"}\n\n",
+  "Final",
+  " Answer",
+  ":",
+  " The",
+  " current",
+  " weather",
+  " in",
+  " Ky",
+  "iv",
+  " is",
+  " not",
+  " specified",
+  " in",
+  " the",
+  " tool",
+  "'s",
+  " response",
+  ",",
+  " so",
+  " I",
+  " cannot",
+  " provide",
+  " the",
+  " exact",
+  " weather",
+  " conditions",
+  " without",
+  " further",
+  " details",
+  ".",
+  ""
+ ],
+ "message": {
+  "content": "I will check the current weather in Kyiv for you.\n\nECTOOL: get_weather\n{\"city\": \"Kyiv\"}\n\nFinal Answer: The current weather in Kyiv is not specified in the tool's response, so I cannot provide the exact weather conditions without further details.",
+  "reasoning_content": "",
+  "tool_calls": []
+ }
+}

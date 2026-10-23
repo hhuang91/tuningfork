@@ -1,0 +1,20 @@
+{
+ "case": "text-nothink",
+ "seed": 2,
+ "tools": false,
+ "offered": [],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": "\nSay hello in French, one word.<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "stop",
+ "completion_tokens": 2,
+ "pieces": [
+  "Bonjour",
+  ""
+ ],
+ "message": {
+  "content": "Bonjour",
+  "reasoning_content": "",
+  "tool_calls": []
+ }
+}

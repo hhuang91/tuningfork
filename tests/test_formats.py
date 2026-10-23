@@ -111,9 +111,11 @@ class TestFixtures:
         renderings = fmt.renderings(message, **known)
         assert renderings[0] == fmt.render(message, **known)
         # the model's end token has an empty piece: the rest is the text rendered back — or, where
-        # the server reads several texts alike, one of them, which the token count picks
-        assert fixture["pieces"][-1] == ""
-        assert "".join(fixture["pieces"][:-1]) in renderings
+        # the server reads several texts alike, one of them, which the token count picks. An
+        # answer cut at its limit has none.
+        written = fixture["pieces"] if fixture["finish_reason"] == "length" else fixture["pieces"][:-1]
+        assert fixture["finish_reason"] == "length" or fixture["pieces"][-1] == ""
+        assert "".join(written) in renderings
 
     @pytest.mark.parametrize("told", [True, False], ids=["told", "inferred"])
     def test_parts_follow_the_markers(self, name, path, told):
@@ -129,7 +131,8 @@ class TestFixtures:
             # reasoning up to its close alone (Qwen3's): the joined reasoning below says which.
             if piece in MARKERS[name] and kind[position] != "reasoning":
                 assert kind[position] == "marker", (position, piece)
-        assert kind[len(pieces) - 1] == "marker"  # the end token
+        if fixture["finish_reason"] != "length":  # cut at its limit, an answer has no end token
+            assert kind[len(pieces) - 1] == "marker"
         reasoning = "".join(p for i, p in enumerate(pieces) if kind[i] == "reasoning")
         assert reasoning == fixture["message"]["reasoning_content"]
         if fixture["message"]["tool_calls"]:

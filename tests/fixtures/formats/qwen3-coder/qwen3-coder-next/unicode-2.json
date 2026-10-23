@@ -1,0 +1,90 @@
+{
+ "case": "unicode",
+ "seed": 2,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "write_file",
+    "description": "Write a file",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      },
+      "content": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path",
+      "content"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": "ontent is: naïve résumé — 日本語 ✓<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "tool_calls",
+ "completion_tokens": 44,
+ "pieces": [
+  "<tool_call>",
+  "\n",
+  "<",
+  "function",
+  "=",
+  "write",
+  "_file",
+  ">\n",
+  "<",
+  "parameter",
+  "=path",
+  ">\n",
+  "ca",
+  "fé",
+  ".txt",
+  "\n",
+  "</",
+  "parameter",
+  ">\n",
+  "<",
+  "parameter",
+  "=",
+  "content",
+  ">\n",
+  "na",
+  "ï",
+  "ve",
+  " ré",
+  "sum",
+  "é",
+  " —",
+  " 日",
+  "本",
+  "語",
+  " ✓",
+  "\n",
+  "</",
+  "parameter",
+  ">\n",
+  "</",
+  "function",
+  ">\n",
+  "</tool_call>",
+  ""
+ ],
+ "message": {
+  "content": "",
+  "reasoning_content": "",
+  "tool_calls": [
+   {
+    "name": "write_file",
+    "arguments": "{\"path\":\"café.txt\",\"content\":\"naïve résumé — 日本語 ✓\"}"
+   }
+  ]
+ }
+}
