@@ -315,10 +315,10 @@ class TestRecording:
         store_raw = recorder._store_raw
         slow = [True]
 
-        def slow_first(raw: bytes) -> str:
+        def slow_first(*args) -> str:
             if slow.pop() if slow else False:
                 time.sleep(0.3)
-            return store_raw(raw)
+            return store_raw(*args)
 
         monkeypatch.setattr(recorder, "_store_raw", slow_first)
         mock_server.script(MockTurn(content="first"), MockTurn(content="second"))
