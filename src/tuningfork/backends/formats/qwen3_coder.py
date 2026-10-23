@@ -20,11 +20,19 @@ opened the reasoning — the template's default, `<think>\\n` closing the prompt
     </tool_call>
 
 then an end token. With reasoning off the prompt closes the reasoning too
-(`<think>\\n\\n</think>\\n\\n`), and the answer is the content and the calls. A value is typed
-by the tool's schema, as the server types it: raw text where the parameter can only be a
-string, any JSON where it can be no string, and otherwise JSON where it reads as a number or
-one of the schema's other types, else text. The server builds the arguments from the values as
-written — a string escaped into JSON, anything else kept as the model wrote it.
+(`<think>\\n\\n</think>\\n\\n`), and the answer is the content and the calls.
+
+The parser reads the prompt's opening of the turn and the answer as one text, and finds one
+reasoning at most, at its start. Qwen3.5's and Qwen3.6's prompts always open or close one, so a
+`<think>` the model writes is text. Where another template leaves the reasoning to the model, a
+`<think>` the answer begins with is the reasoning. Where no prompt is at hand, an answer that
+closes a reasoning it never opened is read as one the prompt opened, and any other as one it
+closed, as these models' prompts do.
+
+A value is typed by the tool's schema, as the server types it: raw text where the parameter can
+only be a string, any JSON where it can be no string, and otherwise JSON where it reads as a
+number or one of the schema's other types, else text. The server builds the arguments from the
+values as written — a string escaped into JSON, anything else kept as the model wrote it.
 
 `<think>`, `</think>`, `<tool_call>` and `</tool_call>` are single tokens; the rest of a call is
 ordinary text.
@@ -42,6 +50,8 @@ CALL, CALL_END = "<tool_call>", "</tool_call>"
 FUNCTION, FUNCTION_END = "<function=", "</function>"
 PARAMETER, ARG_CLOSE = "<parameter=", "\n</parameter>\n"
 ASSISTANT = "<|im_start|>assistant"
+#: What `thinking` says where the prompt left the reasoning to the model.
+MODEL = "model"
 #: The pieces of the special tokens that end an answer (empty in llama.cpp's logprobs).
 ENDS = ("", "<|im_end|>", "<|endoftext|>")
 
@@ -185,12 +195,15 @@ class Qwen3Coder:
             and THINK in template
         )
 
-    def thinking(self, prompt: str) -> bool:
-        """Whether the prompt opened the reasoning: its assistant turn opens `<think>` and
-        never closes it, as the template does unless reasoning is turned off."""
+    def thinking(self, prompt: str) -> bool | str:
+        """What the prompt's last assistant turn did with the reasoning: opened it (True), as the
+        template does unless reasoning is turned off; closed it (False), as it does then; or
+        neither (`MODEL`), leaving it to the model."""
         start = prompt.rfind(ASSISTANT)
         tail = prompt[start:] if start >= 0 else prompt
-        return THINK in tail and THINK_END not in tail
+        if THINK_END in tail:
+            return False
+        return True if THINK in tail else MODEL
 
     def parse(
         self,
@@ -198,18 +211,18 @@ class Qwen3Coder:
         *,
         tools: bool,
         parallel: bool = True,
-        thinking: bool | None = None,
+        thinking: bool | str | None = None,
         offered: Sequence[dict[str, Any]] = (),
     ) -> dict[str, Any]:
-        """Mirrors the server's PEG parser: an optional reasoning, then content up to the first
-        call, then the calls. A call to a tool not offered, or a parameter its schema does not
-        name, is read with any type — the server's grammar never lets one through, and what
-        the model wrote without it is still worth reading."""
-        if thinking is None:
-            thinking = _opened(text)
-        source = (THINK + "\n" if thinking else "") + text
+        """Mirrors the server's PEG parser: the reasoning, then content up to the first call,
+        then the calls; see the module for which reasoning. A call to a tool not offered, or a
+        parameter its schema does not name, is read with any type — the server's grammar never
+        lets one through, and what the model wrote without it is still worth reading."""
+        if thinking is None:  # no prompt at hand: read from the answer
+            thinking = _opened(text)  # opened, or else closed, as these models leave it
+        source = (THINK + "\n" if thinking is True else "") + text
         i, reasoning = 0, ""
-        if source.startswith(THINK):
+        if thinking is True or (thinking == MODEL and source.startswith(THINK)):
             start = _skip_space(source, len(THINK))
             stops = [at for at in (source.find(THINK_END, start), source.find(CALL, start)) if at >= 0]
             if not stops:  # cut off while thinking
@@ -272,7 +285,7 @@ class Qwen3Coder:
             raise FormatError(f"a call is not closed at {i}: {text[i : i + 32]!r}")
         return {"name": name, "arguments": "{" + ",".join(members) + "}"}, i + len(closing)
 
-    def parts(self, pieces: Sequence[str], *, thinking: bool | None = None) -> list[tuple[str, int, int]]:
+    def parts(self, pieces: Sequence[str], *, thinking: bool | str | None = None) -> list[tuple[str, int, int]]:
         runs: list[tuple[str, int, int]] = []
 
         def mark(kind: str, position: int) -> None:
@@ -281,15 +294,15 @@ class Qwen3Coder:
             else:
                 runs.append((kind, position, position + 1))
 
-        if thinking is None:
+        if thinking is None:  # no prompt at hand: read from the answer
             thinking = _opened("".join(pieces))
         # the server skips the space an answer begins with, as after each marker
-        state, skipping = ("reasoning" if thinking else "content"), True
+        state, skipping = ("reasoning" if thinking is True else "content"), True
         for position, piece in enumerate(pieces):
-            if piece == THINK:
-                mark("marker", position)
+            if piece == THINK and position == 0 and thinking == MODEL:
+                mark("marker", position)  # the model opened it, where the prompt left it to it
                 state, skipping = "reasoning", True
-            elif piece == THINK_END:
+            elif piece == THINK_END and state == "reasoning":  # any other <think> is text
                 mark("marker", position)
                 state, skipping = "content", True
             elif piece == CALL:
@@ -307,12 +320,14 @@ class Qwen3Coder:
                 mark(state, position)
         return runs
 
-    def render(self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()) -> str:
+    def render(
+        self, message: dict[str, Any], *, thinking: bool | str | None, offered: Sequence[dict[str, Any]] = ()
+    ) -> str:
         # The server keeps the reasoning up to `</think>`, its last newline included, and skips
         # the space after it, which the model writes as a blank line.
         text = ""
         reasoning = message.get("reasoning_content") or ""
-        if thinking:
+        if thinking is True:
             text += reasoning + THINK_END + "\n\n"
         elif reasoning:
             text += THINK + "\n" + reasoning + THINK_END + "\n\n"
@@ -334,6 +349,11 @@ class Qwen3Coder:
                 text += PARAMETER + key + ">\n" + raw + ARG_CLOSE
             text += FUNCTION_END + "\n" + CALL_END
         return text
+
+    def renderings(
+        self, message: dict[str, Any], *, thinking: bool | str | None, offered: Sequence[dict[str, Any]] = ()
+    ) -> list[str]:
+        return [self.render(message, thinking=thinking, offered=offered)]
 
 
 def _members(arguments: Any) -> list[tuple[str, Any, str]]:

@@ -6,8 +6,8 @@ refused before anything is sent:
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run pytest -m real_server tests/test_real_server.py
 
 Each test is one thing the design relies on. The model must be one
-whose output format tuningfork reads (`tuningfork.backends.formats`): Gemma 4, Qwen3.5 or
-Qwen3.6.
+whose output format tuningfork reads (`tuningfork.backends.formats`): Gemma 4, Qwen2.5, Qwen3,
+Qwen3.5 or Qwen3.6.
 """
 
 from __future__ import annotations

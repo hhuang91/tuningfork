@@ -1,0 +1,87 @@
+{
+ "case": "parallel",
+ "seed": 2,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "city": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "city"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": "ce for each city, both at once.<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "tool_calls",
+ "completion_tokens": 41,
+ "pieces": [
+  "<tool_call>",
+  "\n",
+  "{\"",
+  "name",
+  "\":",
+  " \"",
+  "get",
+  "_weather",
+  "\",",
+  " \"",
+  "arguments",
+  "\":",
+  " {\"",
+  "city",
+  "\":",
+  " \"",
+  "Paris",
+  "\"}}\n",
+  "</tool_call>",
+  "\n",
+  "<tool_call>",
+  "\n",
+  "{\"",
+  "name",
+  "\":",
+  " \"",
+  "get",
+  "_weather",
+  "\",",
+  " \"",
+  "arguments",
+  "\":",
+  " {\"",
+  "city",
+  "\":",
+  " \"",
+  "Tok",
+  "yo",
+  "\"}}\n",
+  "</tool_call>",
+  ""
+ ],
+ "message": {
+  "content": "",
+  "reasoning_content": "",
+  "tool_calls": [
+   {
+    "name": "get_weather",
+    "arguments": "{\"city\": \"Paris\"}"
+   },
+   {
+    "name": "get_weather",
+    "arguments": "{\"city\": \"Tokyo\"}"
+   }
+  ]
+ }
+}

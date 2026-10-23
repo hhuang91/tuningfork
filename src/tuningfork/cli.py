@@ -1251,7 +1251,11 @@ def tokens(
         return
     record = view.record
     facts = [record.source, record.method or "-", f"top {view.stream.top_k}", f"{record.tokens} tokens"]
-    if record.exact is True:
+    alike = (record.notes or {}).get("texts_alike") or 0
+    if record.exact is True and alike > 1:
+        which = "likelier" if alike == 2 else "likeliest"
+        facts.append(f"rebuilt as the {which} of {alike} texts the server reads alike")
+    elif record.exact is True:
         facts.append("rebuilt exactly")
     elif record.exact is False:
         facts.append("rebuilt approximately")

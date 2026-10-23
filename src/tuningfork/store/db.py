@@ -213,7 +213,8 @@ CREATE TABLE IF NOT EXISTS hold_steps (
 -- tuningfork.analysis.tokens): a recorded step's answer scored afterwards, or a sample drawn
 -- with logprobs, or a forced continuation. Derived data, and server-dependent: kept apart from
 -- the responses, with the server that computed it. `exact`: the answer was rebuilt token for
--- token, as its recorded token count confirms.
+-- token, as its recorded token count confirms — or, where several texts the server reads as the
+-- same answer have that count (`texts_alike` in its notes), as the one the model finds likelier.
 CREATE TABLE IF NOT EXISTS token_streams (
     id          TEXT PRIMARY KEY,
     step_id     TEXT,

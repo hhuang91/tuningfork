@@ -16,8 +16,14 @@ from __future__ import annotations
 from tuningfork.backends.formats.base import Format, FormatError
 from tuningfork.backends.formats.gemma4 import Gemma4
 from tuningfork.backends.formats.qwen3_coder import Qwen3Coder
+from tuningfork.backends.formats.qwen_json import QwenJson
 
-FORMATS: tuple[Format, ...] = (Gemma4(), Qwen3Coder())
+FORMATS: tuple[Format, ...] = (
+    Gemma4(),
+    QwenJson("qwen2.5", ("Qwen2.5",), reasoning=False),
+    QwenJson("qwen3", ("Qwen3",), reasoning=True),
+    Qwen3Coder(),
+)
 
 
 def known_models() -> str:

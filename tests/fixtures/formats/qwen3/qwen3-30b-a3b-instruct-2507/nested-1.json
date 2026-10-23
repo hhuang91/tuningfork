@@ -1,0 +1,126 @@
+{
+ "case": "nested",
+ "seed": 1,
+ "tools": true,
+ "offered": [
+  {
+   "type": "function",
+   "function": {
+    "name": "create_event",
+    "description": "Create a calendar event",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "title": {
+       "type": "string"
+      },
+      "attendees": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "location": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string"
+        },
+        "zip": {
+         "type": "string"
+        }
+       }
+      },
+      "priority": {
+       "type": "integer"
+      },
+      "confirmed": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "title"
+     ]
+    }
+   }
+  }
+ ],
+ "parallel": true,
+ "thinking": "model",
+ "prompt_end": "p 10115, priority 2, confirmed.<|im_end|>\n<|im_start|>assistant\n",
+ "finish_reason": "tool_calls",
+ "completion_tokens": 61,
+ "pieces": [
+  "<tool_call>",
+  "\n",
+  "{\"",
+  "name",
+  "\":",
+  " \"",
+  "create",
+  "_event",
+  "\",",
+  " \"",
+  "arguments",
+  "\":",
+  " {\"",
+  "title",
+  "\":",
+  " \"",
+  "Kick",
+  "off",
+  "\",",
+  " \"",
+  "attend",
+  "ees",
+  "\":",
+  " [\"",
+  "Ann",
+  "\",",
+  " \"",
+  "Bo",
+  "\"],",
+  " \"",
+  "location",
+  "\":",
+  " {\"",
+  "city",
+  "\":",
+  " \"",
+  "Berlin",
+  "\",",
+  " \"",
+  "zip",
+  "\":",
+  " \"",
+  "1",
+  "0",
+  "1",
+  "1",
+  "5",
+  "\"},",
+  " \"",
+  "priority",
+  "\":",
+  " ",
+  "2",
+  ",",
+  " \"",
+  "confirmed",
+  "\":",
+  " true",
+  "}}\n",
+  "</tool_call>",
+  ""
+ ],
+ "message": {
+  "content": "",
+  "reasoning_content": "",
+  "tool_calls": [
+   {
+    "name": "create_event",
+    "arguments": "{\"title\": \"Kickoff\", \"attendees\": [\"Ann\", \"Bo\"], \"location\": {\"city\": \"Berlin\", \"zip\": \"10115\"}, \"priority\": 2, \"confirmed\": true}"
+   }
+  ]
+ }
+}

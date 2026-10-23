@@ -6,6 +6,7 @@ checks a format against:
 
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py gemma4
     TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py qwen3-coder/qwen3.6-27b
+    TUNINGFORK_REAL_SERVER=http://127.0.0.1:8081 uv run python tests/fixtures/formats/capture.py qwen3/qwen3-30b-a3b
 
 The second form keeps a format's fixtures a folder for each model that writes it.
 
@@ -15,8 +16,9 @@ server's parsed message comes in the same response. Protected endpoints are refu
 
 A fixture keeps the tools the case offered, which a format that types each argument by its
 schema reads with, and the end of the rendered prompt, where a template that opens the
-reasoning itself does so. Whether the prompt turned reasoning on is the format's reading of
-the prompt, so a format is captured again once tuningfork knows it.
+reasoning itself does so. What the prompt did with the reasoning is the format's reading of the
+prompt (`thinking`), so a format is captured again once tuningfork knows it — or that reading
+taken again from the prompt's end, where only the reading changed.
 """
 
 from __future__ import annotations
@@ -70,6 +72,8 @@ CASES = {
                   "tools": [WRITE]},
     "call-nothink": {"messages": [{"role": "user", "content": "What's the weather in Lima right now?"}], "tools": [WEATHER],
                      "chat_template_kwargs": {"enable_thinking": False}},
+    # A hybrid Qwen3 told so in the turn writes an empty reasoning, which the server drops.
+    "no-think-switch": {"messages": [{"role": "user", "content": "Say hello in German, one word. /no_think"}]},
 }
 
 

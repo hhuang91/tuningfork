@@ -135,7 +135,7 @@ class Gemma4:
         *,
         tools: bool,
         parallel: bool = True,
-        thinking: bool | None = None,
+        thinking: bool | str | None = None,
         offered: Sequence[dict[str, Any]] = (),
     ) -> dict[str, Any]:
         """Mirrors the server's PEG parser: messages (a thought, then content) up to the first
@@ -196,7 +196,7 @@ class Gemma4:
             message["tool_calls"] = calls
         return message
 
-    def parts(self, pieces: Sequence[str], *, thinking: bool | None = None) -> list[tuple[str, int, int]]:
+    def parts(self, pieces: Sequence[str], *, thinking: bool | str | None = None) -> list[tuple[str, int, int]]:
         runs: list[tuple[str, int, int]] = []
 
         def mark(kind: str, position: int) -> None:
@@ -231,7 +231,9 @@ class Gemma4:
                 mark(state, position)
         return runs
 
-    def render(self, message: dict[str, Any], *, thinking: bool, offered: Sequence[dict[str, Any]] = ()) -> str:
+    def render(
+        self, message: dict[str, Any], *, thinking: bool | str | None, offered: Sequence[dict[str, Any]] = ()
+    ) -> str:
         text = ""
         reasoning = message.get("reasoning_content") or ""
         if reasoning or thinking:
@@ -249,3 +251,8 @@ class Gemma4:
                     raise FormatError(f"a call's arguments are not JSON: {error}") from None
             text += CALL_PREFIX + (function.get("name") or "") + _written(arguments or {}) + CALL_END
         return text
+
+    def renderings(
+        self, message: dict[str, Any], *, thinking: bool | str | None, offered: Sequence[dict[str, Any]] = ()
+    ) -> list[str]:
+        return [self.render(message, thinking=thinking, offered=offered)]

@@ -9,7 +9,8 @@ share a beginning and part at one token make a fork at that token, and forcing e
 there leads to that answer.
 
 `QwenToy` is the same model writing Qwen3.5's format: its template opens the reasoning in the
-prompt, so its answers begin with that opening, as what follows the turn.
+prompt, so its answers begin with that opening, as what follows the turn. `Qwen3Toy` writes
+Qwen3's, whose model opens its reasoning itself — or Qwen2.5's, which has none.
 """
 
 from __future__ import annotations
@@ -31,9 +32,10 @@ MODEL_TURN = "<|turn>model\n"
 TEMPLATE = "{# a toy Gemma 4 template #}{{ '<|tool_call>call:' }}"
 
 
-def _token_pattern(specials: dict[str, int]) -> re.Pattern[str]:
+def _token_pattern(specials: dict[str, int], *, blank_line: bool = False) -> re.Pattern[str]:
     return re.compile(
         "|".join(re.escape(s) for s in sorted(specials, key=len, reverse=True))
+        + (r"|\n\n" if blank_line else "")
         + r"|[ \t]?[A-Za-z0-9_]+|\n|[ \t]+|.",
         re.DOTALL,
     )
@@ -241,6 +243,47 @@ class QwenToy(ToyLlama):
         return prompt + self.turn + ("<think>\n" if thinking else "<think>\n\n</think>\n\n")
 
 
+#: The lines of a Qwen3 template the server finds its markers in, as its source writes them.
+QWEN3_TEMPLATE = (
+    "{# a toy Qwen3 template #}<|im_start|>"
+    "{{- '\\n<think>\\n' + reasoning_content.strip('\\n') + '\\n</think>\\n\\n' + content }}"
+    "{{- '<tool_call>\\n{\"name\": \"' + tool_call.name + '\", \"arguments\": ' + tool_call.arguments + '}\\n</tool_call>' }}"
+)
+#: Qwen2.5's renders no reasoning.
+QWEN25_TEMPLATE = QWEN3_TEMPLATE.replace("{{- '\\n<think>\\n' + reasoning_content.strip('\\n') + '\\n</think>\\n\\n' + content }}", "")
+
+
+class Qwen3Toy(QwenToy):
+    """The toy writing Qwen3's format: a call's JSON between `<tool_call>` markers, and a
+    reasoning the model opens itself — closed in the prompt where reasoning is off. Without
+    `reasoning`, Qwen2.5's, whose template renders none. A blank line is one token, as Qwen's
+    tokenizer has it."""
+
+    _token = _token_pattern(QWEN_SPECIALS, blank_line=True)
+
+    def __init__(self, reasoning: bool = True) -> None:
+        super().__init__()
+        self.reasoning = reasoning
+        self.template = QWEN3_TEMPLATE if reasoning else QWEN25_TEMPLATE
+
+    def apply_template(self, body: dict[str, Any]) -> str:
+        messages = [m for m in body.get("messages") or [] if isinstance(m, dict)]
+        thinking = (body.get("chat_template_kwargs") or {}).get("enable_thinking", True)
+        tools = [
+            (tool.get("function") or {}).get("name", "")
+            for tool in body.get("tools") or []
+            if isinstance(tool, dict)
+        ]
+        prompt = f"<|im_start|>system\ntools: {','.join(tools)}<|im_end|>\n" if tools else ""
+        for message in messages:
+            text = _text(message.get("content"))
+            for call in message.get("tool_calls") or []:
+                function = call.get("function") or {}
+                text += f'<tool_call>\n{{"name": "{function.get("name")}", "arguments": {function.get("arguments")}}}\n</tool_call>'
+            prompt += f"<|im_start|>{message.get('role')}\n{text}<|im_end|>\n"
+        return prompt + self.turn + ("" if thinking or not self.reasoning else "<think>\n\n</think>\n\n")
+
+
 def props(template: str = TEMPLATE, **extra: Any) -> dict[str, Any]:
     """A `/props` as llama.cpp serves it, with a toy's template: Gemma 4's unless named."""
     return {
@@ -252,4 +295,4 @@ def props(template: str = TEMPLATE, **extra: Any) -> dict[str, Any]:
     }
 
 
-__all__ = ["EOG", "SPECIALS", "TEMPLATE", "QwenToy", "ToyLlama", "props"]
+__all__ = ["EOG", "SPECIALS", "TEMPLATE", "Qwen3Toy", "QwenToy", "ToyLlama", "props"]
