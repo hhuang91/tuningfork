@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import bisect
 import json
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,14 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
 
 REDACTED = "<redacted>"
 
+#: How deep redaction reads JSON written inside JSON strings: a stored payload's own strings,
+#: a call's arguments or a tool's JSON result inside them, and what that result quotes.
+JSON_DEPTH = 3
+
+#: A JSON escape: how JSON text writes a character of a string.
+_ESCAPE = re.compile(r'\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])')
+_SHORT_ESCAPES = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t"}
+
 #: Marks a request as experiment traffic. A tuningfork proxy on the path forwards it through
 #: its gate but does not record it as a run step: a resampled request carries the same
 #: message path as the step it came from, and would otherwise look like the harness
@@ -42,26 +52,21 @@ def server_root(base_url: str) -> str:
 
 
 def redact(text: str, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> str:
-    """Mask secrets in `text`. The replacement is quote-free, so JSON stays parseable."""
-    for pattern in patterns:
-        compiled = re.compile(pattern)
-        has_secret_group = "secret" in compiled.groupindex
-
-        def _sub(match: re.Match[str], _has_group: bool = has_secret_group) -> str:
-            if not _has_group or match.group("secret") is None:
-                return REDACTED
-            # Keep the surrounding match (the `api_key=` prefix, say) and mask only the
-            # secret itself, so redacted recordings stay readable.
-            whole = match.group(0)
-            start, end = match.span("secret")
-            offset = match.start()
-            return whole[: start - offset] + REDACTED + whole[end - offset :]
-
-        text = compiled.sub(_sub, text)
-    return text
+    """Mask secrets in `text`, as it stands and as its JSON escapes read (`_read_spans`). The
+    replacement is quote-free, and replaces whole escapes, so JSON stays parseable."""
+    spans = _merged(_read_spans(text, patterns))
+    if not spans:
+        return text
+    pieces, at = [], 0
+    for start, end in spans:
+        pieces += [text[at:start], REDACTED]
+        at = end
+    return "".join(pieces) + text[at:]
 
 
 def _masked_spans(text: str, patterns: tuple[str, ...]) -> list[tuple[int, int]]:
+    # A pattern with a `secret` group masks that group only — the `api_key=` before it stays,
+    # so a redacted recording stays readable — and one without masks its whole match.
     spans = []
     for pattern in patterns:
         compiled = re.compile(pattern)
@@ -70,6 +75,58 @@ def _masked_spans(text: str, patterns: tuple[str, ...]) -> list[tuple[int, int]]
                 spans.append(match.span("secret"))
             else:
                 spans.append(match.span())
+    return spans
+
+
+def _merged(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(span for span in spans if span[1] > span[0]):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _json_unescaped(text: str) -> tuple[str, Callable[[int], int]] | None:
+    """`text` with its JSON escapes read once, and a map from an index of that back to `text`'s:
+    a character read from an escape stands for the whole escape. None where there is none."""
+    pieces: list[str] = []
+    read_at: list[int] = []  # where each escape's character sits in what is read
+    shifts: list[int] = []  # how far `text` runs ahead of what is read, after each escape
+    at = shift = 0
+    for match in _ESCAPE.finditer(text):
+        escape = match.group()
+        char = chr(int(escape[2:], 16)) if escape[1] == "u" else _SHORT_ESCAPES[escape[1]]
+        pieces += [text[at : match.start()], char]
+        read_at.append(match.start() - shift)
+        shift += len(escape) - 1
+        shifts.append(shift)
+        at = match.end()
+    if not read_at:
+        return None
+
+    def back(index: int) -> int:
+        before = bisect.bisect_left(read_at, index)
+        return index + (shifts[before - 1] if before else 0)
+
+    return "".join(pieces) + text[at:], back
+
+
+def _read_spans(text: str, patterns: tuple[str, ...]) -> list[tuple[int, int]]:
+    """The spans of `text` the patterns mask, read as it stands and as its JSON escapes read,
+    `JSON_DEPTH` deep. Stored payloads are JSON, where a newline is a backslash and an `n`: a key
+    on a line of its own follows a letter there, which an `sk-` key must not, and `api_key: …`
+    inside a call's arguments or a tool's JSON result has its quotes escaped."""
+    spans = _masked_spans(text, patterns)
+    view, back = text, (lambda index: index)
+    for _ in range(JSON_DEPTH):
+        read = _json_unescaped(view)
+        if read is None:
+            break
+        view, inner = read
+        back = (lambda outer, inner: lambda index: outer(inner(index)))(back, inner)
+        spans += [(back(start), back(end)) for start, end in _masked_spans(view, patterns)]
     return spans
 
 
@@ -90,22 +147,16 @@ def redact_spans(text: str, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> l
     """The spans of `text` a redaction masks, merged and in order.
 
     For text that is stored in pieces — an answer as its tokens — where masking the joined text
-    is not possible. Patterns run over the text as it reads and as JSON escapes it: storage
-    redacts serialized JSON, where a newline is `\\n` and a pattern's `\\s*` no longer matches
-    it, so a secret either form would mask is masked here.
+    is not possible. Patterns run over the text as storage reads it: as it stands and as its
+    JSON escapes read (a model that writes JSON writes them), and as JSON escapes it, as it is
+    stored — so a secret any of these would mask is masked here.
     """
-    spans = _masked_spans(text, patterns)
+    spans = _read_spans(text, patterns)
     escaped, origin = _json_escaped(text)
     for start, end in _masked_spans(escaped, patterns):
         if end > start:
             spans.append((origin[start], origin[end - 1] + 1))
-    merged: list[tuple[int, int]] = []
-    for start, end in sorted(span for span in spans if span[1] > span[0]):
-        if merged and start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        else:
-            merged.append((start, end))
-    return merged
+    return _merged(spans)
 
 
 @dataclass(frozen=True, slots=True)

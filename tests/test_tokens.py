@@ -245,6 +245,13 @@ class TestLogprobsAndRedaction:
         (start, end), = redact_spans(text)
         assert text[start:end] == "abcdefghijklmnop"
 
+    def test_spans_read_the_models_own_json_escapes(self):
+        # A Qwen3 call is JSON the model writes: a newline in a value is its escape, and
+        # storage, which now reads it as a newline, masks the key after it.
+        text = '<tool_call>\n{"name": "write_file", "arguments": {"content": "keys:\\nsk-a1B2c3D4e5F6g7H8i9J0"}}'
+        (start, end), = redact_spans(text)
+        assert text[start:end] == "sk-a1B2c3D4e5F6g7H8i9J0"
+
     def test_nothing_to_mask(self):
         stream = from_entries([entry(1, "hello", 1.0)])
         assert redact_stream(stream) is stream
