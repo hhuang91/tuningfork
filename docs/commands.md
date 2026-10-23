@@ -23,7 +23,7 @@ which gives them all. For a walk through them on a real task, see
   `--home` names.
 - **A running proxy.** The commands that control one — breakpoints, holds, jobs, connections,
   `pause` — find it at `TUNINGFORK_PROXY` (default `http://127.0.0.1:8787`), or `--proxy`.
-- **A run** is named by its id, a prefix of it, or its label (`tally-report/1#c1e9dd10.7`).
+- **A run** is named by its id, a prefix of it, or its label (`tally-report/1#2cc8149f.7`).
   `runs -q` prints ids alone, for a script: `RUN=$(tuningfork runs -q -n 1 --called write_file)`.
 - **A step** is named by its number, or by what the model did there. `write_file` is the first
   step where it called that tool, and `write_file|execute_code` the first where it called either;

@@ -646,9 +646,9 @@ file was there would write at step 3 — so name the step by the tool the model 
 instead: `Write` is the first step where it called Write.
 
 *think* is the length of the model's reasoning before each answer, in characters; this run
-reasoned before every one. `none` would mark a tool call made with no reasoning at all, in a
-run that reasons at other steps. *changed* lists the files each call changed in the
-workspace: the write made `report.json`.
+reasoned before every one. `none` marks a tool call made with no reasoning at all, in a run
+that reasons at other steps: two runs of this batch loaded the skill that way. *changed* lists
+the files each call changed in the workspace: the write made `report.json`.
 
 ```bash
 tuningfork step $RUN Write
@@ -1512,10 +1512,10 @@ could most easily have drawn another token are all in it — what to call the fi
 to begin the last sentence — and none touches the keys. The call was settled by then. *Choice
 of tool* is the model's own chance of each tool at the first token of the call's name: `Write`,
 100%. And `tuningfork tokens $RUN Write --json` puts the first key's `count` at 99.86% and
-`total` at 100%; the nearest the model came to the check's key, among the eight tokens it weighed for
-the first, was `rowCount`, at about one in a million. No amount of resampling this step would
-find `row_count` — Part 2 §5 drew twenty and got none — so the wording has to change, as
-Part 2 §6 found.
+`total` at 100%; the nearest the model came to the check's key, among the eight tokens it
+weighed for the first, was `rowCount`, at about one in a million. No amount of resampling this
+step would find `row_count` — Part 2 §5 drew twenty and got none — so the wording has to
+change, as Part 2 §6 found.
 
 #### With Hermes Agent
 
@@ -2436,7 +2436,7 @@ held out 2 — verdicts only
     forward   edit 5/5 (100%, 95% CI 57–100%); original 0/5 (0%, 95% CI 0–43%)
     training  edit 5/5 (100%, 95% CI 57–100%); original 0/5 (0%, 95% CI 0–43%)
     held out 2: edit 4/5 (80%, 95% CI 38–96%); original 0/5 (0%, 95% CI 0–43%)
-    G0 met     survived a screen: it survived screen 5b3d7089
+    G0 met     survived a screen: it survived screen 5b3d7089, its latest
     G1 met     a held-out task was validated: 1 held-out task(s) validated
     G2 met     finished, with enough runs: every arm ran its runs on one server
     G3 met     its own task succeeds from the target forward: with the edit 5/5 forks passed, without it 0/5
@@ -2541,7 +2541,7 @@ approve proposal 72d4d965 of refinement 338504b1, on validation 3f7c997d
   file before → /home/you/tuningfork/examples/tally-report.history/
   changelog   → /home/you/tuningfork/examples/tally-report.changelog.md
   the gate   every check met:
-    G0 met     survived a screen: it survived screen 5b3d7089
+    G0 met     survived a screen: it survived screen 5b3d7089, its latest
     G1 met     a held-out task was validated: 1 held-out task(s) validated
     G2 met     finished, with enough runs: every arm ran its runs on one server
     G3 met     its own task succeeds from the target forward: with the edit 5/5 forks passed, without it 0/5
@@ -2560,7 +2560,7 @@ approve proposal 72d4d965 of refinement 338504b1, on validation 3f7c997d
   code  637fbf07
 Type the code to write it (anything else writes nothing): 637fbf07
 written: /home/you/tuningfork/examples/tally-report/SKILL.md
-  the file before  /home/you/tuningfork/examples/tally-report.history/SKILL.20261011T184422Z-c3dd28e9.md
+  the file before  /home/you/tuningfork/examples/tally-report.history/SKILL.20261023T083540Z-c3dd28e9.md
   changelog        /home/you/tuningfork/examples/tally-report.changelog.md
   to undo, copy the file before back over it
 ```
@@ -2615,14 +2615,14 @@ Not digit for digit. The model samples at temperature 1.0 from a fresh random se
 a harness sends none, and tuningfork draws new ones for every experiment — so counts wobble
 between tries and between machines, and so do the runs `--called` picks: here every Claude Code
 run wrote its report with `Write` at step 2, and four of the eight Hermes runs with
-`write_file`, three at step 1 and one at step 4. What reproduces
-is the shape: the original wording fails every time, by writing `count` and `total`; resampling
-the write never gives `row_count`; the A/B separates the wordings by a wide, significant margin
-at the write, and so does following it to the end of the run; and full runs with the variant
-pass nearly every time. Our batches of the original wording on this model have all come out at
-zero, every report with `count` and `total`: 0/8 three times with Claude Code and 0/8 twice
-with Hermes. The variant's full runs passed 8/8 twice with Claude Code and 8/8 with Hermes. The
-step-0 split varies the most, and matters least.
+`write_file`, three at step 1 and one at step 4. What reproduces is the shape: the original
+wording fails every time, by writing `count` and `total`; resampling the write never gives
+`row_count`; the A/B separates the wordings by a wide, significant margin at the write, and so
+does following it to the end of the run; and full runs with the variant pass nearly every time.
+Our batches of the original wording on this model have all come out at zero, every report with
+`count` and `total`: 0/8 three times with Claude Code and 0/8 twice with Hermes. The variant's
+full runs passed 8/8 twice with Claude Code and 8/8 with Hermes. The step-0 split varies the
+most, and matters least.
 
 Without bubblewrap, each run works in folders of its own, whose names are in its prompt, so
 on your machine every run is asked something slightly different — and to a model that can
