@@ -14,31 +14,45 @@
 </picture>
 </p>
 
-tuningfork sits between your agent and your local model, and records every call the agent
-makes. When a skill fails, it finds the step where the runs go wrong, and shows how the model
-wavers there, down to its odds for each word of its reasoning. Then it sends that step to the
-model again and again, everything before it held fixed, once as written and once with your edit,
-and tells you whether the difference is real.
+[See it work](#see-it-work) walks through the figure's example, command by command.
+
+Tuning Fork (`tuningfork`) sits between your agent and your LLM, allowing you to record and experiment on every call the agent
+makes. When a skill fails, `tuningfork` helps to find the step where the execution goes wrong, and shows how the
+model's responses cause the failure, down to the odds of each word in the model's reasoning. Then, `tuningfork` provides the
+framework to refine the skill via surgical edits, backed by statistical testing,
+so you can **tune agent skills to your own model**.
 
 It works with **Hermes Agent** and **Claude Code** on **llama.cpp**, from a terminal, a web UI,
-or an agent over MCP. It is pre-alpha: commands and their output may still change.
+or an agent over MCP.
+Any model that llama.cpp serves can be recorded and tested. Seeing the odds of each word works for
+Gemma 4, Qwen3.6, Qwen3.5, Qwen3-Coder, Qwen3 and Qwen2.5 so far, and the list will grow as the
+repo evolves ([how to serve them](docs/setup.md#the-model-server)).
+
+Tuning Fork is pre-alpha: commands and their output may still change.
 
 ## Why
 
-You write a skill — an [agentskills.io](https://agentskills.io)-style `SKILL.md` — for a local
-agent. It works three times out of five. So you reword it, run the task five more times, and
-squint at the results. That loop is broken in two ways:
+**The problem**:
+You have a skill ([agentskills.io](https://agentskills.io)-style `SKILL.md`) for your agent,
+but the skill is flaky: it works three times out of five. So you reword the skill, run the task again, and squint at
+the agent session history trying to see if the edits work. The process is repeated every time the
+agent fails to execute the skill properly, which then turns into what seems like a never-ending whack-a-mole.
+Even worse, when you change your LLM, most edits seem to lose their effect. This problem happens because:
 
-- **Small samples are noise.** 3/5 is consistent with a true success rate anywhere from 23% to
-  88% (95% Wilson interval). Separating a 60% skill from a 90% one takes roughly 30 runs per
-  variant. Almost nobody does that, so wording decisions get made on noise.
 - **Wording sensitivity is real, and model-specific.** Open models swing hard on
   meaning-preserving format changes, and the best format does not transfer between models
   ([Sclar et al., ICLR 2024](https://arxiv.org/abs/2310.11324)). Every model swap or
   quantization change means partial retuning.
+- **Luck and noise play a role.** The edited skill passed after your edits, great, but are
+  you sure that it's your edit and not just that the model generated a different token by luck
+  and that token steered the execution to a success? The model could also have been getting
+  lucky on other steps in previous runs so far, so it can fail in other ways during future runs despite your edits.
+- **You don't have an efficient tool.** Squinting at the agent session history to figure out what went wrong is
+  the same painful and inefficient approach as in the early days of software development, when
+  people did desk checks and diagnostic printouts.
 
-tuningfork treats an agent run as a program and the skill as its source code, and supplies the
-missing debugger:
+**The missing tool**: If we imagine the LLM as the CPU of a computer, a running agent as software,
+and skills as source code written in natural language, then `tuningfork` supplies you with the debugger you have been missing:
 
 - **Record** every model call, with the exact context the model saw, or import a conversation
   your agent already had.
@@ -51,68 +65,34 @@ missing debugger:
   significance test instead of a bare percentage.
 - **Break** a live call before or after the model, and read or edit its whole context.
 
-Pausing and editing LLM traffic is table stakes; several tools do it. The point here is
-**measurement and localization for instruction text**.
-
-## See it work
-
-The toy skill in [`examples/find-the-file/`](examples/find-the-file/README.md) summarizes a CSV
-into `report.json`, and says that if the file is not there, the agent should say so and stop.
-The request names `data.csv`, but the file is in a subfolder. Ten runs through Hermes Agent, on
-Gemma 4 31B:
-
-```console
-$ tuningfork batch examples/find-the-file/evals.json -n 10 --harness hermes --model gemma-4-31b
-...
-4/10  40%  [17%-69%] passed
-```
-
-Every run first read `data.csv` where the request names it, and found nothing. Then it either
-searched for the file and passed, or gave up and failed. Bad luck, or the wording? Sent to the
-model twenty more times with its history held fixed, that step gives up 16 times. Scored, its
-answer shows where the reasoning forks. After "…but it was not found.", the next word is
-"According" at 80%, which goes on "…I should say so and stop", or "Wait" at 7%, which goes on
-"…search for it first?". The model wavers there, so one line of the skill can tip it. Tested at
-that step, toward a target declared before the first sample:
-
-```console
-$ tuningfork ab <run> 1 --variant examples/find-the-file/fix/SKILL.md \
-    --target-rules '[{"if": "calls", "value": "search_files"}]'
-...
-target (declared before sampling): a behaviour that calls search_files
-  original  4/20  20% [8%-42%]
-  variant   20/20 100% [84%-100%]
-  Fisher exact p = 1.5e-07 → significant at α=0.05, variant higher
-```
-
-Full runs agree: with the edit in every run, 10/10 pass [72%-100%], against 4/10 before
-(Fisher p = 0.011). Every rate comes with its 95% interval, and an A/B without a declared target
-is labelled exploratory and corrected for every comparison it makes.
-[The example](examples/find-the-file/README.md) shows each command with its output.
-
-In the web UI, an A/B is a few clicks from a run's step (here on the demo's scripted model, which
-answers at once; [the quickstart](#try-it-without-a-gpu-five-minutes) starts it):
-
-![Opening a run in the web UI, working from its write step beside the run, and A/B-testing an edited wording there: the original arm at 0 of 20, the edit at 20 of 20, with their intervals and Fisher's test](docs/images/ui-demo.gif)
-
-The [step-by-step guide](examples/README.md) walks through every part of the tool on another toy
-skill, with Claude Code beside Hermes, and every output in it is from a real run.
+`tuningfork` does not just stop and edit LLM traffic; it provides a framework to
+give you clarity on how the model interprets agent skills, and make you confident
+that your edits are actually improving the skill in a way that is tuned to your model.
 
 ## Quickstart
 
-tuningfork runs on Linux, or on Windows inside WSL 2, with Python 3.12 or later. It is not on
-PyPI yet: install it from GitHub with [uv](https://docs.astral.sh/uv/), which fetches Python
-itself if you need it. Under WSL, keep the checkout on the Linux file system (`~/…`), never
+`tuningfork` runs on Linux, or on Windows inside WSL 2 (macOS support planned), with Python 3.12 or later.
+> It is not on PyPI yet: install it from GitHub with [uv](https://docs.astral.sh/uv/), which fetches Python
+itself if you need it.
+
+Under WSL, keep the checkout on the Linux file system (`~/…`), never
 under `/mnt/c`, where SQLite's locking does not work; [on Windows](docs/setup.md#on-windows) has
 the steps, and a way to keep the checkout on Windows instead.
 
-### Try it without a GPU (five minutes)
+### Install Tuning Fork (`tuningfork`)
 
 ```bash
 git clone https://github.com/hhuang91/tuningfork.git
 cd tuningfork
 uv sync
-source .venv/bin/activate
+```
+
+Then use `source .venv/bin/activate` to activate the environment and
+make the `tuningfork` command available.
+
+### Try it without a GPU (five-minute UI walkthrough)
+
+```bash
 python tests/browser/demo.py lab /tmp/tuningfork-lab 8790    # made-up runs, a scripted model
 ```
 
@@ -368,6 +348,50 @@ model, or shows it a held-out task's verdicts: those stay with you.
 [`examples/hermes-architecture-diagram/`](examples/hermes-architecture-diagram/README.md) is a
 case study: Hermes improving one of its own skills with tuningfork's tools, beside Hermes's own
 self-improvement loop, on the same local model.
+
+## See it work
+
+The toy skill in [`examples/find-the-file/`](examples/find-the-file/README.md) summarizes a CSV
+into `report.json`, and says that if the file is not there, the agent should say so and stop.
+The request names `data.csv`, but the file is in a subfolder. Ten runs through Hermes Agent, on
+Gemma 4 31B:
+
+```console
+$ tuningfork batch examples/find-the-file/evals.json -n 10 --harness hermes --model gemma-4-31b
+...
+4/10  40%  [17%-69%] passed
+```
+
+Every run first read `data.csv` where the request names it, and found nothing. Then it either
+searched for the file and passed, or gave up and failed. Bad luck, or the wording? Sent to the
+model twenty more times with its history held fixed, that step gives up 16 times. Scored, its
+answer shows where the reasoning forks. After "…but it was not found.", the next word is
+"According" at 80%, which goes on "…I should say so and stop", or "Wait" at 7%, which goes on
+"…search for it first?". The model wavers there, so one line of the skill can tip it. Tested at
+that step, toward a target declared before the first sample:
+
+```console
+$ tuningfork ab <run> 1 --variant examples/find-the-file/fix/SKILL.md \
+    --target-rules '[{"if": "calls", "value": "search_files"}]'
+...
+target (declared before sampling): a behaviour that calls search_files
+  original  4/20  20% [8%-42%]
+  variant   20/20 100% [84%-100%]
+  Fisher exact p = 1.5e-07 → significant at α=0.05, variant higher
+```
+
+Full runs agree: with the edit in every run, 10/10 pass [72%-100%], against 4/10 before
+(Fisher p = 0.011). Every rate comes with its 95% interval, and an A/B without a declared target
+is labelled exploratory and corrected for every comparison it makes.
+[The example](examples/find-the-file/README.md) shows each command with its output.
+
+In the web UI, an A/B is a few clicks from a run's step (here on the demo's scripted model, which
+answers at once; [the quickstart](#try-it-without-a-gpu-five-minute-ui-walkthrough) starts it):
+
+![Opening a run in the web UI, working from its write step beside the run, and A/B-testing an edited wording there: the original arm at 0 of 20, the edit at 20 of 20, with their intervals and Fisher's test](docs/images/ui-demo.gif)
+
+The [step-by-step guide](examples/README.md) walks through every part of the tool on another toy
+skill, with Claude Code beside Hermes, and every output in it is from a real run.
 
 ## Guides
 
