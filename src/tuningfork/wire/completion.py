@@ -82,7 +82,7 @@ class RawCompletion:
             return upstream_error(response["error"])
         return None
 
-    def canonical_response(self, native: dict[str, Any]) -> dict[str, Any]:
+    def canonical_response(self, native: dict[str, Any], *, stream: bytes | None = None) -> dict[str, Any]:
         if native.get("error") is not None and "content" not in native:
             return {"error": native["error"]}
         return {

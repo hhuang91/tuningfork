@@ -57,6 +57,19 @@ class TestRecording:
         assert step.finish_reason == "tool_calls"
         assert step.reasoning_chars == len("Four rows.")
 
+    async def test_a_streamed_calls_arguments_are_stored_as_the_server_sent_them(
+        self, proxy_client, mock_server, recorder, settle
+    ):
+        # what scoring writes back as the model's tokens: its spacing, characters and numbers
+        written = '{"file_path":"naïve.md","content":"café — ✓","amount":61.50}'
+        mock_server.script(MockTurn(tool_calls=[{"name": "Write", "arguments": json.loads(written),
+                                                 "arguments_text": written}]))
+        await proxy_client.post(MESSAGES, json=claude_code_request())
+        await settle()
+
+        stored = recorder.store.response(only_step(recorder.store))
+        assert stored["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] == written
+
     async def test_pausing_answers_in_the_anthropic_shape(self, proxy_client):
         await proxy_client.post(f"{API}/pause")
         response = await proxy_client.post(MESSAGES, json=claude_code_request())
@@ -96,6 +109,28 @@ class TestBreakpoints:
         harness_got = recorder.store.delivered_response(step)["choices"][0]["message"]["tool_calls"][0]
         assert json.loads(model_wrote["function"]["arguments"])["content"] == '{"count": 4}'
         assert json.loads(harness_got["function"]["arguments"])["content"] == '{"row_count": 4}'
+
+    async def test_a_held_calls_arguments_are_the_text_the_server_sent(
+        self, proxy_client, proxy_app, mock_server, recorder, settle
+    ):
+        written = '{"file_path":"report.json","content":"café — ✓"}'
+        mock_server.script(MockTurn(tool_calls=[{"name": "Write", "arguments": json.loads(written),
+                                                 "arguments_text": written}]))
+        await proxy_client.post(
+            f"{API}/breakpoints", json={"phase": "response", "tool": "Write", "path_glob": "*.json"}
+        )
+        call = asyncio.create_task(proxy_client.post(MESSAGES, json=claude_code_request()))
+        (hold,) = await until(lambda: proxy_app.state.engine.holds())
+
+        held = (await proxy_client.get(f"{API}/holds/{hold.id}")).json()
+        assert held["response"]["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] == written
+        await proxy_client.post(f"{API}/holds/{hold.id}/continue")
+        received = ANTHROPIC.parse((await call).content, event_stream=True)
+        assert next(b for b in received["content"] if b["type"] == "tool_use")["input"] == json.loads(written)
+
+        await settle()
+        stored = recorder.store.response(only_step(recorder.store))
+        assert stored["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] == written
 
     async def test_a_dropped_stream_ends_with_an_anthropic_error_event(self, proxy_client, proxy_app):
         await proxy_client.post(f"{API}/breakpoints", json={"phase": "request"})

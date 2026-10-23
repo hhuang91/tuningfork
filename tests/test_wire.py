@@ -18,6 +18,7 @@ from tuningfork.wire import get_wire, wire_for
 from tuningfork.wire.anthropic import AnthropicMessages
 from tuningfork.wire.base import cap_output, uncapped
 from tuningfork.wire.openai import OpenAIChat
+from tests.helpers import messages_stream
 
 ANTHROPIC = AnthropicMessages()
 OPENAI = OpenAIChat()
@@ -132,6 +133,42 @@ class TestAnthropicResponses:
         for event in SSEParser().feed(raw.encode()):
             assembler.add_event(event)
         assert assembler.result()["content"][0]["input"] == {"file_path": "a.csv"}
+
+    def test_a_streamed_calls_arguments_are_the_text_the_server_sent(self):
+        # the model's own spacing, characters and numbers, which parsing them loses
+        raw = messages_stream(("record", ['{"note":"café — ✓",', '"amount":61.50}']),
+                              ("read", ['{"path": "a.csv"}']), text="Both.")
+        native = ANTHROPIC.parse(raw, event_stream=True)
+        message = ANTHROPIC.canonical_response(native, stream=raw)["choices"][0]["message"]
+        assert [call["function"]["arguments"] for call in message["tool_calls"]] == [
+            '{"note":"café — ✓","amount":61.50}', '{"path": "a.csv"}']
+        assert message["content"] == "Both."
+        # without the stream, the parsed input is written again: not the text the model wrote
+        (again, _) = ANTHROPIC.canonical_response(native)["choices"][0]["message"]["tool_calls"]
+        assert again["function"]["arguments"] == '{"note": "caf\\u00e9 \\u2014 \\u2713", "amount": 61.5}'
+
+    def test_streamed_text_is_kept_only_where_it_reads_as_the_input(self):
+        raw = messages_stream(("read", ['{"path": "a.csv"}']))
+        native = ANTHROPIC.parse(raw, event_stream=True)
+        native["content"][0]["input"] = {"path": "b.csv"}  # not what the stream sent
+        (call,) = ANTHROPIC.canonical_response(native, stream=raw)["choices"][0]["message"]["tool_calls"]
+        assert call["function"]["arguments"] == '{"path": "b.csv"}'
+        # a stream that cannot be read gives no text at all
+        (call,) = ANTHROPIC.canonical_response(native, stream=b"\xff\xfe no events")["choices"][0]["message"]["tool_calls"]
+        assert call["function"]["arguments"] == '{"path": "b.csv"}'
+
+    def test_an_input_sent_whole_is_written_again(self):
+        # a server may open a tool_use block with its input and stream none of it
+        raw = (
+            'event: content_block_start\ndata: {"type":"content_block_start","index":0,'
+            '"content_block":{"type":"tool_use","id":"t","name":"Read","input":{"file_path":"a.csv"}}}\n\n'
+        ).encode()
+        assembler = ANTHROPIC.assembler()
+        for event in SSEParser().feed(raw):
+            assembler.add_event(event)
+        assert assembler.arguments() == [None]
+        (call,) = ANTHROPIC.canonical_response(assembler.result(), stream=raw)["choices"][0]["message"]["tool_calls"]
+        assert call["function"]["arguments"] == '{"file_path": "a.csv"}'
 
     def test_the_common_shape_carries_reasoning_calls_and_usage(self):
         canonical = ANTHROPIC.canonical_response(anthropic_message())

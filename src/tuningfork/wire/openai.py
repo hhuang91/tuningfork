@@ -55,8 +55,8 @@ class OpenAIChat:
                 return upstream_error(response["error"])
         return None
 
-    def canonical_response(self, native: dict[str, Any]) -> dict[str, Any]:
-        return native
+    def canonical_response(self, native: dict[str, Any], *, stream: bytes | None = None) -> dict[str, Any]:
+        return native  # a call's arguments are already the text the server sent
 
     def native_response(
         self, canonical: dict[str, Any], original: dict[str, Any] | None

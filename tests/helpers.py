@@ -93,6 +93,26 @@ def as_response(message: dict[str, Any], finish_reason: str = "stop") -> dict[st
     }
 
 
+def messages_stream(*calls: tuple[str, Sequence[str]], text: str = "") -> bytes:
+    """An Anthropic Messages answer as a server streams it: some text, then tool calls, each
+    input sent as these pieces of JSON text."""
+    events: list[tuple[str, dict[str, Any]]] = []
+    if text:
+        events += [
+            ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+            ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}}),
+        ]
+    for index, (name, pieces) in enumerate(calls, start=1 if text else 0):
+        events.append(("content_block_start", {"type": "content_block_start", "index": index, "content_block": {
+            "type": "tool_use", "id": f"toolu_{index}", "name": name, "input": {}}}))
+        events += [("content_block_delta", {"type": "content_block_delta", "index": index,
+                                            "delta": {"type": "input_json_delta", "partial_json": piece}})
+                   for piece in pieces]
+    events.append(("message_delta", {"type": "message_delta", "delta": {"stop_reason": "tool_use"}}))
+    events.append(("message_stop", {"type": "message_stop"}))
+    return "".join(f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events).encode()
+
+
 # --- a recorded pilot run, shaped like a real Hermes one ---------------------------------
 
 SKILL = "---\nname: tally-report\n---\n\n# Tally report\n\nWrite the totals to report.json.\n"
