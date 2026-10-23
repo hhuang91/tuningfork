@@ -96,9 +96,9 @@ make the `tuningfork` command available.
 python tests/browser/demo.py lab /tmp/tuningfork-lab 8790    # made-up runs, a scripted model
 ```
 
-Open the web UI at the address it prints. The runs are made up, nine of the guide's example task, tally-report, with a
+Open the web UI at the address it prints. The runs are made up, nine of the guide's example task (tally-report) with a
 resample and an A/B, but tuningfork's own proxy serves them, in front of a scripted model that
-answers at once, so every button works. To make the A/B shown under [See it work](#see-it-work), open run `tally-report/1#demo.2`,
+answers at once, so every button works. To make the A/B in the GIF under [See it work](#see-it-work), open run `tally-report/1#demo.2`,
 its step 1, and *A/B a wording…*. The scripted model writes the keys the check wants only for a
 wording that names them in these exact words: `row_count and amount_total`
 ([step by step](docs/images/README.md#the-gif)).
