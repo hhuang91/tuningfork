@@ -343,7 +343,7 @@ model.
 ## Which token decided it?
 
 These need llama.cpp's own endpoints, and a model whose raw output tuningfork reads: Gemma 4,
-Qwen2.5, Qwen3, Qwen3.5 or Qwen3.6. The step's prompt must have the token count it had when it was
+Qwen2.5, Qwen3, Qwen3.5, Qwen3.6 or Qwen3-Coder. The step's prompt must have the token count it had when it was
 recorded, or the work is refused.
 
 ### `tokens`

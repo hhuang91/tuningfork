@@ -1437,7 +1437,7 @@ Part 2 found the step that fails and the wording that fixes it. This part looks 
 step, at the model's own tokens: how sure it was of each one, and — where runs split —
 which token splits them. It uses Part 2's proxy and recordings, and needs what Part 2 does:
 llama.cpp's server, and a model whose raw output tuningfork reads — Gemma 4 here; Qwen2.5,
-Qwen3, Qwen3.5 and Qwen3.6 are read too. §2 probes a step of Part 2's Hermes Agent runs.
+Qwen3, Qwen3.5, Qwen3.6 and Qwen3-Coder are read too. §2 probes a step of Part 2's Hermes Agent runs.
 
 ### 1. How sure was the model of each token?
 

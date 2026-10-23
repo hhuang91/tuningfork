@@ -296,13 +296,15 @@ so first (`refine.citations`); an approval keeps its evidence.
 
 Token-level work needs llama.cpp's own endpoints (`/apply-template`, `/tokenize`,
 `/completion`) and a model whose raw output tuningfork reads (`backends/formats/`: Gemma 4;
-Qwen3.5 and 3.6, read as llama.cpp's Qwen3-Coder parser reads them — each argument typed by the
-tool's schema, `offered`; Qwen3 and Qwen2.5, read as the parser llama.cpp builds from their
-templates reads them — a call's JSON kept as written). The server reads the prompt's opening of
+Qwen3.5 and 3.6, and Qwen3-Coder, whose template has no reasoning, read as llama.cpp's Qwen3-Coder
+parser reads them — each argument typed by the tool's schema, `offered`; Qwen3 and Qwen2.5, read
+as the parser llama.cpp builds from their templates reads them — a call's JSON kept as written).
+The server reads the prompt's opening of
 the turn with the answer, so a format is told what the prompt did with the reasoning (`thinking`:
 opened it, closed it, or left it to the model) and reads it from the answer where no prompt is at
 hand. Where the server reads several texts as one answer — an empty reasoning it drops, a blank
-line between calls — a format gives each (`renderings`): scoring keeps the one with the recorded
+line between calls, Qwen3-Coder's first call written without its `<tool_call>` — a format gives
+each (`renderings`): scoring keeps the one with the recorded
 token count, and of several, the one the model finds likelier where they part, saying so
 (`texts_alike`). Scoring rebuilds a recorded answer as the
 model's tokens and forces it after the step's exact prompt in one request (a grammar of token
