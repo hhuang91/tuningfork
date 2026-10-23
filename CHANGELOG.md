@@ -57,15 +57,16 @@ README opens in plainer words.
 Changed:
 
 - **Redaction reads stored text as it reads.** It matched its patterns against JSON as written,
-  where a newline is a backslash and an `n`: an `sk-` key on a line of its own, or after a tab,
-  then followed a letter, and was stored in clear in every harness's recordings. Nor did an
-  assignment whose value is in double quotes, such as `api_key = "…"` or `"token": "…"`, match
-  inside a message, a call's arguments or a tool's result, where JSON escapes every quote. The
-  patterns now also run over the text with its JSON escapes read, three levels deep: a payload,
-  the arguments or JSON result in it, and a JSON file that result shows. A key with an escape
-  inside it is masked whole, in a Claude Code call's arguments too. A token stream reads the
-  model's own escapes the same way. Recordings made before keep what they stored, and a streamed
-  answer's raw bytes, kept beside it, can still hold a key the server sent in pieces.
+  where a newline is a backslash and an `n`: an `sk-` key or a `Bearer` token on a line of its
+  own, or after a tab, then followed a letter, and was stored in clear in every harness's
+  recordings. Nor did an assignment whose value is in double quotes, such as `api_key = "…"` or
+  `"token": "…"`, match inside a message, a call's arguments or a tool's result, where JSON
+  escapes every quote. The patterns now also run over the text with its JSON escapes read, three
+  levels deep: a payload, the arguments or JSON result in it, and a JSON file that result shows.
+  A key with an escape inside it is masked whole, in a Claude Code call's arguments too. A token
+  stream reads the model's own escapes the same way. Recordings made before keep what they
+  stored, and a streamed answer's raw bytes, kept beside it, can still hold a key the server sent
+  in pieces.
 - **A Claude Code step's arguments read as the server sent them** wherever they are printed as
   text: `tuningfork step` and `timeline`, a held call, and MCP's `show_step`. Before, they read as
   Python's `json.dumps` of the input, with a space after each `:` and `,`, characters outside
