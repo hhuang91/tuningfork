@@ -629,10 +629,11 @@ class TestRedaction:
         assert masked_warning(recorder.store.rebuild_request(quiet), quiet) is None
         assert masked.params["masked"] == 1
         assert f"{REDACTED} in 1 place," in masked_warning(recorder.store.rebuild_request(masked), masked)
-        # And names the patterns that made them, which a fork reads it again by.
+        # And names the patterns that made them, which the store keeps for a fork to mask with.
         from tuningfork.config import patterns_digest
 
         assert masked.params["redaction"] == patterns_digest(DEFAULT_REDACTIONS)
+        assert recorder.store.masking(masked.params["redaction"]) == DEFAULT_REDACTIONS
 
     async def test_a_number_under_a_secrets_name_keeps_a_claude_code_session_whole(
         self, proxy_client, mock_server, recorder, settle

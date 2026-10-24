@@ -406,9 +406,11 @@ class Recorder:
             # Redacted in the worker thread, as the step is stored: redaction reads every
             # payload whole, its JSON escapes read too, and the event loop has calls to serve.
             # The step counts its masks — a request can read `<redacted>` where nothing was masked —
-            # and names the patterns that made them, which a fork reads it again by.
+            # and names the patterns that made them, which the store keeps: a fork masks a call
+            # with them again, to match a step masked otherwise than the patterns it has.
             request, params["masked"] = redact_json_counted(request_payload, patterns)
             params["redaction"] = patterns_digest(patterns)
+            self.store.keep_masking(params["redaction"], patterns)
             return self.store.record_step(
                 request=request,
                 response=response,

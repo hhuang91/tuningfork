@@ -282,6 +282,11 @@ class TestRedactionMasksKeysNotCode:
             '"apiKey": "os.getenv(\'X\')"',
             'token: "Buffer.from(raw).toString()"',
             '{"password": "getPassword()"}',
+            'token: "uuid4().hex"',
+            # Found measuring the third round's fixes: a raw string holds a pattern, a formatted one
+            # code (urllib3's, Hermes's own).
+            '_UNRESERVED_PAT = r"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._\\-~"',
+            'token = f"__HERMES_STT_{len(placeholders)}__"',
         ],
     )
     def test_code_and_words_are_kept(self, text):
@@ -390,6 +395,10 @@ class TestRedactionMasksKeysNotCode:
             # Found in review's third round: `PASS` before a colon is a test's result, not here.
             ("PASS=Zq8xK3vN5wLp", "Zq8xK3vN5wLp"),
             ("export PASS='Zq8xK3vN5wLp'", "Zq8xK3vN5wLp"),
+            # Found in review's fourth round: a password in lower case with a bracket read as a call.
+            ('{"password": "letmein[1]x"}', "letmein[1]x"),
+            ('password = "my.pass(word)9"', "my.pass(word)9"),
+            ('{"api_key": "q(Zr7Lm2Kd9X)"}', "q(Zr7Lm2Kd9X)"),
             ("token: \x1b[1;38;2;255;255;255;48;2;0;0;0mghp" "_Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2\x1b[0m",
              "Q7bX2kLm9Zr4Tw8Y"),
             # A random key whose case cuts into many short words reads as no name.
@@ -454,6 +463,8 @@ class TestRedactionMasksKeysNotCode:
             '["Enter your password:",12345678,true,"next"]',
             '[["2024-01-02","token=",1729712345,9.5],["x","y",1,2]]',
             '["api_key:",null,null,null,"done"]',
+            # Found in review's fourth round: a string ending in a backslash, read a level deeper.
+            '["token: \\"C:\\\\keys\\\\",1729712345,true,"next"]',
         ],
     )
     def test_compact_json_written_in_a_string_stays_json(self, text):
@@ -462,7 +473,7 @@ class TestRedactionMasksKeysNotCode:
         closing quote, to mask `,128,true]],` up to the next string."""
         assert redact_json(as_a_tool_result(text)) == as_a_tool_result(text)
 
-    @pytest.mark.parametrize("prefix", ["", "b"])
+    @pytest.mark.parametrize("prefix", ["", "b", "u"])
     def test_a_key_written_as_bytes_escapes_is_masked(self, prefix):
         # Found in review's third round: a value led by a backslash was taken for an escape.
         key = "\\x8f\\x12\\xab\\xcd\\xef\\x01\\x23\\x45\\x67\\x89"
@@ -483,6 +494,16 @@ class TestRedactionMasksKeysNotCode:
         # string written inside the string, which then no longer parsed.
         stored = redact_json({"password": json.dumps("Xy7zQ2mL9vK4pR8s")})
         json.loads(stored["password"])
+
+    @pytest.mark.parametrize("inner", [{"password": "Xq9Zr7Lm2Kd\\", "n": 1}, {"n": 1, "password": "Xq9Zr7Lm2Kd\\"}])
+    @pytest.mark.parametrize("separators", [(", ", ": "), (",", ":")], ids=["spaced", "compact"])
+    def test_json_in_a_string_whose_value_ends_in_a_backslash_stays_json(self, inner, separators):
+        """Found measuring the third round's fixes: a quoted value that read `\\"` whole took the
+        closing quote of a string ending in a backslash, read a level deeper than it is written
+        (`"…\\\\"` reads `"…\\"` there), and ran on to the next quote."""
+        stored = redact_json(as_a_tool_result(json.dumps(inner, separators=separators)))["messages"][0]["content"]
+        assert json.loads(stored)["n"] == 1
+        assert "Xq9Zr7Lm2Kd" not in stored
 
     @pytest.mark.parametrize(
         "unit, end",

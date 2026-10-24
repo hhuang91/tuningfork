@@ -528,6 +528,8 @@ class TestStoredMasks:
         [
             ('"GITHUB_TOKENS=<redacted>\\nexit 0"', '"GITHUB_TOKENS=A1b2C3d4,E5f6G7h8\\nexit 0"'),
             ('"GET /api?token=<redacted>&user=bob 200"', '"GET /api?token=A1b2C3d4&admin=true&user=bob 200"'),
+            ('"GET /api?token=<redacted>&key=<redacted> 200"',
+             '"GET /api?token=A1b2C3d4&admin=true&key=E5f6G7h8 200"'),
         ],
     )
     def test_a_mask_stands_for_one_key(self, recorded, live):
@@ -545,6 +547,46 @@ class TestStoredMasks:
         from tuningfork.replay import fits
 
         assert fits('"key=<redacted> ok"', '"key=ab\\\\u0041cd ok"')
+
+    def test_a_mask_hides_whole_escapes(self):
+        """Found in review's fourth round: the next piece could be found inside a `\\u` escape, the
+        mask before it hiding a lone backslash."""
+        from tuningfork.replay import fits
+
+        escaped = "0" + "\\" + "u0041-10"
+        assert not fits("<redacted><redacted>u<redacted><redacted>", escaped)
+        assert fits("<redacted>-<redacted>", escaped)
+        assert not fits("<redacted>u0041<redacted>", "ab" + "\\" + "u0041c")
+
+    def test_each_place_a_piece_may_stand_is_tried(self):
+        """Found in review's fourth round: a piece looked for at its leftmost place only can cut an
+        escape there, where a later place leaves it whole for the mask before."""
+        from tuningfork.replay import fits
+
+        backslash = "\\"
+        assert fits("<redacted>" + backslash + "<redacted>!", "a" + backslash + "u0041" + backslash + "b!")
+
+    def test_a_step_masked_by_patterns_the_store_keeps_is_matched_as_they_mask(self, store):
+        """Found in review's fourth round: a mask stood for a key's characters, as 0.5.0's masks
+        hid, so a step masked by today's patterns where they took punctuation would part from a
+        fork once they change. The store keeps the patterns each step names, and a fork masks a
+        call with them again."""
+        from tests.helpers import record_pilot
+        from tuningfork.config import patterns_digest
+        from tuningfork.replay import build_table
+        from tuningfork.wire import get_wire
+
+        own = (r"pw=(?P<secret>\S+)",)
+        run = store.get_run(record_pilot(store, read="pw=<redacted> ok\n", params={"redaction": patterns_digest(own)}))
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        live = json.loads(json.dumps(stored).replace("<redacted>", "Pa$$w0rd!x"))
+        wire = get_wire("openai-chat")
+        assert build_table(store, run, 1).fitting(live, wire) is None  # its masks hide a key's characters
+        store.keep_masking(patterns_digest(own), own)
+        table = build_table(store, run, 1)
+        assert table.fitting(live, wire) == table.live_key
+        parted = json.loads(json.dumps(stored).replace("<redacted> ok", "Pa$$w0rd!x ok\\nERROR: refused"))
+        assert table.fitting(parted, wire) is None
 
     def test_a_call_is_matched_in_one_pass(self):
         """Found in review's third round: matched as a regex, eight masks in one run of letters took

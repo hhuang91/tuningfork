@@ -36,9 +36,10 @@ from typing import Any
 #: The characters a value is written in, as each kind of pattern reads one: bare, as `.env`
 #: files, YAML, headers and command lines write it; in double or single quotes, as code and JSON
 #: do (anything but spaces and that quote, and an escape read whole: a backslash masked alone
-#: breaks the JSON); a bearer token; Base64; a password in a URL; a key alone; a command's
-#: argument. A quoted value opens only where a string does, never on a JSON escape, `{` or `[`,
-#: so JSON written inside the string it is in keeps its quotes.
+#: breaks the JSON — but `\"`, which may close a string: one ending in a backslash, `"…\\"`,
+#: reads `"…\"` where its escapes are read once more); a bearer token; Base64; a password in a
+#: URL; a key alone; a command's argument. A quoted value opens only where a string does, never
+#: on a JSON escape, `{` or `[`, so JSON written inside the string it is in keeps its quotes.
 _BARE = r"A-Za-z0-9_\-.~+/=!@#$%^&*"
 _DOUBLE_QUOTED = r"^\s\"\\"
 _SINGLE_QUOTED = r"^\s\"'\\"
@@ -106,9 +107,11 @@ def _not_a_key(chars: str, *, numbers: bool = True, password: bool | str = False
     `password` (or where the group of that name matched), one word and digits (`rootpass123`,
     `Welcome2024`), as a person makes a password up, where a constant's name holds an id
     (`sessionid2`), unless it numbers a password's field (`password2`); a key's random letters
-    and digits read as no name. Not a call or an index of a name in lower case or a dotted one
-    (`getPassword()`, `os.getenv('X')`), where a password may read as a capital's
-    (`Summer(2024)`). Not a number, where `numbers` and the value is no password's (a count, a
+    and digits read as no name. Not a call or an index of a name in lower case of three characters
+    or more, or of a dotted one, closed where the value ends — a chain of them perhaps, names after
+    (`getPassword()`, `os.getenv('X')`, `Buffer.from(raw).toString()`, `uuid4().hex`) — where a
+    password may read as a capital's (`Summer(2024)`), or a short name's, or go on after it
+    (`letmein[1]x`). Not a number, where `numbers` and the value is no password's (a count, a
     time, a page's place), nor a key's id or an address in hex (`0x4AEE18F83AFDEB23`); not a path
     to a file that holds one (`~/.ssh/id_ed25519`), nor a reference to where one is kept
     (`op://…`, `vault://…`); not a mask's stars, nor an example cut short (`sk-...`); not a
@@ -121,13 +124,15 @@ def _not_a_key(chars: str, *, numbers: bool = True, password: bool | str = False
         + end + ")"
     )
     number = r"-?[0-9]{1,40}+(?:\.[0-9]{1,40}+)?+(?:[eE][-+]?[0-9]{1,3}+)?+" + end
+    call = r"(?:\((?:(?![()])[" + chars + r"]){0,64}+\)|\[(?:(?![\[\]])[" + chars + r"]){0,64}+\])"
     name, state = _PASSWORD_NAME if password is True else _NAME, ""
     if isinstance(password, str):
         made_up, number = f"(?({password}){made_up})", f"(?({password})(?!)|{number})"
         name, state = f"(?({password}){_PASSWORD_NAME}|{_NAME})", rf"|(?({password})(?!)|\?)"
     return (
         r"(?!" + (made_up if password else "") + r"!{0,2}+" + name + end + "|" + _LONG_NAME
-        + r"|(?:(?=[a-z])|(?=[A-Za-z0-9_$]{1,64}+\.))" + name + r"[(\[]"
+        + r"|(?:(?=[a-z][A-Za-z0-9_$]{2})|(?=[A-Za-z0-9_$]{1,64}+\.))" + name + call
+        + r"(?:" + call + r"|\." + name + r"){0,8}+(?![" + chars + "])"
         + (("|" + number) if numbers else "")
         + r"|0x(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{16}|[0-9a-fA-F]{8})" + end
         + r"|(?:~|\.{1,2})?/{1,2}+\.?(?:" + _PIECE + "|" + _SHORT_PIECE + ")(?:/|" + end + ")"
@@ -272,19 +277,19 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     + "[" + _TOKEN68 + "]{16,}+=*)",
     _SECRET_FLAG + r"(?:[ \t]+|=)[\"']?(?P<secret>(?!-)" + _not_a_key(_BARE, password="password")
     + "[" + _BARE + "]{8,}+)",
-    # A value under a secret's name, in quotes (a string's prefix perhaps before them: `b"…"`)
-    # or bare, a type perhaps named between them. A
-    # quoted name takes a quoted value only — `"page_token": 1729712345678` is a number, and
-    # masked bare it would no longer be JSON — and neither crosses a line, but into a YAML
-    # block (`api_key: |`): `if not api_key:` is no assignment of the next line. A bare value
-    # before `(` or `[` is a call or an index; how far its run goes is looked at within a key's
-    # length, so a run of names is read once.
+    # A value under a secret's name, in quotes — a bytes string's `b` or a unicode one's `u`
+    # perhaps before them, never a raw string's `r` nor a formatted one's `f`, which hold a pattern
+    # or code — or bare, a type perhaps named between them. A quoted name takes a quoted value
+    # only — `"page_token": 1729712345678` is a number, and masked bare it would no longer be
+    # JSON — and neither crosses a line, but into a YAML block (`api_key: |`): `if not api_key:`
+    # is no assignment of the next line. A bare value before `(` or `[` is a call or an index; how
+    # far its run goes is looked at within a key's length, so a run of names is read once.
     _SECRET_NAME + r"(?P<kq>[\"'])?[ \t]*" + _TYPED + r"(?:=>|:=|:|=(?!=))[ \t]*(?:[|>][-+]?[ \t]*(?:\n|\\n)[ \t]+)?"
-    r"(?:[bBrRuUfF]{1,2}(?=[\"']))?"
+    r"(?:[bBuU](?=[\"']))?"
     r"(?:\"(?P<secret>(?![,:;)\]}])" + _not_a_key(_DOUBLE_QUOTED, password="password") + r"(?:["
-    + _DOUBLE_QUOTED + r"]|\\.){8,}+)\""
+    + _DOUBLE_QUOTED + r"]|\\[^\"]){8,}+)\""
     r"|'(?P<secret_single>(?![,:;)\]}])" + _not_a_key(_SINGLE_QUOTED, password="password") + r"(?:["
-    + _SINGLE_QUOTED + r"]|\\.){8,}+)(?<!\\)'"
+    + _SINGLE_QUOTED + r"]|\\[^\"]){8,}+)(?<!\\)'"
     r"|(?(kq)(?!)|(?P<secret_bare>" + _not_a_key(_BARE, password="password") + "(?![" + _BARE
     + "]{8,256}+[(\\[])[" + _BARE + r"]{8,}+)))",
     # A value under any other name ending in `key` (`azure_openai_key`, `mistralKey`), where it
