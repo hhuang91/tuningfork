@@ -48,13 +48,20 @@ SKILL = "---\nname: tally-report\n---\n\n# Tally report\n\nWrite the totals to c
 
 def canaries() -> dict[str, str]:
     """A key a name, each its own: in a shape every pattern set masks whole, or, named only, a
-    password's letters and digits."""
+    password's letters and digits, masked under a password's name. A draw the patterns would not
+    mask so — found in review: one in a few thousand reads as a name — is drawn again."""
+    from tuningfork.config import redact
+
     draw = random.Random()
-    return {
-        name: ("Pw" if name in NAMED_ONLY else "sk-tfcanary") + f"{number:02d}"
-        + "".join(draw.choices(string.ascii_letters + string.digits, k=20))
-        for number, name in enumerate(PLANTED)
-    }
+    keys = {}
+    for number, name in enumerate(PLANTED):
+        while True:
+            key = ("Pw" if name in NAMED_ONLY else "sk-tfcanary") + f"{number:02d}" + "".join(
+                draw.choices(string.ascii_letters + string.digits, k=20))
+            if key not in redact(f"password={key}" if name in NAMED_ONLY else key):
+                break
+        keys[name] = key
+    return keys
 
 
 def model(keys: dict[str, str]):

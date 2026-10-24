@@ -622,10 +622,20 @@ def redact_json_found(
     return masked, made + more, frozenset(taken)
 
 
-def _also_in(value: Any, found: Sequence[str]) -> tuple[Any, int]:
+def _also_in(value: Any, found: Sequence[str], depth: int = 0) -> tuple[Any, int]:
     """`value` with every place a value `found` names stands in its strings masked — a key's or a
-    value's, as JSON reads them — and how many masks that made."""
+    value's, as JSON reads them — and how many masks that made. A string that is JSON itself, as a
+    call's arguments are, is read as JSON too, as deep as masking reads JSON (`JSON_DEPTH`), and
+    written again only where a mask fell in it."""
     if isinstance(value, str):
+        if depth < JSON_DEPTH and value.lstrip()[:1] in ("{", "["):
+            try:
+                inner = json.loads(value)
+            except (ValueError, RecursionError):
+                inner = None
+            if isinstance(inner, (dict, list)):
+                inner, made = _also_in(inner, found, depth + 1)
+                return (json.dumps(inner, ensure_ascii=False) if made else value), made
         spans = _merged(_found_spans(value, found))
         if not spans:
             return value, 0
@@ -635,13 +645,13 @@ def _also_in(value: Any, found: Sequence[str]) -> tuple[Any, int]:
             at = end
         return "".join(pieces) + value[at:], len(spans)
     if isinstance(value, list):
-        items = [_also_in(item, found) for item in value]
+        items = [_also_in(item, found, depth) for item in value]
         return [item for item, _ in items], sum(made for _, made in items)
     if isinstance(value, dict):
         pairs, made = [], 0
         for key, item in value.items():
-            key, at_key = _also_in(key, found) if isinstance(key, str) else (key, 0)
-            item, at_item = _also_in(item, found)
+            key, at_key = _also_in(key, found, depth) if isinstance(key, str) else (key, 0)
+            item, at_item = _also_in(item, found, depth)
             pairs.append((key, item))
             made += at_key + at_item
         return _apart(pairs), made

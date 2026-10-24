@@ -929,6 +929,20 @@ class TestRedaction:
         read = {**quiet, "extra": "sk-a1B2c3D4e5F6g7H8i9J0"}
         assert self.check(quiet, Leaving(read=read)) == (b"rendered", "rendered")
         assert self.check(quiet, Leaving(read=quiet)) == (self.PIECES, None)
+        # And so a value a mask took elsewhere in the step, which no pattern reads there.
+        quoted = {**quiet, "extra": "login refused for Tr0ub4dor3xyz"}
+        kept = bytes_without_secrets(self.PIECES, quiet, Leaving(read=quoted), simple_request(stream=True),
+                                     DEFAULT_REDACTIONS, also=("Tr0ub4dor3xyz",))
+        assert kept == (b"rendered", "rendered")
+
+    def test_bytes_that_cannot_be_read_back_are_masked_of_a_value_taken_elsewhere(self):
+        """They hold no JSON a mask could break: a value a mask took elsewhere in the step is masked
+        where they quote it, as text."""
+        quiet = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"}}]}
+        body = b"<html>login refused for Tr0ub4dor3xyz</html>"
+        kept = bytes_without_secrets(body, quiet, self.Wire(parse_fails=True), simple_request(stream=True),
+                                     DEFAULT_REDACTIONS, also=("Tr0ub4dor3xyz",))
+        assert kept == (f"<html>login refused for {REDACTED}</html>".encode(), None)
 
 class TestGate:
     async def test_a_harness_gone_before_its_answer_began_leaves_the_gate_free(

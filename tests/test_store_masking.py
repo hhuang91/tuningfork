@@ -83,6 +83,27 @@ class TestARecordedStep:
                                  wire="openai-chat", error="tuningfork could not read the response")
         assert store.blobs.get(step.raw_response_blob) == f"<html>login refused for {REDACTED}</html>".encode()
 
+    def test_json_written_inside_a_string_stays_json(self, store):
+        """Found in review: a call's arguments are a string holding JSON, and a value a mask took was
+        masked in a number there, or cut an escape there, as it was one level up."""
+        from tests.helpers import tool_call_message
+
+        def call(arguments):
+            return as_response(tool_call_message("write_file", arguments), "tool_calls")
+
+        def arguments(step):
+            return json.loads(store.response(step)["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"])
+
+        digits = store.record_step(request=request_with([text_message("mysql -uroot -p17613123 app")]),
+                                   response=call({"pin": 17613123, "user": "root", "note": "pin 17613123"}))
+        assert arguments(digits) == {"pin": 17613123, "user": "root", "note": f"pin {REDACTED}"}
+        escaped = store.record_step(request=request_with([text_message("password=nT0ub4dor3xyz")]),
+                                    response=call({"content": "one\nT0ub4dor3xyz", "then": "nT0ub4dor3xyz"}))
+        assert arguments(escaped) == {"content": "one\nT0ub4dor3xyz", "then": REDACTED}
+
+    def test_a_value_a_mask_took_is_masked_in_a_key_too(self, store):
+        assert store.masking.of({PASSWORD: 1}, also=[PASSWORD]).value == {REDACTED: 1}
+
     def test_a_value_a_mask_took_is_masked_in_strings_as_they_read(self, store):
         """Never in the middle of an escape: a value beginning as an escape ends, in the JSON text."""
         step = store.record_step(request=request_with([text_message("password=nT0ub4dor3xyz")]),

@@ -2228,9 +2228,11 @@ class Store:
         it is filed under the step the call becomes, whichever is recorded first.
 
         What it sends and how it differs from the recording are masked as the store masks: its
-        request — raw where it holds what a person typed (a wording) or a held call not yet
-        recorded, else masked already (a `Masked`) — its changes, variant and notes, and where it
-        sent its calls, without a user and password. Its settings are kept as given: they are the
+        request as an arm sent it — given masked (a `Masked`) where it was read back from the store
+        unchanged, as a fork's is; else masked here, a held call not yet recorded, a wording a person
+        typed, or a stored request with an arm's changes, masked again alike in every arm, so an
+        A/B's two arms read apart only by their wording — its changes, variant and notes, and where
+        it sent its calls, without a user and password. Its settings are kept as given: they are the
         test declared before sampling, read again to judge it, and a target read from masked
         answers, masked again, could name no behaviour any of them shows."""
         from tuningfork.config import without_credentials
