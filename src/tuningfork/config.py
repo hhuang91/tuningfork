@@ -648,37 +648,44 @@ def _also_in(value: Any, found: Sequence[str]) -> tuple[Any, int]:
     return value, 0
 
 
+#: A string of a JSON text, its content between the quotes, every escape whole: in JSON that
+#: `json.loads` read, no quote stands outside a string, so each match is one.
+_LITERAL = re.compile(r'"((?:[^"\\]++|\\.)*+)"', re.DOTALL)
+#: The escapes that can write a character a value `_FOUND` admits: any, by its code; `/`; a backspace.
+_HIDING = ("\\u", "\\/", "\\b")
+
+
 def _found_in_string(text: str, found: Sequence[str], depth: int = 0) -> list[tuple[int, int]]:
     """Where in a string a value `found` names stands, merged and in order. A string that is JSON
     itself, as a call's arguments are, is read as JSON, as deep as masking reads JSON
     (`JSON_DEPTH`): a value stands only in its strings, as they read, never in a number or part of
-    an escape — and a mask falls where it stands, the rest of the text as it was written."""
+    an escape — and a mask falls where it stands, the rest of the text as it was written. A string
+    is read character by character only where a value stands in it."""
+    if not _may_hold(text, found):
+        return []
     if depth < JSON_DEPTH and text.lstrip()[:1] in ("{", "["):
         try:
             inner = json.loads(text)
         except (ValueError, RecursionError):
             inner = None
-        if isinstance(inner, (dict, list)):
+        if inner is not None:  # an object or an array: a value stands in its strings alone
             spans = []
-            for start, end in _string_literals(text):
-                read, origin = _read_literal(text[start:end])
-                spans += [(start + origin[at][0], start + origin[until - 1][1])
-                          for at, until in _found_in_string(read, found, depth + 1)]
+            for literal in _LITERAL.finditer(text):
+                written, start = literal.group(1), literal.start(1)
+                if "\\" not in written:
+                    spans += [(start + at, start + until) for at, until in _found_in_string(written, found, depth + 1)]
+                elif _may_hold(written, found):
+                    hits = _found_in_string(json.loads(f'"{written}"'), found, depth + 1)
+                    origin = _read_literal(written)[1] if hits else []
+                    spans += [(start + origin[at][0], start + origin[until - 1][1]) for at, until in hits]
             return _merged(spans)
     return _merged(_found_spans(text, found))
 
 
-def _string_literals(text: str) -> list[tuple[int, int]]:
-    """Where each string of a JSON text stands, between its quotes."""
-    literals, at = [], 0
-    while at < len(text):
-        if text[at] == '"':
-            start = at = at + 1
-            while at < len(text) and text[at] != '"':
-                at += 2 if text[at] == "\\" else 1
-            literals.append((start, at))
-        at += 1
-    return literals
+def _may_hold(text: str, found: Sequence[str]) -> bool:
+    """Whether a value `found` names can stand in `text` as JSON reads it: as it is written there,
+    or behind an escape (`_HIDING`)."""
+    return any(value in text for value in found) or any(escape in text for escape in _HIDING)
 
 
 def _read_literal(written: str) -> tuple[str, list[tuple[int, int]]]:
