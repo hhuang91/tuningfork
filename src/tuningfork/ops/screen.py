@@ -145,7 +145,16 @@ def prepare_screen(
     from tuningfork.endpoints import check_endpoint
     from tuningfork.experiment import experiment_outcomes
     from tuningfork.experiment.sampling import step_resample
-    from tuningfork.experiment.skill import NothingToCompare, diagnose, locate, substitute, text_sha256, unapplied
+    from tuningfork.experiment.skill import (
+        MASKED_SKILL,
+        NothingToCompare,
+        diagnose,
+        locate,
+        masked_in,
+        substitute,
+        text_sha256,
+        unapplied,
+    )
     from tuningfork.ops.diff import line_diff
     from tuningfork.ops.trash import refuse_trashed
 
@@ -227,9 +236,11 @@ def prepare_screen(
         warnings.append(f"at {n} samples an arm, only a large shift can survive the correction")
     from tuningfork.ops.inspect import masked_warning
 
-    masked = masked_warning(checkpoint.request, checkpoint.step.idx)
+    masked = masked_warning(checkpoint.request, checkpoint.step)
     if masked:
         warnings.append(masked)
+    if masked_in(checkpoint.request, original_text):
+        warnings.append(MASKED_SKILL)
     return ScreenPlan(
         checkpoint=checkpoint,
         plan=sampling,

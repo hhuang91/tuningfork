@@ -42,11 +42,11 @@ class ScoringError(RuntimeError):
     """The answer cannot be scored as the run's own: said why."""
 
 
-def other_context(request: dict[str, Any]) -> str:
+def other_context(request: dict[str, Any], params: dict[str, Any] | None) -> str:
     """Why a step's prompt renders to another number of tokens than it had, as a sentence."""
-    from tuningfork.config import REDACTED
+    from tuningfork.config import REDACTED, masks_in
 
-    if REDACTED in json.dumps(request, ensure_ascii=False):
+    if masks_in(request, params):
         return (f"Its context reads {REDACTED} where text was masked as it was recorded, and the mask is not the "
                 "text the model read.")
     return "The server's chat template or settings may have changed since the step was recorded."
@@ -188,7 +188,7 @@ async def score_answer(
         raise ScoringError(
             f"the prompt renders to {len(prompt.ids)} tokens here, and the step's had "
             f"{recorded_prompt}: the model would be asked about a different context. "
-            + other_context(checkpoint.request)
+            + other_context(checkpoint.request, checkpoint.step.params)
         )
     thinking = fmt.thinking(prompt.text)
     try:

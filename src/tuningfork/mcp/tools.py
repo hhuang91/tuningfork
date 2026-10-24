@@ -1297,6 +1297,12 @@ def job_answer(context: Context, job: dict[str, Any]) -> Answer:
     if links:
         data["links"] = links
     lines = [head + (" — the same work was already under way, so it was not started again" if job.get("deduplicated") else "")]
+    # What its plan warned of — a context that reads `<redacted>`, say — which a dry run alone showed.
+    plan = job.get("plan") if isinstance(job.get("plan"), dict) else {}
+    warnings = [warning for warning in plan.get("warnings") or [] if isinstance(warning, str)]
+    if warnings:
+        data["warnings"] = warnings
+        lines += [f"warning: {warning}" for warning in warnings]
     status = job.get("status")
     if status in ("queued", "running"):
         left = progress.get("remaining_s")
@@ -1316,7 +1322,7 @@ def job_answer(context: Context, job: dict[str, Any]) -> Answer:
 
         view = compact.experiment(experiment_report(context.store, experiments[0]).to_json())
         data["result"] = view
-        lines += compact.experiment_lines(view)[1:]
+        lines += [line for line in compact.experiment_lines(view)[1:] if line not in lines]
     elif job.get("kind") == "tokens" and isinstance(result, dict):
         data["result"] = compact.tokens(result)
         choice = data["result"].get("choice") or {}

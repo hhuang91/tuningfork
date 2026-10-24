@@ -612,14 +612,34 @@ class TestRedaction:
         assert "<redacted>" in stored["messages"][0]["content"]
         assert stored["model"] == "m"
 
-    async def test_a_number_under_a_tokens_name_keeps_a_claude_code_session_whole(
+    async def test_a_step_counts_the_masks_it_made(self, proxy_client, mock_server, recorder, settle):
+        """Found in review: a context that read `<redacted>` was taken for a masked one, though a
+        client's debug log writes the word itself: a step counts the masks storage made."""
+        from tuningfork.ops.inspect import masked_warning
+
+        logged = "DEBUG Request options: {'headers': {'Authorization': '<redacted>'}}"
+        await proxy_client.post(CHAT, json={"model": "m", "messages": [{"role": "user", "content": logged}]})
+        await proxy_client.post(CHAT, json={"model": "m", "messages": [
+            {"role": "user", "content": logged + "\nmy key is sk-ABCDEFGHIJKLMNOPQRSTUV"}]})
+        await settle()
+
+        steps = [step for run in recorder.store.runs() for step in recorder.store.steps(run.id)]
+        quiet, masked = sorted(steps, key=lambda step: step.params["masked"])
+        assert quiet.params["masked"] == 0
+        assert masked_warning(recorder.store.rebuild_request(quiet), quiet) is None
+        assert masked.params["masked"] == 1
+        assert f"{REDACTED} in 1 place," in masked_warning(recorder.store.rebuild_request(masked), masked)
+
+    async def test_a_number_under_a_secrets_name_keeps_a_claude_code_session_whole(
         self, proxy_client, mock_server, recorder, settle
     ):
         """Found in the redaction audit: a long number under `page_token` in a tool's input was
         masked bare, which broke the request's JSON. The request was dropped, and so was every
-        later one of the session, which repeats the call: each became a run of its own."""
+        later one of the session, which repeats the call: each became a run of its own. A number
+        under a password's name is one a password may be, and stays only because it is JSON's."""
         first = claude_code_request()
-        call = {"type": "tool_use", "id": "t2", "name": "list_items", "input": {"page_token": 1729712345678}}
+        call = {"type": "tool_use", "id": "t2", "name": "list_items",
+                "input": {"page_token": 1729712345678, "pin_password": 20261023123456}}
         first["messages"] += [
             {"role": "assistant", "content": [call]},
             {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "3 items"}]},
@@ -637,7 +657,7 @@ class TestRedaction:
         runs = recorder.store.runs()
         assert len(runs) == 1 and runs[0].step_count == 2
         stored = recorder.store.rebuild_request(recorder.store.steps(runs[0].id)[1])
-        assert stored["messages"][4]["content"][0]["input"] == {"page_token": 1729712345678}
+        assert stored["messages"][4]["content"][0]["input"] == call["input"]
 
     async def keep(self, settings, recorder, path, request, *chunks):
         """What the recorder keeps of an answer the upstream streams in these chunks: the bytes,

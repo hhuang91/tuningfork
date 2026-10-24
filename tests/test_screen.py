@@ -56,6 +56,23 @@ def test_a_context_masked_as_it_was_recorded_is_said_in_the_plan(store):
     assert [warning for warning in plan.warnings if f"reads {REDACTED} in 1 place," in warning]
 
 
+def test_a_skill_masked_as_it_was_recorded_is_screened_masked(store):
+    """Found in review: a skill holding an example credential is stored masked, and no wording
+    of it could be tested, the skill "not in the context" at its step."""
+    from tuningfork.config import REDACTED
+    from tuningfork.experiment.skill import MASKED_SKILL
+
+    source = "Read the rows from postgres://report:Tr0ub4dor9@db.internal/app.\n"
+    skill = SKILL.replace("Write the totals", source + "Write the totals")
+    run_id = record_pilot(store, skill=skill, masked=True)
+    variant = VARIANT.replace("Write the totals", source + "Write the totals")
+    plan = prepare_screen(store, run_id, "1", original_text=skill, arms=[("p1", variant, {"proposal": "a1"})],
+                          target_spec=TARGET, base_url=UPSTREAM, n=6)
+    assert MASKED_SKILL in plan.warnings
+    (arm,) = plan.arms
+    assert f"report:{REDACTED}@db.internal" in json.dumps(arm.request) and "Tr0ub4dor9" not in json.dumps(arm.request)
+
+
 async def test_a_wording_that_names_the_keys_survives_and_a_neutral_one_does_not(store, served):
     run_id = record_pilot(store)
     plan = prepare(store, run_id, [("p1", VARIANT, {"proposal": "a1"}), ("p2", NEUTRAL, {"proposal": "b2"})], n=8)

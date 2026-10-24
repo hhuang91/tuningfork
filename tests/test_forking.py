@@ -58,14 +58,14 @@ def served(monkeypatch, mock_server):
     return mock_server
 
 
-async def recorded_and_scored(store, served, answers, recorded_raw) -> str:
+async def recorded_and_scored(store, served, answers, recorded_raw, request=REQUEST) -> str:
     """A step whose answer was `recorded_raw`, scored on the toy model holding `answers`."""
     served.toy.answers = answers
-    usage = {"prompt_tokens": served.toy.input_tokens(REQUEST),
+    usage = {"prompt_tokens": served.toy.input_tokens(request),
              "completion_tokens": len(served.toy.tokenize(recorded_raw)) + 1}
     store.begin_run("probed", "t/1")
     wire = get_wire("openai-chat")
-    store.record_step(request=REQUEST, response={**as_response(message(recorded_raw), "tool_calls"), "usage": usage},
+    store.record_step(request=request, response={**as_response(message(recorded_raw), "tool_calls"), "usage": usage},
                       wire=wire.name, normalize=wire.normalize_message)
     run_id = store.get_run("probed").id
     await execute_score(store, prepare_score(store, run_id, "0", base_url=UPSTREAM))
@@ -79,6 +79,18 @@ RUN_CODE = [(thought("Run it.") + '<|tool_call>call:execute_code{code:<|"|>print
 
 
 class TestProbe:
+    async def test_a_context_masked_as_it_was_recorded_is_said_in_the_plan(self, store, served):
+        """Found in review: the probe's plan said nothing of a mask, and its check of the prompt's
+        token count lets through one that renders to the count the step recorded."""
+        from tuningfork.config import REDACTED
+
+        masked = {**REQUEST, "messages": [*REQUEST["messages"][:1], {"role": "user", "content": f"Summarize {REDACTED}."}]}
+        run_id = await recorded_and_scored(store, served, FORK_IN_ANSWER, FORK_IN_ANSWER[0][0], request=masked)
+        plan = prepare_forking(store, run_id, "0", n=4, base_url=UPSTREAM)
+        assert [warning for warning in plan.warnings if f"step 0's context reads {REDACTED} in 1 place," in warning]
+        assert [warning for warning in prepare_score(store, run_id, "0", base_url=UPSTREAM).warnings
+                if "the answer is scored after the mask" in warning]
+
     async def test_the_forking_token_is_found_and_nothing_else(self, store, served):
         run_id = await recorded_and_scored(store, served, FORK_IN_ANSWER, FORK_IN_ANSWER[0][0])
 

@@ -117,7 +117,10 @@ def prepare_forking(
     sampler = Sampler.of(checkpoint.request, checkpoint.step.server_defaults)
     # A position after a redacted token cannot be forked: its prefix is not stored.
     first_masked = next((i for i, token in enumerate(tokens.ids) if token is None), len(tokens))
-    warnings: list[str] = []
+    from tuningfork.ops.inspect import masked_warning
+
+    masked = masked_warning(checkpoint.request, checkpoint.step)
+    warnings: list[str] = [masked] if masked else []
     if positions:
         found = []
         for position in positions:

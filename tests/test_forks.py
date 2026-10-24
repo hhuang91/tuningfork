@@ -483,3 +483,50 @@ class TestBreakpoints:
         (fork,) = done
         assert released == 2  # the write and the summary; the read was replayed
         assert fork.usable
+
+
+class TestStoredMasks:
+    """Found in review: a fork keys each call by its request as today's patterns mask it, and a
+    step stored under other patterns was masked where today's keep the text — `token =
+    tokenizer.encode(…)` — so every fork of a run recorded before they changed parted from it."""
+
+    CODE = "ids = tokenizer.encode(text)\ntoken = tokenizer.encode(text)[0]\n"
+
+    def recorded(self, store):
+        from tests.helpers import record_pilot
+
+        # As an earlier pattern stored it: the second line's call masked.
+        return record_pilot(store, read=self.CODE.replace("tokenizer.encode(text)[0]", "<redacted>(text)[0]"))
+
+    def test_a_call_fits_a_step_stored_under_other_masks(self, store):
+        from tuningfork.replay import build_table
+        from tuningfork.wire import get_wire
+
+        run = store.get_run(self.recorded(store))
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        live = json.loads(json.dumps(stored).replace("<redacted>", "tokenizer.encode"))
+        table = build_table(store, run, 1)
+        wire = get_wire("openai-chat")
+        assert table.fitting(live, wire) == table.live_key
+        other = json.loads(json.dumps(live).replace("[0]", "[1]"))
+        assert table.fitting(other, wire) is None
+
+    def test_a_fork_goes_live_at_its_step_though_its_mask_fell_elsewhere(self, store):
+        from types import SimpleNamespace
+
+        from tuningfork.config import DEFAULT_REDACTIONS
+        from tuningfork.proxy.replay import ForkReplay
+        from tuningfork.wire import get_wire
+
+        run = store.get_run(self.recorded(store))
+        launch = SimpleNamespace(id="f" * 32, source_run=run.id, source_step=1, workspace=None, home=None,
+                                 variant=None)
+        replay = ForkReplay(store, launch, DEFAULT_REDACTIONS, ())
+        wire = get_wire("openai-chat")
+        first = store.rebuild_request(store.steps(run.id)[0])
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        second = json.loads(json.dumps(stored).replace("<redacted>", "tokenizer.encode"))
+        main = SimpleNamespace(main=True, thread=0, idx=0)
+        assert replay.decide(first, wire, main).served is not None
+        decided = replay.decide(second, wire, SimpleNamespace(main=True, thread=0, idx=1))
+        assert decided.at_step and decided.mismatch is None

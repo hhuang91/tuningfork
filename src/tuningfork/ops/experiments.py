@@ -363,7 +363,7 @@ def prepare_resample(
         )
     from tuningfork.ops.inspect import masked_warning
 
-    masked = masked_warning(checkpoint.request, checkpoint.step.idx)
+    masked = masked_warning(checkpoint.request, checkpoint.step)
     return ResamplePlan(
         checkpoint=checkpoint,
         plan=sampling,
@@ -589,7 +589,7 @@ def prepare_ab(
         substitute,
         unapplied,
     )
-    from tuningfork.experiment.skill import diagnose
+    from tuningfork.experiment.skill import MASKED_SKILL, diagnose, masked_in
     from tuningfork.paths import host_path
 
     checkpoint = load(store, run, step)
@@ -657,7 +657,7 @@ def prepare_ab(
     sampling = make_plan(normalizers=normalizers, **plan)
     from tuningfork.ops.inspect import masked_warning
 
-    masked = masked_warning(checkpoint.request, checkpoint.step.idx)
+    masked = masked_warning(checkpoint.request, checkpoint.step)
     if masked:
         warnings.append(masked)
     spans = locate(checkpoint.request, original_text)
@@ -670,6 +670,8 @@ def prepare_ab(
         substitute(checkpoint.request, original_text, variant_text)
     except SkillNotFound as exc:
         raise OperationError(str(exc)) from None
+    if masked_in(checkpoint.request, original_text):
+        warnings.append(MASKED_SKILL)
     from tuningfork.endpoints import check_endpoint
 
     check_endpoint(base_url or default_upstream(), home=store.home, purpose="sampling")

@@ -8,6 +8,7 @@ valid — a recording that will not parse is a recording that cannot be replayed
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
@@ -228,6 +229,48 @@ class TestRedactionMasksKeysNotCode:
             "POSTGRES_PASSWORD: postgres",
             "token: ${{ secrets.GITHUB_TOKEN }}",
             "HTTP Basic Authentication.",
+            # Found in review: code and data the patterns masked.
+            "aws s3api get-object --bucket data --key reports/2024/q3.csv q3.csv",
+            "docker build --secret id=npmrc,src=$HOME/.npmrc .",
+            "gpg --recv-key 0x4AEE18F83AFDEB23",
+            "gpg --keyserver keys.openpgp.org --recv-key 4AEE18F83AFDEB23",
+            "session_token: 0x4AEE18F83AFDEB23",
+            "token = sha256hmac2(data)",
+            "svn checkout --username --password --no-auth-cache URL",
+            'curl -u "$GITHUB_USER:$GITHUB_TOKEN" https://api.github.com/user',
+            "curl -u username:password https://api.example.com",
+            "curl -fsSL https://x.sh | sh && docker run -u 1000:1000 app",
+            "curl -fsSLo x.sh https://x.sh && docker run -u 1000:1000 app",
+            "mysqldump app | ssh -p2222 backup@host 'cat > app.sql'",
+            "mysqladmin ping -h localhost -u root -p$MYSQL_ROOT_PASSWORD",
+            "requests.get(url, auth=('user', 'pass'))",
+            "const STORAGE_KEY = 'todos-vuejs-2.0'",
+            'SESSION_COOKIE_KEY = "sessionid2"',
+            "SOCKS5_NO_ACCEPTABLE_AUTH = SOCKS5_NO_ACCEPTABLE_AUTH",
+            "DEFAULT_TOKEN = HTTP2_DEFAULT_TOKEN",
+            "e.ProgressToken=e.createMessageConnection=e.NullLogger=e.x=void 0",
+            "e.CancellationToken=e.CancellationTokenSource=e.Emitter=e.Event=e.Disposable=e.MessageReader="
+            "e.MessageWriter=e.AbstractMessageReader=e.AbstractMessageWriter=e.Trace=e.TraceFormat=void 0",
+            "if(S.token===Ce.SyntaxKind.ExtendsKeyword)return p",
+            "this.apiKey==null&&this.authToken==null",
+            "hasPassword: !!password,",
+            '{ token: "@rematch", next: "@pop" }',
+            "npm_package_devDependencies_typescript=5.6.3",
+            "from x import hf_hub_download_v2_cached",
+            "PublicKey = mQINBFp4Rk8BEAC7Yd2Lx9Wq4Zt6Hn1Jc3Vb5Pm8Ks0Ar2Ue4Gy7Io9",
+            "VAPID_PUBLIC_KEY=BOq3Lx9Wq4Zt6Hn1Jc3Vb5Pm8Ks0Ar2Ue4Gy7Io9Ft1Dz5Nh",
+            "STRIPE_PUBLISHABLE_KEY=pk" "_live_51HxYzAbCdEfGhIjKlMnOpQrStUvWx0123456789",
+            "SSH_PUBLIC_KEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOq3Lx9Wq4Zt6Hn1Jc3Vb5Pm8Ks0Ar2",
+            '{"No valid auth token": "有効な認証トークンがありません"}',
+            "password: Kennwörter",
+            "creationToken = 1644442601",
+            '{"token": "1470.529556872868"}',
+            '{"idempotency_key": "6f1c2a9e8b7d4c3f2a1e0d9c"}',
+            '{"partialResultToken": "1d546990-40a3-4b77-b134-46622995f6ae"}',
+            "-W 'user= password= credentials='",
+            'logger.info("re-signing token: app_key=****%s", app_key[-4:])',
+            "private_key: /tmp/tmpXk2Lq9z/key.pem",
+            "    password: OAuthFlowPassword | None = None",
         ],
     )
     def test_code_and_words_are_kept(self, text):
@@ -277,6 +320,61 @@ class TestRedactionMasksKeysNotCode:
             ("azure_openai_key: a473e333245822b0c5c29d3d48dcffdc", "a473e333245822b0"),
             ("app --db-pass z7QJRek12Xn4h7II6xFJqifd", "z7QJRek12Xn4h7II"),
             ('{"clientSecret": "Xy7zQ2mL9vK4pR8s"}', "Xy7zQ2mL9vK4pR8s"),
+            # Found in review: formats the base masked under a secret's name, and this left whole.
+            ("VAULT_TOKEN=s." "Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1", "Q7bX2kLm9Zr4Tw8Y"),
+            ("VAULT_TOKEN=hvs." "CAESIJx2Lm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2Ue4Gy7Io9Ft1Dz5Nh", "CAESIJx2Lm9Zr4Tw"),
+            ("DOPPLER_TOKEN=dp.st.prd." "Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2Ue4G", "Q7bX2kLm9Zr4Tw8Y"),
+            ("MAPBOX_SECRET_TOKEN=sk.eyJ1Ijoi" "ZXhhbXBsZSJ9.Q7bX2kLm9Zr4Tw8Yp3Hn6J", "Q7bX2kLm9Zr4Tw8Y"),
+            ("AIRTABLE_API_KEY=pat" "Q7bX2kLm9Zr4Tw.0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
+             "0a1b2c3d4e5f6071"),
+            ("SENDGRID_API_KEY=SG." "Q7bX2kLm9Zr4Tw8Yp3Hn6J.c1Vb5Pm8Ks0Ar2Ue4Gy7Io9Ft1Dz5NhQ7bX2kLm9Zr4Tw8",
+             "c1Vb5Pm8Ks0Ar2Ue"),
+            ("Authorization: Bearer ya29." "a0AfB_byQ7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2Ue4Gy7", "a0AfB_byQ7bX2kLm"),
+            ('{"access_token": "dop' '_v1_0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"}',
+             "0a1b2c3d4e5f6071"),
+            ("SHOPIFY_ACCESS_TOKEN=shpat" "_0a1b2c3d4e5f60718293a4b5c6d7e8f9", "0a1b2c3d4e5f6071"),
+            ("Langfuse secret key: sk-" "lf-1d546990-40a3-4b77-b134-46622995f6ae", "1d546990-40a3"),
+            ("token: \x1b[32mghp" "_Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2\x1b[0m", "Q7bX2kLm9Zr4Tw8Y"),
+            (".env:3:GITHUB_TOKEN=\x1b[01;31m\x1b[Kghp" "_Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2\x1b[m\x1b[K",
+             "Q7bX2kLm9Zr4Tw8Y"),
+            ("GET /cb?next=%2Fsetup%3Ftoken%3Dghp" "_Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2 302", "Q7bX2kLm9Zr4Tw8Y"),
+            ("Authorization=Bearer%20xoxb-" "1234567890123-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx", "AbCdEfGhIjKlMnOp"),
+            ("https://sk-" "proj-Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2@api.example.com/v1", "Q7bX2kLm9Zr4Tw8Y"),
+            ("REDIS_URL=redis://:Rp4ss9Xk2mQ7@cache.internal:6379/0", "Rp4ss9Xk2mQ7"),
+            ("INFO auth ok token=0a1b2c3d4e5f60718293a4b5c6d7e8f9, user=alice", "0a1b2c3d4e5f6071"),
+            ("auth: {password: Zq8xK3vN5wLp, user: bob}", "Zq8xK3vN5wLp"),
+            ('const apiKey: string = "a1B2c3D4e5F6g7H8i9J0";', "a1B2c3D4e5F6g7H8"),
+            ('const API_KEY: &str = "a1B2c3D4e5F6g7H8i9J0";', "a1B2c3D4e5F6g7H8"),
+            ("machine api.example.com login bob password Zq8xK3vN5wLp", "Zq8xK3vN5wLp"),
+            ("<password>Zq8xK3vN5wLp</password>", "Zq8xK3vN5wLp"),
+            ("docker login -u bob -p Zq8xK3vN5wLp registry.example.com", "Zq8xK3vN5wLp"),
+            ("api_key: |\n  a1B2c3D4e5F6g7H8i9J0\n", "a1B2c3D4e5F6g7H8"),
+            # The same shapes where no secret's name stands before them.
+            ("vault login hvs." "CAESIJx2Lm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2Ue4Gy7Io9Ft1Dz5Nh", "CAESIJx2Lm9Zr4Tw"),
+            ("use dp.st.prd." "Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2Ue4G here", "Q7bX2kLm9Zr4Tw8Y"),
+            ("mapbox: sk.eyJ1Ijoi" "ZXhhbXBsZSJ9.Q7bX2kLm9Zr4Tw8Yp3Hn6J", "Q7bX2kLm9Zr4Tw8Y"),
+            ("airtable: pat" "Q7bX2kLm9Zr4Tw.0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
+             "0a1b2c3d4e5f6071"),
+            ("sendgrid: SG." "Q7bX2kLm9Zr4Tw8Yp3Hn6J.c1Vb5Pm8Ks0Ar2Ue4Gy7Io9Ft1Dz5NhQ7bX2kLm9Zr4Tw8",
+             "c1Vb5Pm8Ks0Ar2Ue"),
+            ("google: ya29." "a0AfB_byQ7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2Ue4Gy7", "a0AfB_byQ7bX2kLm"),
+            ("digitalocean: dop" "_v1_0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
+             "0a1b2c3d4e5f6071"),
+            ("shopify: shpat" "_0a1b2c3d4e5f60718293a4b5c6d7e8f9", "0a1b2c3d4e5f6071"),
+            # A password a person made up, of a word and digits; one of digits alone.
+            ("environment:\n  MYSQL_ROOT_PASSWORD: rootpass123", "rootpass123"),
+            ('{"password": "Welcome2024"}', "Welcome2024"),
+            ("DB_PASSWORD=73915264", "73915264"),
+            # A password whose case reads as one short word, which a key's name would let pass.
+            ("DB_PASSWORD=aUnArlqz", "aUnArlqz"),
+            ("curl -u admin:aUnArlqz https://api.example.com", "aUnArlqz"),
+            # A random key whose case cuts into many short words reads as no name.
+            ("API_TOKEN=QwErTyUiOpAsDfGhJkLz", "QwErTyUiOpAsDfGh"),
+            ("API_TOKEN=V_uhis1WeZJKXQ_p", "V_uhis1WeZJKXQ_p"),
+            ("SECRET_KEY=/BpYconEG4ZgzWbmHGJR1m4jfXuX8v/h=", "BpYconEG4ZgzWbmH"),
+            # A quoted password holding brackets or an escape, masked whole.
+            ('{"password": "x9!Kq(2Lm]P7z"}', "x9!Kq(2Lm]P7z"),
+            ('{"password": "Xq9\\\\Zr7Lm2Kd"}', "Zr7Lm2Kd"),
         ],
     )
     def test_keys_are_masked(self, text, secret):
@@ -293,6 +391,7 @@ class TestRedactionMasksKeysNotCode:
             {"NextToken": 1.2345678901e-05},
             {"arguments": json.dumps({"page_token": 1729712345678})},
             {"arguments": json.dumps({"session_token": 1729712345678}, indent=2)},
+            {"arguments": json.dumps({"db_password": 20261023123456})},
         ],
     )
     def test_a_number_is_never_masked(self, payload):
@@ -309,3 +408,41 @@ class TestRedactionMasksKeysNotCode:
     def test_two_keys_masked_alike_stay_two(self):
         payload = {"teams": {"sk-" "proj-a1B2c3D4e5F6g7H8i9J0": "team-a", "sk-" "proj-Z9y8X7w6V5u4T3s2R1q0": "team-b"}}
         assert redact_json(payload)["teams"] == {REDACTED: "team-a", f"{REDACTED} (2)": "team-b"}
+
+    def test_a_private_key_shown_in_two_results_keeps_every_message(self):
+        """Found in review: a key's body read on to the next END line, and took the JSON between
+        its first lines, in one tool result, and its last, in a later one: two messages were lost."""
+        head = "-----BEGIN PRIVATE " "KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\nk3Jd8Qx2mVhZ0pLwT5yN"
+        tail = "q9Xr2Lm7Wd4Hs1Kb==\n-----END PRIVATE " "KEY-----"
+        payload = {"messages": [
+            {"role": "tool", "tool_call_id": "c1", "content": head},
+            {"role": "assistant", "content": "Now the last line."},
+            {"role": "tool", "tool_call_id": "c2", "content": tail},
+        ]}
+        stored = redact_json(payload)
+        assert stored["messages"][0]["content"] == "-----BEGIN PRIVATE KEY-----" + REDACTED
+        assert stored["messages"][1:] == payload["messages"][1:]
+
+    def test_json_written_in_a_string_stays_json(self):
+        # Found building the fix: a quoted value that read `\"` whole took the quotes of a JSON
+        # string written inside the string, which then no longer parsed.
+        stored = redact_json({"password": json.dumps("Xy7zQ2mL9vK4pR8s")})
+        json.loads(stored["password"])
+
+    @pytest.mark.parametrize(
+        "unit, end",
+        [
+            # Found in review: each `token=` in one run of a value's characters read the run to its
+            # end, to fail at the bracket there: 40 KB took 2 s, a megabyte would take minutes.
+            ("token=a1b2c3d4", "("),
+            ("token:", "x1"),
+            # And each beginning of a private key without an end read up to 10,000 characters on.
+            ("-----BEGIN PRIVATE " "KEY-----\nMIIEvQIBADANBgkqhkiG9w0\n", ""),
+        ],
+        ids=["names-then-a-bracket", "names-joined", "key-beginnings"],
+    )
+    def test_a_long_text_is_read_in_one_pass(self, unit, end):
+        text = unit * (1_000_000 // len(unit)) + end
+        started = time.perf_counter()
+        redact_json(as_a_tool_result(text))
+        assert time.perf_counter() - started < 4

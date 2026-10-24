@@ -28,6 +28,8 @@ class CountParams:
     delay: float = 0.0
     fail: str | None = None
     refuse: bool = False
+    #: A warning its plan gives.
+    warn: str | None = None
 
 
 @dataclass
@@ -40,7 +42,7 @@ class Counted:
         self.params = params
 
     def to_json(self) -> dict:
-        return {"steps": self.params.steps}
+        return {"steps": self.params.steps, **({"warnings": [self.params.warn]} if self.params.warn else {})}
 
 
 def prepare(context, params: CountParams) -> Counted:

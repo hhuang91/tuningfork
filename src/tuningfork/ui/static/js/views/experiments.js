@@ -165,6 +165,8 @@ export async function experimentView(root, [id], scope) {
           : null,
         originBanner(experiment),
         runningBanner(experiment),
+        // Its samples were sent `<redacted>` where the model saw text, as the step was recorded.
+        experiment.masked ? h("div", { class: "banner banner-warn" }, experiment.masked) : null,
         (experiment.partial || []).map((arm) =>
           h("div", { class: "banner banner-warn" }, h("strong", null, "Stopped early. "),
             `The ${arm.arm} wording has ${arm.drawn} of its ${arm.meant} samples, and its rates are over those.`)),

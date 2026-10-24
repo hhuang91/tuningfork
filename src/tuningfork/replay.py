@@ -61,6 +61,25 @@ def key_of(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def fits(recorded: str, text: str) -> bool:
+    """Whether `text` reads as `recorded` does but where `recorded` holds a mask, each standing
+    for one or more characters: a call keyed as today's patterns mask it, against a request
+    stored under others — found in review, every fork of a run recorded before the patterns
+    changed parted from its recording where they had masked code they now keep."""
+    if REDACTED not in recorded:
+        return recorded == text
+    first, *middle, last = recorded.split(REDACTED)
+    if not (text.startswith(first) and text.endswith(last)):
+        return False
+    at, end = len(first), len(text) - len(last)
+    for piece in middle:
+        found = text.find(piece, at + 1, end)
+        if found < 0:
+            return False
+        at = found + len(piece)
+    return at < end
+
+
 @dataclass(slots=True)
 class Served:
     """A recorded answer, ready to be given again."""
@@ -83,9 +102,24 @@ class ReplayTable:
     step: int
     volatile: tuple[tuple[str, str], ...] = ()
     patterns: tuple[str, ...] = DEFAULT_REDACTIONS
+    #: The recorded calls whose stored request holds a mask, as (key, its text unredacted):
+    #: what a call matches when its key is no recorded one's (`fitting`).
+    masked: list[tuple[str, str]] = field(default_factory=list)
 
     def text(self, request: dict[str, Any], wire: Any) -> str:
         return masked_request(request, wire, self.patterns, self.volatile)
+
+    def fitting(self, request: dict[str, Any], wire: Any) -> str | None:
+        """The key of a recorded call, still to answer or the fork's own step, whose stored
+        request this one fits where its masks stand (`fits`); None where none does."""
+        if not self.masked:
+            return None
+        text = masked_request(request, wire, (), self.volatile)
+        return next(
+            (key for key, recorded in self.masked
+             if (key == self.live_key or self.entries.get(key)) and fits(recorded, text)),
+            None,
+        )
 
     def take(self, key: str) -> Served | None:
         queue = self.entries.get(key)
@@ -126,16 +160,21 @@ def build_table(
     volatile = tuple(volatile)
     entries: dict[str, deque[Served]] = {}
     expected: dict[int, str] = {}
+    masked: list[tuple[str, str]] = []
     main = store.steps(run.id)
-    for recorded, thread in replayed_steps(store, run, step):
-        wire = get_wire(recorded.wire)
-        text = masked_request(store.harness_request(recorded), wire, patterns, volatile)
-        entries.setdefault(key_of(text), deque()).append(Served(recorded, thread))
-        if thread == 0:
-            expected[recorded.idx] = text
     live = main[step]
-    live_text = masked_request(store.harness_request(live), get_wire(live.wire), patterns, volatile)
-    expected[step] = live_text
+    for recorded, thread in [*replayed_steps(store, run, step), (live, None)]:
+        wire = get_wire(recorded.wire)
+        request = store.harness_request(recorded)
+        text = masked_request(request, wire, patterns, volatile)
+        if thread is not None:
+            entries.setdefault(key_of(text), deque()).append(Served(recorded, thread))
+        if not thread:
+            expected[recorded.idx] = text
+        plain = masked_request(request, wire, (), volatile)
+        if REDACTED in plain:
+            masked.append((key_of(text), plain))
+    live_text = expected[step]
     return ReplayTable(
         entries=entries,
         live_key=key_of(live_text),
@@ -144,6 +183,7 @@ def build_table(
         step=step,
         volatile=volatile,
         patterns=tuple(patterns),
+        masked=masked,
     )
 
 

@@ -443,6 +443,9 @@ class ExperimentReport:
     #: Of a resample that asked for each sample's tokens, how many samples kept them: none
     #: where the server sends no logprobs.
     tokens_kept: int | None = None
+    #: Where its samples were sent a context that reads `<redacted>`, as its step was recorded:
+    #: what its plan warned of (`masked_warning`). Forks run to the end are sent the harness's own.
+    masked: str | None = None
 
     @property
     def interrupted_arm(self) -> str | None:
@@ -478,6 +481,7 @@ class ExperimentReport:
             "alpha": report.alpha,
             "alpha_declared": report.alpha_declared,
             "tokens_kept": report.tokens_kept,
+            "masked": report.masked,
         }
         if report.wording is not None:
             base["wording"] = report.wording.to_json()
@@ -592,6 +596,8 @@ def experiment_report(
         experiment=found, kind="resample", checkpoint=checkpoint, arms=arms, partial=partial,
         status=overall_status(statuses.values()), running=running,
     )
+    if checkpoint is not None and found.settings.get("reach") != "end":
+        report.masked = masked_warning(checkpoint.request, checkpoint.step)
     if found.settings.get("logprobs"):
         samples = [sample.id for sample in store.samples(found.id)]
         report.tokens_kept = len(store.token_streams(sample_ids=samples)) if samples else 0
@@ -943,18 +949,23 @@ def replay_warning(store: Store, run: Run, step: int) -> str | None:
             "first change of it)")
 
 
-def masked_warning(request: dict[str, Any], step: int) -> str | None:
-    """A sentence for a person or an agent about to sample at `step`, when its context reads
-    `<redacted>`: where text was masked as the step was recorded, each sample is sent the mask
-    where the model saw the text, and answers another prompt than the recorded one."""
-    from tuningfork.config import REDACTED
+def masked_warning(request: dict[str, Any], step: Step, *, scored: bool = False) -> str | None:
+    """A sentence for a person or an agent about to sample at `step` (or to score its answer),
+    when its context reads `<redacted>`: where text was masked as the step was recorded, each
+    sample is sent the mask where the model saw the text, and answers another prompt than the
+    recorded one — and scoring weighs the answer after that other prompt."""
+    from tuningfork.config import REDACTED, masks_in
 
-    found = json.dumps(request, ensure_ascii=False).count(REDACTED)
+    found = masks_in(request, step.params)
     if not found:
         return None
-    return (f"step {step}'s context reads {REDACTED} in {found} place{'s' if found != 1 else ''}, where text was "
-            "masked as it was recorded: each sample is sent the mask where the model saw the text, so it answers "
-            "another prompt than the recorded one")
+    said = (f"step {step.idx}'s context reads {REDACTED} in {found} place{'s' if found != 1 else ''}, where text "
+            "was masked as it was recorded: ")
+    if scored:
+        return said + ("the answer is scored after the mask where the model saw the text, so each token's chance is "
+                       "another prompt's")
+    return said + ("each sample is sent the mask where the model saw the text, so it answers another prompt than the "
+                   "recorded one")
 
 
 def restore_workspace(store: Store, view: WorkspaceView, target: Path) -> None:

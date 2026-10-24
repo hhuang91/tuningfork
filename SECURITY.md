@@ -25,8 +25,10 @@ does to keep that local:
   answers only to the endpoint you configure, and to one that is not your machine only once
   you allow it. Its key comes from `TUNINGFORK_PROPOSER_KEY` or a 0600 file, never anywhere
   else.
-- **Strings shaped like secrets are redacted before they are stored**: `sk-…` keys, bearer
-  tokens, `api_key=…` and the like, GitHub, AWS and Slack tokens. That is a net, not a
+- **Strings shaped like secrets are redacted before they are stored**: keys by their shape
+  (`sk-…`, GitHub's, GitLab's, AWS's, Google's, Slack's, Stripe's, Hugging Face's and more),
+  private keys, bearer tokens, passwords in URLs and on command lines, and a value under a
+  secret's name (`api_key=…`) where it reads as a key rather than as code. That is a net, not a
   promise. Recordings hold what your harness sent and received — prompts, tool output, file
   contents — so read a recordings folder before you share one.
 

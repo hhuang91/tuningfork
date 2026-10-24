@@ -61,6 +61,9 @@ class ForkReplay:
         text = self.table.text(payload, wire)
         key = key_of(text)
         with self._lock:
+            if key != self.table.live_key and not self.table.entries.get(key):
+                # No recorded call has its key: one stored under other masks may still be it.
+                key = self.table.fitting(payload, wire) or key
             if not self.live and key == self.table.live_key and assignment.main:
                 self.live = True
                 return Decision(live=True, at_step=True)

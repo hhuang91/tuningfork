@@ -256,6 +256,7 @@ class ScorePlan:
     checkpoint: Any
     base_url: str
     top_k: int
+    warnings: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         usage = self.checkpoint.step.usage or {}
@@ -265,6 +266,7 @@ class ScorePlan:
             "top_k": self.top_k,
             "answer_tokens": usage.get("completion_tokens"),
             "prompt_tokens": usage.get("prompt_tokens"),
+            "warnings": self.warnings,
         }
 
 
@@ -274,6 +276,7 @@ def prepare_score(
     from tuningfork.endpoints import check_endpoint
     from tuningfork.experiment.scoring import recorded_message
     from tuningfork.ops.experiments import default_upstream, load
+    from tuningfork.ops.inspect import masked_warning
 
     if not 1 <= top_k <= 20:
         raise OperationError("top_k is how many alternatives to keep at each token, from 1 to 20", field="top_k")
@@ -282,10 +285,12 @@ def prepare_score(
     message, _ = recorded_message(store, checkpoint.step)
     if not message:
         raise OperationError(f"step {checkpoint.step.idx} has no answer to score")
+    masked = masked_warning(checkpoint.request, checkpoint.step, scored=True)
     return ScorePlan(
         checkpoint=checkpoint,
         base_url=check_endpoint(base_url or default_upstream(), home=store.home, purpose="scoring"),
         top_k=top_k,
+        warnings=[masked] if masked else [],
     )
 
 

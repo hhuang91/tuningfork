@@ -660,6 +660,7 @@ def experiment(report: dict[str, Any]) -> dict[str, Any]:
         "partial": report.get("partial") or None,
         "running": report.get("running") or None,
         "notes": [clip(note, 300) for note in report.get("notes") or []] or None,
+        "masked": report.get("masked"),
         "job": short(report.get("job_id")),
     }
     for key in ("interrupted", "running_arm"):
@@ -1018,7 +1019,7 @@ def checkpoint_lines(found: dict[str, Any]) -> list[str]:
 
 def experiment_lines(found: dict[str, Any]) -> list[str]:
     head = f"experiment {found.get('id')} ({found.get('kind')}) at run {found.get('run')} step {found.get('step')}: {found.get('status')}"
-    lines = [head, *wording_lines(found.get("wording"))]
+    lines = [head, *([f"warning: {found['masked']}"] if found.get("masked") else []), *wording_lines(found.get("wording"))]
     if found.get("screen"):
         return lines + screen_lines(found["screen"])
     if found.get("forking"):

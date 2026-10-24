@@ -171,7 +171,7 @@ async def run_forking(store: Store, plan: ForkingPlan, *, progress: Any = None) 
         if recorded is not None and recorded != len(prompt.ids):
             raise ForkingError(
                 f"the prompt renders to {len(prompt.ids)} tokens here, and the step's had {recorded}: "
-                "the model would be asked about a different context. " + other_context(checkpoint.request)
+                "the model would be asked about a different context. " + other_context(checkpoint.request, checkpoint.step.params)
             )
         thinking = fmt.thinking(prompt.text)
         server_defaults, notes = await check_parity(
