@@ -69,6 +69,10 @@ _HIDDEN_UNIT = re.compile(_UNIT)
 _HIDDEN = re.compile(f"(?:{_UNIT})*+")
 #: A stretch of plain characters, each one whole: a mask may end at any place in it.
 _PLAIN = re.compile(r"[A-Za-z0-9._\-]*+")
+#: How many places a mask may start before a call is taken to part from its recording: more than
+#: a recording's masks give, which end where a key's characters do, and a bound on the time a run
+#: of escapes made to multiply them takes.
+_MOST_STARTS = 10_000
 
 
 def fits(recorded: str, text: str) -> bool:
@@ -81,8 +85,9 @@ def fits(recorded: str, text: str) -> bool:
 
     Each piece of the recording is looked for where the mask before it may end, from each place
     that mask may start (`_past`), so every way the masks could fall is tried — the leftmost place
-    alone could cut an escape a later one leaves whole — and in linear time: each run of what a
-    mask hid is read once, from its first start."""
+    alone could cut an escape a later one leaves whole — each mask in time linear in the call:
+    each run of what a mask hid is read once, from its first start, and past `_MOST_STARTS`
+    places a mask could start, the call is taken to part."""
     if REDACTED not in recorded:
         return recorded == text
     first, *middle, last = recorded.split(REDACTED)
@@ -93,7 +98,7 @@ def fits(recorded: str, text: str) -> bool:
     starts = [len(first)]
     for piece in middle:
         starts = sorted(_past(text, piece, starts, end, runs))
-        if not starts:
+        if not starts or len(starts) > _MOST_STARTS:
             return False
     return any(at < runs.end(at) == end for at in starts)
 

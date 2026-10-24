@@ -575,8 +575,27 @@ class TestStoredMasks:
         backslash = "\\"
         assert fits("<redacted>" + backslash + "<redacted>!", "a" + backslash + "u0041" + backslash + "b!")
         # And where a mask starts inside an escape, behind another start in its run, the escape's
-        # letters are places it may end.
+        # letters are places it may end — but from a backslash there, the rest of it is one escape.
         assert fits("<redacted>" + backslash + "<redacted>42<redacted>", "ab" + backslash + "u0041" + backslash + "u0042x")
+        assert not fits("<redacted>" + backslash + "<redacted>042<redacted>",
+                        "a" + backslash * 2 + "u0041" + backslash * 2 + "u0042Z")
+
+    def test_a_last_mask_hides_something(self):
+        # Found in review's sixth round: no test held that the last mask stands for a character or more.
+        from tuningfork.replay import fits
+
+        assert not fits("a<redacted>b", "ab")
+        assert fits("a<redacted>b", "axb")
+
+    def test_a_call_whose_masks_could_start_in_too_many_places_parts(self):
+        """Found in review's sixth round: in a run of escapes a backslash between two masks may stand
+        at every one, and the places multiplied: twelve masks in a megabyte took 5 s, a hundred 49 s."""
+        from tuningfork.replay import fits
+
+        backslash = "\\"
+        started = time.perf_counter()
+        assert not fits("<redacted>" + (backslash + "<redacted>") * 11, (backslash + "u0041") * 170_000)
+        assert time.perf_counter() - started < 1
 
     def test_a_step_masked_by_patterns_the_store_keeps_is_matched_as_they_mask(self, store):
         """Found in review's fourth round: a mask stood for a key's characters, as 0.5.0's masks
