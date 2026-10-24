@@ -49,7 +49,7 @@ class McpRoute:
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
         if importlib.util.find_spec("mcp") is None:
-            await _refuse(501, "this tuningfork has no MCP SDK: install tuningfork[mcp]", "mcp_unavailable")(scope, receive, send)
+            await _refuse(501, "this tuningfork has no MCP SDK: install tuningfork-lab[mcp]", "mcp_unavailable")(scope, receive, send)
             return
         self._loop = asyncio.get_running_loop()
         # The address the client reached is the proxy's own: where a job's model calls go.

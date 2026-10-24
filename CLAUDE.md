@@ -419,7 +419,7 @@ leads there. A question at a held call and a check tried keep their answers on t
 their only home once the call is decided or the tester closed.
 
 The same operations, as tools for an agent over MCP (`tuningfork.mcp`, the SDK an optional
-extra, `tuningfork[mcp]`; nothing else imports it):
+extra, `tuningfork-lab[mcp]`; nothing else imports it):
 
     tuningfork mcp --home <dir> [--proxy URL] [--tools evidence|refine|all]   # stdio
     tuningfork serve ... --mcp-tools evidence|refine|all|none                 # also at /_tuningfork/mcp

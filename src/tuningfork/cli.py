@@ -329,8 +329,8 @@ def mcp_server(
     from tuningfork.control import default_proxy
 
     if importlib.util.find_spec("mcp") is None:
-        typer.echo("tuningfork mcp needs the MCP SDK: install tuningfork[mcp] "
-                   "(uv tool install 'tuningfork[mcp]')", err=True)
+        typer.echo("tuningfork mcp needs the MCP SDK: install tuningfork-lab[mcp] "
+                   "(uv tool install 'tuningfork-lab[mcp]')", err=True)
         raise typer.Exit(code=1)
     from tuningfork.mcp.stdio import parse_limits, serve
 

@@ -1,5 +1,5 @@
 [project]
-name = "tuningfork"
+name = "tuningfork-lab"
 dynamic = ["version"]
 description = "A step debugger and experiment lab for agent skills on local LLMs"
 readme = "README.md"
