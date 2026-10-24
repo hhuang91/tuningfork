@@ -945,7 +945,7 @@ class BatchRunner(Launcher):
         if not item.tuningfork.context:
             return {}
         context = load_context(spec_dir, item.tuningfork.context)
-        return {"context": {"blob": self.store.put_json(context.to_json()), "messages": len(context.before),
+        return {"context": {"blob": self.store.put_given(context.to_json()), "messages": len(context.before),
                             **({"in_turn": len(context.in_turn)} if context.in_turn else {}),
                             "file": item.tuningfork.context}}
 

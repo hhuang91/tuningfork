@@ -40,7 +40,7 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from tuningfork.breakpoints import BreakpointEngine, Decision, ExchangeContext, Hold
 from tuningfork.config import Settings
 from tuningfork.proxy.recorder import Recorder, Timings
-from tuningfork.proxy.sse import SSEParser, read_as, unreadable
+from tuningfork.proxy.sse import SSEParser, json_body, read_as, unreadable
 from tuningfork.wire import Assembler, WireFormat
 from tuningfork.wire.base import cap_output
 
@@ -368,6 +368,7 @@ class BreakpointPath:
 
         raw = upstream.content
         parse, event_stream = read_as(upstream.headers, bool(payload.get("stream")))
+        event_stream = event_stream and not json_body(raw)  # sent at once as JSON, whatever its label
         # `produced` is in the call's own format. Conditions, holds and edits work on the
         # common shape; an edit is turned back into the harness's format to be delivered.
         try:

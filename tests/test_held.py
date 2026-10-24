@@ -541,6 +541,18 @@ class TestResponsesThatGoWrong:
         assert response.content == upstream.state.body
         assert only_step(recorder.store).error == "upstream_error: Overloaded"
 
+    async def test_an_answer_sent_at_once_for_a_stream_is_read_as_json(self, settings, recorder):
+        answer = {"id": "x", "object": "chat.completion", "model": "m", "choices": [
+            {"index": 0, "message": {"role": "assistant", "content": "sent whole"}, "finish_reason": "stop"}]}
+        upstream = upstream_sending(json.dumps(answer), media_type="text/plain")
+        async with proxy_before(upstream, settings, recorder) as (app, harness):
+            app.state.engine.add(Breakpoint(phase="response", tool="Write"))
+            response = await harness.post(CHAT, json=streaming())
+
+        assert response.headers["x-tuningfork"] == "breakpoint-path"
+        step = only_step(recorder.store)
+        assert step.error is None and recorder.store.response(step)["choices"][0]["message"]["content"] == "sent whole"
+
     async def test_a_stream_asked_for_is_read_as_one_whatever_its_label(self, settings, recorder):
         """As on the ordinary path: a stream labelled `text/plain` is read as a stream, and a key it
         sent in pieces is not kept in its raw bytes."""

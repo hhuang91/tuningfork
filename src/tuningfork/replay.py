@@ -321,6 +321,9 @@ def replay_problems(store: Store, run: Run, step: int) -> list[str]:
         raw = store.blobs.get(recorded.raw_response_blob)
         if REDACTED.encode() in raw:
             problems.append(f"{where}'s answer had a secret redacted from it, so it cannot be replayed as it was")
+        elif recorded.delivered_response_blob and REDACTED.encode() in store.blobs.get(recorded.delivered_response_blob):
+            # An edit's answer is what a fork serves (`served_body`): masked, it is not what the harness got.
+            problems.append(f"{where}'s edited answer had a secret redacted from it, so it cannot be replayed as it was")
     return problems
 
 

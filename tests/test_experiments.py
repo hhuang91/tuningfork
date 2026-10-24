@@ -347,6 +347,26 @@ class TestAMaskedContext:
         assert "holds text storage masks" in refused.value.detail
 
 
+class TestATargetKeptAsDeclared:
+    async def test_a_target_read_from_masked_answers_still_names_its_behaviour(self, store, mock_server, client):
+        """Found in review: an experiment's settings were masked as they were stored, and a target keyed
+        from an answer masked once, masked again — a command's second password — named no behaviour."""
+        from tuningfork.analysis.distribution import target_by_key
+        from tuningfork.analysis.normalize import DEFAULT_NORMALIZERS, outcome_for
+
+        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        mock_server.script(*[MockTurn(content=command)] * 4)
+        checkpoint = load_checkpoint(store, record_pilot(store), 1)
+        key = outcome_for(store.masking.of(as_response(text_message(command))).value, list(DEFAULT_NORMALIZERS)).key
+        target = target_by_key(key, "A from an earlier resample: says the command")
+        ab = await run_ab(store, checkpoint, SamplingPlan(n=2), base_url=UPSTREAM, original_text=SKILL,
+                          variant_text=VARIANT, target=target, client=client)
+
+        arm = store.get_experiment(ab.original.id)
+        stored, _ = declared_target(arm)
+        assert [stored.matches(outcome) for outcome in experiment_outcomes(store, arm)] == [True, True]
+
+
 class TestLogprobs:
     """A resample can keep each sample's tokens, for a heatmap of where it wavered."""
 

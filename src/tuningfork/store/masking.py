@@ -1,7 +1,8 @@
-"""What the store masks, and how: every write into the recordings folder masks what it is given
-here, with the store's one set of patterns, so nothing is stored unmasked and nothing is masked
-twice — masking is not idempotent (a command's second `-p` falls only to a second pass), and a
-fork matches a call masked once against a step stored masked once.
+"""What the store masks, and how: a write into the recordings folder's database and blobs masks
+what it is given here, once, with the store's one set of patterns — masking is not idempotent (a
+command's second `-p` falls only to a second pass), and a fork matches a call masked once against
+a step stored masked once. What a run is given is kept as it was given, since a fork runs it
+again: a launch's eval and variant, and a scenario's context (`Store.put_given`).
 
 A writer that must read a value as it will be stored first — an outcome computed from a
 sample's answer, so a report recomputing it from the store agrees — asks for it masked
@@ -76,13 +77,13 @@ class Masking:
         also: Iterable[str] = (),
     ) -> tuple[bytes | None, str | None]:
         """An answer's raw bytes as they are kept, and how they were masked beyond the text
-        (`bytes_without_secrets`). Bytes that are not UTF-8 are masked as text too, and
-        otherwise kept as they came."""
-        found = tuple(also)
+        (`bytes_without_secrets`). They are masked as text by the patterns — bytes that are not
+        UTF-8 too, and otherwise kept as they came — but not of what masks took elsewhere: a
+        number holding its digits would break; the bytes are read back whole for it instead."""
         text = body.decode("utf-8", "surrogateescape")
-        kept = _masking(text, self.patterns, found)[0].encode("utf-8", "surrogateescape")
+        kept = _masking(text, self.patterns, ())[0].encode("utf-8", "surrogateescape")
         return bytes_without_secrets(
-            kept, answer, wire, request, self.patterns, masked=masked, streamed=streamed, also=found
+            kept, answer, wire, request, self.patterns, masked=masked, streamed=streamed, also=also
         )
 
 
@@ -115,14 +116,19 @@ def bytes_without_secrets(
     the bytes needs — logprobs, a cut-off end or an error event (the step keeps its error), usage
     the request did not ask for, a thinking block's signature, the server's timings. Where the
     masked answer cannot be written again, no bytes are kept: losing them beats storing the
-    secret. An answer the proxy could not read at all keeps its bytes as the text left them: its
-    step has an error, which scoring and a fork refuse first.
+    secret. Bytes that cannot be read back, nor an answer the proxy could not read at all, are
+    kept as the text left them, with every place a value `also` names masked as text: they hold
+    no JSON a mask could break. Such a step has an error, which scoring and a fork refuse first.
     """
     from tuningfork.analysis.tokens import split_logprobs
 
-    if not answer:
-        return body, None
     found = tuple(also)
+
+    def as_text(unread: bytes) -> bytes:
+        return _masking(unread.decode("utf-8", "surrogateescape"), (), found)[0].encode("utf-8", "surrogateescape")
+
+    if not answer:
+        return as_text(body), None
     if masked is None:
         masked = redact_json_found(answer, patterns, found)[0]
     native: dict[str, Any] | None = None
@@ -138,7 +144,7 @@ def bytes_without_secrets(
         if split_logprobs(kept)[0] == masked and not spelled:
             return body, None
     elif not isinstance(kept, dict) and masked == answer:
-        return body, None
+        return as_text(body), None
     if "tuningfork_error" in masked:
         return None, "dropped"  # masked, the answer no longer reads: written again, it would be an empty one
     try:

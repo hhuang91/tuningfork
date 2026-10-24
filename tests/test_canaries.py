@@ -1,9 +1,10 @@
-"""The canary sweep: a key planted in every input a run takes, the loop run as a person runs it —
-a batch through the proxy with the fake agent, jobs, a held call edited, an import, a server's
-error — and every row and blob the recordings folder's store holds searched for each key.
+"""The canary sweep: a key planted in each input of the loop, run as a person runs it — batches
+through the proxy with the fake agent, a scenario's among them, jobs, a held call edited and asked
+about, a label queued, an import, a server's errors — and every row and blob the recordings
+folder's store holds searched for each key.
 
-Only what is kept as given by design may hold one: a launch's eval and variant, which a fork runs
-again as they were written.
+Only what a run is given, kept as it was given by design, may hold one: a launch's eval and
+variant, and a scenario's context, which a fork runs again as they were written.
 """
 
 from __future__ import annotations
@@ -35,17 +36,23 @@ KEPT_AS_GIVEN = {("launches", "eval"), ("launches", "variant")}
 PLANTED = (
     "input file", "written by the model", "final reply", "check command", "environment", "prompt",
     "sampled answer", "imported chat", "check trial reply", "check trial file", "server error",
-    "server error event", "edit at a breakpoint", "upstream password",
+    "server error event", "edit at a breakpoint", "upstream password", "label queued", "wording tried",
+    "question at a held call", "scenario's context", "password a server's error quotes",
 )
+#: Keys no pattern reads alone: masked by a password's name in a call, then quoted bare by the
+#: server's error — masked there only as a value the call's own mask took.
+NAMED_ONLY = ("password a server's error quotes",)
 
 SKILL = "---\nname: tally-report\n---\n\n# Tally report\n\nWrite the totals to config.json.\n"
 
 
 def canaries() -> dict[str, str]:
-    """A key a name, each its own, in a shape every pattern set masks whole."""
+    """A key a name, each its own: in a shape every pattern set masks whole, or, named only, a
+    password's letters and digits."""
     draw = random.Random()
     return {
-        name: f"sk-tfcanary{number:02d}" + "".join(draw.choices(string.ascii_letters + string.digits, k=20))
+        name: ("Pw" if name in NAMED_ONLY else "sk-tfcanary") + f"{number:02d}"
+        + "".join(draw.choices(string.ascii_letters + string.digits, k=20))
         for number, name in enumerate(PLANTED)
     }
 
@@ -64,6 +71,9 @@ def model(keys: dict[str, str]):
         if last.startswith("cut"):
             return MockTurn(content="Writing", error_event={
                 "code": 500, "message": f"Invalid diff: {keys['server error event']} not found", "type": "server_error"})
+        if last.startswith("deny"):
+            return MockTurn(content="Checking", error_event={
+                "code": 500, "message": f"login refused for {keys[NAMED_ONLY[0]]}", "type": "server_error"})
         if last.startswith("edit me"):
             return MockTurn(content="Edited.")
         system = str(messages[0].get("content") or "") if messages else ""
@@ -104,10 +114,18 @@ def found_in_rows(database: Path, keys: dict[str, str]) -> list[str]:
         connection.close()
 
 
-def found_in_blobs(blobs: Path, keys: dict[str, str]) -> list[str]:
+def found_in_blobs(home: Path, keys: dict[str, str]) -> list[str]:
+    """Each blob a key stands in, but a scenario's context, which its launches name."""
+    connection = sqlite3.connect(f"file:{home / 'tuningfork.db'}?mode=ro", uri=True)
+    try:
+        given = {row[0] for row in connection.execute(
+            "SELECT json_extract(settings, '$.context.blob') FROM launches"
+            " WHERE json_extract(settings, '$.context.blob') IS NOT NULL")}
+    finally:
+        connection.close()
     return [
         f"{name} in blob {path.parent.name}{path.name}"
-        for path in sorted(blobs.rglob("*")) if path.is_file()
+        for path in sorted((home / "blobs").rglob("*")) if path.is_file() and path.parent.name + path.name not in given
         for name, key in keys.items() if key.encode() in path.read_bytes()
     ]
 
@@ -138,6 +156,18 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
     spec = TaskSpec(skill_name="tally-report", evals=[item], path=tmp_path / "spec" / "spec.json",
                     skill_dir="skills-src/tally-report")
     spec.path.write_text(json.dumps(spec.to_dict()), encoding="utf-8")
+    # A scenario: the same task, continuing a conversation that holds a key.
+    earlier = keys["scenario's context"]
+    (tmp_path / "spec" / "context.json").write_text(json.dumps([
+        {"role": "user", "content": f"Earlier: my API token is {earlier}."},
+        {"role": "assistant", "content": "Noted."},
+    ]), encoding="utf-8")
+    scenario = TaskSpec(
+        skill_name="tally-report", path=tmp_path / "spec" / "scenario.json", skill_dir="skills-src/tally-report",
+        evals=[Eval(id="2", prompt=item.prompt, files=item.files, tuningfork=TuningforkOptions(
+            check=check, skills=["tally-report"], max_turns=6, timeout=60, context="context.json"))],
+    )
+    scenario.path.write_text(json.dumps(scenario.to_dict()), encoding="utf-8")
     home = tmp_path / "home"
     upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_server.app), timeout=30)
     settings = Settings(upstream_base_url=f"http://tuningfork:{keys['upstream password']}@upstream.test", home=home,
@@ -156,10 +186,13 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
 
             # The server the proxy sends its calls to, read and kept, its address with a password in it.
             assert client.switch_upstream(settings.upstream_base_url)["switched"]
-            # A batch run through the proxy: the ordinary recording, and its check.
+            # A batch run through the proxy: the ordinary recording, and its check; and a scenario's.
             (run_id,) = job("batch", {"spec": str(spec.path), "n": 1, "harness": "fake", "model": "m"})["links"]["runs"]
-            # Jobs on it: a resample, a fork to the end, the check tried and run along it.
+            job("batch", {"spec": str(scenario.path), "n": 1, "harness": "fake", "model": "m"})
+            # Jobs on it: a resample, an A/B of a wording, a fork to the end, the check tried and run along it.
             job("resample", {"run": run_id, "step": "1", "n": 2})
+            job("ab", {"run": run_id, "step": "1", "n": 1, "exploratory": True, "variant_name": "canary",
+                       "variant_text": SKILL + f"Never print {keys['wording tried']}.\n"})
             job("resample-to-end", {"run": run_id, "step": "1", "n": 1})
             job("check-trial", {"check": "cat notes.txt", "reply": f"my reply quotes {keys['check trial reply']}",
                                 "files": [{"path": "notes.txt", "content": f"token {keys['check trial file']}"}]})
@@ -169,6 +202,12 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
                        json={"model": "m", "messages": [{"role": "user", "content": "fail, please"}]})
             httpx.post(f"{url}/v1/chat/completions", timeout=30,
                        json={"model": "m", "stream": True, "messages": [{"role": "user", "content": "cut it"}]})
+            httpx.post(f"{url}/v1/chat/completions", timeout=30, json={"model": "m", "stream": True, "messages": [
+                {"role": "user", "content": f"deny me, password={keys[NAMED_ONLY[0]]}"}]})
+            # A label queued for the next run.
+            store.label_next(f"tried with {keys['label queued']}")
+            httpx.post(f"{url}/v1/chat/completions", timeout=30,
+                       json={"model": "m", "messages": [{"role": "user", "content": "labelled"}]})
             # A call held before the model, and a key typed into it.
             client.add_breakpoint(phase="request", context_regex="edit me")
             sent: dict = {}
@@ -178,6 +217,7 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
             caller.start()
             held = client.wait_for_hold(timeout=30, poll=0.1)
             assert held is not None
+            job("hold-console", {"hold": held["id"], "question": f"What would you do with {keys['question at a held call']}?"})
             edited = {"model": "m", "messages": [{"role": "user", "content": f"edit me: {keys['edit at a breakpoint']}"}]}
             client.decide(held["id"], "continue", request=edited)
             caller.join(60)
@@ -193,7 +233,7 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
         store.close()
         asyncio.run(upstream.aclose())
 
-    return found_in_rows(home / "tuningfork.db", keys) + found_in_blobs(home / "blobs", keys)
+    return found_in_rows(home / "tuningfork.db", keys) + found_in_blobs(home, keys)
 
 
 def test_no_key_planted_in_a_run_is_kept_by_the_store(tmp_path, mock_server, monkeypatch):

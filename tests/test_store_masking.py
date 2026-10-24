@@ -52,6 +52,43 @@ class TestARecordedStep:
         step = store.record_step(request=request_with([text_message("hi")]), params={"stop": [f"api_key={KEY}"]})
         assert step.params["stop"] == [f"api_key={REDACTED}"]
 
+    def test_its_request_is_masked_by_the_patterns_alone(self, store):
+        """A fork keys a call by its request masked so: the request's own masks are not carried into
+        it, and a call found in the recording is its step."""
+        from tuningfork.replay import build_table, key_of
+        from tuningfork.wire import get_wire
+
+        store.begin_run("asked", "t/1")
+        asked = request_with([text_message(f"{NAMED}, then say {PASSWORD} back")])
+        step = store.record_step(request=asked, response=as_response(text_message("ok")))
+        said = store.rebuild_request(step)["messages"][0]["content"]
+        assert said == f"log in with password={REDACTED} please, then say {PASSWORD} back"
+        table = build_table(store, store.get_run(step.run_id), 0)
+        assert key_of(table.text(asked, get_wire("openai-chat"))) == table.live_key
+
+    def test_a_number_holding_a_value_a_mask_took_is_kept_whole(self, store):
+        """Found in review: a password of digits, masked under its name, was masked inside a number of the
+        same step too — the answer's `created`, a seed — which no longer read as JSON, and was dropped."""
+        answer = {**as_response(text_message("connected")), "created": 1761312345}
+        raw = json.dumps(answer).encode()
+        step = store.record_step(request=request_with([text_message("mysql -uroot -p17613123 app")]),
+                                 response=answer, params={"seed": 1761312345}, raw_response=raw, wire="openai-chat")
+        assert store.response(step)["created"] == 1761312345 and step.params["seed"] == 1761312345
+        assert store.blobs.get(step.raw_response_blob) == raw and "raw_redacted" not in step.params
+
+    def test_bytes_that_cannot_be_read_are_masked_of_what_the_request_masked(self, store):
+        """Unread, they hold no JSON a mask could break: a value a mask took is masked where they quote it."""
+        step = store.record_step(request=request_with([text_message(NAMED)]),
+                                 raw_response=f"<html>login refused for {PASSWORD}</html>".encode(),
+                                 wire="openai-chat", error="tuningfork could not read the response")
+        assert store.blobs.get(step.raw_response_blob) == f"<html>login refused for {REDACTED}</html>".encode()
+
+    def test_a_value_a_mask_took_is_masked_in_strings_as_they_read(self, store):
+        """Never in the middle of an escape: a value beginning as an escape ends, in the JSON text."""
+        step = store.record_step(request=request_with([text_message("password=nT0ub4dor3xyz")]),
+                                 response=as_response(text_message("one\nT0ub4dor3xyz, then nT0ub4dor3xyz")))
+        assert store.response(step)["choices"][0]["message"]["content"] == f"one\nT0ub4dor3xyz, then {REDACTED}"
+
     def test_the_harness_s_request_is_masked_by_the_patterns_alone(self, store):
         """A fork keys a call by its request masked so (`replay.masked_request`): the request's own
         masks are not carried into it."""
@@ -165,18 +202,19 @@ class TestASample:
 
 
 class TestTheRestOfTheStore:
-    def test_an_experiment_s_request_and_setup_are_masked(self, store):
+    def test_an_experiment_s_request_and_setup_are_masked_and_its_test_kept_as_declared(self, store):
+        """Its settings are the test declared before sampling, read again to judge it: kept as given."""
         experiment = store.create_experiment(
             kind="ab", arm="variant", run_id=None, step_idx=None, step_id=None,
-            request=request_with([text_message(NAMED)]), settings={"target": f"api_key={KEY}"},
+            request=request_with([text_message(NAMED)]), settings={"target": {"kind": "regex", "value": COMMAND}},
             changes={"skill": f"api_key={KEY}"}, variant={"name": f"api_key={KEY}"}, notes=[f"api_key={KEY}"],
             base_url=f"http://tuningfork:{KEY}@127.0.0.1:8787",
         )
         store.add_experiment_notes(experiment.id, [f"later: api_key={KEY}"])
         found = store.get_experiment(experiment.id)
-        kept = json.dumps([store.experiment_request(found), found.settings, found.changes, found.variant,
-                           found.notes, found.base_url])
+        kept = json.dumps([store.experiment_request(found), found.changes, found.variant, found.notes, found.base_url])
         assert KEY not in kept and PASSWORD not in kept
+        assert found.settings == {"target": {"kind": "regex", "value": COMMAND}}
 
     def test_a_run_s_label_setup_and_result_are_masked(self, store):
         step = store.record_step(request=request_with([text_message("hi")]))
@@ -220,9 +258,30 @@ class TestTheRestOfTheStore:
         assert KEY not in json.dumps([store.server(server_id), store.server_checks(server_id)])
         assert store.server(server_id)["upstream"] == f"http://{REDACTED}@127.0.0.1:8081"
 
-    def test_a_scenario_s_context_is_kept_masked(self, store):
-        digest = store.put_json({"before": [text_message(NAMED)]})
-        assert PASSWORD not in store.blobs.get(digest).decode()
+    def test_a_scenario_s_context_is_kept_as_given(self, store):
+        """It is what each of its runs is given: masked, every call would send the model another
+        conversation than the scenario's (found in review)."""
+        digest = store.put_given([text_message(NAMED)])
+        assert PASSWORD in store.blobs.get(digest).decode()
+
+    def test_a_label_queued_for_the_next_run_is_masked(self, store):
+        store.label_next(f"tried with api_key={KEY}")
+        assert store.pending_labels() == [f"tried with api_key={REDACTED}"]
+        store.discard_pending_label(f"tried with api_key={KEY}")
+        assert store.pending_labels() == []
+
+    def test_what_json_cannot_write_is_masked_as_it_is_written(self, store):
+        """Found in review: masking passed such a value by, and the job's record wrote it out as text."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class Plan:
+            env: dict
+
+        job = store.create_job(kind="x", lane="background", params={})
+        store.update_job(job.id, plan=Plan(env={"TOKEN": f"api_key={KEY}"}))
+        plan = store.get_job(job.id).plan
+        assert "Plan(env={'TOKEN': " in plan and REDACTED in plan and KEY not in plan  # read, as it is written
 
 
 class TestAnAddressKeptAndShown:
@@ -289,6 +348,22 @@ class TestOnePatternSet:
         finally:
             store.close()
 
+    def test_a_fork_refuses_a_step_whose_edited_answer_holds_a_mask(self, store):
+        """Found in review: the answer a person edited at a breakpoint is what a fork serves, and its
+        masks were served as they were stored, nothing said."""
+        from tuningfork.replay import replay_problems
+
+        store.begin_run("edited", "t/1")
+        answer = as_response(text_message("ok"))
+        delivered = text_message(f"ok, with {PASSWORD}")
+        store.record_step(request=request_with([text_message(NAMED)]), response=answer,
+                          delivered_response=as_response(delivered),
+                          raw_response=json.dumps(answer).encode(), wire="openai-chat")
+        store.record_step(request=request_with([text_message(NAMED), delivered, {"role": "user", "content": "go on"}]),
+                          response=answer)
+        (problem,) = replay_problems(store, store.get_run("edited"), 1)
+        assert "edited answer had a secret redacted" in problem
+
     def test_a_masked_value_passes_through_unmasked_again(self):
         from tuningfork.store.masking import Masking
 
@@ -308,9 +383,11 @@ class TestOneBoundary:
         "replay.py": "a fork's call keyed as the store masked its step",
         "experiment/skill.py": "a skill found as storage masked it, and a wording sent masked alike",
         "ops/proposer.py": "the proposer's exchange kept beside its refinement, a file",
+        "launches.py": "a call's path predicted as the store masks, where no store is given",
+        "breakpoints/engine.py": "a call's place predicted as the store masks, where no store is given",
     }
     MASKERS = {"redact", "redact_json", "redact_json_counted", "redact_json_found", "redact_stream",
-               "redact_spans", "_masking"}
+               "redact_spans", "_masking", "Masking", "bytes_without_secrets"}
 
     def test_nothing_else_masks_or_writes_a_blob_itself(self):
         """Masking is not idempotent, and a fork matches a call masked once against a step stored

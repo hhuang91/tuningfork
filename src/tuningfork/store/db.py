@@ -903,10 +903,12 @@ class Store:
 
     # --- recording ----------------------------------------------------------------
 
-    def put_json(self, value: Any) -> str:
-        """Keep a JSON value as a blob, masked as the store masks: what a record names by its
-        digest (a scenario's context, which every launch of it is given)."""
-        return self.blobs.put_json(self.masking.value(value))
+    def put_given(self, value: Any) -> str:
+        """Keep a JSON value a run is given as a blob, as it was given: a scenario's context, which
+        the proxy puts before the harness's own messages in every call of each launch of it and
+        each fork after. Like a launch's eval, what the model is sent is not changed; the steps
+        that send it are masked as they are recorded."""
+        return self.blobs.put_json(value)
 
     def record_step(
         self,
@@ -959,9 +961,11 @@ class Store:
         A value masked in one form of a step is masked in its others: what the request's and
         the answer's masks took is masked wherever else it stands in the answer, the answer the
         harness was given, the error, the parameters, what is noted of an edit, a variant, a
-        context or a replay, the raw bytes and the tokens (`config._FOUND`). Not in the
-        requests: a fork keys a call by the request masked with the patterns alone
-        (`replay.masked_request`).
+        context or a replay, and the tokens (`config._FOUND`) — in a JSON value's strings only —
+        and raw bytes holding it are written again. Not in the requests: a fork keys a call by
+        the request masked with the patterns alone (`replay.masked_request`). So a value no
+        pattern reads, which the model's answer says bare, stands in clear in the next request,
+        which sends that answer back.
 
         `normalize` gives a message the stable form the tree identifies it by, when a
         harness re-encodes earlier messages from one request to the next. Messages whose
@@ -1327,6 +1331,8 @@ class Store:
     def label_next(
         self, label: str, task_id: str | None = None, force: bool = False
     ) -> None:
+        """The label the next new run takes — a person's, or a batch's — masked as the store masks."""
+        label = self.masking.value(label)
         with self._lock:
             self._conn.execute(
                 "INSERT INTO pending_labels (label, task_id, force, created_at)"
@@ -1375,6 +1381,7 @@ class Store:
         model's context window is too small, for instance. The queued label would otherwise
         be picked up by whatever ran next and quietly mislabel it.
         """
+        label = self.masking.value(label)  # as it was queued
         with self._lock:
             self._conn.execute("DELETE FROM pending_labels WHERE label = ?", (label,))
             self._conn.commit()
@@ -1820,8 +1827,7 @@ class Store:
         token: str | None = None,
     ) -> Launch:
         """A new launch, running. Its label and settings are masked as the store masks; its
-        eval and variant are kept as they were given, since a fork runs them again — masked
-        wherever they are shown or sent."""
+        eval and variant are kept as they were given, since a fork runs them again."""
         from tuningfork.launches import new_token
         from tuningfork.owners import current_owner
 
@@ -2221,18 +2227,18 @@ class Store:
         (`finish_experiments`). One sampled at a held call has no step yet (`hold_id`):
         it is filed under the step the call becomes, whichever is recorded first.
 
-        What it sends and how it was set up are masked as the store masks: its request — raw
-        where it holds what a person typed (a wording) or a held call not yet recorded, else
-        masked already (a `Masked`) — its settings, changes, variant and notes, and where it
-        sent its calls, without a user and password."""
+        What it sends and how it differs from the recording are masked as the store masks: its
+        request — raw where it holds what a person typed (a wording) or a held call not yet
+        recorded, else masked already (a `Masked`) — its changes, variant and notes, and where it
+        sent its calls, without a user and password. Its settings are kept as given: they are the
+        test declared before sampling, read again to judge it, and a target read from masked
+        answers, masked again, could name no behaviour any of them shows."""
         from tuningfork.config import without_credentials
         from tuningfork.owners import current_owner
 
         masking = self.masking
         request = masking.value(request)
-        settings, changes, variant, notes = (
-            masking.value(value) for value in (settings, changes, variant, notes)
-        )
+        changes, variant, notes = (masking.value(value) for value in (changes, variant, notes))
         base_url = without_credentials(base_url) if base_url else base_url
 
         experiment = Experiment(

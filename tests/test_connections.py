@@ -636,7 +636,7 @@ def test_an_upstream_s_password_is_neither_kept_nor_shown(tmp_path, caplog):
     finally:
         store.close()
         asyncio.run(upstream.aclose())
-    assert switched["switched"] and kept
+    assert switched["switched"] and kept and shown["proxy"]["restart_masked"] is True
     for said in (json.dumps(switched), health, json.dumps(shown), json.dumps(kept), json.dumps(published),
                  caplog.text):
         assert KEY not in said and f"{REDACTED}@a.test" in said

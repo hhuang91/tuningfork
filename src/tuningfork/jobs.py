@@ -142,7 +142,7 @@ def asked_by(value: Any) -> dict[str, str] | None:
     return kept
 
 
-def kept_params(parsed: Any, masking: Masking | None = None) -> dict[str, Any]:
+def kept_params(parsed: Any, masking: Masking) -> dict[str, Any]:
     """A job's parameters as they are kept and shown — on the Jobs page, to whoever reads the
     jobs API — masked as the store masks (`masking`, its own), and a harness's options as its
     plan shows them: every value under an MCP server's `headers` or `env` masked, whatever its
@@ -153,7 +153,7 @@ def kept_params(parsed: Any, masking: Masking | None = None) -> dict[str, Any]:
     data = dataclasses.asdict(parsed)
     if isinstance(data.get("harness_options"), dict):
         data["harness_options"] = shown_options(data["harness_options"])
-    return (masking or Masking()).value(data)
+    return masking.value(data)
 
 
 def plain(value: Any) -> Any:

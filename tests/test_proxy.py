@@ -818,6 +818,19 @@ class TestRedaction:
         assert recorder.store.response(step)["choices"][0]["message"]["content"] == f"my key:\n{REDACTED} is set"
         assert b"D4e5F6g7" not in recorder.store.blobs.get(step.raw_response_blob)
 
+    @pytest.mark.parametrize("label", ["text/plain", None], ids=["plain-text", "unlabelled"])
+    async def test_an_answer_sent_at_once_for_a_stream_is_read_as_json_whatever_its_label(self, settings, recorder, label):
+        """Found in review: read as a stream by the request's ask, a JSON answer labelled otherwise read as
+        no events at all, a cut-off answer."""
+        answer = {"id": "x", "object": "chat.completion", "model": "m", "choices": [
+            {"index": 0, "message": {"role": "assistant", "content": "sent whole"}, "finish_reason": "stop"}]}
+        upstream = upstream_sending(json.dumps(answer), media_type=label)
+        async with proxy_before(upstream, settings, recorder) as (_, harness):
+            await harness.post(CHAT, json=simple_request(stream=True))
+        step = only_step(recorder.store)
+        assert step.error is None and step.params["streamed"] is False
+        assert recorder.store.response(step)["choices"][0]["message"]["content"] == "sent whole"
+
     async def test_an_error_sent_as_json_for_a_stream_is_read_as_json(self, settings, recorder):
         refused = json.dumps({"error": {"message": "the model is still loading", "type": "unavailable"}})
         upstream = upstream_sending(refused, status=503, media_type="application/json")

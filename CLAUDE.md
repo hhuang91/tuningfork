@@ -641,14 +641,17 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                the one TUNINGFORK_WSL_DISTRO names (tests/test_wsl_wrapper.py)
 
 A request is never stored whole: messages live in the content-addressed tree and are
-rebuilt by `Store.rebuild_request`. Everything the store keeps it masks itself, once, with its one
+rebuilt by `Store.rebuild_request`. What the store keeps of what happened — steps, samples and
+their tokens, jobs, runs' results, launches' exits, servers — it masks itself, once, with its one
 set of patterns (`Store.masking`, `store/masking.py`): a writer hands it what it has — or, where it
 must read a value as it will be stored first (an outcome computed from an answer), the `Masked`
-it asked the store's masking for. Masking is not idempotent, and a fork matches a call masked once
-against a step stored masked once; `tests/test_store_masking.py` fails on code elsewhere that masks
-or writes a blob itself, and `tests/test_canaries.py` plants a key in every input of the loop and
-searches every row and blob for it. Never report a rate without its interval — see
-`analysis/stats.py`.
+it asked the store's masking for. What a run is given is kept as it was given, since a fork runs
+it again — a launch's eval and variant, a scenario's context (`Store.put_given`) — and so is an
+experiment's settings, the test it declared. Masking is not idempotent, and a fork matches a call
+masked once against a step stored masked once; `tests/test_store_masking.py` fails on code
+elsewhere that masks or writes a blob itself, and `tests/test_canaries.py` plants a key in the
+loop's inputs and searches every row and blob for it. Never report a rate without its interval —
+see `analysis/stats.py`.
 
 Server- and harness-specific knowledge lives behind the `backends/`, `harness/` and `wire/`
 seams, never in the core. Supporting another harness or inference server must not require

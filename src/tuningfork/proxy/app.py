@@ -45,7 +45,7 @@ from tuningfork.launches import split as split_launch
 from tuningfork.proxy.held import BreakpointPath
 from tuningfork.proxy.launches import LaunchRegistry, Refusal, context_note
 from tuningfork.proxy.recorder import ANSWERED, Recorder, Timings, read_upstream
-from tuningfork.proxy.sse import SSEParser, read_as, unreadable
+from tuningfork.proxy.sse import SSEParser, json_body, read_as, unreadable
 from tuningfork.snapshots import SnapshotError, Snapshots
 from tuningfork.snapshots import available as git_available
 from tuningfork.ui import ui_routes
@@ -809,15 +809,20 @@ def create_app(
             response_json: dict[str, Any] | None = None
             raw = bytes(collected) if collected is not None else None
             error = copy_failed
+            streamed, reader = is_event_stream, assembler
             if error is None:
                 try:
-                    if assembler is not None:
-                        response_json = assembler.result() if assembler.chunk_count else None
+                    if reader is not None and not reader.chunk_count and raw is not None and json_body(raw):
+                        # Read as a stream, and sent at once as JSON: an answer, or an error.
+                        streamed, reader = False, None
+                        response_json = wire.parse(raw, event_stream=False)
+                    elif reader is not None:
+                        response_json = reader.result() if reader.chunk_count else None
                     elif raw is not None and not is_event_stream:
                         response_json = wire.parse(raw, event_stream=False)
                     # An error status is not the only failure: a 200 can carry an error
                     # body, or a stream that errored or was cut off partway.
-                    error = wire.failure(upstream.status_code, response_json, assembler)
+                    error = wire.failure(upstream.status_code, response_json, reader)
                 except Exception as exc:  # noqa: BLE001 - still record the exchange, raw
                     logger.warning("tuningfork could not read a response", exc_info=True)
                     response_json, error = None, unreadable(exc)
@@ -830,7 +835,7 @@ def create_app(
                 timings=timings,
                 response_json=response_json,
                 raw_response=raw,
-                streamed=is_event_stream,
+                streamed=streamed,
                 error=error,
                 wire=wire,
                 assignment=assignment,

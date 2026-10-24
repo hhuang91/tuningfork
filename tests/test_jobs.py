@@ -291,7 +291,7 @@ class TestAsking:
             job = runner.submit("options", {"harness_options": options}, dedupe=True)
             until(lambda: given)
             kept = store.get_job(job["id"]).params
-            assert kept == runner.get(job["id"])["params"] == same_params(kind, {"harness_options": options})
+            assert kept == runner.get(job["id"])["params"] == same_params(kind, {"harness_options": options}, store.masking)
             assert kept["harness_options"]["mcp_servers"]["x"] == {
                 "command": "x", "env": {"CREDENTIAL": "…"}, "headers": {"X-Credential": "…"}}
             assert given == [options]

@@ -133,6 +133,8 @@ def connection_routes() -> list[Route]:
                 "jobs": settings.jobs,
                 "protected": [str(endpoint) for endpoint in protected(settings.home)],
                 "restart": restart_command(settings, without_credentials(state.upstream.url)),
+                # Its upstream's user and password are shown masked: they are typed back to run it.
+                "restart_masked": without_credentials(state.upstream.url) != state.upstream.url,
             },
             "busy": busy,
         })

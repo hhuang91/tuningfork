@@ -1583,7 +1583,7 @@ def check_job_id(value: str) -> str:
     return value
 
 
-def same_params(kind: Kind, params: dict[str, Any], masking: Any = None) -> dict[str, Any]:
+def same_params(kind: Kind, params: dict[str, Any], masking: Any) -> dict[str, Any]:
     """Parameters as the job runner stores them — parsed, defaults filled, masked as the store
     masks (`masking`, its own) — so an identical job already under way can be found."""
     from tuningfork.jobs import kept_params

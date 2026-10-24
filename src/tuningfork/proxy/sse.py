@@ -38,19 +38,25 @@ def unreadable(exc: BaseException) -> str:
 
 
 def read_as(headers: Any, asked: bool) -> tuple[bool, bool]:
-    """(read at all, read as an event stream) for an answer being recorded.
+    """(read at all, read as an event stream) for an answer being recorded, by its headers.
 
     A stream is read as one where the request asked for one (`asked`, its `stream`) whatever
-    its label but JSON: one labelled `text/plain` and kept as text would keep whole a key the
-    model sent in pieces. A JSON body is an error the server sent instead, read as JSON. A
-    content-encoded body is forwarded verbatim but not read: decoding a copy just to record it
-    would be work for no benefit on a local server, which never compresses.
+    its label: one labelled `text/plain` and kept as text would keep whole a key the model sent
+    in pieces. A body that turns out to be JSON — an answer sent at once, or an error the server
+    sent instead — is read as JSON whatever its label (`json_body`). A content-encoded body is
+    forwarded verbatim but not read: decoding a copy just to record it would be work for no
+    benefit on a local server, which never compresses.
     """
     encoding = (headers.get("content-encoding") or "").strip().lower()
     if encoding and encoding != "identity":
         return False, False
-    content_type = (headers.get("content-type") or "").lower()
-    return True, "text/event-stream" in content_type or (asked and "json" not in content_type)
+    return True, asked or "text/event-stream" in (headers.get("content-type") or "").lower()
+
+
+def json_body(raw: bytes) -> bool:
+    """Whether a body read as a stream is JSON instead: one sent at once, where a stream was
+    asked for. An event stream's first line is an event's field, or a comment."""
+    return raw.lstrip()[:1] in (b"{", b"[")
 
 
 def event_index(value: Any, default: int) -> int:
