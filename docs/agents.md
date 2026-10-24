@@ -35,6 +35,9 @@ restarts; otherwise a new one is minted each time `serve` starts.
 Point the agent's own model at the inference server, never at the proxy it studies, or its
 calls are recorded beside the runs it is reading.
 
+The examples below name `tuningfork` where a clone at `/home/you/tuningfork` keeps it. Installed
+with `uv tool install`, it is `/home/you/.local/bin/tuningfork`.
+
 ### Hermes Agent
 
 Hermes needs its `mcp` extra: `uv tool install "hermes-agent[mcp]==0.18.2"`. Then list the server

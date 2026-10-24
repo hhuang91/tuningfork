@@ -110,15 +110,15 @@ bubblewrap`), so that every run sees the same folders: the model reads them
    [Recording an agent as you use it](docs/setup.md#recording-an-agent-as-you-use-it) says how
    to move the proxy to another port, and how to reach it from another machine.
 
-3. **Check the server**, in a second terminal with the venv activated: can it do what the
-   harnesses need, and does it process every prompt whole?
+3. **Check the server**, in a second terminal (in a clone, with the venv activated): can it do
+   what the harnesses need, and does it process every prompt whole?
 
    ```bash
    tuningfork connections check
    ```
 
 4. **Record runs of a task** — a prompt, its input files and a pass/fail check
-   ([the format](docs/setup.md#a-task)):
+   ([the format](docs/setup.md#a-task)). This one is the repository's example, in a clone:
 
    ```bash
    tuningfork batch examples/tally-report.evals.json -n 8 --harness hermes    # or --harness claude-code
