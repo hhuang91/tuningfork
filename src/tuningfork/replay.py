@@ -67,6 +67,8 @@ def key_of(text: str) -> str:
 _UNIT = r"[A-Za-z0-9._\-]|\\++u[0-9a-fA-F]{4}"
 _HIDDEN_UNIT = re.compile(_UNIT)
 _HIDDEN = re.compile(f"(?:{_UNIT})*+")
+#: A stretch of plain characters, each one whole: a mask may end at any place in it.
+_PLAIN = re.compile(r"[A-Za-z0-9._\-]*+")
 
 
 def fits(recorded: str, text: str) -> bool:
@@ -77,43 +79,91 @@ def fits(recorded: str, text: str) -> bool:
     they now keep; a mask that stood for any text let a call that parted from the recording right
     after one take its answer; and matching it as a regex took exponential time.
 
-    Each piece of the recording is looked for where the mask before it may end, from every place
-    that mask may start: once a place, so the match is linear however many ways a piece could
-    stand."""
+    Each piece of the recording is looked for where the mask before it may end, from each place
+    that mask may start (`_past`), so every way the masks could fall is tried — the leftmost place
+    alone could cut an escape a later one leaves whole — and in linear time: each run of what a
+    mask hid is read once, from its first start."""
     if REDACTED not in recorded:
         return recorded == text
     first, *middle, last = recorded.split(REDACTED)
     if not (text.startswith(first) and text.endswith(last)) or len(text) < len(first) + len(last):
         return False
     end = len(text) - len(last)
-    starts = {len(first)}
+    runs = _Runs(text, end)
+    starts = [len(first)]
     for piece in middle:
-        stops, starts = _stops(text, starts, end), set()
-        if stops:
-            limit = min(max(stops) + len(piece), end)
-            found = text.find(piece, min(stops), limit)
-            while found >= 0:
-                if found in stops:
-                    starts.add(found + len(piece))
-                found = text.find(piece, found + 1, limit)
+        starts = sorted(_past(text, piece, starts, end, runs))
         if not starts:
             return False
-    return end in _stops(text, starts, end)
+    return any(at < runs.end(at) == end for at in starts)
 
 
-def _stops(text: str, starts: set[int], end: int) -> set[int]:
-    """Where a mask from any of `starts` may end: past one or more whole characters of what it
-    hid, read from where it starts — an escape the piece before it cut reads as its letters."""
-    stops: set[int] = set()
-    for at in sorted(starts):
-        if at in stops:
-            continue  # a mask from an earlier start passes here, and goes on as this one would
-        run = _HIDDEN.match(text, at, end).end()
-        if text.find("\\", at, run) < 0:
-            stops.update(range(at + 1, run + 1))
-        else:
-            stops.update(unit.end() for unit in _HIDDEN_UNIT.finditer(text, at, run))
-    return stops
+class _Runs:
+    """Where the run of what a mask hid ends, from a place in it: the same from any place in it,
+    so a run is read once."""
+
+    def __init__(self, text: str, end: int) -> None:
+        self.text, self.stop = text, end
+        self.origin = self.run = -1
+
+    def end(self, at: int) -> int:
+        if not self.origin <= at < self.run:
+            self.origin, self.run = at, _HIDDEN.match(self.text, at, self.stop).end()
+        return self.run
+
+
+class _Units:
+    """The whole units of what a mask from `at` hid, as far as `run`, read only as far as the
+    places asked about, in order: any place in a stretch of plain characters ends one, none inside
+    an escape."""
+
+    def __init__(self, text: str, at: int, run: int) -> None:
+        self.text, self.run, self.at = text, run, at  # read up to `at`, where a unit ends
+
+    def inside(self, place: int) -> int:
+        """Where the escape `place` stands inside ends; 0 where `place` ends a unit, and -1 past
+        the run."""
+        if place > self.run:
+            return -1
+        while True:
+            plain = _PLAIN.match(self.text, self.at, place).end()
+            if plain == place:
+                self.at = place
+                return 0
+            escape = _HIDDEN_UNIT.match(self.text, plain, self.run).end()
+            if place < escape:
+                self.at = plain
+                return escape
+            self.at = escape
+
+
+def _past(text: str, piece: str, starts: list[int], end: int, runs: _Runs) -> set[int]:
+    """Where the next mask may start: just past `piece`, where it stands where a mask from one of
+    `starts` may end. A mask from a start in the run of an earlier one ends where that one's does,
+    and, where it starts inside an escape there, also at the letters of that escape it reads as
+    plain characters. A piece of plain characters stands inside the run, and its earliest place
+    there leaves the most: a mask from it reads through every later one."""
+    plain = _PLAIN.fullmatch(piece) is not None
+    past: set[int] = set()
+    run = -1
+    for at in starts:
+        if at < run:
+            escape = units.inside(at)
+            if escape > 0 and text[at] != "\\":
+                past.update(place + len(piece) for place in range(at + 1, escape)
+                            if text.startswith(piece, place) and place + len(piece) <= end)
+            continue
+        run = runs.end(at)
+        units, ends = _Units(text, at, run), _Units(text, at, run)
+        limit = run if plain else min(run + len(piece), end)
+        found = text.find(piece, at + 1, limit)
+        while found >= 0:
+            if ends.inside(found) == 0:
+                past.add(found + len(piece))
+                if plain:
+                    break
+            found = text.find(piece, found + 1, limit)
+    return past
 
 
 @dataclass(slots=True)
@@ -212,12 +262,14 @@ def build_table(
     for recorded, thread in [*replayed_steps(store, run, step), (live, None)]:
         wire = get_wire(recorded.wire)
         request = store.harness_request(recorded)
-        text = masked_request(request, wire, patterns, volatile)
+        digest = (recorded.params or {}).get("redaction")
+        # A step masked as these patterns mask is keyed as it is stored: a call masked once by them
+        # reads so exactly, where masking it again can mask more (a command's second `-p`).
+        text = masked_request(request, wire, () if digest == today else patterns, volatile)
         if thread is not None:
             entries.setdefault(key_of(text), deque()).append(Served(recorded, thread))
         if not thread:
             expected[recorded.idx] = text
-        digest = (recorded.params or {}).get("redaction")
         if digest == today:
             continue  # masked as these patterns mask: a call that is it has its key
         plain = masked_request(request, wire, (), volatile)

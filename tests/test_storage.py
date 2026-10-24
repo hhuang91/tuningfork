@@ -408,6 +408,7 @@ class TestRedactionMasksKeysNotCode:
             # A quoted password holding brackets or an escape, masked whole.
             ('{"password": "x9!Kq(2Lm]P7z"}', "x9!Kq(2Lm]P7z"),
             ('{"password": "Xq9\\\\Zr7Lm2Kd"}', "Zr7Lm2Kd"),
+            ("password = 'Xq9\\\\Zr7Lm2Kd'", "Zr7Lm2Kd"),
         ],
     )
     def test_keys_are_masked(self, text, secret):
@@ -504,6 +505,20 @@ class TestRedactionMasksKeysNotCode:
         stored = redact_json(as_a_tool_result(json.dumps(inner, separators=separators)))["messages"][0]["content"]
         assert json.loads(stored)["n"] == 1
         assert "Xq9Zr7Lm2Kd" not in stored
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "UPDATE users SET password='Zq8xK3vN\\\\',role='admin' WHERE id=7;",
+            "const c={token:'Zq8xK3vN5wLp\\\\',retries:3,host:'db'};",
+            "$cfg=['password'=>'Zq8xK3vN\\\\','user'=>'bob'];",
+        ],
+        ids=["sql", "js", "php"],
+    )
+    def test_a_single_quoted_value_ending_in_a_backslash_stays_whole(self, text):
+        """Found in review's fifth round: in single quotes `\\'` read as an escape, so a string ending
+        in a backslash, read a level deeper, ran on past its closing quote to the next one."""
+        assert redact_json(as_a_tool_result(text)) == as_a_tool_result(text)
 
     @pytest.mark.parametrize(
         "unit, end",

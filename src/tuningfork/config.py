@@ -36,10 +36,11 @@ from typing import Any
 #: The characters a value is written in, as each kind of pattern reads one: bare, as `.env`
 #: files, YAML, headers and command lines write it; in double or single quotes, as code and JSON
 #: do (anything but spaces and that quote, and an escape read whole: a backslash masked alone
-#: breaks the JSON — but `\"`, which may close a string: one ending in a backslash, `"…\\"`,
-#: reads `"…\"` where its escapes are read once more); a bearer token; Base64; a password in a
-#: URL; a key alone; a command's argument. A quoted value opens only where a string does, never
-#: on a JSON escape, `{` or `[`, so JSON written inside the string it is in keeps its quotes.
+#: breaks the JSON — but `\"`, and in single quotes `\'`, which may close a string: one ending in
+#: a backslash, `"…\\"`, reads `"…\"` where its escapes are read once more); a bearer token;
+#: Base64; a password in a URL; a key alone; a command's argument. A quoted value opens only
+#: where a string does, never on a JSON escape, `{` or `[`, so JSON written inside the string it
+#: is in keeps its quotes.
 _BARE = r"A-Za-z0-9_\-.~+/=!@#$%^&*"
 _DOUBLE_QUOTED = r"^\s\"\\"
 _SINGLE_QUOTED = r"^\s\"'\\"
@@ -289,7 +290,7 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     r"(?:\"(?P<secret>(?![,:;)\]}])" + _not_a_key(_DOUBLE_QUOTED, password="password") + r"(?:["
     + _DOUBLE_QUOTED + r"]|\\[^\"]){8,}+)\""
     r"|'(?P<secret_single>(?![,:;)\]}])" + _not_a_key(_SINGLE_QUOTED, password="password") + r"(?:["
-    + _SINGLE_QUOTED + r"]|\\[^\"]){8,}+)(?<!\\)'"
+    + _SINGLE_QUOTED + r"]|\\[^\"']){8,}+)(?<!\\)'"
     r"|(?(kq)(?!)|(?P<secret_bare>" + _not_a_key(_BARE, password="password") + "(?![" + _BARE
     + "]{8,256}+[(\\[])[" + _BARE + r"]{8,}+)))",
     # A value under any other name ending in `key` (`azure_openai_key`, `mistralKey`), where it

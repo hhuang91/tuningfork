@@ -558,6 +558,15 @@ class TestStoredMasks:
         assert fits("<redacted>-<redacted>", escaped)
         assert not fits("<redacted>u0041<redacted>", "ab" + "\\" + "u0041c")
 
+    def test_a_megabyte_of_a_keys_characters_is_matched_quickly(self):
+        """Found in review's fifth round: every place a mask could end was kept apart, so twelve
+        masks in a megabyte of a key's characters took 3 s and 210 MB."""
+        from tuningfork.replay import fits
+
+        started = time.perf_counter()
+        assert fits("<redacted>" + "a<redacted>" * 11, "a" * 1_000_000)
+        assert time.perf_counter() - started < 1
+
     def test_each_place_a_piece_may_stand_is_tried(self):
         """Found in review's fourth round: a piece looked for at its leftmost place only can cut an
         escape there, where a later place leaves it whole for the mask before."""
@@ -565,6 +574,9 @@ class TestStoredMasks:
 
         backslash = "\\"
         assert fits("<redacted>" + backslash + "<redacted>!", "a" + backslash + "u0041" + backslash + "b!")
+        # And where a mask starts inside an escape, behind another start in its run, the escape's
+        # letters are places it may end.
+        assert fits("<redacted>" + backslash + "<redacted>42<redacted>", "ab" + backslash + "u0041" + backslash + "u0042x")
 
     def test_a_step_masked_by_patterns_the_store_keeps_is_matched_as_they_mask(self, store):
         """Found in review's fourth round: a mask stood for a key's characters, as 0.5.0's masks
@@ -615,6 +627,23 @@ class TestStoredMasks:
         run = store.get_run(record_pilot(store, read=self.CODE.replace("tokenizer.encode(text)[0]", "<redacted>(text)[0]"),
                                          params=stamped))
         assert build_table(store, run, 1).masked == []
+
+    def test_a_step_masked_as_these_patterns_mask_is_keyed_as_it_is_stored(self, store):
+        """Found in review's fifth round: masking is not idempotent — one pass masks a command's
+        first `-p`, a second its next — so a step keyed by masking its stored request again parted
+        from a fork whose call was masked once, as the step was."""
+        from tests.helpers import record_pilot
+        from tuningfork.config import DEFAULT_REDACTIONS, patterns_digest
+        from tuningfork.replay import build_table, key_of
+        from tuningfork.wire import get_wire
+
+        today = {"redaction": patterns_digest(DEFAULT_REDACTIONS)}
+        read = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db\n"
+        run = store.get_run(record_pilot(store, read=read, masked=True, params=today))
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        call = json.loads(json.dumps(stored).replace("<redacted>", "Abcd1234X"))
+        table = build_table(store, run, 1)
+        assert key_of(table.text(call, get_wire("openai-chat"))) == table.live_key
 
     def test_a_fork_goes_live_at_its_step_though_its_mask_fell_elsewhere(self, store):
         from types import SimpleNamespace
