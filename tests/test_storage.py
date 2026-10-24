@@ -511,6 +511,20 @@ class TestRedactionMasksKeysNotCode:
         assert "Xq9Zr7Lm2Kd" not in stored
 
     @pytest.mark.parametrize(
+        "layout", [{"separators": (",", ":")}, {}, {"indent": 2}], ids=["compact", "spaced", "indented"]
+    )
+    def test_an_auth_tuple_cut_across_strings_leaves_the_json_whole(self, layout):
+        """Found in review's tenth round: where a string ended after `auth=('bob',`, its closing quote
+        was read as the password's opening one, and the mask took the JSON up to the next string."""
+        matches = {"matches": [{"line": 12, "text": "    resp = requests.get(url, auth=('bob',"},
+                               {"line": 13, "text": "        'Zq8xK3vN5wLp'))"}]}
+        text = json.dumps(matches, **layout)
+        assert redact_json(as_a_tool_result(text)) == as_a_tool_result(text)
+        assert redact_json(matches) == matches
+        assert redact_json({"lines": ["requests.get(url, auth=('bob', ", "timeout=30)"]}) == {
+            "lines": ["requests.get(url, auth=('bob', ", "timeout=30)"]}
+
+    @pytest.mark.parametrize(
         "text",
         [
             "UPDATE users SET password='Zq8xK3vN\\\\',role='admin' WHERE id=7;",

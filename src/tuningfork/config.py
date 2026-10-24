@@ -247,7 +247,8 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?=(?:\s|\\[nrt])*+(?:Proc-Type:|[A-Za-z0-9+/]{16}))"
     r"(?P<secret>(?:\\[nrt]|[A-Za-z0-9+/=\s:,]|-(?!----))++)",
     # A password in a URL, in HTTP Basic credentials, curl's `-u`, MySQL's `-p`, `docker login`'s,
-    # requests' `auth=`, a `.netrc` line or an XML element; AWS's secret key — under a quoted
+    # requests' `auth=` (opening only where a string does, as a quoted value below, and holding no
+    # space), a `.netrc` line or an XML element; AWS's secret key — under a quoted
     # name, quoted: a number in JSON is none — an Azure connection string or signature, and a Slack
     # webhook's path.
     r"://[^\s/:@\"'<>\\]*+:(?P<secret>" + _not_a_key(_URL_PASSWORD, numbers=False, password=True)
@@ -263,7 +264,8 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     r"[Dd]" + _WORD_START.format("[Dd]") + _either("ocker") + r"[ \t]+login(?![A-Za-z0-9_])" + _SAME_COMMAND
     + r"[ \t]-p[ \t]+(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True) + r"[^\s\"'\\]{4,})",
     r"[Aa]" + _WORD_START.format("[Aa]") + _either("uth") + r"[ \t]*=[ \t]*\([ \t]*(?P<u>[\"'])[^\"'\\]*(?P=u)[ \t]*,"
-    r"[ \t]*(?P<q>[\"'])(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True) + r"[^\"'\\]+)(?P=q)",
+    r"[ \t]*(?P<q>[\"'])(?![,:;)\]}])(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True) + "["
+    + _ARGUMENT + r"]+)(?P=q)",
     r"m" + _WORD_START.format("m") + r"achine[ \t]+[^\s\"'\\]+(?:[ \t]+login[ \t]+[^\s\"'\\]+)?[ \t]+password[ \t]+"
     r"(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True) + r"[^\s\"'\\]+)",
     r"<(?:(?i:password|passwd|secret|token|api[_\-]?key|client[_\-]?secret|access[_\-]?token|private[_\-]?key))>"
