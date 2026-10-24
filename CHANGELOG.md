@@ -33,8 +33,8 @@ more formats, and the recordings folder's store masks everything it keeps, once.
   which a fork read back and gave its harness again. Bytes that hold a secret are written again
   from the masked answer, and a fork refuses to replay that step.
 - **The store masks everything it keeps, once.** A check's output in a run's result and a
-  launch's exit, a job's plan and result, an imported chat, a step's error text, a label queued for
-  the next run, and an upstream's password were kept in clear. A value masked in one form of a
+  launch's exit, a job's plan and result, an imported chat's steps, a step's error text, a label
+  queued for the next run, and an upstream's password were kept in clear. A value masked in one form of a
   step is masked in its others, so a server's error that quotes a password is masked, and so is a
   key the model writes in its own call syntax, in its tokens. An answer sent at once keeps no
   logprobs that spell a key, and a stream labelled otherwise is read as a stream. What a run is
