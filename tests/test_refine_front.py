@@ -11,11 +11,11 @@ import pytest
 from typer.testing import CliRunner
 
 from tuningfork.cli import app as cli
+from tuningfork.demo.mock import MockTurn
 from tuningfork.ops import refine
 from tuningfork.ops.batch import execute_batch, prepare_batch
 from tuningfork.proxy.app import create_browse_app
 from tests.helpers import control_headers, tally_model, task_stack
-from tests.mock_server import MockTurn
 
 API = "/_tuningfork/api/refinements"
 PROPOSER = "/_tuningfork/api/proposer"

@@ -1,6 +1,6 @@
 // Drive the Live page in a real browser through the DevTools protocol, and check what the
 // harness actually received — not just what the page shows. See README.md for setup:
-// a Chromium-based browser with a debugging port, and `demo.py live` running.
+// a Chromium-based browser with a debugging port, and `tuningfork demo live` running.
 //
 // Node 22+, for its built-in WebSocket. Exits non-zero on the first failed check. The
 // environment it reads is described in cdp.mjs.

@@ -12,11 +12,11 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from tuningfork.cli import app
+from tuningfork.demo.mock import MockTurn
 from tuningfork.ops import compact, inspect
 from tuningfork.ops.timeline import step_detail
 from tuningfork.store.db import Store
 from tests.helpers import PROPS, SKILL, VARIANT, record_pilot, record_run, tool_call_message
-from tests.mock_server import MockTurn
 
 UPSTREAM = "http://upstream.test"
 
@@ -217,7 +217,7 @@ class TestTokens:
 
     @pytest.fixture
     def toy(self, monkeypatch, mock_server):
-        from tests.mock_server.toy import props as toy_props
+        from tuningfork.demo.toy import props as toy_props
 
         mock_server.props = toy_props()
         real = httpx.AsyncClient

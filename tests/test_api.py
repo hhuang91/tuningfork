@@ -9,9 +9,9 @@ import json
 import httpx
 import pytest
 
+from tuningfork.demo.mock import MockTurn
 from tuningfork.proxy.app import create_browse_app
 from tests.helpers import SKILL, record_pilot, record_run, text_message, until
-from tests.mock_server import MockTurn
 
 API = "/_tuningfork/api"
 CHAT = "/v1/chat/completions"

@@ -16,9 +16,9 @@ import pytest
 
 from tuningfork.config import Settings
 from tuningfork.control import ControlClient, ControlError
+from tuningfork.demo.mock import MockTurn
 from tuningfork.proxy.app import create_app
 from tests.helpers import PROPS, SKILL, VARIANT, control_headers, record_pilot, serving
-from tests.mock_server import MockTurn
 
 API = "/_tuningfork/api"
 

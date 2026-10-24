@@ -2,7 +2,7 @@
 
 Every tuningfork test runs against this instead of a real model, so the whole suite passes
 with no GPU, no weights and no network. That is the contribution gate: an outside PR has to
-be runnable by anyone.
+be runnable by anyone. `tuningfork demo` puts it behind a real proxy, as its model.
 
 It reproduces the wire behaviour observed from real servers, including the parts that are
 easy to get wrong:
@@ -29,7 +29,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from tests.mock_server.toy import ToyLlama
+from tuningfork.demo.toy import ToyLlama
 
 DEFAULT_USAGE = {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
 

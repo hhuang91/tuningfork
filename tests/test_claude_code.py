@@ -15,6 +15,7 @@ import httpx
 import pytest
 
 from tuningfork.analysis.normalize import outcome_for
+from tuningfork.demo.mock import MockTurn
 from tuningfork.experiment.sampling import SamplingPlan, load_checkpoint, run_resample
 from tuningfork.experiment.skill import substitute, text_sha256
 from tuningfork.harness.claude_code import ClaudeCodeAdapter, anthropic_base
@@ -22,7 +23,6 @@ from tuningfork.proxy.app import create_browse_app
 from tuningfork.specs import skill_bodies
 from tuningfork.wire.anthropic import AnthropicMessages
 from tests.helpers import all_steps, only_step, until
-from tests.mock_server import MockTurn
 from tests.test_wire import SKILL_BODY, claude_code_request
 
 ANTHROPIC = AnthropicMessages()

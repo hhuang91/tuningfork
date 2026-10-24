@@ -14,13 +14,13 @@ import pytest
 
 from tuningfork.config import Settings
 from tuningfork.control import ControlClient
+from tuningfork.demo.mock import MockTurn
 from tuningfork.experiment.sampling import step_resample
 from tuningfork.proxy.app import create_app
 from tuningfork.store.db import Store
 from tuningfork.wire import get_wire
 from tuningfork.wire.base import NOT_RUN
 from tests.helpers import PROPS, record_pilot, serving
-from tests.mock_server import MockTurn
 
 CHAT = "/v1/chat/completions"
 

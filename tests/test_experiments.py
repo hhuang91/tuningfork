@@ -14,6 +14,7 @@ import pytest
 
 from tuningfork.analysis.distribution import compare_arms, distribution, target_by_pattern
 from tuningfork.analysis.normalize import NORMALIZER_VERSION
+from tuningfork.demo.mock import MockTurn
 from tuningfork.experiment import (
     EXPERIMENT_HEADER,
     CheckpointError,
@@ -33,7 +34,6 @@ from tuningfork.experiment import (
 from tuningfork.analysis.tokens import TokenStream
 from tuningfork.config import REDACTED
 from tests.helpers import KEY, PROPS, SKILL, VARIANT, as_response, record_pilot, text_message
-from tests.mock_server import MockTurn
 
 UPSTREAM = "http://upstream.test"
 

@@ -18,6 +18,7 @@ import mcp_types as types  # noqa: E402
 from mcp import Client  # noqa: E402
 
 from tuningfork.cli import app  # noqa: E402
+from tuningfork.demo.mock import MockTurn  # noqa: E402
 from tuningfork.jobs import JobRunner  # noqa: E402
 from tuningfork.mcp.backend import InProcessJobs  # noqa: E402
 from tuningfork.mcp.server import ToolServer  # noqa: E402
@@ -25,7 +26,6 @@ from tuningfork.mcp.tools import job_tool  # noqa: E402
 from tuningfork.ops.common import OperationError  # noqa: E402
 from tuningfork.store.db import Store  # noqa: E402
 from tests.helpers import PROPS, SKILL, VARIANT, record_pilot  # noqa: E402
-from tests.mock_server import MockTurn  # noqa: E402
 from tests.test_jobs import Bus, Proxy, kinds, settled  # noqa: E402
 
 UPSTREAM = "http://upstream.test"

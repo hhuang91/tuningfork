@@ -30,6 +30,7 @@ server check measures it (`fresh_prompts`).
     uv run tuningfork serve ... --max-output 8192              # every call a harness makes held to that many
                                                                #   output tokens, what it asked kept with the step
     uv run tuningfork probe <base-url> [--out profile.json]    # what a server can do
+    uv run tuningfork demo                                     # no GPU: made-up runs, a scripted model
 
 Inspecting and experimenting (all take `--home <recordings dir>`):
 
@@ -418,7 +419,7 @@ leads there. A question at a held call and a check tried keep their answers on t
 their only home once the call is decided or the tester closed.
 
 The same operations, as tools for an agent over MCP (`tuningfork.mcp`, the SDK an optional
-extra, `tuningfork[mcp]`; nothing else imports it):
+extra, `tuningfork-lab[mcp]`; nothing else imports it):
 
     tuningfork mcp --home <dir> [--proxy URL] [--tools evidence|refine|all]   # stdio
     tuningfork serve ... --mcp-tools evidence|refine|all|none                 # also at /_tuningfork/mcp
@@ -620,13 +621,16 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                answer; the forking-token probe
     src/tuningfork/runner.py   batch runs and forks (fresh workspace + home per launch)
     src/tuningfork/specs.py    task specs (evals.json convention)
-    tests/mock_server/        scriptable mock: OpenAI chat-completions and Anthropic Messages;
-                               toy.py, a toy llama.cpp (tokenizer, template, a model with forks;
-                               QwenToy, the same writing Qwen3.5's format; Qwen3Toy, Qwen3's
-                               or Qwen2.5's)
+    src/tuningfork/demo/       `tuningfork demo`, shipped so that it runs with no checkout: lab
+                               (made-up runs behind a real proxy); mock, the scriptable model
+                               server (OpenAI chat-completions and Anthropic Messages); toy, a toy
+                               llama.cpp (tokenizer, template, a model with forks; QwenToy, the
+                               same writing Qwen3.5's format; Qwen3Toy, Qwen3's or Qwen2.5's);
+                               agent, a real agent process, and task, its skill, its model and
+                               the adapter that launches it. The test suite runs on the same
+                               pieces; nothing else in tuningfork imports them
     tests/fixtures/formats/   raw output beside the server's parse of it; capture.py remakes them
-    tests/fake_agent.py       a real agent process for end-to-end tests of batches and forks
-    tests/browser/            opt-in browser tests (Edge/Chromium over DevTools) and demo servers
+    tests/browser/            opt-in browser tests (Edge/Chromium over DevTools), against the demo
     examples/                 a skill that mostly fails, and a step-by-step guide (README.md);
                                hermes-design-md/, Hermes's own design-md skill fixed from the
                                failing step to an approved edit, with its guide; find-the-file/,
@@ -634,8 +638,9 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     docs/                     what the README links to: setup.md (install, the server's flags and
                                why, the harnesses, the sandbox, a task's format), commands.md
                                (every command by the question it answers), agents.md (the MCP
-                               server, client by client); adapters/, one page per harness;
-                               images/, the README's pictures (hero.py draws the figure)
+                               server, client by client), web-ui.md (the pages, pictured);
+                               adapters/, one page per harness; images/, the pictures (hero.py
+                               draws the figure)
     scripts/                  tuningfork inside WSL from a checkout on Windows: tuningfork.ps1 for
                                PowerShell, tuningfork for Git Bash, twins — the distro only ever
                                the one TUNINGFORK_WSL_DISTRO names (tests/test_wsl_wrapper.py)
@@ -670,7 +675,7 @@ than on a hardcoded assumption about which server is running.
   else, notes. Those go in untracked `*.local.md` files. A screenshot is a tracked file too.
 - The README is the front door, read by someone deciding in a few minutes whether to try
   tuningfork: what it does, a quickstart, the commands by question, links. Reference goes in
-  `docs/`. A new command or option goes in `docs/commands.md` (and in the README's tables if a
+  `docs/`. A new command or option goes in `docs/commands.md` (and in the README's table if a
   newcomer needs it): `tests/test_docs.py` fails on a command it does not name, and on a link
   in those pages that leads nowhere. An output a guide shows that changes is captured again,
   never typed.

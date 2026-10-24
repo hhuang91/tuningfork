@@ -23,12 +23,12 @@ from tuningfork.analysis.normalize import outcome_for
 from tuningfork.analysis.tokens import TokenStream
 from tuningfork.breakpoints import Breakpoint
 from tuningfork.config import DEFAULT_REDACTIONS, EXPERIMENT_HEADER, REDACTED, Settings, redact
+from tuningfork.demo.mock import MockTurn
 from tuningfork.proxy.app import create_app, upstream_url
 from tuningfork.store.masking import bytes_without_secrets
 from tuningfork.proxy.sse import CUT_OFF, ChunkAssembler, reassemble
 from tuningfork.wire.anthropic import AnthropicMessages
 from tests.helpers import all_steps, only_step
-from tests.mock_server import MockTurn
 from tests.test_wire import (
     MESSAGE_DELTA,
     MESSAGE_STOP,

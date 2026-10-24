@@ -36,8 +36,8 @@ from tuningfork.backends.probe import (
     probe_usage_in_stream,
     server_root,
 )
-from tests.mock_server import MockTurn
-from tests.mock_server.toy import props as toy_props
+from tuningfork.demo.mock import MockTurn
+from tuningfork.demo.toy import props as toy_props
 
 UPSTREAM = "http://upstream.test"
 

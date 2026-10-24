@@ -8,7 +8,7 @@ command, see [commands](commands.md).
 - [Install](#install), and [on Windows](#on-windows)
 - [The model server](#the-model-server) — and [numbers that repeat](#numbers-that-repeat)
 - [The harnesses](#the-harnesses)
-- [Start tuningfork](#start-tuningfork)
+- [Start tuningfork](#start-tuningfork), and [recording an agent as you use it](#recording-an-agent-as-you-use-it)
 - [The sandbox](#the-sandbox), and [a pinned clock](#a-pinned-clock)
 - [A task](#a-task)
 - [Protecting a server](#protecting-a-server)
@@ -16,8 +16,16 @@ command, see [commands](commands.md).
 
 ## Install
 
-You need git and [uv](https://docs.astral.sh/uv/); uv fetches Python 3.12 or later itself if you
-don't have it. tuningfork is not on PyPI yet, so install it from GitHub:
+You need [uv](https://docs.astral.sh/uv/), which fetches Python 3.12 or later itself if you don't
+have it. tuningfork is on PyPI as `tuningfork-lab`:
+
+```bash
+uv tool install "tuningfork-lab[mcp]"
+tuningfork version
+```
+
+The command is `tuningfork`, and `[mcp]` brings its MCP server. To work on tuningfork, or to follow
+the guides, which use the repository's examples, install it from a checkout instead, with git:
 
 ```bash
 git clone https://github.com/hhuang91/tuningfork.git
@@ -33,7 +41,8 @@ tuningfork version
 tuningfork records into `~/.tuningfork`, or into the folder `TUNINGFORK_HOME` or a command's
 `--home` names. Keep tuningfork, the harnesses and the recordings out of `/tmp`: in
 [the sandbox](#the-sandbox) every launch has a `/tmp` of its own, so a harness kept there
-vanishes from a run's sight.
+vanishes from a run's sight. `tuningfork demo` is the exception: it records into the system's
+temporary folder, and the harness it launches is part of tuningfork.
 
 ## On Windows
 
@@ -64,7 +73,7 @@ git clone https://github.com/hhuang91/tuningfork.git
 cd tuningfork
 $env:TUNINGFORK_WSL_DISTRO = "Ubuntu"      # the distro it runs in
 .\scripts\tuningfork version               # the first run installs it there
-.\scripts\tuningfork --run python tests/browser/demo.py lab /tmp/tuningfork-lab 8790
+.\scripts\tuningfork demo                  # made-up runs and a scripted model, no GPU
 ```
 
 - **It runs nothing until a distro is named**, and lists the installed ones instead: with more
@@ -239,7 +248,8 @@ what it needs, rather than finding out from a failed run. [`adapters/`](adapters
 each harness sends and how it is kept apart from your own setup.
 
 Any other harness that takes a custom base URL is recorded as it runs: point it at
-`http://127.0.0.1:8787/v1` (OpenAI) or `http://127.0.0.1:8787` (Anthropic). Launching and forking
+`http://127.0.0.1:8787/v1` (OpenAI) or `http://127.0.0.1:8787` (Anthropic), as
+[recording an agent as you use it](#recording-an-agent-as-you-use-it) says. Launching and forking
 it needs an adapter: [`adapters/TEMPLATE.md`](adapters/TEMPLATE.md).
 
 ## Start tuningfork
@@ -248,10 +258,11 @@ it needs an adapter: [`adapters/TEMPLATE.md`](adapters/TEMPLATE.md).
 tuningfork serve --upstream http://127.0.0.1:8081
 ```
 
-It listens on `http://127.0.0.1:8787/v1`, records, and prints the web UI's address. That address
-carries the proxy's *access token*: new each time it starts, and what lets a page change
-anything; reading needs none. `tuningfork token` prints the address again. One proxy per
-recordings folder: two would overwrite each other's tokens.
+It listens on `http://127.0.0.1:8787/v1`, forwards each call to the model server `--upstream`
+names, records it, and prints the web UI's address. That address carries the proxy's *access
+token*: new each time it starts, and what lets a page change anything; reading needs none.
+`tuningfork token` prints the address again. One proxy per recordings folder: two would overwrite
+each other's tokens.
 
 Then, in another terminal, check the server before anything runs:
 
@@ -275,6 +286,20 @@ Options of `serve` worth knowing:
 | `--max-inflight N` | Concurrent requests to the server (default 1): at least the `--concurrency` of any forks run through it. |
 | `--mcp-tools`, `--mcp-results`, `--mcp-max-wait` | The MCP route an agent connects to: see [agents](agents.md). |
 | `--port`, `--host` | Where it listens: 8787 on 127.0.0.1 by default. Keep it local. |
+
+### Recording an agent as you use it
+
+The harnesses tuningfork launches are pointed at its proxy for you. To record an agent you run
+yourself, set its base URL (where it sends its model calls) to the proxy:
+
+- `http://127.0.0.1:8787/v1` for an agent that uses an OpenAI-style API, such as Hermes Agent;
+- `http://127.0.0.1:8787` for one that uses Anthropic's, such as Claude Code.
+
+`--port` (or `TUNINGFORK_PORT`) moves the proxy to another port, and `TUNINGFORK_PROXY` then
+tells the other commands where it is. Keep it on `127.0.0.1`, the default: anything that can reach
+the port can read your recordings and send calls to your model
+([what it guards](../SECURITY.md)). From another machine, forward the port over SSH instead:
+`ssh -L 8787:127.0.0.1:8787 <host>`.
 
 ## The sandbox
 

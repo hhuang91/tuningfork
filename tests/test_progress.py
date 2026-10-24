@@ -13,12 +13,12 @@ import threading
 import httpx
 import pytest
 
+from tuningfork.demo.mock import MockTurn
 from tuningfork.experiment import SamplingPlan, load_checkpoint
 from tuningfork.ops.experiments import ResamplePlan, execute_resample
 from tuningfork.proxy.app import create_app
 from tuningfork.store.db import Store
 from tests.helpers import PROPS, record_pilot, serving
-from tests.mock_server import MockTurn
 
 
 def events_of(seen, kind):

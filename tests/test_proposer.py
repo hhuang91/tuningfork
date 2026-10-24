@@ -8,11 +8,11 @@ import json
 import httpx
 import pytest
 
+from tuningfork.demo.mock import MockTurn
 from tuningfork.ops import proposer, refine
 from tuningfork.ops.batch import execute_batch, prepare_batch
 from tuningfork.ops.common import OperationError
 from tests.helpers import tally_model, task_stack
-from tests.mock_server import MockTurn
 
 RULES = [{"if": "calls", "value": "write_file"}, {"if": "contains", "value": "row_count"}]
 KEY = "sk-test-0123456789abcdefXYZ"

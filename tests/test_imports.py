@@ -1,4 +1,4 @@
-"""The MCP SDK is an optional extra (`tuningfork[mcp]`): nothing but `tuningfork mcp` and
+"""The MCP SDK is an optional extra (`tuningfork-lab[mcp]`): nothing but `tuningfork mcp` and
 the proxy's MCP route may load it, so the rest of tuningfork works, and starts as fast,
 without it."""
 

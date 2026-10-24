@@ -642,7 +642,7 @@ def test_a_run_takes_its_turns_earlier_steps_as_done_and_stops_at_the_next_skill
     import re
 
     from tests.helpers import FakeAgent
-    from tests.mock_server import MockTurn
+    from tuningfork.demo.mock import MockTurn
     from tuningfork.harness import ADAPTERS
 
     class Loading(FakeAgent):
@@ -736,7 +736,7 @@ def test_a_launched_runs_scenario_from_later_in_its_turn_has_its_workspace_there
     import re
 
     from tests.helpers import SKILL as LOADED, FakeAgent
-    from tests.mock_server import MockTurn
+    from tuningfork.demo.mock import MockTurn
     from tuningfork.harness import ADAPTERS
     from tuningfork.harness.base import SkillSpan
 

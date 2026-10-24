@@ -23,10 +23,10 @@ from mcp import Client  # noqa: E402
 from mcp.client.stdio import StdioServerParameters  # noqa: E402
 
 from tuningfork.config import Settings  # noqa: E402
+from tuningfork.demo.mock import MockTurn  # noqa: E402
 from tuningfork.proxy.app import create_app  # noqa: E402
 from tuningfork.store.db import Store  # noqa: E402
 from tests.helpers import PROPS, free_port, record_pilot, serving  # noqa: E402
-from tests.mock_server import MockTurn  # noqa: E402
 
 AGENT = types.Implementation(name="stdio-test", version="1")
 

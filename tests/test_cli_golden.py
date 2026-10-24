@@ -22,9 +22,9 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from tuningfork.cli import app
+from tuningfork.demo.mock import MockTurn
 from tuningfork.store.db import Store
 from tests.helpers import PROPS, SKILL, VARIANT, record_pilot, record_run, text_message
-from tests.mock_server import MockTurn
 
 GOLDEN = Path(__file__).parent / "golden"
 UPSTREAM = "http://upstream.test"

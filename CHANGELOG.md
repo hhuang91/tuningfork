@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.6.0 — on PyPI, a demo without a GPU, and redaction reworked
+
+tuningfork is on PyPI as `tuningfork-lab`, and `tuningfork demo` shows the whole loop in the web
+UI with no GPU and no model. The README is shorter. Redaction, which masks keys in what tuningfork
+records, was reworked: it masks keys rather than code, never breaks the JSON it masks, and knows
+more formats, and the recordings folder's store masks everything it keeps, once.
+
+- **On PyPI as `tuningfork-lab`.** `uv tool install "tuningfork-lab[mcp]"` installs the
+  `tuningfork` command, its MCP server included; without `[mcp]`, the rest. The import stays
+  `tuningfork`. The name `tuningfork` is too close to an existing project's to register.
+- **`tuningfork demo`** opens the web UI on made-up runs, which tuningfork's own proxy serves in
+  front of a scripted model, so every button works without a GPU:
+  `uvx --from tuningfork-lab tuningfork demo`. It records only into a folder of its own, never
+  into `~/.tuningfork`.
+- **The README** says what tuningfork is, why, and how to start: the demo first, then your own
+  agent. Its command tables lead to `docs/commands.md`, and the web UI's pictures moved to
+  `docs/web-ui.md`.
+- **Redaction masks keys, not code.** A value under a secret's name is masked only where it reads
+  as a key: a name, a call, a path or a number is kept. Hermes's own source, read as tool results,
+  had 731 masks in 147 of its 877 files, and has 2 now, both example keys. Its dependencies went
+  from 273 masks to 7, and Python's standard library from 27 to none. A mask still costs a step
+  its scoring and its forking tokens, and a resample sends `<redacted>` where the model saw the
+  text: a plan says so now.
+- **More formats are masked by their shape:** provider tokens (`gsk_`, `hf_`, `glpat-`,
+  `github_pat_`, `AIza…` and more), Stripe's keys, JWTs, Discord and Telegram bot tokens, private
+  keys, a URL's password, HTTP Basic credentials, AWS's and Azure's secret keys, and Slack
+  webhooks. Of 47 key formats in 12 places a key stands, 537 are masked, against 258.
+- **A mask never breaks JSON.** A number is never masked, and of 30,000 fuzzed payloads none is
+  dropped, against 2,459. JSON written inside a string stays JSON.
+- **A key the model streams in pieces** is no longer kept in the raw bytes beside its answer,
+  which a fork read back and gave its harness again. Bytes that hold a secret are written again
+  from the masked answer, and a fork refuses to replay that step.
+- **The store masks everything it keeps, once.** A check's output in a run's result and a
+  launch's exit, a job's plan and result, an imported chat's steps, a step's error text, a label
+  queued for the next run, and an upstream's password were kept in clear. A value masked in one form of a
+  step is masked in its others, so a server's error that quotes a password is masked, and so is a
+  key the model writes in its own call syntax, in its tokens. An answer sent at once keeps no
+  logprobs that spell a key, and a stream labelled otherwise is read as a stream. What a run is
+  given is kept as given: its task, a wording tried, a scenario's conversation.
+
+Changed:
+
+- **`/_tuningfork/health`, Connections and `serve`** show an upstream's user and password as
+  `<redacted>`, and Connections says to type them back into its restart command.
+- **A step's parameters** count its masks (`masked`) and name the patterns that made them
+  (`redaction`), which `tuningfork step` prints.
+- **`Settings.redaction_patterns` is gone:** a `Store` holds its patterns.
+
+Recordings made before keep what they stored: masking them again with today's rules is planned. A
+fork of a run recorded before still matches its calls, each mask standing for what it hid.
+
 ## 0.5.0 — Qwen models, token by token
 
 Token-level work — scoring an answer, forking tokens, a resample's kept tokens marked by part,

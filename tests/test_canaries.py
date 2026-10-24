@@ -26,8 +26,8 @@ from tuningfork.control import ControlClient
 from tuningfork.harness import ADAPTERS
 from tuningfork.proxy.app import create_app
 from tuningfork.specs import Eval, TaskSpec, TuningforkOptions
+from tuningfork.demo.mock import MockTurn
 from tests.helpers import FakeAgent, serving
-from tests.mock_server import MockTurn
 
 #: Where a key may stand by design: what a fork runs again as it was written.
 KEPT_AS_GIVEN = {("launches", "eval"), ("launches", "variant")}

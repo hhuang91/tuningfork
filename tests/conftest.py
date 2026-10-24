@@ -14,9 +14,9 @@ import pytest
 
 from tuningfork.access import HEADER as TOKEN_HEADER
 from tuningfork.config import Settings
+from tuningfork.demo.mock import MockServer
 from tuningfork.proxy.app import create_app
 from tuningfork.proxy.recorder import Recorder
-from tests.mock_server import MockServer
 
 
 @pytest.fixture(autouse=True)

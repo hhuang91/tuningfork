@@ -14,13 +14,12 @@
 </picture>
 </p>
 
-[See it work](#see-it-work) tells the story behind the figure.
+> [See it work](#see-it-work) tells the story behind the figure.
 
-Tuning Fork (`tuningfork`) sits between your agent and your LLM, allowing you to record and experiment on every call the agent
-makes. When a skill fails, `tuningfork` helps to find the step where the execution goes wrong, and shows how the
-model's responses cause the failure, down to the odds of each word in the model's reasoning. Then, `tuningfork` provides the
-framework to refine the skill via surgical edits, backed by statistical testing,
-so you can **tune agent skills to your own model**.
+Tuning Fork (`tuningfork`) sits between your agent and your LLM and records every call the agent
+makes. If the LLM is the CPU and a skill is source code written in natural language, `tuningfork`
+is the debugger you have been missing: it finds the step where a run goes wrong, shows why the
+model went that way, down to the odds of each word, and tests your edit to the skill to tell a real fix from luck.
 
 It works with **Hermes Agent** and **Claude Code** on **llama.cpp**, from a terminal, a web UI,
 or an agent over MCP.
@@ -32,54 +31,41 @@ Tuning Fork is pre-alpha: commands and their output may still change.
 
 ## Why
 
-**The problem**:
-You have a skill ([agentskills.io](https://agentskills.io)-style `SKILL.md`) for your agent,
-but the skill is flaky: it works three times out of five. So you reword the skill, run the task again, and squint at
-the agent session history trying to see if the edits work. The process is repeated every time the
-agent fails to execute the skill properly, which then turns into what seems like a never-ending whack-a-mole.
-Even worse, when you change your LLM, most edits seem to lose their effect. This problem happens because:
+You have a skill ([agentskills.io](https://agentskills.io)-style `SKILL.md`) that works three
+times out of five. So you reword it, run the task again, and squint at the session history to see
+whether the edit worked; then again at the next failure, in a never-ending whack-a-mole. And when
+you change your LLM, most edits seem to lose their effect. This problem happens because:
 
-- **Wording sensitivity is real, and model-specific.** Open models swing hard on
-  meaning-preserving format changes, and the best format does not transfer between models
-  ([Sclar et al., ICLR 2024](https://arxiv.org/abs/2310.11324)). Every model swap or
-  quantization change means partial retuning.
-- **Luck and noise play a role.** The edited skill passed after your edits, great, but are
-  you sure that it's your edit and not just that the model generated a different token by luck
-  and that token steered the execution to a success? The model could also have been getting
-  lucky on other steps in previous runs so far, so it can fail in other ways during future runs despite your edits.
-- **You don't have an efficient tool.** Squinting at the agent session history to figure out what went wrong is
-  the same painful and inefficient approach as in the early days of software development, when
-  people did desk checks and diagnostic printouts.
-
-**The missing tool**: If we imagine the LLM as the CPU of a computer, a running agent as software,
-and skills as source code written in natural language, then `tuningfork` supplies you with the debugger you have been missing:
-
-- **Record** every model call, with the exact context the model saw, or import a conversation
-  your agent already had.
-- **Localize** the first step where successful and failed runs diverge.
-- **Resample** that step N times from a checkpoint, its history held fixed, and count what the
-  model does.
-- **Look inside the step**: the model's own odds at each token of its answer, and the word where
-  its reasoning forks.
-- **A/B the wording there**, and report the difference with a confidence interval and a
-  significance test instead of a bare percentage.
-- **Break** a live call before or after the model, and read or edit its whole context.
-
-`tuningfork` does not just stop and edit LLM traffic; it provides a framework to
-give you clarity on how the model interprets agent skills, and make you confident
-that your edits are actually improving the skill in a way that is tuned to your model.
+- **Wording sensitivity is real, and model-specific.** Open models swing hard on meaning-preserving
+  format changes, and the best format does not transfer between models ([Sclar et al., ICLR 2024](https://arxiv.org/abs/2310.11324)).
+- **Luck looks like progress.** A run that passes after your edit may owe it to one lucky token, not to the edit.
+- **No automated tool.** Reading agent session histories is like doing desk check in software development.
 
 ## Quickstart
 
-`tuningfork` runs on Linux, or on Windows inside WSL 2 (macOS support planned), with Python 3.12 or later.
-> It is not on PyPI yet: install it from GitHub with [uv](https://docs.astral.sh/uv/), which fetches Python
-itself if you need it.
+`tuningfork` runs on Linux, or on Windows inside [WSL 2](docs/setup.md#on-windows) (macOS support planned), with Python 3.12 or later.
+> Install it with [uv](https://docs.astral.sh/uv/), which fetches Python itself if you need it.
 
-Under WSL, keep the checkout on the Linux file system (`~/…`), never
-under `/mnt/c`, where SQLite's locking does not work; [on Windows](docs/setup.md#on-windows) has
-the steps, and a way to keep the checkout on Windows instead.
+### Try it without a GPU (five-minute UI walkthrough)
+
+```bash
+uvx --from tuningfork-lab tuningfork demo
+```
+
+Open the web UI at the address it prints. The runs are made up and the model is a script, but
+tuningfork's own proxy serves them, so every button works.
+[The guide](examples/README.md#test-a-wording-from-the-browser) says what to click, and
+[its Part 1](examples/README.md#part-1--tuningfork-without-a-model) installs tuningfork and tours
+runs like these from the terminal too.
 
 ### Install Tuning Fork (`tuningfork`)
+
+```bash
+uv tool install "tuningfork-lab[mcp]"
+```
+
+The command is `tuningfork`, and `[mcp]` brings its MCP server. To follow the guides, which use the
+repository's examples, clone it instead:
 
 ```bash
 git clone https://github.com/hhuang91/tuningfork.git
@@ -89,21 +75,6 @@ source .venv/bin/activate
 ```
 
 The last line activates the environment, so that `tuningfork` and `python` are the environment's own.
-
-### Try it without a GPU (five-minute UI walkthrough)
-
-```bash
-python tests/browser/demo.py lab /tmp/tuningfork-lab 8790    # made-up runs, a scripted model
-```
-
-Open the web UI at the address it prints. The runs are made up, nine of the guide's example task (tally-report) with a
-resample and an A/B, but tuningfork's own proxy serves them, in front of a scripted model that
-answers at once, so every button works. To make the A/B in the GIF under [See it work](#see-it-work), open run `tally-report/1#demo.2`,
-its step 1, and *A/B a wording…*. The scripted model writes the keys the check wants only for a
-wording that names them in these exact words: `row_count and amount_total`
-([step by step](docs/images/README.md#the-gif)).
-[Part 1 of the guide](examples/README.md#part-1--tuningfork-without-a-model) tours runs like these
-from the terminal, then stops a live call at a breakpoint and changes it, still with no model.
 
 ### On your own agent
 
@@ -136,21 +107,18 @@ bubblewrap`), so that every run sees the same folders: the model reads them
    tuningfork's proxy:
    `http://127.0.0.1:8787/v1` for agents that use an OpenAI-style API, such as Hermes Agent,
    or `http://127.0.0.1:8787` for those that use Anthropic's, such as Claude Code.
-   `--port` (or `TUNINGFORK_PORT`) moves the proxy to another port, and `TUNINGFORK_PROXY` then
-   tells the other commands where it is. Keep it on `127.0.0.1`, the default: anything that can
-   reach the port can read your recordings and send calls to your model
-   ([what it guards](SECURITY.md)). From another machine, forward the port over SSH instead:
-   `ssh -L 8787:127.0.0.1:8787 <host>`.
+   [Recording an agent as you use it](docs/setup.md#recording-an-agent-as-you-use-it) says how
+   to move the proxy to another port, and how to reach it from another machine.
 
-3. **Check the server**, in a second terminal with the venv activated: can it do what the
-   harnesses need, and does it process every prompt whole?
+3. **Check the server**, in a second terminal (in a clone, with the venv activated): can it do
+   what the harnesses need, and does it process every prompt whole?
 
    ```bash
    tuningfork connections check
    ```
 
 4. **Record runs of a task** — a prompt, its input files and a pass/fail check
-   ([the format](docs/setup.md#a-task)):
+   ([the format](docs/setup.md#a-task)). This one is the repository's example, in a clone:
 
    ```bash
    tuningfork batch examples/tally-report.evals.json -n 8 --harness hermes    # or --harness claude-code
@@ -200,141 +168,39 @@ flowchart LR
 
 ## What you can do
 
-Grouped by the question each answers; each is run as `tuningfork <command>`. Every command takes
-`--help`, and [`docs/commands.md`](docs/commands.md) lists them all with their main options. The
-[web UI](#the-web-ui) does nearly all of it with a click, and an agent can do the reading,
-measuring and refining itself, over MCP ([`docs/agents.md`](docs/agents.md)).
+Each row is a question, with one command that answers it. The question leads to its part of
+[`docs/commands.md`](docs/commands.md), which lists its other commands with their main options,
+and every command takes `--help`. The [web UI](#the-web-ui) does nearly all of it with a click,
+and an agent can do the reading, measuring and refining itself, over MCP
+([`docs/agents.md`](docs/agents.md)).
 
-### Does my skill work?
-
-| Command | What it tells you |
-|---|---|
-| `batch spec.json -n 8` | Runs a task N times through the harness, each run in a fresh workspace, judged by the task's check |
-| `scenario <run> <name>` | Any run as a task of its own: each run continues its conversation from the person's message the skill came in after, judged by a check |
-| `tasks` | The pass rates with their intervals: one row per harness, model and version of the skill |
-| `runs --failed` | The recorded runs, newest first: here the failed ones, to pick one to study |
-| `recheck <run>` | Judges a recorded run again, by its own check or one you are trying out (`--check`), recording nothing |
-
-### What happened in a run?
-
-| Command | What it tells you |
-|---|---|
-| `show <run>` | Its steps, and what the model did at each |
-| `timeline <run>` | The run as one conversation, each step's answer where it happened, reasoning included |
-| `step <run> <step>` | One step: the exact context the model saw, and what it did |
-| `files <run> <step>` | The workspace as that step's call found it (`end`: as the run left it; `--diff`) |
-| `diff <runA> <runB>` | Two runs, step by step |
-| `import chat.json` | A conversation your agent had elsewhere (a Hermes session file or export, a list of messages) as a run, each turn a step the commands here work on |
-
-### Where do the runs go wrong?
-
-| Command | What it tells you |
-|---|---|
-| `divergence --task <id>` | The first step where a task's runs stop agreeing, and how the runs that did each thing fared |
-| `tally --task <id>` | What the failed runs' checks said, counted: the most common failure first |
-| `check-along --task <id>` | The check run again after every call that changed the files: which call made each finding |
-| `where --task <id> --file F` | One question asked of every run — of a file it wrote (`--contains`), or of what the model did (`--match`) — lined up with the verdicts: the call that made the difference |
-
-### Bad luck, or the wording?
-
-| Command | What it tells you |
-|---|---|
-| `resample <run> <step> -n 20` | The step sent again N times, its history held fixed: how often the model does each thing there |
-| `ab <run> <step> --variant SKILL.v2.md --target-match RE` | Your edit against the original at that step, toward a target declared before sampling |
-| `ab … --to-end` | The same, each sample a fork run to the end and judged by the task's check |
-| `fork <run> <step>` | The run replayed up to the step and live from there, with breakpoints armed |
-
-A step is named by its number, or by what the model did there: `write_file` is the first step
-where it called that tool.
-
-### Which token decided it?
-
-These need llama.cpp, and a model whose raw output tuningfork reads: Gemma 4, Qwen2.5, Qwen3, Qwen3.5,
-Qwen3.6 or Qwen3-Coder.
-
-| Command | What it tells you |
-|---|---|
-| `tokens <run> <step> --score` | The answer as the model's tokens: how sure it was of each, as a heatmap |
-| `forking-tokens <run> <step>` | Each likely alternative forced at the uncertain tokens: which ones change what the model does |
-
-### What is the model doing right now?
-
-| Command | What it tells you |
-|---|---|
-| `break add --tool write_file --path '*.json'` | Stops a live call after the model answers, before the harness acts; `--from-step 2` stops before the model sees step 2 |
-| `hold wait` | Waits for a held call and shows it: `hold continue` (`--edited f.json`), `hold step` or `hold drop` decides it |
-| `pause` | Refuses model calls until `resume` |
-
-### How do I fix the skill?
-
-A *refinement* declares what the step should do before anything is proposed, screens each edit
-against the original, validates a survivor with full runs — held-out tasks included — and
-writes it into the skill only when you approve it.
-
-| Command | What it tells you |
-|---|---|
-| `refine start <run> <step> --target-rules '[…]'` | Names the step, and what the model should do there |
-| `refine propose <id> --file SKILL.md --why '…'` | Your own edit; `--builtin` asks a model for edits from the evidence |
-| `refine screen <id> -n 20` | Each edit against a fresh arm of the original, Holm-corrected; `--to-end` lets the check decide |
-| `refine validate <id> <proposal>` | Full runs: forks to the end, the task from its first step, and each held-out task |
-| `refine approve <id> <proposal>` | Writes the edit into the skill's file once you type the code it shows, the old file and a changelog beside it |
-| `skills` | Every skill the recordings know; `skill <name>` gives each version with its pass rates |
-
-### Setting up, and keeping things tidy
-
-| Command | What it does |
-|---|---|
-| `serve --upstream URL` | The recording proxy, with its web UI, its jobs and its MCP route |
-| `connections check` | Measures whether the server can do what the harnesses and experiments need |
-| `ui --home DIR` | The web UI, read-only, over recordings with no proxy running |
-| `jobs list` | Work running inside `serve`, started from the web UI or by an agent |
-| `spend --run <run>` | What work cost: model calls, tokens and time |
-| `trash run <run>` | Sets runs aside, out of every list and rate; `trash purge` deletes them for good |
-| `glossary [word]` | tuningfork's words, each defined once |
+| Question | For example | What it does |
+|---|---|---|
+| [Does my skill work?](docs/commands.md#does-my-skill-work) | `tuningfork batch spec.json -n 8` | Runs a task N times, each run judged by the task's check |
+| [What happened in a run?](docs/commands.md#what-happened-in-a-run) | `tuningfork timeline <run>` | The run as one conversation, each step's answer where it happened |
+| [Where do the runs go wrong?](docs/commands.md#where-do-the-runs-go-wrong) | `tuningfork divergence --task <id>` | The first step where a task's runs stop agreeing, and how the runs that did each thing fared |
+| [Bad luck, or the wording?](docs/commands.md#bad-luck-or-the-wording) | `tuningfork ab <run> <step> --variant SKILL.v2.md --target-match RE` | Your edit against the original at that step, its history held fixed, toward a target declared before sampling |
+| [Which token decided it?](docs/commands.md#which-token-decided-it) | `tuningfork forking-tokens <run> <step>` | Each likely alternative forced at the uncertain tokens: which ones change what the model does |
+| [What is the model doing right now?](docs/commands.md#what-is-the-model-doing-right-now) | `tuningfork break add --tool write_file` | Stops a live call after the model answers, before the harness acts |
+| [How do I fix the skill?](docs/commands.md#how-do-i-fix-the-skill) | `tuningfork refine start <run> <step> --target-rules '[…]'` | Starts a refinement, declaring what the step should do; each edit is then tested at the step, and a survivor is tested in full runs and written into the skill only when you approve it |
+| [Setting up, and keeping things tidy](docs/commands.md#setting-up-and-keeping-things-tidy) | `tuningfork serve --upstream URL` | The recording proxy, with its web UI, its jobs and its MCP route |
 
 ## The web UI
 
 `tuningfork serve` serves a web UI at the address it prints, and `tuningfork ui` serves the same
 pages, read-only, over recordings with no proxy running. Everything above is in it, and it can
-start the work as well as show it: a batch of runs, a resample, an A/B, a fork, a refinement.
+start the work as well as show it: a batch of runs, a resample, an A/B, a fork, a refinement. Here,
+on the demo's scripted model, an A/B is a few clicks from a run's step:
 
-![The front page: where you left off, what is set up, and the loop from a skill to its next version](docs/images/ui-guide.png)
+![Opening a run in the web UI, working from its write step beside the run, and A/B-testing an edited wording there: the original arm at 0 of 20, the edit at 20 of 20, with their intervals and Fisher's test](docs/images/ui-demo.gif)
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/images/ui-run.png" alt="A step's exact context: every message as the model saw it, the skill marked in it, and the call it made"></td>
-    <td width="50%"><img src="docs/images/ui-divergence.png" alt="The divergence page: the step that best predicts whether a run passes, then where a task's runs split and how each behaviour fared"></td>
-  </tr>
-  <tr>
-    <td>A step's exact context: every message as the model saw it, the skill marked line by line, and the call it made</td>
-    <td>The step that best predicts the verdict, then where a task's runs stop agreeing and how the runs that took each path fared</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/images/ui-ab.png" alt="An A/B result: the edit it tested, each arm's rate with its interval, and Fisher's test"></td>
-    <td width="50%"><img src="docs/images/ui-tokens.png" alt="An answer as tokens, shaded by how unsure the model was, one token's alternatives open"></td>
-  </tr>
-  <tr>
-    <td>An A/B at a step: the edit it tested, each arm's rate with its interval, and the test of the target declared before sampling</td>
-    <td>An answer as the model's tokens, shaded by how unsure it was; a click shows what else it weighed there</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/images/ui-refine.png" alt="A refinement: its target and its four stages in a line, then the evidence — each proposal's screen and the approved one's validation — and a section for each stage"></td>
-    <td width="50%"><img src="docs/images/ui-live.png" alt="The Live page: a call held at a breakpoint, its tool call edited in place"></td>
-  </tr>
-  <tr>
-    <td>A refinement: the target declared first and its four stages in a line, then each proposal's screen and the full runs behind the one approved</td>
-    <td>A call held at a breakpoint, edited in place before the harness gets it</td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="docs/images/ui-scenario.png" alt="Making a scenario from a chat had elsewhere: its first message the starting prompt, and each step the chat took beside what each run of the scenario does there"></td>
-  </tr>
-  <tr>
-    <td colspan="2">A chat had elsewhere, imported and made a scenario: each run is sent the person's message with the conversation before it, and the skill comes in live</td>
-  </tr>
-</table>
+A step's answer can be read as the model's own tokens, shaded by how unsure it was. This is the
+figure's fork, in a run that went on to search: the model wrote "Wait" at 7%, where "According"
+was at 80%.
 
-The page changes nothing without the proxy's access token, which is in the address `serve`
-prints; `tuningfork token` prints it again.
+![An answer as tokens, shaded by how unsure the model was, one token's alternatives open: 'According' at 80.4%, 'Wait' at 7.2%](docs/images/ui-tokens.png)
+
+[More of its pages](docs/web-ui.md), pictured.
 
 ## Let an agent drive it
 
@@ -385,11 +251,6 @@ Full runs agree: with the edit in every run, 10/10 pass [72%-100%], against 4/10
 is labelled exploratory and corrected for every comparison it makes.
 [The example](examples/find-the-file/README.md) shows each command with its output.
 
-In the web UI, an A/B is a few clicks from a run's step (here on the demo's scripted model, which
-answers at once; [the quickstart](#try-it-without-a-gpu-five-minute-ui-walkthrough) starts it):
-
-![Opening a run in the web UI, working from its write step beside the run, and A/B-testing an edited wording there: the original arm at 0 of 20, the edit at 20 of 20, with their intervals and Fisher's test](docs/images/ui-demo.gif)
-
 ## Guides
 
 - [**Tuning Fork, step by step**](examples/README.md) — every part of the tool, on a toy skill
@@ -403,7 +264,7 @@ answers at once; [the quickstart](#try-it-without-a-gpu-five-minute-ui-walkthrou
   after it.
 - [**The same model, two ways to improve a skill**](examples/hermes-architecture-diagram/README.md)
   — Hermes's own self-improvement loop against Hermes with tuningfork's tools.
-- **Reference:** [setup](docs/setup.md) · [commands](docs/commands.md) ·
+- **Reference:** [setup](docs/setup.md) · [commands](docs/commands.md) · [the web UI](docs/web-ui.md) ·
   [agents over MCP](docs/agents.md) · [writing a harness adapter](docs/adapters/TEMPLATE.md) ·
   `tuningfork glossary` for the words.
 

@@ -1,4 +1,5 @@
-"""A minimal harness, for tests: an agent loop over OpenAI chat-completions, as a real process.
+"""A minimal harness, for tests and the demo: an agent loop over OpenAI chat-completions, as
+a real process.
 
 Launched the way tuningfork launches Hermes or Claude Code — a subprocess, in its own
 workspace and home, talking HTTP to the proxy's base URL — so a batch run or a fork goes

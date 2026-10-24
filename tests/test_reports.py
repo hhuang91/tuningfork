@@ -15,11 +15,11 @@ from starlette.routing import Route
 from typer.testing import CliRunner
 
 from tuningfork.cli import app
+from tuningfork.demo.mock import MockTurn
 from tuningfork.experiment import SamplingPlan, load_checkpoint, run_resample
 from tuningfork.ops.inspect import experiment_report
 from tuningfork.store.db import Store
 from tests.helpers import PROPS, SKILL, VARIANT, record_pilot
-from tests.mock_server import MockTurn
 
 UPSTREAM = "http://upstream.test"
 

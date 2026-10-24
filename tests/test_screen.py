@@ -10,12 +10,12 @@ import httpx
 import pytest
 
 from tuningfork.analysis.distribution import target_by_rules
+from tuningfork.demo.mock import MockTurn
 from tuningfork.ops import compact
 from tuningfork.ops.common import Cancel, Cancelled, OperationError
 from tuningfork.ops.inspect import experiment_report
 from tuningfork.ops.screen import execute_screen, prepare_screen, screen_result
 from tests.helpers import PROPS, SKILL, VARIANT, record_pilot
-from tests.mock_server import MockTurn
 from tests.test_compact import assert_intervals
 
 UPSTREAM = "http://upstream.test"

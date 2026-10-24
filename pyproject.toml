@@ -1,8 +1,7 @@
 [project]
-name = "tuningfork"
-dynamic = ["version"]
+name = "tuningfork-lab"
+dynamic = ["version", "readme"]
 description = "A step debugger and experiment lab for agent skills on local LLMs"
-readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -55,11 +54,32 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.27", "hatch-fancy-pypi-readme>=24"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
 path = "src/tuningfork/__init__.py"
+
+# PyPI shows README.md with its links to the repository's files made absolute: it reads a
+# relative one against its own page. A link to a heading works there as it is. It draws no
+# Mermaid, so a diagram is a link to the README on GitHub.
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(\]\(|src="|srcset=")(docs/images/)'
+replacement = '\1https://raw.githubusercontent.com/hhuang91/tuningfork/main/\2'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\]\((?!https?://|#)([^)\s]+)\)'
+replacement = '](https://github.com/hhuang91/tuningfork/blob/main/\1)'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(?s)```mermaid\r?\n.*?\r?\n```'
+replacement = '[See the diagram on GitHub.](https://github.com/hhuang91/tuningfork#how-it-works)'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tuningfork"]
