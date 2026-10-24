@@ -973,9 +973,18 @@ class Store:
                         substitution = kept
                     else:
                         context = kept
-                elif harness_overrides:
-                    edits = copy.deepcopy(edits or {})
-                    edits.setdefault("request", {})["harness_overrides"] = harness_overrides
+                else:
+                    changed = (edits or {}).get("request") or {}
+                    if harness_overrides or changed.get("original_extras") is not None:
+                        edits = copy.deepcopy(edits or {})
+                        edit = edits.setdefault("request", {})
+                        if harness_overrides:
+                            edit["harness_overrides"] = harness_overrides
+                        if changed.get("original_extras") is not None:
+                            # A person's edit keeps the harness's own fields, which a fork
+                            # rebuilds its request from: taken from that request as stored,
+                            # masked with it — never as the edit saw them, in clear.
+                            edit["original_extras"] = {k: v for k, v in harness_request.items() if k != "messages"}
             else:
                 attach_path = path
             if assignment is not None:

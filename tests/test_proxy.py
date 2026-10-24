@@ -612,7 +612,18 @@ class TestRedaction:
         assert "<redacted>" in stored["messages"][0]["content"]
         assert stored["model"] == "m"
 
-    async def test_a_breakpoint_edit_is_stored_masked_and_a_fork_finds_its_step(self, recorder):
+    @pytest.mark.parametrize(
+        "asked, taken, secret",
+        [
+            ("Deploy staging.", "DEPLOY_TOKEN=Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1", "Q7bX2kLm9Zr4Tw8Y"),
+            # Found in review's seventh round: a pattern reads across fields, as a command's does
+            # from a message to a tool's description, so the edit's copy of the fields masked
+            # alone kept what the request masked.
+            ("Back up with mysqldump -uroot", "-pZq8xK3vN5wLp", "Zq8xK3vN5wLp"),
+        ],
+        ids=["in-the-field", "across-fields"],
+    )
+    async def test_a_breakpoint_edit_is_stored_masked_and_a_fork_finds_its_step(self, recorder, asked, taken, secret):
         """Found in review's sixth round: an edit of a field besides the messages kept the harness's
         own fields as they came (`original_extras`), which a fork rebuilds the harness's request
         from: a key in a tool's description was stored in clear, and the step, keyed as it is
@@ -628,9 +639,9 @@ class TestRedaction:
         wire = get_wire("openai-chat")
         tools = [{"type": "function", "function": {
             "name": "deploy", "parameters": {"type": "object", "properties": {}},
-            "description": "Deploys the site. Staging takes DEPLOY_TOKEN=Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1"}}]
-        first = {"model": "m", "temperature": 0.7, "tools": tools,
-                 "messages": [{"role": "user", "content": "Deploy staging."}]}
+            "description": f"Deploys the site. It takes {taken} to run."}}]
+        first = {"model": "m", "messages": [{"role": "user", "content": asked}], "temperature": 0.7,
+                 "tools": tools}
         second = {**first, "messages": [*first["messages"], tool_call_message("deploy", {}),
                                         {"role": "tool", "tool_call_id": "call_1", "content": "deployed"}]}
 
@@ -644,7 +655,7 @@ class TestRedaction:
         edited = {**first, "temperature": 0.0}  # a person changed a field besides the messages
         step = await record(edited, harness=first, edits={"request": describe_edit(first, edited)})
         await record(second)
-        assert "Q7bX2kLm9Zr4Tw8Y" not in json.dumps(recorder.store.step(step.run_id, 0).edits)
+        assert secret not in json.dumps(recorder.store.step(step.run_id, 0).edits)
 
         launch = SimpleNamespace(id="f" * 32, source_run=step.run_id, source_step=1, workspace=None, home=None,
                                  variant=None)

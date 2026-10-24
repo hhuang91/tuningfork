@@ -423,9 +423,7 @@ class Recorder:
                 harness=harness,
                 harness_request=clean(harness_request),
                 delivered_response=clean(delivered_response),
-                # An edit's record holds the harness's own fields (`original_extras`), which a
-                # fork rebuilds the harness's request from: masked as that request is.
-                edits=clean(edits),
+                edits=edits,
                 wire=wire.name,
                 normalize=wire.normalize_message,
                 assignment=assignment,
