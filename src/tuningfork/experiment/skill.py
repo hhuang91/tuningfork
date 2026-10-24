@@ -261,7 +261,7 @@ def masked_in(request: dict[str, Any], skill_text: str) -> bool:
 #: What a plan says when the skill it swaps is held masked (`masked_in`).
 MASKED_SKILL = (
     "the skill's own text reads <redacted> at this step, where it was masked as it was recorded: each "
-    "wording is sent masked alike, so they differ by their edits alone"
+    "wording is sent masked as storage masks text"
 )
 
 
@@ -318,12 +318,13 @@ def substitute(
 
     Every occurrence, not the first: if the skill appears twice (preloaded, then viewed
     again through a tool), replacing one would leave the model reading both wordings. Where
-    the request holds the skill masked (`as_stored`), the variant goes in masked alike, so the
-    two arms differ by the edit alone.
+    the request holds the skill masked (`as_stored`), the variant goes in masked as storage
+    masks text.
     Raises `NothingToCompare` if the result is the request unchanged.
     """
     stored = as_stored(request, original_text)
-    if stored != original_text:
+    masked = stored != original_text
+    if masked:
         from tuningfork.config import redact
 
         original_text, variant_text = stored, redact(variant_text)
@@ -346,7 +347,9 @@ def substitute(
     spans = [span for _, span, _ in found]
     if changed == request:
         detail = " ".join(unapplied(original_text, variant_text, spans)) or (
-            "the variant's text, in the form the model sees it here, is identical"
+            "the edit falls inside text storage masks, which both wordings read as <redacted> here"
+            if masked
+            else "the variant's text, in the form the model sees it here, is identical"
         )
         raise NothingToCompare(
             f"Both arms would send the same request: {detail}. Nothing would be measured."

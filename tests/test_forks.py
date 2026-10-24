@@ -511,6 +511,28 @@ class TestStoredMasks:
         other = json.loads(json.dumps(live).replace("[0]", "[1]"))
         assert table.fitting(other, wire) is None
 
+    def test_a_call_that_parts_from_the_recording_after_a_mask_does_not_fit(self, store):
+        """Found in review's second round: a mask stood for any text, so a call whose tool result
+        went on, after the masked text, to say something else took the recorded answer."""
+        from tuningfork.replay import build_table
+        from tuningfork.wire import get_wire
+
+        run = store.get_run(self.recorded(store))
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        parted = json.loads(json.dumps(stored).replace(
+            "<redacted>", "tokenizer.encode(text)[0]\\nERROR: publish.sh refused, nothing was published\\nx = tokenizer.encode"))
+        assert build_table(store, run, 1).fitting(parted, get_wire("openai-chat")) is None
+
+    def test_a_step_masked_as_these_patterns_mask_is_found_by_its_key_alone(self, store):
+        from tuningfork.config import DEFAULT_REDACTIONS, patterns_digest
+        from tests.helpers import record_pilot
+        from tuningfork.replay import build_table
+
+        stamped = {"redaction": patterns_digest(DEFAULT_REDACTIONS)}
+        run = store.get_run(record_pilot(store, read=self.CODE.replace("tokenizer.encode(text)[0]", "<redacted>(text)[0]"),
+                                         params=stamped))
+        assert build_table(store, run, 1).masked == []
+
     def test_a_fork_goes_live_at_its_step_though_its_mask_fell_elsewhere(self, store):
         from types import SimpleNamespace
 

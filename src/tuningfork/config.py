@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import bisect
+import hashlib
 import json
 import os
 import re
@@ -34,13 +35,12 @@ from typing import Any
 
 #: The characters a value is written in, as each kind of pattern reads one: bare, as `.env`
 #: files, YAML, headers and command lines write it; in double or single quotes, as code and JSON
-#: do (anything but spaces, that quote and the angle brackets markup is written in — and an
-#: escape read whole, since a backslash masked alone breaks the JSON, but `\"`, which in JSON
-#: written inside a string is a quote that ends one); a bearer token; Base64; a password in a
-#: URL; a key alone; a command's argument.
+#: do (anything but spaces and that quote — and an escape read whole, since a backslash masked
+#: alone breaks the JSON, but `\"`, which in JSON written inside a string is a quote that ends
+#: one); a bearer token; Base64; a password in a URL; a key alone; a command's argument.
 _BARE = r"A-Za-z0-9_\-.~+/=!@#$%^&*"
-_DOUBLE_QUOTED = r"^\s\"\\<>"
-_SINGLE_QUOTED = r"^\s\"'\\<>"
+_DOUBLE_QUOTED = r"^\s\"\\"
+_SINGLE_QUOTED = r"^\s\"'\\"
 _TOKEN68 = r"A-Za-z0-9_\-.~+/"
 _BASE64 = r"A-Za-z0-9+/"
 _URL_PASSWORD = r"^\s/@\"'<>\\"
@@ -100,31 +100,37 @@ def _not_a_key(chars: str, *, numbers: bool = True, password: bool | str = False
     """A lookahead: the value ahead, written in `chars`, is no key though it stands where one
     could. Not a name (`_NAME`): a word, words joined (`Initialization`, `resolved_api_key`,
     `_RUNTIME_KEY`, `resolvedApiKey`, `token-based-authentication`, `!!enabled`), a dotted name
-    (`settings.SECRET_KEY`), a call or an index (`getToken()`), a path (`reports/2024/q3.csv`)
-    or numbers between dots (a version, an address, an OID), an option's name (`credentials=`) —
-    but, where the value is a `password` (or where the group of that name matched), one word and
-    digits (`rootpass123`, `Welcome2024`), as a person makes a password up, where a constant's
-    name holds an id (`sessionid2`); a key's random letters and digits read as no name. Not a
-    number, where `numbers` and the value is no password's (a count, a time, a page's place),
-    nor a key's id or an address in hex (`0x4AEE18F83AFDEB23`); not a path to a file that holds
-    one (`~/.ssh/id_ed25519`), nor a reference to where one is kept (`op://…`, `vault://…`); not
-    a mask's stars, nor an example cut short (`sk-...`); not a variable or a placeholder
-    (`$TOKEN`, `${{ secrets.X }}`, `<your-key>`, `%KEY%`, `@rematch`, `[KEY]`)."""
+    (`settings.SECRET_KEY`), a path (`reports/2024/q3.csv`) or numbers between dots (a version,
+    an address, an OID), an option's name (`credentials=`) — but, where the value is a
+    `password` (or where the group of that name matched), one word and digits (`rootpass123`,
+    `Welcome2024`), as a person makes a password up, where a constant's name holds an id
+    (`sessionid2`), unless it numbers a password's field (`password2`); a key's random letters
+    and digits read as no name. Not a number, where `numbers` and the value is no password's (a
+    count, a time, a page's place), nor a key's id or an address in hex (`0x4AEE18F83AFDEB23`);
+    not a path to a file that holds one (`~/.ssh/id_ed25519`), nor a reference to where one is
+    kept (`op://…`, `vault://…`); not a mask's stars, nor an example cut short (`sk-...`); not a
+    variable or a placeholder (`$TOKEN`, `${{ secrets.X }}`, `<your-key>`, `%KEY%`, `@rematch`,
+    `[KEY]`), an escape, a regex (`/^…`), nor, where it is no password, a state a tokenizer names
+    (`?InterpolationInTemplate`)."""
     end = "[.!=]?(?![" + chars + "])"
-    made_up = r"(?!(?:[A-Z]?" + _LOWER + r"{1,40}+|[A-Z]{1,40}+)[0-9]{1,6}+" + end + ")"
+    made_up = (
+        r"(?!(?!(?:pass(?:word|wd)?|pwd)[0-9]" + end + r")(?:[A-Z]?" + _LOWER + r"{1,40}+|[A-Z]{1,40}+)[0-9]{1,6}+"
+        + end + ")"
+    )
     number = r"-?[0-9]{1,40}+(?:\.[0-9]{1,40}+)?+(?:[eE][-+]?[0-9]{1,3}+)?+" + end
     name = _PASSWORD_NAME if password is True else _NAME
+    state = "" if password is True else r"|\?"
     if isinstance(password, str):
         made_up, number = f"(?({password}){made_up})", f"(?({password})(?!)|{number})"
-        name = f"(?({password}){_PASSWORD_NAME}|{_NAME})"
+        name, state = f"(?({password}){_PASSWORD_NAME}|{_NAME})", rf"|(?({password})(?!)|\?)"
     return (
-        r"(?!" + (made_up if password else "") + r"!{0,2}+" + name + "(?:" + end + r"|[(\[])|" + _LONG_NAME
+        r"(?!" + (made_up if password else "") + r"!{0,2}+" + name + end + "|" + _LONG_NAME
         + (("|" + number) if numbers else "")
         + r"|0x(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{16}|[0-9a-fA-F]{8})" + end
         + r"|(?:~|\.{1,2})?/{1,2}+\.?(?:" + _PIECE + "|" + _SHORT_PIECE + ")(?:/|" + end + ")"
         + r"|[A-Za-z][A-Za-z0-9+.\-]{0,31}+://"
         + "|[" + chars + r"]{0,64}?(?:\.\.\.|…|\*{3})"
-        + r"|[$%{<@\[(])"
+        + r"|[$%{<@\[(\\]|/\^" + state + ")"
     )
 
 
@@ -140,7 +146,7 @@ def _starts(read: str, chars: str = r"A-Za-z0-9_\-") -> str:
     at only where one stands: it starts a token. No character a key or a name is written in
     stands before it, but where it ends a URL's escape (`%3D`) or a terminal's colour (`ESC[33m`,
     and grep's `ESC[K`), which join it to no word."""
-    colours = "|".join(rf"(?<=\x1b\[[0-9;]{{{n}}}[mK]{read})" for n in range(17))
+    colours = "|".join(rf"(?<=\x1b\[[0-9;]{{{n}}}[mK]{read})" for n in range(33))
     return rf"(?:(?<![{chars}]{read})|(?<=%[0-9A-Fa-f]{{2}}{read})|(?<=[mK]{read})(?:{colours}))"
 
 
@@ -151,12 +157,13 @@ _WORD_START = r"(?<![A-Za-z0-9_]{})"
 #: `clientSecret`, `GITHUB_TOKEN`, `DB_PASS`, `dbPass`, and an upper-case `…_KEY`, `…_AUTH`,
 #: `…_PAT` or `…_CREDENTIALS` as a `.env` file writes one — but a public key's (`…_PUBLIC_KEY`,
 #: `…_PUBLISHABLE_KEY`). Not a page's token (`next_page_token`, `nextPageToken`): opaque, but no
-#: key, and an agent sends it back in its next call.
+#: key, and an agent sends it back in its next call. Not `PASS` on its own, as a test's result
+#: (Go's `--- PASS: TestA`).
 _SECRET_NAME = (
     r"[AaSsPpEeMmTt_](?:(?<=[Aa])(?i:pi[_\-]?key|ccess[_\-]?key|ccount[_\-]?key)"
     r"|(?<=[Ss])(?i:ecret[_\-]?key|igning[_\-]?key|ecret)"
     r"|(?<=[Pp])(?i:rivate[_\-]?key)"
-    r"|(?P<password>(?<=[Pp])(?i:assword|asswd|assphrase|ass(?<![a-z]pass))|(?<=P)ass(?<=[a-z0-9]Pass))"
+    r"|(?P<password>(?<=[Pp])(?i:assword|asswd|assphrase|ass(?<![a-z]pass))(?<!(?<!_)PASS)|(?<=P)ass(?<=[a-z0-9]Pass))"
     r"|(?<=[Ee])(?i:ncryption[_\-]?key)|(?<=[Mm])(?i:aster[_\-]?key)"
     r"|(?<=[Tt])(?i:oken" + "".join(
         f"(?<!{page}{joint}token)"
@@ -233,11 +240,11 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     # requests' `auth=`, a `.netrc` line or an XML element; AWS's secret key, an Azure connection
     # string or signature, and a Slack webhook's path.
     r"://[^\s/:@\"'<>\\]*+:(?P<secret>" + _not_a_key(_URL_PASSWORD, numbers=False, password=True)
-    + "[" + _URL_PASSWORD + "]+)@",
+    + "[" + _URL_PASSWORD + "]++)@",
     r"[Bb]" + _WORD_START.format("[Bb]") + _either("asic") + r"[ \t]+(?P<secret>" + _not_a_key(_BASE64)
     + r"[A-Za-z0-9+/]{12,}+={0,2})(?![A-Za-z0-9+/=])",
     r"[Cc]" + _WORD_START.format("[Cc]") + _either("url") + r"(?![A-Za-z0-9_])" + _SAME_COMMAND
-    + r"[ \t](?:-u|--user)[ \t=]+[\"']?[^\s:\"'\\]+:(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True)
+    + r"[ \t](?:-u|--user)[ \t=]+[\"']?[^\s:\"'\\]++:(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True)
     + r"[^\s\"'\\]+)",
     r"[Mm]" + _WORD_START.format("[Mm]") + r"(?:" + _either("ysql") + r"(?:" + _either("dump") + "|" + _either("admin")
     + r")?|" + _either("ariadb") + r")(?![A-Za-z0-9_])" + _SAME_COMMAND + r"[ \t]-p(?P<secret>"
@@ -268,10 +275,10 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     # before `(` or `[` is a call or an index; how far its run goes is looked at within a key's
     # length, so a run of names is read once.
     _SECRET_NAME + r"(?P<kq>[\"'])?[ \t]*" + _TYPED + r"(?:=>|:=|:|=(?!=))[ \t]*(?:[|>][-+]?[ \t]*(?:\n|\\n)[ \t]+)?"
-    r"(?:\"(?P<secret>" + _not_a_key(_DOUBLE_QUOTED, password="password") + r"(?:[" + _DOUBLE_QUOTED
-    + r"]|\\[^\"]){8,}+)\""
-    r"|'(?P<secret_single>" + _not_a_key(_SINGLE_QUOTED, password="password") + r"(?:[" + _SINGLE_QUOTED
-    + r"]|\\[^\"]){8,}+)'"
+    r"(?:\"(?P<secret>(?![,:;)\]}])" + _not_a_key(_DOUBLE_QUOTED, password="password") + r"(?:["
+    + _DOUBLE_QUOTED + r"]|\\[^\"]){8,}+)\""
+    r"|'(?P<secret_single>(?![,:;)\]}])" + _not_a_key(_SINGLE_QUOTED, password="password") + r"(?:["
+    + _SINGLE_QUOTED + r"]|\\[^\"]){8,}+)'"
     r"|(?(kq)(?!)|(?P<secret_bare>" + _not_a_key(_BARE, password="password") + "(?![" + _BARE
     + "]{8,256}+[(\\[])[" + _BARE + r"]{8,}+)))",
     # A value under any other name ending in `key` (`azure_openai_key`, `mistralKey`), where it
@@ -538,6 +545,12 @@ def redact_json_counted(obj: Any, patterns: tuple[str, ...] = DEFAULT_REDACTIONS
     except json.JSONDecodeError:
         # A pattern broke the structure. Losing the recording beats storing the secret.
         return {"tuningfork_error": "redaction produced invalid JSON; payload dropped"}, made
+
+
+def patterns_digest(patterns: tuple[str, ...]) -> str:
+    """What names a set of patterns: kept with each step as `redaction`, so what reads a step
+    again knows whether it was masked as the patterns at hand mask (a fork's `replay.fits`)."""
+    return hashlib.sha256("\n".join(patterns).encode("utf-8")).hexdigest()[:16]
 
 
 def masks_in(request: Any, params: dict[str, Any] | None) -> int:

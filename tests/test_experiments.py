@@ -322,6 +322,15 @@ class TestAMaskedContext:
         assert f"postgres://report:{REDACTED}@db.internal" in system and "row_count and amount_total" in system
         assert "Tr0ub4dor9" not in json.dumps(sent)
 
+    def test_an_edit_inside_masked_text_is_said_to_be_one(self, store, tmp_path):
+        from tuningfork.experiment.skill import NothingToCompare
+
+        skill = SKILL.replace("Write the totals", self.SOURCE + "Write the totals")
+        run = record_pilot(store, skill=skill, masked=True)
+        checkpoint = load_checkpoint(store, run, 1)
+        with pytest.raises(NothingToCompare, match="the edit falls inside text storage masks"):
+            substitute(checkpoint.request, skill, skill.replace("Tr0ub4dor9", "Tr0ub4dor8"))
+
     def test_a_skill_masked_otherwise_than_storage_masks_it_now_is_said_to_be(self, store, tmp_path):
         from tuningfork.ops.common import OperationError
         from tuningfork.ops.experiments import prepare_ab

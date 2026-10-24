@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from tuningfork.analysis.normalize import mask_workspace
-from tuningfork.config import DEFAULT_REDACTIONS, REDACTED, redact_json
+from tuningfork.config import DEFAULT_REDACTIONS, REDACTED, patterns_digest, redact_json
 from tuningfork.store.db import Run, Step, Store, arrived
 from tuningfork.wire import get_wire
 
@@ -63,21 +63,15 @@ def key_of(text: str) -> str:
 
 def fits(recorded: str, text: str) -> bool:
     """Whether `text` reads as `recorded` does but where `recorded` holds a mask, each standing
-    for one or more characters: a call keyed as today's patterns mask it, against a request
-    stored under others — found in review, every fork of a run recorded before the patterns
-    changed parted from its recording where they had masked code they now keep."""
+    for what a mask hides: one or more characters, no space and no quote — a call keyed as
+    today's patterns mask it, against a request stored under others. Found in review, every
+    fork of a run recorded before the patterns changed parted from its recording where they had
+    masked code they now keep; and a mask that stood for any text let a call that parted from
+    the recording right after one take its answer."""
     if REDACTED not in recorded:
         return recorded == text
-    first, *middle, last = recorded.split(REDACTED)
-    if not (text.startswith(first) and text.endswith(last)):
-        return False
-    at, end = len(first), len(text) - len(last)
-    for piece in middle:
-        found = text.find(piece, at + 1, end)
-        if found < 0:
-            return False
-        at = found + len(piece)
-    return at < end
+    hidden = r'[^\s"]+?'
+    return re.fullmatch(hidden.join(re.escape(piece) for piece in recorded.split(REDACTED)), text) is not None
 
 
 @dataclass(slots=True)
@@ -102,8 +96,9 @@ class ReplayTable:
     step: int
     volatile: tuple[tuple[str, str], ...] = ()
     patterns: tuple[str, ...] = DEFAULT_REDACTIONS
-    #: The recorded calls whose stored request holds a mask, as (key, its text unredacted):
-    #: what a call matches when its key is no recorded one's (`fitting`).
+    #: The recorded calls masked under other patterns than these (`config.patterns_digest`,
+    #: kept as `redaction`) whose request holds a mask, as (key, its text unredacted): what a
+    #: call matches when its key is no recorded one's (`fitting`).
     masked: list[tuple[str, str]] = field(default_factory=list)
 
     def text(self, request: dict[str, Any], wire: Any) -> str:
@@ -161,6 +156,7 @@ def build_table(
     entries: dict[str, deque[Served]] = {}
     expected: dict[int, str] = {}
     masked: list[tuple[str, str]] = []
+    today = patterns_digest(tuple(patterns))
     main = store.steps(run.id)
     live = main[step]
     for recorded, thread in [*replayed_steps(store, run, step), (live, None)]:
@@ -171,6 +167,8 @@ def build_table(
             entries.setdefault(key_of(text), deque()).append(Served(recorded, thread))
         if not thread:
             expected[recorded.idx] = text
+        if (recorded.params or {}).get("redaction") == today:
+            continue  # masked as these patterns mask: a call that is it has its key
         plain = masked_request(request, wire, (), volatile)
         if REDACTED in plain:
             masked.append((key_of(text), plain))

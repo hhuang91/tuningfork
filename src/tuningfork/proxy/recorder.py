@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 
 from tuningfork.analysis.tokens import from_entries, redact_stream, split_logprobs
-from tuningfork.config import Settings, redact_json, redact_json_counted, server_root
+from tuningfork.config import Settings, patterns_digest, redact_json, redact_json_counted, server_root
 from tuningfork.store.db import Step, Store
 from tuningfork.wire import DEFAULT as DEFAULT_WIRE
 from tuningfork.wire import WireFormat
@@ -405,8 +405,10 @@ class Recorder:
         def record_step(raw_blob: str | None, response: dict[str, Any] | None) -> Any:
             # Redacted in the worker thread, as the step is stored: redaction reads every
             # payload whole, its JSON escapes read too, and the event loop has calls to serve.
-            # The step counts its masks: a request can read `<redacted>` where nothing was masked.
+            # The step counts its masks — a request can read `<redacted>` where nothing was masked —
+            # and names the patterns that made them, which a fork reads it again by.
             request, params["masked"] = redact_json_counted(request_payload, patterns)
+            params["redaction"] = patterns_digest(patterns)
             return self.store.record_step(
                 request=request,
                 response=response,

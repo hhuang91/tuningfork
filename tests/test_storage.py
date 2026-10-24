@@ -271,6 +271,13 @@ class TestRedactionMasksKeysNotCode:
             'logger.info("re-signing token: app_key=****%s", app_key[-4:])',
             "private_key: /tmp/tmpXk2Lq9z/key.pem",
             "    password: OAuthFlowPassword | None = None",
+            # Found in review's second round.
+            "--- PASS: TestA/sub (0.00s)\n--- PASS: TestJSONv2 (0.01s)",
+            "login(username=user2, password=password2)",
+            "{ password: password2 }",
+            'lastSignificantToken = "?InterpolationInTemplate";',
+            'UNTRACKED_CAPPED_AT_KEY = "\\0capped_at_ns"',
+            "const UNEXPECTED_TOKEN = /^Unexpected token '?(.)'?(,)? /;",
         ],
     )
     def test_code_and_words_are_kept(self, text):
@@ -368,6 +375,16 @@ class TestRedactionMasksKeysNotCode:
             # A password whose case reads as one short word, which a key's name would let pass.
             ("DB_PASSWORD=aUnArlqz", "aUnArlqz"),
             ("curl -u admin:aUnArlqz https://api.example.com", "aUnArlqz"),
+            # Found in review's second round: passwords shaped like a call or holding markup, a
+            # weak one of a word and digits, and one after a colour of many parameters.
+            ('password = "Summer(2024)"', "Summer(2024)"),
+            ('{"password": "MyPass[1]x"}', "MyPass[1]x"),
+            ('"password": "Ab<3>cd9Kx"', "Ab<3>cd9Kx"),
+            ("password: password123", "password123"),
+            ("TEST_PASS=Zq8xK3vN5wLp", "Zq8xK3vN5wLp"),
+            ('password: "?Xk2Lq9zWm7"', "?Xk2Lq9zWm7"),
+            ("token: \x1b[1;38;2;255;255;255;48;2;0;0;0mghp" "_Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2\x1b[0m",
+             "Q7bX2kLm9Zr4Tw8Y"),
             # A random key whose case cuts into many short words reads as no name.
             ("API_TOKEN=QwErTyUiOpAsDfGhJkLz", "QwErTyUiOpAsDfGh"),
             ("API_TOKEN=V_uhis1WeZJKXQ_p", "V_uhis1WeZJKXQ_p"),
@@ -422,6 +439,21 @@ class TestRedactionMasksKeysNotCode:
         stored = redact_json(payload)
         assert stored["messages"][0]["content"] == "-----BEGIN PRIVATE KEY-----" + REDACTED
         assert stored["messages"][1:] == payload["messages"][1:]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            '{"form":{"fields":[["Username:",32,false],["Password:",128,true]],"minLength":12}}',
+            '["Enter your password:",12345678,true,"next"]',
+            '[["2024-01-02","token=",1729712345,9.5],["x","y",1,2]]',
+            '["api_key:",null,null,null,"done"]',
+        ],
+    )
+    def test_compact_json_written_in_a_string_stays_json(self, text):
+        """Found in review's second round: a string ending in a secret's name and a colon, then
+        compact JSON — `["Password:",128,true]` — and a quoted value opened on the string's
+        closing quote, to mask `,128,true]],` up to the next string."""
+        assert redact_json(as_a_tool_result(text)) == as_a_tool_result(text)
 
     def test_json_written_in_a_string_stays_json(self):
         # Found building the fix: a quoted value that read `\"` whole took the quotes of a JSON
