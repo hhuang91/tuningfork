@@ -426,6 +426,10 @@ class TestRedactionMasksKeysNotCode:
             {"arguments": json.dumps({"page_token": 1729712345678})},
             {"arguments": json.dumps({"session_token": 1729712345678}, indent=2)},
             {"arguments": json.dumps({"db_password": 20261023123456})},
+            # Found in review's ninth round: AWS's secret key is forty characters, digits among them.
+            {"aws_secret_access_key": int("7" * 40), "n": 1},
+            {"arguments": json.dumps({"SecretAccessKey": int("7" * 40), "n": 1}, separators=(",", ":"))},
+            {"arguments": '{"secretAccessKey":' + "1" * 37 + "e+1}"},
         ],
     )
     def test_a_number_is_never_masked(self, payload):

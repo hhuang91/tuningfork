@@ -247,8 +247,9 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?=(?:\s|\\[nrt])*+(?:Proc-Type:|[A-Za-z0-9+/]{16}))"
     r"(?P<secret>(?:\\[nrt]|[A-Za-z0-9+/=\s:,]|-(?!----))++)",
     # A password in a URL, in HTTP Basic credentials, curl's `-u`, MySQL's `-p`, `docker login`'s,
-    # requests' `auth=`, a `.netrc` line or an XML element; AWS's secret key, an Azure connection
-    # string or signature, and a Slack webhook's path.
+    # requests' `auth=`, a `.netrc` line or an XML element; AWS's secret key — under a quoted
+    # name, quoted: a number in JSON is none — an Azure connection string or signature, and a Slack
+    # webhook's path.
     r"://[^\s/:@\"'<>\\]*+:(?P<secret>" + _not_a_key(_URL_PASSWORD, numbers=False, password=True)
     + "[" + _URL_PASSWORD + "]++)@",
     r"[Bb]" + _WORD_START.format("[Bb]") + _either("asic") + r"[ \t]+(?P<secret>" + _not_a_key(_BASE64)
@@ -267,8 +268,8 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     r"(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True) + r"[^\s\"'\\]+)",
     r"<(?:(?i:password|passwd|secret|token|api[_\-]?key|client[_\-]?secret|access[_\-]?token|private[_\-]?key))>"
     r"(?P<secret>" + _not_a_key(r"^<\s\"'\\", numbers=False, password=True) + r"[^<\s\"'\\]{8,}+)</",
-    r"[AaSs](?:(?<=[Aa])(?i:ws_secret_access_key)|(?<=[Ss])(?i:ecretaccesskey))[\"']?[ \t]*[:=\t ][ \t]*[\"']?"
-    r"(?P<secret>[A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])",
+    r"[AaSs](?:(?<=[Aa])(?i:ws_secret_access_key)|(?<=[Ss])(?i:ecretaccesskey))(?P<kq>[\"'])?[ \t]*[:=\t ][ \t]*"
+    r"(?(kq)[\"']|[\"']?)(?P<secret>[A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])",
     r"[?&;Ss](?:(?<=[?&;])[Ss][Ii][Gg]|(?<=[Ss])(?i:hared[_\-]?access[_\-]?signature))"
     r"=(?P<secret>[A-Za-z0-9%+/=]{20,})",
     r"hooks\.slack\.com/services/(?P<secret>T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+)",
