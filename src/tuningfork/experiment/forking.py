@@ -159,7 +159,7 @@ async def run_forking(store: Store, plan: ForkingPlan, *, progress: Any = None) 
     then `sample` as each lands. Returns the experiment, `running` until the caller says how
     it ended (`sampling.finished`)."""
     from tuningfork.experiment.sampling import Anchor, SampleEvent, SamplingPlan, check_parity
-    from tuningfork.experiment.scoring import raw_session
+    from tuningfork.experiment.scoring import other_context, raw_session
 
     checkpoint = plan.checkpoint
     fmt = get_format(plan.format)
@@ -171,7 +171,7 @@ async def run_forking(store: Store, plan: ForkingPlan, *, progress: Any = None) 
         if recorded is not None and recorded != len(prompt.ids):
             raise ForkingError(
                 f"the prompt renders to {len(prompt.ids)} tokens here, and the step's had {recorded}: "
-                "the model would be asked about a different context"
+                "the model would be asked about a different context. " + other_context(checkpoint.request)
             )
         thinking = fmt.thinking(prompt.text)
         server_defaults, notes = await check_parity(

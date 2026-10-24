@@ -17,15 +17,156 @@ from typing import Any
 #
 # Each pattern masks its ``secret`` group if it has one, otherwise the whole match.
 #
+# A mask costs the recording: a step whose context holds one can no longer be scored or
+# probed (its prompt no longer renders to the recorded token count), a fork past an answer
+# holding one is refused, and a resample sends `<redacted>` where the model saw text. So a
+# pattern masks what has a key's shape, and a value under a secret's name only where it reads
+# as a key — never code, never words: the generic pattern once took `tokenizer.encode` for a
+# token, and masked one Hermes source file in six an agent read.
+#
 # The key prefixes must start a token: without that, `sk-` matched inside ordinary words —
 # "task-management-system" was stored as "ta<redacted>".
+
+#: The characters a value is written in, as each kind of pattern reads one: bare, as `.env`
+#: files, YAML, headers and command lines write it; in quotes, as code and JSON do (anything
+#: but spaces, quotes and the brackets placeholders and markup are written in); a bearer token;
+#: Base64; a password in a URL; a key alone.
+_BARE = r"A-Za-z0-9_\-.~+/=!@#$%^&*"
+_QUOTED = r"^\s\"'\\<>|\[\]{}(),;"
+_TOKEN68 = r"A-Za-z0-9_\-.~+/"
+_BASE64 = r"A-Za-z0-9+/"
+_URL_PASSWORD = r"^\s/@\"'<>\\"
+_KEY_CHARS = r"A-Za-z0-9_\-"
+
+
+def _not_a_key(chars: str) -> str:
+    """A lookahead: the value ahead, written in `chars`, is no key though it stands where one
+    could. Not a dotted name (`settings.SECRET_KEY`); not letters only, a word or words joined
+    (`Initialization`, `resolved_api_key`, `_RUNTIME_KEY`, `resolvedApiKey`,
+    `token-based-authentication`, `io.modelcontextprotocol/related-task`) — a key of letters
+    only is read as a name and kept, as real keys hold digits; not a snake_case name with digits
+    (`oauth2_scheme`); not numbers between dots (a version, an address, an OID); not a path to a
+    file that holds one (`~/.ssh/id_ed25519`), nor a reference to where one is kept (`op://…`,
+    `vault://…`); not a mask's stars, nor an example cut short (`sk-...`); not a variable or a
+    placeholder (`$TOKEN`, `${{ secrets.X }}`, `<your-key>`, `%KEY%`)."""
+    end = "[.!]?(?![" + chars + "])"
+    return (
+        r"(?!_*[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+" + end
+        + r"|_*[A-Za-z]+(?:[_\-./:#]+[A-Za-z]+)*_*" + end
+        + r"|_*[a-z][a-z0-9]*(?:_[a-z0-9]+)+_*" + end
+        + r"|[0-9]+(?:\.[0-9]+)+" + end
+        + r"|(?:~|\.{1,2})?/[A-Za-z0-9_.\-]"
+        + r"|[A-Za-z][A-Za-z0-9+.\-]*://"
+        + r"|\*{3}"
+        + "|[" + chars + r"]*?(?:\.\.\.|…)"
+        + r"|[$%{<])"
+    )
+
+
+def _either(word: str) -> str:
+    """`word` in either case, letter by letter. Each pattern starts with a letter or a set of
+    them, and looks behind only after it: the engine then skips to where one stands, where a
+    pattern starting with a lookbehind, or under `(?i)`, is tried at every character."""
+    return "".join(f"[{c.upper()}{c.lower()}]" if c.isalpha() else re.escape(c) for c in word)
+
+
+#: Starts a token: no character a key or a name is written in stands before it.
+_STARTS = r"(?<![A-Za-z0-9_\-]{})"
+
+#: Starts a word.
+_WORD = r"(?<![A-Za-z0-9_]{})"
+
+#: How the name of a secret ends: `OPENAI_API_KEY`, `db_password`, `aws_secret_access_key`,
+#: `clientSecret`, `GITHUB_TOKEN`, `DB_PASS`, `dbPass`, and an upper-case `…_KEY`, `…_AUTH` or
+#: `…_PAT` as a `.env` file writes one. Not a page's token (`next_page_token`, `nextPageToken`):
+#: opaque, but no key, and an agent sends it back in its next call.
+_SECRET_NAME = (
+    r"[AaSsPpEeMmTt_](?:(?<=[Aa])(?i:pi[_\-]?key|ccess[_\-]?key|ccount[_\-]?key)"
+    r"|(?<=[Ss])(?i:ecret[_\-]?key|igning[_\-]?key|ecret)"
+    r"|(?<=[Pp])(?i:rivate[_\-]?key|assword|asswd|assphrase|ass(?<![a-z]pass))"
+    r"|(?<=P)ass(?<=[a-z0-9]Pass)"
+    r"|(?<=[Ee])(?i:ncryption[_\-]?key)|(?<=[Mm])(?i:aster[_\-]?key)"
+    r"|(?<=[Tt])(?i:oken" + "".join(
+        f"(?<!{page}{joint}token)"
+        for page in ("page", "next", "cursor", "sync", "continuation", "pagination", "resume")
+        for joint in ("", "_", "-")
+    )
+    + r")|(?<=_)(?:KEY(?<=[A-Z0-9]_KEY)|AUTH(?<=[A-Z0-9]_AUTH)|PAT(?<=[A-Z0-9]_PAT)"
+    r"|CREDENTIALS(?<=[A-Z0-9]_CREDENTIALS)))"
+)
+
+#: A long flag named for a secret: `--api-key`, `--secret-key`, `--azure-openai-key`, `--db-pass`.
+_SECRET_FLAG = r"--(?i:(?:[a-z0-9]+-)*(?:key|token|secret|password|passwd|pass))(?![A-Za-z0-9_\-])"
+
 DEFAULT_REDACTIONS: tuple[str, ...] = (
-    r"(?<![A-Za-z0-9_\-])(?P<secret>sk-[A-Za-z0-9_\-]{16,})",
-    r"(?i)\bbearer\s+(?P<secret>[A-Za-z0-9._\-]{16,})",
-    r"(?i)(?:api[_-]?key|secret|token|password)[\"']?\s*[:=]\s*[\"']?(?P<secret>[A-Za-z0-9._\-]{12,})",
-    r"(?P<secret>gh[pousr]_[A-Za-z0-9]{16,})",
-    r"(?P<secret>AKIA[0-9A-Z]{16})",
-    r"(?P<secret>xox[baprs]-[A-Za-z0-9-]{10,})",
+    # Keys known by their shape, wherever they stand. `sk-` is no key where lower-case words
+    # follow it (`sk-toggleable__content`, `sk-ecdsa-sha2-nistp256@openssh.com`); the generic
+    # prefixes need a digit or a capital, which an identifier such as `fw_update_settings`
+    # never has.
+    r"(?P<secret>s" + _STARTS.format("s")
+    + r"k(?:-(?![a-z0-9]{1,12}(?:[_\-]+[a-z0-9]{1,12})+(?![A-Za-z0-9_\-]))[A-Za-z0-9_\-]{16,}+(?!@)"
+    r"|_(?:live|test)_[A-Za-z0-9]{20,})"
+    r"|g" + _STARTS.format("g") + r"(?:h[pousr]_[A-Za-z0-9]{16,}|ithub_pat_[A-Za-z0-9_]{22,}"
+    r"|(?:lpat-|sk_)(?=[A-Za-z0-9_\-]*[0-9A-Z])[A-Za-z0-9_\-]{20,})"
+    r"|h" + _STARTS.format("h") + r"f_(?=[A-Za-z0-9_\-]*[0-9A-Z])[A-Za-z0-9_\-]{20,}"
+    r"|f" + _STARTS.format("f") + r"w_(?=[A-Za-z0-9_\-]*[0-9A-Z])[A-Za-z0-9_\-]{20,}"
+    r"|n" + _STARTS.format("n") + r"pm_(?=[A-Za-z0-9_\-]*[0-9A-Z])[A-Za-z0-9_\-]{20,}"
+    r"|t" + _STARTS.format("t") + r"gp_v1_(?=[A-Za-z0-9_\-]*[0-9A-Z])[A-Za-z0-9_\-]{20,}"
+    r"|A" + _STARTS.format("A") + r"Iza[0-9A-Za-z_\-]{35}"
+    r"|A(?<![A-Za-z0-9_\-+/]A)(?:KIA|SIA)[0-9A-Z]{16}(?![A-Za-z0-9+/])"
+    r"|p" + _STARTS.format("p") + r"ypi-[A-Za-z0-9_\-]{40,}"
+    r"|r" + _STARTS.format("r") + r"k_(?:live|test)_[A-Za-z0-9]{20,}"
+    r"|w" + _STARTS.format("w") + r"hsec_[A-Za-z0-9+/=]{24,}"
+    r"|x" + _STARTS.format("x") + r"(?:ox[abprs]-[A-Za-z0-9\-]{10,}|app-[0-9]-[A-Za-z0-9\-]{10,})"
+    r")",
+    # A JSON Web Token; a Discord bot's token; a Telegram bot's, after its bot's number.
+    r"(?P<secret>eyJ" + _STARTS.format("eyJ") + r"[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,})",
+    r"(?P<secret>[MNO]" + _STARTS.format("[MNO]") + r"(?=[A-Za-z_\-]*[0-9])[A-Za-z0-9_\-]{23,27}"
+    r"\.[A-Za-z0-9_\-]{6}\.[A-Za-z0-9_\-]{27,40})(?![A-Za-z0-9_\-])",
+    r"[0-9](?<![0-9][0-9])[0-9]{7,9}:(?P<secret>AA[A-Za-z0-9_\-]{33})(?![A-Za-z0-9_\-])",
+    # A private key's body, from its first line to its last, or to where the text stops; a
+    # body that starts as one does (Base64, or an encrypted key's header), not a mention. Its end
+    # is looked for within a key's length: many beginnings without one would each read to the end.
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?=(?:\s|\\[nrt])*(?:Proc-Type:|[A-Za-z0-9+/]{16}))"
+    r"(?P<secret>[\s\S]{1,10000}?(?=-----END [A-Z ]*PRIVATE KEY-----)|(?:\\[nrt]|[A-Za-z0-9+/=\s])+)",
+    # A password in a URL, in HTTP Basic credentials, curl's `-u`, MySQL's `-p`, requests'
+    # `auth=`, AWS's secret key, an Azure connection string or signature, and a Slack webhook's
+    # path. None takes a backslash: at the JSON's own level it is half of an escape, and masked
+    # alone it breaks the JSON.
+    r"://[^\s/:@\"'<>\\]+:(?P<secret>" + _not_a_key(_URL_PASSWORD) + "[" + _URL_PASSWORD + "]+)@",
+    r"[Bb]" + _WORD.format("[Bb]") + _either("asic") + r"[ \t]+(?P<secret>" + _not_a_key(_BASE64)
+    + r"[A-Za-z0-9+/]{12,}+={0,2})(?![A-Za-z0-9+/=])",
+    r"[Cc]" + _WORD.format("[Cc]") + _either("url")
+    + r"(?![A-Za-z0-9_])[^\n]{0,300}?[ \t](?:-u|--user)[ \t=]+[\"']?[^\s:\"'\\]+:(?P<secret>[^\s\"'\\]+)",
+    r"[Mm]" + _WORD.format("[Mm]") + r"(?:" + _either("ysql") + r"(?:" + _either("dump") + "|" + _either("admin")
+    + r")?|" + _either("ariadb") + r")(?![A-Za-z0-9_])[^\n]{0,300}?[ \t]-p(?P<secret>[^\s\"'\\]{4,})",
+    r"[AaSs](?:(?<=[Aa])(?i:ws_secret_access_key)|(?<=[Ss])(?i:ecretaccesskey))[\"']?[ \t]*[:=\t ][ \t]*[\"']?"
+    r"(?P<secret>[A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])",
+    r"[Aa]" + _WORD.format("[Aa]") + _either("uth") + r"[ \t]*=[ \t]*\([ \t]*(?P<u>[\"'])[^\"'\\]*(?P=u)[ \t]*,"
+    r"[ \t]*(?P<q>[\"'])(?P<secret>[^\"'\\]+)(?P=q)",
+    r"[?&;Ss](?:(?<=[?&;])[Ss][Ii][Gg]|(?<=[Ss])(?i:hared[_\-]?access[_\-]?signature))"
+    r"=(?P<secret>[A-Za-z0-9%+/=]{20,})",
+    r"hooks\.slack\.com/services/(?P<secret>T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+)",
+    # A bearer token, and a key given to a command's flag. Neither crosses a line.
+    r"[Bb]" + _WORD.format("[Bb]") + _either("earer") + r"[ \t]+(?P<secret>" + _not_a_key(_TOKEN68)
+    + "[" + _TOKEN68 + "]{16,}+=*)",
+    _SECRET_FLAG + r"(?:[ \t]+|=)[\"']?(?P<secret>" + _not_a_key(_BARE) + "[" + _BARE + "]{8,}+)",
+    # A value under a secret's name, in quotes or bare. A quoted name takes a quoted value only
+    # — `"page_token": 1729712345678` is a number, and masked bare it would no longer be JSON —
+    # and neither crosses a line: `if not api_key:` is no assignment of the next line. A bare
+    # value before `,` or `)` is a type, an argument or a call (`private_key: PKCS7Types,`).
+    _SECRET_NAME + r"(?P<kq>[\"'])?[ \t]*(?:=>|:=|[:=])[ \t]*"
+    r"(?:(?P<q>[\"'])(?P<secret>" + _not_a_key(_QUOTED) + "[" + _QUOTED + "]{8,}+)(?P=q)"
+    r"|(?(kq)(?!)|(?P<secret_bare>" + _not_a_key(_BARE) + "[" + _BARE + r"]{8,}+)(?![(\[,)\]}])))",
+    # A value under any other name ending in `key` (`azure_openai_key`, `mistralKey`), where it
+    # reads as a key alone: digits and letters, twenty or more, ending where a key ends. Not a
+    # UUID, a path, a cache's or a table's key, nor a public one.
+    r"[_\-K](?:(?<=[_\-])[Kk][Ee][Yy](?<=[A-Za-z0-9][_\-][Kk][Ee][Yy])|(?<=K)ey(?<=[a-z0-9]Key))"
+    r"(?<![Pp][Uu][Bb][Ll][Ii][Cc][_\-][Kk][Ee][Yy])(?<!publicKey)"
+    r"(?P<kq>[\"'])?[ \t]*[:=][ \t]*(?(kq)[\"']|[\"']?)"
+    r"(?P<secret>(?=[A-Za-z0-9_\-]*[0-9])(?=[A-Za-z0-9_\-]*[A-Za-z])" + _not_a_key(_KEY_CHARS)
+    + r"(?![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![A-Za-z0-9_\-]))"
+    "[" + _KEY_CHARS + r"]{20,}+)(?![A-Za-z0-9_\-./:+@,(\[)\]}])",
 )
 
 REDACTED = "<redacted>"
@@ -66,15 +207,14 @@ def redact(text: str, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> str:
 
 def _masked_spans(text: str, patterns: tuple[str, ...]) -> list[tuple[int, int]]:
     # A pattern with a `secret` group masks that group only — the `api_key=` before it stays,
-    # so a redacted recording stays readable — and one without masks its whole match.
+    # so a redacted recording stays readable — and one without masks its whole match. One with
+    # several ways to a secret names each group `secret…`, and masks the one that matched.
     spans = []
     for pattern in patterns:
         compiled = re.compile(pattern)
+        groups = [name for name in compiled.groupindex if name.startswith("secret")]
         for match in compiled.finditer(text):
-            if "secret" in compiled.groupindex and match.group("secret") is not None:
-                spans.append(match.span("secret"))
-            else:
-                spans.append(match.span())
+            spans.append(next((match.span(name) for name in groups if match.group(name) is not None), match.span()))
     return spans
 
 
@@ -251,9 +391,10 @@ def write_home_config(home: Path, data: dict[str, Any]) -> None:
 def redact_json(obj: Any, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> Any:
     """Redact a JSON-serializable object by round-tripping it through `redact`.
 
-    Replacements are quote-free, so the result still parses. Applied to payloads on their
-    way into storage, which means a recording containing a secret will not reconstruct
-    byte-identically — that is the intended trade.
+    Replacements are quote-free and fall inside strings, so the result still parses. Applied to
+    payloads on their way into storage, which means a recording containing a secret will not
+    reconstruct byte-identically — that is the intended trade. Two keys of one object masked
+    alike stay two: the second is `<redacted> (2)`, and so on.
     """
     try:
         text = json.dumps(obj, ensure_ascii=False)
@@ -263,7 +404,20 @@ def redact_json(obj: Any, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> Any
     if redacted == text:
         return obj
     try:
-        return json.loads(redacted)
+        return json.loads(redacted, object_pairs_hook=_apart)
     except json.JSONDecodeError:
         # A pattern broke the structure. Losing the recording beats storing the secret.
         return {"tuningfork_error": "redaction produced invalid JSON; payload dropped"}
+
+
+def _apart(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """An object's pairs, a key masked as another already is numbered: none is lost."""
+    kept: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in kept and REDACTED in key:
+            number = 2
+            while f"{key} ({number})" in kept:
+                number += 1
+            key = f"{key} ({number})"
+        kept[key] = value
+    return kept

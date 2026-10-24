@@ -401,6 +401,7 @@ function resampleForm(step, work = {}) {
         ["tokens", plan.sampling.logprobs
           ? `each sample's kept, with ${plural(plan.sampling.logprobs, "alternative")} at each token` : null],
       ]),
+      (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
       h("p", { class: "hint" }, "Each sample resends this step's request exactly as recorded, with its own seed. Everything before the step stays as it was, and nothing is recorded as a run.")),
     startLabel: "Start the resample",
     onStarted: opened,

@@ -42,6 +42,16 @@ class ScoringError(RuntimeError):
     """The answer cannot be scored as the run's own: said why."""
 
 
+def other_context(request: dict[str, Any]) -> str:
+    """Why a step's prompt renders to another number of tokens than it had, as a sentence."""
+    from tuningfork.config import REDACTED
+
+    if REDACTED in json.dumps(request, ensure_ascii=False):
+        return (f"Its context reads {REDACTED} where text was masked as it was recorded, and the mask is not the "
+                "text the model read.")
+    return "The server's chat template or settings may have changed since the step was recorded."
+
+
 @asynccontextmanager
 async def raw_session(
     store: Store, base_url: str, *, tag: str, timeout: float = 600.0, progress: Any = None
@@ -177,8 +187,8 @@ async def score_answer(
     if recorded_prompt is not None and recorded_prompt != len(prompt.ids):
         raise ScoringError(
             f"the prompt renders to {len(prompt.ids)} tokens here, and the step's had "
-            f"{recorded_prompt}: the model would be asked about a different context. The server's "
-            "chat template or settings may have changed since the step was recorded."
+            f"{recorded_prompt}: the model would be asked about a different context. "
+            + other_context(checkpoint.request)
         )
     thinking = fmt.thinking(prompt.text)
     try:

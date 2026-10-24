@@ -943,6 +943,20 @@ def replay_warning(store: Store, run: Run, step: int) -> str | None:
             "first change of it)")
 
 
+def masked_warning(request: dict[str, Any], step: int) -> str | None:
+    """A sentence for a person or an agent about to sample at `step`, when its context reads
+    `<redacted>`: where text was masked as the step was recorded, each sample is sent the mask
+    where the model saw the text, and answers another prompt than the recorded one."""
+    from tuningfork.config import REDACTED
+
+    found = json.dumps(request, ensure_ascii=False).count(REDACTED)
+    if not found:
+        return None
+    return (f"step {step}'s context reads {REDACTED} in {found} place{'s' if found != 1 else ''}, where text was "
+            "masked as it was recorded: each sample is sent the mask where the model saw the text, so it answers "
+            "another prompt than the recorded one")
+
+
 def restore_workspace(store: Store, view: WorkspaceView, target: Path) -> None:
     """Write the snapshot's files into `target`."""
     from tuningfork.snapshots import Snapshots

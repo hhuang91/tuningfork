@@ -2908,6 +2908,8 @@ def resample(
         _refuse(error)
     checkpoint, plan = prepared.checkpoint, prepared.plan
     _print_checkpoint(checkpoint, plan, prepared.base_url)
+    for warning in prepared.warnings:
+        console.print(f"  [yellow]note[/yellow]      {escape(warning)}")
     console.print()
 
     result = asyncio.run(

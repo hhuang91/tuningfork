@@ -225,6 +225,11 @@ def prepare_screen(
         power["assumed"] = "a baseline that never reaches the target: the most an arm could be helped"
     if n < 20:
         warnings.append(f"at {n} samples an arm, only a large shift can survive the correction")
+    from tuningfork.ops.inspect import masked_warning
+
+    masked = masked_warning(checkpoint.request, checkpoint.step.idx)
+    if masked:
+        warnings.append(masked)
     return ScreenPlan(
         checkpoint=checkpoint,
         plan=sampling,

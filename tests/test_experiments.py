@@ -30,6 +30,7 @@ from tuningfork.experiment import (
     run_resample,
 )
 from tuningfork.analysis.tokens import TokenStream
+from tuningfork.config import REDACTED
 from tests.helpers import PROPS, SKILL, VARIANT, as_response, record_pilot, text_message
 from tests.mock_server import MockTurn
 
@@ -254,6 +255,37 @@ class TestResample:
 
         (outcome,) = experiment_outcomes(store, experiment)
         assert outcome.kind == "truncated"
+
+
+class TestAMaskedContext:
+    """Found in the redaction audit: a resample or an A/B sends the step's request as it is stored,
+    and where text was masked as the step was recorded, every sample is sent `<redacted>` where the
+    model saw the text — another prompt than the recorded one — and nothing said so."""
+
+    MASKED = f"id,amount\nkey={REDACTED}\n"
+
+    def test_a_resample_says_so(self, store):
+        from tuningfork.ops.experiments import prepare_resample
+
+        plan = prepare_resample(store, record_pilot(store, read=self.MASKED), "1", base_url=UPSTREAM)
+        assert [warning for warning in plan.warnings if f"reads {REDACTED} in 1 place," in warning]
+        assert plan.to_json()["warnings"] == plan.warnings
+
+    def test_a_context_without_a_mask_says_nothing(self, store):
+        from tuningfork.ops.experiments import prepare_resample
+
+        assert prepare_resample(store, record_pilot(store), "1", base_url=UPSTREAM).warnings == []
+
+    def test_an_ab_says_so(self, store, tmp_path):
+        from tuningfork.ops.experiments import prepare_ab
+
+        (tmp_path / "SKILL.md").write_text(SKILL, encoding="utf-8")
+        (tmp_path / "variant.md").write_text(VARIANT, encoding="utf-8")
+        plan = prepare_ab(
+            store, record_pilot(store, read=self.MASKED), "1", variant=tmp_path / "variant.md",
+            original=tmp_path / "SKILL.md", base_url=UPSTREAM,
+        )
+        assert [warning for warning in plan.warnings if f"reads {REDACTED}" in warning]
 
 
 class TestLogprobs:

@@ -612,6 +612,33 @@ class TestRedaction:
         assert "<redacted>" in stored["messages"][0]["content"]
         assert stored["model"] == "m"
 
+    async def test_a_number_under_a_tokens_name_keeps_a_claude_code_session_whole(
+        self, proxy_client, mock_server, recorder, settle
+    ):
+        """Found in the redaction audit: a long number under `page_token` in a tool's input was
+        masked bare, which broke the request's JSON. The request was dropped, and so was every
+        later one of the session, which repeats the call: each became a run of its own."""
+        first = claude_code_request()
+        call = {"type": "tool_use", "id": "t2", "name": "list_items", "input": {"page_token": 1729712345678}}
+        first["messages"] += [
+            {"role": "assistant", "content": [call]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "3 items"}]},
+        ]
+        second = json.loads(json.dumps(first))
+        second["messages"] += [
+            {"role": "assistant", "content": [{"type": "text", "text": "Three."}]},
+            {"role": "user", "content": [{"type": "text", "text": "And the next page?"}]},
+        ]
+        mock_server.script(MockTurn(content="Three."), MockTurn(content="None left."))
+        await proxy_client.post(MESSAGES, json=first)
+        await proxy_client.post(MESSAGES, json=second)
+        await settle()
+
+        runs = recorder.store.runs()
+        assert len(runs) == 1 and runs[0].step_count == 2
+        stored = recorder.store.rebuild_request(recorder.store.steps(runs[0].id)[1])
+        assert stored["messages"][4]["content"][0]["input"] == {"page_token": 1729712345678}
+
     async def keep(self, settings, recorder, path, request, *chunks):
         """What the recorder keeps of an answer the upstream streams in these chunks: the bytes,
         the step, and the body as it came."""
@@ -770,8 +797,12 @@ class TestRedaction:
         assert self.check(None, neither) == (self.PIECES, None)  # an answer the proxy could not read
 
     def test_an_answer_that_masking_leaves_unreadable_is_not_kept(self):
-        # Masked bare, a number breaks the answer's JSON: written again, it would be an empty answer.
-        assert self.check({**self.ANSWER, "session_token": 12345678901234567}, self.Wire()) == (None, "dropped")
+        # The default patterns mask inside strings only. A pattern of a person's own can mask a bare
+        # number, which breaks the answer's JSON: written again, it would be an empty answer.
+        patterns = (*DEFAULT_REDACTIONS, r"12345678901234567")
+        answer = {**self.ANSWER, "session_token": 12345678901234567}
+        kept = stream_without_secrets(self.PIECES, answer, self.Wire(), simple_request(stream=True), patterns)
+        assert kept == (None, "dropped")
 
     def test_bytes_that_cannot_be_read_back_are_written_again(self):
         assert self.check(self.ANSWER, self.Wire(parse_fails=True)) == (b"rendered", "rendered")

@@ -48,6 +48,14 @@ def prepare(store, run_id, arms, **kwargs):
     )
 
 
+def test_a_context_masked_as_it_was_recorded_is_said_in_the_plan(store):
+    from tuningfork.config import REDACTED
+
+    run_id = record_pilot(store, read=f"id,amount\nkey={REDACTED}\n")
+    plan = prepare(store, run_id, [("p1", VARIANT, {"proposal": "a1"})])
+    assert [warning for warning in plan.warnings if f"reads {REDACTED} in 1 place," in warning]
+
+
 async def test_a_wording_that_names_the_keys_survives_and_a_neutral_one_does_not(store, served):
     run_id = record_pilot(store)
     plan = prepare(store, run_id, [("p1", VARIANT, {"proposal": "a1"}), ("p2", NEUTRAL, {"proposal": "b2"})], n=8)

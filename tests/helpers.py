@@ -139,8 +139,10 @@ def system_prompt(skill: str = SKILL) -> str:
     )
 
 
-def record_pilot(store: Store, *, model: str = "mock-model", server_defaults=DEFAULTS) -> str:
-    """Record a two-step run: read the CSV, then write the report."""
+def record_pilot(
+    store: Store, *, model: str = "mock-model", server_defaults=DEFAULTS, read: str = "id,amount\n1,10\n"
+) -> str:
+    """Record a two-step run: read the CSV (`read`, what the tool gave back), then write the report."""
     store.begin_run("pilot", "tally-report/1")
     base = {
         "model": model,
@@ -158,7 +160,7 @@ def record_pilot(store: Store, *, model: str = "mock-model", server_defaults=DEF
         response=as_response(READ, finish_reason="tool_calls"),
         server_defaults=server_defaults,
     )
-    second = [*first, READ, {"role": "tool", "tool_call_id": "c1", "content": "id,amount\n1,10\n"}]
+    second = [*first, READ, {"role": "tool", "tool_call_id": "c1", "content": read}]
     store.record_step(
         request={**base, "messages": second},
         response=as_response(tool_call_message("write_file", {"path": "report.json"})),

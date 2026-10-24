@@ -203,14 +203,14 @@ class TestLogprobsAndRedaction:
         }
 
     def test_logprobs_come_out_before_redaction(self):
-        entries = [entry(1, "abcdefghijklmnop", 1.0)]
+        entries = [entry(1, "a1B2c3D4e5F6g7H8", 1.0)]
         response, found = split_logprobs(self.response(entries))
         assert found == entries
         assert "logprobs" not in response["choices"][0]
-        # Redacted in place, the logprobs' own "token" key would have matched `token: <12+>`
+        # Redacted in place, the logprobs' own "token" key would have matched `"token": "…"`
         assert REDACTED in json.dumps(redact_json(self.response(entries))["choices"][0]["logprobs"])
-        assert redact_json(response)["choices"][0]["message"]["content"] == "abcdefghijklmnop"
-        assert redact_stream(from_entries(found)).pieces[1] == "abcdefghijklmnop"
+        assert redact_json(response)["choices"][0]["message"]["content"] == "a1B2c3D4e5F6g7H8"
+        assert redact_stream(from_entries(found)).pieces[1] == "a1B2c3D4e5F6g7H8"
 
     def test_a_response_without_logprobs_is_left_as_it_is(self):
         response = {"choices": [{"message": {"content": "hi"}}]}
@@ -241,9 +241,9 @@ class TestLogprobsAndRedaction:
         assert [c.position for c in candidates(masked, Sampler())] == [1]
 
     def test_spans_are_found_in_the_text_and_in_its_json_form(self):
-        text = 'line\n"api_key": "abcdefghijklmnop" tail'
+        text = 'line\n"api_key": "a1B2c3D4e5F6g7H8" tail'
         (start, end), = redact_spans(text)
-        assert text[start:end] == "abcdefghijklmnop"
+        assert text[start:end] == "a1B2c3D4e5F6g7H8"
 
     def test_spans_read_the_models_own_json_escapes(self):
         # A Qwen3 call is JSON the model writes: a newline in a value is its escape, and
