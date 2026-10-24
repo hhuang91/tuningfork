@@ -14,12 +14,12 @@ import pytest
 
 from tuningfork.access import HEADER as TOKEN_HEADER
 from tuningfork.config import Settings, read_home_config
+from tuningfork.demo.mock import MockServer, MockTurn
 from tuningfork.harness import ClaudeCodeAdapter, HermesAdapter
 from tuningfork.ops import OperationError
 from tuningfork.ops.connections import adapter_for, detect_harnesses, preflight, set_override
 from tuningfork.proxy.app import create_app
 from tests.helpers import PROPS, as_response, until
-from tests.mock_server import MockServer, MockTurn
 
 API = "/_tuningfork/api"
 CHAT = "/v1/chat/completions"

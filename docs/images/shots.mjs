@@ -13,8 +13,8 @@
 //
 //   TUNINGFORK_SHOTS_FINDFILE  `tuningfork serve` over examples/find-the-file's recordings
 //   TUNINGFORK_SHOTS_GUIDE     `tuningfork serve` over the guide's, refinement 338504b1 among them
-//   TUNINGFORK_SHOTS_LIVE      `demo.py live`, started fresh
-//   TUNINGFORK_SHOTS_LAB       `demo.py lab`, started fresh: the GIF, and a chat had elsewhere
+//   TUNINGFORK_SHOTS_LIVE      `tuningfork demo live`, started fresh
+//   TUNINGFORK_SHOTS_LAB       `tuningfork demo`, started fresh: the GIF, and a chat had elsewhere
 //
 // — FFMPEG, where ffmpeg is not on the PATH, and TUNINGFORK_SHOTS_PRIVATE: words no picture may
 // show, comma-separated — your user names, a host, a port that serves something else. A picture
@@ -154,7 +154,7 @@ async function importedChat(source) {
  *  `row_count and amount_total`: the edit below moves it from 0 in 20 to 20 in 20. */
 async function abDemo(page, source) {
   const run = (await source.api("/runs?task=tally-report/1&limit=50")).find((each) => each.label === "tally-report/1#demo.2");
-  if (!run) throw new Error("no run tally-report/1#demo.2: start demo.py lab on a new folder");
+  if (!run) throw new Error("no run tally-report/1#demo.2: start tuningfork demo on a new folder");
   const pointer = await pointerOn(page);
   await sleep(1200);
   await pointer.click(`[...document.querySelectorAll(".run-row")].find((row) => row.querySelector(".run-label")?.textContent === "tally-report/1#demo.2").querySelector("a.run-id")`);

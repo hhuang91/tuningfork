@@ -16,10 +16,10 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from tuningfork.control import ControlClient
+from tuningfork.demo.mock import MockTurn
 from tuningfork.ops import Cancel, Cancelled, OperationError
 from tuningfork.ops.chain import execute_chain, get_chain, list_chains, prepare_chain
 from tests.helpers import FakeAgent, task_stack
-from tests.mock_server import MockTurn
 
 
 def self_improving(payload: dict) -> MockTurn:

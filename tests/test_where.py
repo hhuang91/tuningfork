@@ -14,11 +14,11 @@ import pytest
 from typer.testing import CliRunner
 
 from tuningfork.cli import app
+from tuningfork.demo.mock import MockTurn
 from tuningfork.ops.batch import execute_batch, prepare_batch
 from tuningfork.ops.common import OperationError
 from tuningfork.ops.where import make_probe, seen_text, split_text, where_it_holds
 from tests.helpers import record_run, task_stack, text_message, tool_call_message
-from tests.mock_server import MockTurn
 
 API = "/_tuningfork/api"
 TASK = "t/1"

@@ -4,9 +4,10 @@ This folder holds one small skill that mostly doesn't work, and everything neede
 tuningfork find out why. Follow it top to bottom and you will have used every part of the
 tool.
 
-- **Part 1 — no GPU, about five minutes.** Install, browse a set of recordings, and stop a
-  live model call at a breakpoint and change it. The "model" is a script, so what you see
-  matches this page exactly, apart from ids and times.
+- **Part 1 — no GPU, about five minutes.** Install, browse a set of recordings, test a
+  wording from the browser, and stop a live model call at a breakpoint and change it. The
+  "model" is a script, so what you see matches this page exactly, apart from ids, times and
+  the names of the folders it makes.
 - **Part 2 — the real experiment, about half an hour with Claude Code and forty minutes with
   Hermes Agent, on one GPU.** Record eight runs of the skill on Gemma 4 31B, find the
   decision that fails, resample it, test a rewording at exactly that step, follow the
@@ -73,7 +74,7 @@ pytest -q
 ### 2. Make some recordings to look at
 
 ```bash
-python tests/browser/demo.py seed ~/tuningfork-demo
+tuningfork demo seed --home ~/tuningfork-demo
 export TUNINGFORK_HOME=~/tuningfork-demo
 ```
 
@@ -261,14 +262,38 @@ context* shows everything that step was sent.
 commands' results; the A/B's page starts with the line its variant changes, and **Skills** keeps
 that variant among the skill's saved ones. Stop it with Ctrl-C.
 
+#### Test a wording from the browser
+
+`tuningfork ui` only reads, so what needs a running proxy is greyed. To start work from the
+pages too, serve runs like these through a real proxy, in front of a scripted model that answers
+at once. It records into a new folder of its own, never `$TUNINGFORK_HOME`:
+
+```bash
+tuningfork demo
+```
+
+```
+seeded /tmp/tuningfork-lab-1ybrwr5r: 10 runs, a resample and an A/B.
+tuningfork proxy on http://127.0.0.1:8790/v1, in front of a mock model (no GPU)
+  recording to /tmp/tuningfork-lab-1ybrwr5r
+  web UI       http://127.0.0.1:8790/_tuningfork/ui/?token=…
+  control it with TUNINGFORK_PROXY=http://127.0.0.1:8790 — Ctrl-C to stop
+```
+
+Open the web UI at the address it prints. To make the A/B in the README's GIF, open run
+`tally-report/1#demo.2`, its step 1's *Work from here*, and *A/B a wording…*. The scripted model
+writes the keys the check wants only for a wording that names them in these exact words:
+`row_count and amount_total` ([step by step](../docs/images/README.md#the-gif)). Stop it with
+Ctrl-C.
+
 ### 5. Stop a live call, and change it
 
-Now a real tuningfork proxy, in front of the scripted model. It answers every call by
+Now the proxy alone, with no runs, in front of another scripted model: it answers every call by
 writing `report.json` with the wrong keys. In a **first terminal**:
 
 ```bash
 cd tuningfork && source .venv/bin/activate
-python tests/browser/demo.py proxy ~/tuningfork-live 8791
+tuningfork demo proxy --home ~/tuningfork-live --port 8791
 ```
 
 ```
@@ -2600,7 +2625,7 @@ the built-in proposer, a validation or an approval, and never shown a held-out t
 Stop the proxy and `llama-server` with Ctrl-C, then:
 
 ```bash
-rm -rf ~/tuningfork-guide ~/tuningfork-demo ~/tuningfork-live
+rm -rf ~/tuningfork-guide ~/tuningfork-demo ~/tuningfork-live /tmp/tuningfork-lab-*
 rm -f held.json answer.json
 ```
 

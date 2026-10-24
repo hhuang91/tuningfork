@@ -70,7 +70,7 @@ def test_a_command_reaches_tuningfork_argument_by_argument(tmp_path):
 
 
 def test_run_runs_anything_else_in_its_venv(tmp_path):
-    done = wrapper(tmp_path, "--run", "python", "tests/browser/demo.py", "lab", "/tmp/tuningfork-lab", "8790")
+    done = wrapper(tmp_path, "--run", "pytest", "-q", "tests/test_docs.py")
     assert done.returncode == 0, done.stderr
     args = [line.removeprefix("arg=") for line in done.stdout.splitlines() if line.startswith("arg=")]
-    assert args == ["run", "python", "tests/browser/demo.py", "lab", "/tmp/tuningfork-lab", "8790"]
+    assert args == ["run", "pytest", "-q", "tests/test_docs.py"]

@@ -17,10 +17,10 @@ from typing import Iterator
 import httpx
 
 from tuningfork.config import Settings
+from tuningfork.demo.mock import MockServer, MockTurn
 from tuningfork.proxy.app import ProxyServer, create_app
 from tuningfork.proxy.recorder import Recorder
 from tests.helpers import control_headers, free_port, serving
-from tests.mock_server import MockServer, MockTurn
 
 API = "/_tuningfork/api"
 CHAT = "/v1/chat/completions"

@@ -1,6 +1,6 @@
 """Forks: a recorded run replayed to a relaunched harness, then live from one step.
 
-End to end, with no model: `tests/fake_agent.py` is a real agent process talking HTTP to a
+End to end, with no model: the demo's `agent.py` is a real agent process talking HTTP to a
 real proxy on a socket, and the mock server plays the model — answering by what it is
 shown, so a wording swapped in at a fork's step changes what it does, as a model's would.
 """
@@ -19,8 +19,8 @@ import pytest
 from tuningfork.ops import OperationError
 from tuningfork.ops.forks import execute_forks, prepare_fork
 from tuningfork.store.db import Store
+from tuningfork.demo.mock import MockTurn
 from tests.helpers import VARIANT, control_headers, tally_model, task_stack
-from tests.mock_server import MockTurn
 
 
 @pytest.fixture

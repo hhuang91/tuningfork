@@ -13,11 +13,11 @@ from typer.testing import CliRunner
 from tuningfork.analysis.tokens import from_entries
 from tuningfork.backends.formats import get_format
 from tuningfork.cli import app
+from tuningfork.demo.mock import MockTurn
 from tuningfork.experiment import SamplingPlan, load_checkpoint, run_resample
 from tuningfork.ops.common import OperationError
 from tuningfork.ops.tokens import sample_tokens, step_tokens
 from tests.helpers import PROPS, record_pilot
-from tests.mock_server import MockTurn
 
 API = "/_tuningfork/api"
 UPSTREAM = "http://upstream.test"

@@ -1,4 +1,4 @@
-"""The forking-token probe, against the mock's toy llama.cpp (tests/mock_server/toy.py).
+"""The forking-token probe, against the mock's toy llama.cpp (src/tuningfork/demo/toy.py).
 
 The toy model holds answers that part at one token. Forcing either side there leads to that
 answer, so the probe must find exactly that position, and nothing else.
@@ -15,6 +15,7 @@ from tuningfork.analysis.forking import detectable, forking_report
 from tuningfork.analysis.distribution import target_by_key, target_by_pattern
 from tuningfork.analysis.normalize import Outcome
 from tuningfork.cli import app
+from tuningfork.demo.toy import props as toy_props
 from tuningfork.ops.catalog import CATALOG
 from tuningfork.ops.common import Cancel, Cancelled, OperationError
 from tuningfork.ops.forking import _prefill_seconds, execute_forking, forking_result, prepare_forking
@@ -22,7 +23,6 @@ from tuningfork.ops.inspect import experiment_report
 from tuningfork.ops.tokens import execute_score, prepare_score
 from tuningfork.wire import get_wire
 from tests.helpers import as_response
-from tests.mock_server.toy import props as toy_props
 
 UPSTREAM = "http://upstream.test"
 TOOLS = [{"type": "function", "function": {"name": name, "parameters": {"type": "object"}}}

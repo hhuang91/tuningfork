@@ -1,5 +1,5 @@
 """Scoring and forking tokens on a model that writes Qwen3-Coder's format, against the toy
-(`tests/mock_server/toy.py`'s `Qwen3CoderToy`).
+(`src/tuningfork/demo/toy.py`'s `Qwen3CoderToy`).
 
 What the format's reading takes from the step, each exercised through the real path: there is
 no reasoning to read, and the model may write its first call without the `<tool_call>` the
@@ -13,11 +13,11 @@ import httpx
 import pytest
 
 from tuningfork.backends.formats import get_format
+from tuningfork.demo.toy import Qwen3CoderToy, props as toy_props
 from tuningfork.ops.forking import execute_forking, prepare_forking
 from tuningfork.ops.tokens import execute_score, prepare_score
 from tuningfork.wire import get_wire
 from tests.helpers import as_response
-from tests.mock_server.toy import Qwen3CoderToy, props as toy_props
 
 UPSTREAM = "http://upstream.test"
 CODER = get_format("qwen3-coder")

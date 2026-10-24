@@ -4947,6 +4947,47 @@ def ui(
     uvicorn.run(create_browse_app(store, host=host), host=host, port=port, log_level="warning")
 
 
+#: What `tuningfork demo` starts: see `tuningfork.demo.lab`.
+DEMO_MODES = ("lab", "seed", "proxy", "live")
+
+
+@app.command()
+def demo(
+    mode: str = typer.Argument(
+        "lab",
+        help="lab: made-up runs behind a real proxy in front of a scripted model, so every button in "
+        "the web UI works; the model names the report's keys only when the skill does. seed: the "
+        "runs alone, to read from the terminal. proxy: the proxy alone, no runs, in front of a model "
+        "that always writes the wrong keys. live: the same, with a call held at a breakpoint.",
+    ),
+    home: Optional[Path] = typer.Option(
+        None, help="Where the demo records: a new folder each time by default, never your own recordings."
+    ),
+    port: int = typer.Option(8790, "--port", "-p", min=1, max=65535, help="Where its proxy listens, on 127.0.0.1."),
+) -> None:
+    """Try tuningfork with no GPU and no model: made-up runs and a scripted model, in the web UI."""
+    if mode not in DEMO_MODES:
+        _refuse(OperationError(f"the demo is lab, seed, proxy or live, not {mode!r}"))
+    from tuningfork.demo import lab
+
+    try:
+        if mode != "seed":
+            lab.check_port(port)
+        home = lab.demo_home(home, mode)
+    except OperationError as error:
+        _refuse(error)
+    # uvicorn shuts down cleanly on Ctrl-C, then raises the signal again: the demo exits quietly on it.
+    try:
+        if mode == "seed":
+            lab.seed(home)
+        elif mode == "lab":
+            lab.lab(home, port)
+        else:
+            lab.proxy(home, port, demo_call=mode == "live")
+    except KeyboardInterrupt:
+        raise typer.Exit(code=130)
+
+
 # --- the trash ---------------------------------------------------------------------------
 
 trash_app = typer.Typer(

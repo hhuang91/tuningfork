@@ -15,13 +15,13 @@ import pytest
 
 from tuningfork.breakpoints import Breakpoint
 from tuningfork.config import Settings
+from tuningfork.demo.mock import MockTurn
 from tuningfork.proxy.app import create_app
 from tuningfork.proxy.held import HUNG_UP
 from tuningfork.proxy.sse import ChunkAssembler, reassemble
 from tuningfork.wire.anthropic import AnthropicMessages
 from tuningfork.wire.openai import OpenAIChat
 from tests.helpers import all_steps, only_step, sse_payloads, until
-from tests.mock_server import MockTurn
 from tests.test_proxy import proxy_before, upstream_sending
 from tests.test_wire import OVERLOADED, claude_code_request, message_start, text_block
 

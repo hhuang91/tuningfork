@@ -19,6 +19,7 @@ import httpx
 import pytest
 
 from tuningfork.config import Settings
+from tuningfork.demo.mock import MockTurn
 from tuningfork.harness import HermesAdapter
 from tuningfork.launches import LaunchThreads, launch_url, proxy_root, request_path, split
 from tuningfork.ops import OperationError
@@ -26,7 +27,6 @@ from tuningfork.ops.launch import check_proxy
 from tuningfork.proxy.app import create_app
 from tuningfork.runner import BatchRunner, prepare_home
 from tests.helpers import as_response, control_headers, mcp_headers, serving, token_in
-from tests.mock_server import MockTurn
 from tests.test_runner import GOOD_REPORT, RecordingHarness, ScriptedHarness, make_spec
 
 CHAT = "/v1/chat/completions"

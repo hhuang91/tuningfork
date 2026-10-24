@@ -14,7 +14,7 @@ which gives them all. For a walk through them on a real task, see
 - [What is the model doing right now?](#what-is-the-model-doing-right-now) — `break`, `hold`, `pause`, `resume`
 - [How do I fix the skill?](#how-do-i-fix-the-skill) — `refine`, `skills`, `skill`, `add-skill`, `forget-skill`,
   `connections proposer`
-- [Setting up, and keeping things tidy](#setting-up-and-keeping-things-tidy) — `serve`, `ui`, `token`,
+- [Setting up, and keeping things tidy](#setting-up-and-keeping-things-tidy) — `serve`, `ui`, `demo`, `token`,
   `connections`, `probe`, `servers`, `jobs`, `trash`, `glossary`, `mcp`, `version`
 
 ## How commands name things
@@ -542,6 +542,24 @@ works there ([cloud models](setup.md#cloud-models)).
 
 The web UI over recordings, read-only, with no proxy running (`--home`, `--port` default 8788).
 With a proxy running, use its own UI instead: it adds live breakpoints and starts work.
+
+### `demo`
+
+tuningfork with no GPU and no model. `demo` (or `demo lab`) serves made-up runs of the guide's
+example task through a real proxy in front of a scripted model, so every button in the web UI
+works. At a step of the made-up runs, the model writes the report's keys only when the skill
+names them in the words `row_count and amount_total`; in a run the demo's own harness makes, it
+reads `data.csv` first, then writes them whenever the skill names `row_count`. `--port` (default
+8790) moves it. `demo seed` writes the runs alone, for the terminal. `demo proxy` is the proxy
+alone, with no runs, in front of a model that always writes the wrong keys, and `demo live` the
+same with a call held at a breakpoint.
+
+Each records into a new folder in the system's temporary folder, unless `--home` names one; the
+folder is kept after it stops. Its runs are made up under that task's own id (`tally-report/1`),
+so it records only into a folder it made or an empty one, never where tuningfork keeps
+recordings by default, and it seeds a folder only once. It refuses a `--port` something listens
+on already. [Part 1 of the guide](../examples/README.md#part-1--tuningfork-without-a-model)
+walks through `demo seed`, `demo` and `demo proxy`.
 
 ### `token`
 

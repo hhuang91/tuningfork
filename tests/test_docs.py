@@ -13,8 +13,8 @@ from tuningfork.cli import app
 ROOT = Path(__file__).resolve().parents[1]
 COMMANDS = ROOT / "docs" / "commands.md"
 #: The pages a newcomer reads first, and what they link to: pages and images alike.
-PAGES = ("README.md", "docs/setup.md", "docs/commands.md", "docs/agents.md", "docs/images/README.md",
-         "examples/find-the-file/README.md")
+PAGES = ("README.md", "docs/setup.md", "docs/commands.md", "docs/agents.md", "docs/web-ui.md",
+         "docs/images/README.md", "examples/find-the-file/README.md")
 
 
 def command_paths(group, prefix: str = "") -> list[str]:

@@ -1,4 +1,4 @@
-"""Scoring a recorded answer, against the mock's toy llama.cpp (see tests/mock_server/toy.py).
+"""Scoring a recorded answer, against the mock's toy llama.cpp (see src/tuningfork/demo/toy.py).
 
 The toy model holds two answers that part at one token — `count` or `row_count` — so a scored
 answer's heatmap has exactly one fork, and where it is, is known.
@@ -18,13 +18,13 @@ from tuningfork.backends.llamacpp.raw import aligned
 from tuningfork.backends.raw import RawError
 from tuningfork.cli import app
 from tuningfork.config import EXPERIMENT_HEADER, REDACTED
+from tuningfork.demo.toy import props as toy_props
 from tuningfork.endpoints import ProtectedEndpoint
 from tuningfork.ops.catalog import CATALOG
 from tuningfork.ops.common import OperationError
 from tuningfork.ops.tokens import execute_score, prepare_score
 from tuningfork.wire import get_wire
 from tests.helpers import PROPS, as_response
-from tests.mock_server.toy import props as toy_props
 
 UPSTREAM = "http://upstream.test"
 GEMMA = get_format("gemma4")

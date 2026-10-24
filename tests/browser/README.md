@@ -12,7 +12,7 @@ Three terminals, from the repository root:
 ```bash
 # 1. The real proxy app in front of the mock model: no GPU needed. After a moment it arms
 #    a write_file breakpoint and makes one call that stops there.
-uv run python tests/browser/demo.py live /tmp/tuningfork-demo 8791
+uv run tuningfork demo live --home /tmp/tuningfork-demo --port 8791
 
 # 2. Any Chromium-based browser, headless, with a debugging port.
 chromium --headless=new --remote-debugging-port=9333 --user-data-dir=/tmp/fp-browser about:blank
@@ -44,17 +44,17 @@ left held.
 
 ## Starting work from the browser
 
-`jobs_ui.mjs` drives the forms that start work, against `demo.py lab`: the proxy over
+`jobs_ui.mjs` drives the forms that start work, against `tuningfork demo`: the proxy over
 the seeded recordings, in front of a model that names the report's keys only when the skill
-states them — and with a harness it can launch, `tests/fake_agent.py` as "fake", and a
+states them — and with a harness it can launch, `src/tuningfork/demo/agent.py` as "fake", and a
 task for it in `<home>/lab-task/evals.json`. The lab's raw endpoints (`/apply-template`,
-`/tokenize`, `/completion`) are the mock's toy llama.cpp (`tests/mock_server/toy.py`), and
+`/tokenize`, `/completion`) are the mock's toy llama.cpp (`src/tuningfork/demo/toy.py`), and
 its run `tokens-lab` has an answer that toy model parts on one token — read the file, or
 search for it.
 
 ```bash
 # a fresh home each time; 127.0.0.1:18099 stands in for a protected endpoint
-TUNINGFORK_PROTECTED=127.0.0.1:18099 uv run python tests/browser/demo.py lab /tmp/tuningfork-lab 8791
+TUNINGFORK_PROTECTED=127.0.0.1:18099 uv run tuningfork demo --port 8791
 node tests/browser/jobs_ui.mjs
 ```
 
@@ -179,18 +179,18 @@ A page's content-security-policy violations count as page errors.
 
 ## Looking at the pages
 
-`demo.py seed` records a varied store — runs that diverge, an edited step, a run that
-cannot be counted, a resample and an A/B — and `demo.py browse` serves it read-only, as
-`tuningfork ui` would. Headless screenshots are a quick check after a CSS change:
+`tuningfork demo seed` records a varied store — runs that diverge, an edited step, a run that
+cannot be counted, a resample and an A/B — and `tuningfork ui` serves it read-only. Headless
+screenshots are a quick check after a CSS change:
 
 ```bash
-uv run python tests/browser/demo.py seed /tmp/tuningfork-seed
-uv run python tests/browser/demo.py browse /tmp/tuningfork-seed 8790
+uv run tuningfork demo seed --home /tmp/tuningfork-seed
+uv run tuningfork ui --home /tmp/tuningfork-seed --port 8790
 chromium --headless=new --window-size=1440,1000 --virtual-time-budget=4000 \
   --screenshot=runs.png 'http://127.0.0.1:8790/_tuningfork/ui/#/runs'
 ```
 
-`demo.py proxy` is `live` without the breakpoint and the call: the real proxy in front of
+`tuningfork demo proxy` is `live` without the breakpoint and the call: the real proxy in front of
 the mock model, for trying breakpoints by hand. `examples/README.md` walks through it.
 
 A live page keeps its event stream open, so `--virtual-time-budget` never runs out there;

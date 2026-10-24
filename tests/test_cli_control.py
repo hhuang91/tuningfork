@@ -20,11 +20,11 @@ from typer.testing import CliRunner
 from tuningfork.cli import app
 from tuningfork.config import Settings
 from tuningfork.control import ControlClient, ControlError
+from tuningfork.demo.mock import MockServer, MockTurn
 from tuningfork.proxy.app import create_app, create_browse_app
 from tuningfork.proxy.recorder import Recorder
 from tuningfork.store.db import Store
 from tests.helpers import free_port, serving
-from tests.mock_server import MockServer, MockTurn
 
 CHAT = "/v1/chat/completions"
 

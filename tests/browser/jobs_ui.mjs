@@ -1,5 +1,5 @@
 // Start work from the browser, and check what the proxy ran — not just what the page shows.
-// Needs `demo.py lab` running (see README.md): the proxy over seeded recordings, in front of
+// Needs `tuningfork demo` running (see README.md): the proxy over seeded recordings, in front of
 // a model that names the report's keys as the skill does.
 //
 // Node 22+. Exits non-zero on the first failed check. The environment is read by cdp.mjs.
@@ -8,7 +8,7 @@ import { BASE, Page, TOKEN, api, check, post, sleep, until } from "./cdp.mjs";
 
 const UI = `${BASE}/_tuningfork/ui/?token=${TOKEN}`;
 const run = (await api("/runs?task=tally-report/1&limit=20")).find((found) => found.label === "tally-report/1#demo.0");
-if (!run) throw new Error("no seeded run: start `demo.py lab` on a fresh home");
+if (!run) throw new Error("no seeded run: start `tuningfork demo` on a fresh home");
 
 const jobIdIn = (hash) => /#\/jobs\/([0-9a-f]{32})/.exec(hash)?.[1];
 
@@ -629,10 +629,11 @@ try {
   await post("/resume");
 
   // --- 4. The event stream cut mid-job: every event shown once ----------------------------
-  // What the bus does to a page that falls a whole queue behind (the demo's /_demo/blip does
-  // it on demand). A browser's own offline switch leaves an open stream alone.
+  // What the bus does to a page that falls a whole queue behind (the demo's
+  // /_tuningfork/api/demo/blip does it on demand). A browser's own offline switch leaves an open
+  // stream alone.
   console.log("the event stream cut while it runs");
-  const cut = await (await fetch(`${BASE}/_demo/blip`, { method: "POST" })).json();
+  const cut = await post("/demo/blip");
   check(cut.cut >= 1, "the page's stream is cut");
   await until(() => page.eval(`document.querySelector(".status")?.textContent.includes("reconnecting")`), "the page to notice", 8000);
   const before = await page.eval(`document.querySelectorAll(".job-log .log-line").length`);

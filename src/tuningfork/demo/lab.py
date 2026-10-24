@@ -1,44 +1,42 @@
-"""Demo data and servers: tuningfork with no GPU and no model.
+"""Demo data and servers: tuningfork with no GPU and no model, as `tuningfork demo` serves them.
 
-    uv run python tests/browser/demo.py seed   <home>          # recordings to look at
-    uv run python tests/browser/demo.py browse <home> <port>   # `tuningfork ui` over them
-    uv run python tests/browser/demo.py proxy  <home> <port>   # the real proxy, mock model
-    uv run python tests/browser/demo.py live   <home> <port>   # the same, with a call held
-    uv run python tests/browser/demo.py lab    <home> <port>   # seeded runs, a model to test
+    tuningfork demo [lab] [--home DIR] [--port N]    # seeded runs, a model to test a wording on
+    tuningfork demo seed  [--home DIR]               # recordings to look at
+    tuningfork demo proxy [--home DIR] [--port N]    # the real proxy, mock model
+    tuningfork demo live  [--home DIR] [--port N]    # the same, with a call held
 
 `proxy` runs the proxy app itself in front of the scriptable mock server, so breakpoints
 and held calls behave exactly as they do against a model. Its model answers every call by
 writing report.json with the wrong keys. `live` is `proxy` for the browser test: shortly
 after it starts, it arms a `write_file` breakpoint and makes one call that stops there, so
-the Live page has something to show. `live_ui.mjs` drives that page; see README.md.
+the Live page has something to show. `tests/browser/live_ui.mjs` drives that page.
 
 `lab` is the proxy over the `seed` recordings, for starting work from the browser: its
 model follows the skill's key names only when the skill states them — so a resample of the
 write step finds the wrong keys, and an A/B of a wording that names them shows the shift.
-Its raw endpoints are the mock's toy llama.cpp (`tests/mock_server/toy.py`), and one more
-run, `tokens-lab`, has an answer that toy model parts on one token — read the file, or
-search for it — for scoring and forking tokens from the browser. `jobs_ui.mjs` drives it.
+Its raw endpoints are the mock's toy llama.cpp (`toy.py`), and one more run, `tokens-lab`,
+has an answer that toy model parts on one token — read the file, or search for it — for
+scoring and forking tokens from the browser. `tests/browser/jobs_ui.mjs` drives it.
 
-`examples/README.md` walks through all of them.
+`tuningfork ui --home DIR` browses seeded recordings read-only. `examples/README.md`
+walks through all of them.
 """
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
-import sys
 import threading
 import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from tuningfork.analysis.normalize import outcome_for  # noqa: E402
-from tuningfork.store.db import Store  # noqa: E402
-from tests.helpers import SKILL, VARIANT, system_prompt, tool_call_message  # noqa: E402
+from tuningfork.analysis.normalize import outcome_for
+from tuningfork.demo.task import SKILL, VARIANT, system_prompt, tool_call_message
+from tuningfork.store.db import Store
 
 MODEL = "gemma-4-31b"
 TOOLS = [
@@ -49,6 +47,67 @@ CSV = "id,amount\n1,10.00\n2,20.50\n3,15.00\n4,16.00\n"
 DEFAULTS = {"temperature": 1.0, "top_p": 0.95, "top_k": 64, "n_ctx": 65536}
 GOOD = {"row_count": 4, "amount_total": 61.5}
 BAD = {"count": 4, "total": 61.5}
+#: What marks a folder the demo recorded into, so that it may record there again.
+MARK = ".tuningfork-demo"
+#: The seeded runs' task, which `seed` writes first: a folder holding it holds those runs.
+SEEDED = "demo-task"
+
+
+def demo_home(home: Path | None, mode: str) -> Path:
+    """The folder a demo records into: a new one, or the one named if the demo may use it.
+    Its runs are made up under a real task's id (`tally-report/1`), so it records only into a
+    folder it made or an empty one, never where tuningfork keeps recordings by default; and
+    `seed` adds its runs to whatever is there, so a folder is seeded once. A folder
+    `TUNINGFORK_HOME` names is refused only for what it holds: the guide names the demo's own."""
+    import tempfile
+
+    from tuningfork.ops import OperationError
+
+    named = home is not None
+    again = "name a new folder with --home, or leave --home out for one"
+    try:
+        if not named:
+            home = Path(tempfile.mkdtemp(prefix=f"tuningfork-{mode}-"))
+        else:
+            home = home.expanduser().resolve()
+            if home.exists() and not home.is_dir():
+                raise OperationError(f"{home} is a file, not a folder", hint=again)
+            # A folder the demo seeded before it marked its folders keeps the tasks it wrote there.
+            ours = (home / MARK).exists() or (home / SEEDED).is_dir() or (home / "lab-task").is_dir()
+            if not ours:
+                if home == (Path.home() / ".tuningfork").resolve():
+                    raise OperationError(f"{home} is where tuningfork keeps your recordings by default", hint=again)
+                if (home / "tuningfork.db").exists():
+                    raise OperationError(f"{home} holds recordings not marked as the demo's", hint=again)
+                if home.exists() and any(home.iterdir()):
+                    raise OperationError(f"{home} is not empty, and not a folder the demo made", hint=again)
+            if mode == "seed" and (home / SEEDED).is_dir():
+                raise OperationError(f"{home} is seeded already: seeding it again would add its runs twice", hint=again)
+        home.mkdir(parents=True, exist_ok=True)
+        (home / MARK).write_text("Made-up recordings, made by `tuningfork demo`.\n", encoding="utf-8")
+    except OSError as error:  # a folder it may not read, or cannot make
+        if not named:  # a new one, in the temporary folder
+            again = "name a folder with --home"
+        where = home or error.filename or "a new folder in the temporary folder"
+        raise OperationError(f"cannot record in {where}: {error.strerror or error}", hint=again) from None
+    return home
+
+
+def check_port(port: int) -> None:
+    """Refuse a port something listens on already, before anything is seeded or printed: the
+    address the demo prints would lead to whatever holds it."""
+    import socket
+
+    from tuningfork.ops import OperationError
+
+    with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # as uvicorn binds
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError as error:
+            taken = error.errno == errno.EADDRINUSE
+            said = f"port {port} is in use" if taken else f"cannot listen on port {port}: {error.strerror}"
+            raise OperationError(said, hint="name another with --port") from None
 
 
 def response(message, finish="stop", reasoning="", prompt=4100, completion=120):
@@ -95,7 +154,7 @@ DEMO_CHECK = (
 def demo_spec(home: Path) -> Path:
     """The task the seeded runs were launched from, as a batch keeps its spec: `Run this task
     again…` on their page opens it, for the lab's own harness (`fake`) to run."""
-    folder = home / "demo-task"
+    folder = home / SEEDED
     (folder / "tally-report").mkdir(parents=True, exist_ok=True)
     (folder / "tally-report" / "SKILL.md").write_text(SKILL, encoding="utf-8")
     path = folder / "evals.json"
@@ -124,7 +183,7 @@ def keep_skill(store: Store) -> Path:
     return snapshot / "SKILL.md"
 
 
-def seed(home: Path) -> None:
+def seed(home: Path, hint: bool = True) -> None:
     """Nine runs of a flaky task that diverge at step 1, each launched by a batch of it as
     Hermes Agent: one edited at a breakpoint and one whose skill changed mid-run, neither
     counted; a run with no task, recorded live; a resample and an A/B of a saved variant, its
@@ -264,25 +323,17 @@ def seed(home: Path) -> None:
     # Drawn in full: done, not left running by a process that is about to exit.
     store.finish_experiments([e.id for e in store.experiments(limit=10)], "done")
     store.close()
-    print(f"seeded {home}: 10 runs, a resample and an A/B. Try: tuningfork runs --home {home}")
-
-
-def browse(home: Path, port: int) -> None:
-    import uvicorn
-
-    from tuningfork.proxy.app import create_browse_app
-
-    print(f"browsing {home} at http://127.0.0.1:{port}/_tuningfork/ui/ — Ctrl-C to stop", flush=True)
-    uvicorn.run(create_browse_app(Store(home)), host="127.0.0.1", port=port, log_level="warning")
+    # The lab serves them next: what to try is the web UI it prints, with no command to type.
+    print(f"seeded {home}: 10 runs, a resample and an A/B." + (f" Try: tuningfork runs --home {home}" if hint else ""))
 
 
 def proxy(home: Path, port: int, demo_call: bool = False, responder=None, blip: bool = False, setup=None) -> None:
     import httpx
 
     from tuningfork.config import Settings
+    from tuningfork.demo.mock import MockServer, MockTurn
     from tuningfork.proxy.app import ProxyServer, create_app
     from tuningfork.proxy.recorder import Recorder
-    from tests.mock_server import MockServer, MockTurn
 
     mock = MockServer()
     mock.props = {"default_generation_settings": {"n_ctx": DEFAULTS["n_ctx"], "params": {
@@ -323,6 +374,7 @@ def proxy(home: Path, port: int, demo_call: bool = False, responder=None, blip: 
 
         # Demo only: end every open event stream, as the bus does to a page that fell a whole
         # queue behind. The page reconnects, and must catch up on what it missed meanwhile.
+        # Under tuningfork's own prefix, where the guard asks the access token of any change.
         async def cut_streams(request):
             from starlette.responses import JSONResponse
 
@@ -337,17 +389,17 @@ def proxy(home: Path, port: int, demo_call: bool = False, responder=None, blip: 
                 cut += 1
             return JSONResponse({"cut": cut})
 
-        app.router.routes.insert(0, Route("/_demo/blip", cut_streams, methods=["POST"]))
+        app.router.routes.insert(0, Route("/_tuningfork/api/demo/blip", cut_streams, methods=["POST"]))
     ProxyServer(app, host="127.0.0.1", port=port).run()
 
 
 def lab(home: Path, port: int) -> None:
     """The proxy over seeded recordings, with a model worth testing a wording on — and a
-    harness it can launch: `tests/fake_agent.py`, as "fake", and a task for it in
+    harness it can launch: `agent.py`, as "fake", and a task for it in
     <home>/lab-task/evals.json."""
+    from tuningfork.demo.mock import MockTurn
+    from tuningfork.demo.task import CHECK, FakeAgent, tally_model
     from tuningfork.harness import ADAPTERS
-    from tests.helpers import CHECK, FakeAgent, tally_model
-    from tests.mock_server import MockTurn
 
     ADAPTERS["fake"] = FakeAgent
     task = home / "lab-task"
@@ -370,8 +422,8 @@ def lab(home: Path, port: int) -> None:
         }],
     }, indent=2), encoding="utf-8")
 
-    if not (home / "tuningfork.db").exists():
-        seed(home)
+    if not (home / SEEDED).is_dir():
+        seed(home, hint=False)
     # Kept again for a home seeded before the seed kept it.
     store = Store(home)
     keep_skill(store)
@@ -399,7 +451,7 @@ def lab(home: Path, port: int) -> None:
     seed_tokens(home)
 
     def toy(mock):
-        from tests.mock_server.toy import props
+        from tuningfork.demo.toy import props
 
         mock.props = {**mock.props, **{k: v for k, v in props().items() if k.startswith("chat_template")}}
         mock.toy.answers = TOKEN_ANSWERS
@@ -430,8 +482,8 @@ def seed_tokens(home: Path) -> None:
     """The `tokens-lab` run: one step whose answer is the toy model's likelier one, with the
     token counts the toy server reports for it — so scoring it rebuilds it exactly."""
     from tuningfork.backends.formats import get_format
-    from tests.helpers import as_response
-    from tests.mock_server.toy import ToyLlama
+    from tuningfork.demo.task import as_response
+    from tuningfork.demo.toy import ToyLlama
 
     store = Store(home)
     try:
@@ -469,25 +521,3 @@ def _demo_call(port: int, token: str) -> None:
             {"role": "tool", "tool_call_id": "c1", "content": CSV},
         ]
         client.post("/v1/chat/completions", json={"model": MODEL, "messages": messages, "tools": TOOLS})
-
-
-if __name__ == "__main__":
-    if len(sys.argv) < 3 or sys.argv[1] not in {"seed", "browse", "proxy", "live", "lab"}:
-        sys.exit(__doc__)
-    mode, home = sys.argv[1], Path(sys.argv[2]).expanduser()
-    if mode == "seed":
-        seed(home)
-    elif len(sys.argv) < 4:
-        sys.exit(f"{mode} needs a port: demo.py {mode} <home> <port>")
-    else:
-        # uvicorn shuts down cleanly on Ctrl-C, then raises the signal again; `tuningfork
-        # serve` exits quietly on it, and so does the demo.
-        try:
-            if mode == "browse":
-                browse(home, int(sys.argv[3]))
-            elif mode == "lab":
-                lab(home, int(sys.argv[3]))
-            else:
-                proxy(home, int(sys.argv[3]), demo_call=mode == "live")
-        except KeyboardInterrupt:
-            sys.exit(130)

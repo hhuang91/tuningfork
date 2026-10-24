@@ -21,9 +21,9 @@ from mcp.client.streamable_http import streamable_http_client  # noqa: E402
 
 from tuningfork.access import HEADER  # noqa: E402
 from tuningfork.config import Settings  # noqa: E402
+from tuningfork.demo.mock import MockTurn  # noqa: E402
 from tuningfork.proxy.app import create_app, stop_live_work  # noqa: E402
 from tests.helpers import PROPS, record_pilot, serving  # noqa: E402
-from tests.mock_server import MockTurn  # noqa: E402
 
 AGENT = types.Implementation(name="http-test", version="2")
 MCP = "/_tuningfork/mcp"

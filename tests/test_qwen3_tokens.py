@@ -1,5 +1,5 @@
 """Scoring and forking tokens on a model that writes Qwen3's format, or Qwen2.5's, against the
-toy (`tests/mock_server/toy.py`'s `Qwen3Toy`).
+toy (`src/tuningfork/demo/toy.py`'s `Qwen3Toy`).
 
 What the format's reading takes from the step, each exercised through the real path: the model
 opens its reasoning itself, or the prompt closed it; a reasoning the model left empty reads as
@@ -17,13 +17,13 @@ from typer.testing import CliRunner
 from tuningfork.backends.formats import get_format
 from tuningfork.backends.llamacpp.anthropic import to_chat
 from tuningfork.cli import app
+from tuningfork.demo.toy import Qwen3Toy, props as toy_props
 from tuningfork.experiment.scoring import _chance, recorded_message
 from tuningfork.ops.forking import execute_forking, prepare_forking
 from tuningfork.ops.tokens import execute_score, prepare_score
 from tuningfork.wire import get_wire
 from tuningfork.wire.anthropic import AnthropicMessages
 from tests.helpers import as_response, messages_stream
-from tests.mock_server.toy import Qwen3Toy, props as toy_props
 
 UPSTREAM = "http://upstream.test"
 ANTHROPIC = AnthropicMessages()
