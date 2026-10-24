@@ -32,7 +32,7 @@ from tuningfork.experiment import (
 )
 from tuningfork.analysis.tokens import TokenStream
 from tuningfork.config import REDACTED
-from tests.helpers import PROPS, SKILL, VARIANT, as_response, record_pilot, text_message
+from tests.helpers import KEY, PROPS, SKILL, VARIANT, as_response, record_pilot, text_message
 from tests.mock_server import MockTurn
 
 UPSTREAM = "http://upstream.test"
@@ -263,7 +263,8 @@ class TestAMaskedContext:
     and where text was masked as the step was recorded, every sample is sent `<redacted>` where the
     model saw the text — another prompt than the recorded one — and nothing said so."""
 
-    MASKED = f"id,amount\nkey={REDACTED}\n"
+    #: What a tool gave back, a key in it: stored masked, `key=<redacted>`.
+    MASKED = f"id,amount\nkey={KEY}\n"
 
     def test_a_resample_says_so(self, store):
         from tuningfork.ops.experiments import prepare_resample
@@ -313,7 +314,7 @@ class TestAMaskedContext:
         (tmp_path / "SKILL.md").write_text(skill, encoding="utf-8")
         (tmp_path / "variant.md").write_text(VARIANT.replace("Write the totals", self.SOURCE + "Write the totals"),
                                              encoding="utf-8")
-        run = record_pilot(store, skill=skill, masked=True)
+        run = record_pilot(store, skill=skill)
         plan = prepare_ab(store, run, "1", variant=tmp_path / "variant.md", original=tmp_path / "SKILL.md",
                           base_url=UPSTREAM)
         assert MASKED_SKILL in plan.warnings
@@ -326,7 +327,7 @@ class TestAMaskedContext:
         from tuningfork.experiment.skill import NothingToCompare
 
         skill = SKILL.replace("Write the totals", self.SOURCE + "Write the totals")
-        run = record_pilot(store, skill=skill, masked=True)
+        run = record_pilot(store, skill=skill)
         checkpoint = load_checkpoint(store, run, 1)
         with pytest.raises(NothingToCompare, match="the edit falls inside text storage masks"):
             substitute(checkpoint.request, skill, skill.replace("Tr0ub4dor9", "Tr0ub4dor8"))
@@ -344,6 +345,26 @@ class TestAMaskedContext:
             prepare_ab(store, run, "1", variant=tmp_path / "variant.md", original=tmp_path / "SKILL.md",
                        base_url=UPSTREAM)
         assert "holds text storage masks" in refused.value.detail
+
+
+class TestATargetKeptAsDeclared:
+    async def test_a_target_read_from_masked_answers_still_names_its_behaviour(self, store, mock_server, client):
+        """Found in review: an experiment's settings were masked as they were stored, and a target keyed
+        from an answer masked once, masked again — a command's second password — named no behaviour."""
+        from tuningfork.analysis.distribution import target_by_key
+        from tuningfork.analysis.normalize import DEFAULT_NORMALIZERS, outcome_for
+
+        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        mock_server.script(*[MockTurn(content=command)] * 4)
+        checkpoint = load_checkpoint(store, record_pilot(store), 1)
+        key = outcome_for(store.masking.of(as_response(text_message(command))).value, list(DEFAULT_NORMALIZERS)).key
+        target = target_by_key(key, "A from an earlier resample: says the command")
+        ab = await run_ab(store, checkpoint, SamplingPlan(n=2), base_url=UPSTREAM, original_text=SKILL,
+                          variant_text=VARIANT, target=target, client=client)
+
+        arm = store.get_experiment(ab.original.id)
+        stored, _ = declared_target(arm)
+        assert [stored.matches(outcome) for outcome in experiment_outcomes(store, arm)] == [True, True]
 
 
 class TestLogprobs:
@@ -383,6 +404,24 @@ class TestLogprobs:
 
         assert experiment_report(store, experiment.id).tokens_kept == 1
         assert not any("sent none back" in note for note in experiment.notes)
+
+    async def test_a_samples_tokens_are_masked_of_what_its_answer_masked(self, store, mock_server, client):
+        """The model says a password back bare, a few characters a token: no pattern reads it there,
+        and the answer's own mask names it."""
+        mock_server.props = {**PROPS, "chat_template": "{{ '<|tool_call>call:' }}"}
+        pieces = ["password=", "Tr0u", "b4do", "r3xyz", " so", " Tr0u", "b4do", "r3xyz"]
+        entries = [self.entry(number, piece) for number, piece in enumerate(pieces, start=1)]
+        mock_server.script(MockTurn(content="".join(pieces), logprobs={"content": entries}))
+        checkpoint = load_checkpoint(store, record_pilot(store), 0)
+
+        experiment = await run_resample(
+            store, checkpoint, SamplingPlan(n=1, logprobs=5), base_url=UPSTREAM, client=client
+        )
+
+        (sample,) = store.samples(experiment.id)
+        (record,) = store.token_streams(sample_ids=[sample.id])
+        kept = json.dumps(store.token_stream_data(record))
+        assert "b4do" not in kept and '" so"' in kept
 
     async def test_a_server_that_sends_none_back_is_said_to(self, store, mock_server, client):
         """Found in review: asked for and accepted with nothing back — a server without logprobs —

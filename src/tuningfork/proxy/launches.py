@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Any, Callable
 
 from tuningfork.launches import Assignment, LaunchThreads, request_path
 from tuningfork.proxy.replay import ForkReplay
@@ -67,9 +67,10 @@ def _skill_key(name: str) -> str:
 
 
 class LaunchState:
-    def __init__(self, launch: Launch, patterns: Sequence[str], store: Store | None = None) -> None:
+    def __init__(self, launch: Launch, store: Store | None = None) -> None:
         self.launch = launch
-        self.patterns = tuple(patterns)
+        #: The store's masking: what a call's path is predicted with (`request_path`).
+        self.masking = store.masking if store is not None else None
         self.threads = LaunchThreads(
             launch.id,
             label=launch.label,
@@ -80,7 +81,7 @@ class LaunchState:
         #: For a fork: the recording it answers from, until it goes live.
         self.replay: ForkReplay | None = None
         if launch.kind == "fork" and store is not None:
-            self.replay = ForkReplay(store, launch, self.patterns, volatile_for(launch.harness))
+            self.replay = ForkReplay(store, launch, volatile=volatile_for(launch.harness))
         #: For a scenario's run: the conversation it continues (`tuningfork.context`), put
         #: before the harness's own messages in each call of its main thread — and the model's
         #: earlier steps of the prompt's turn, after the prompt.
@@ -140,7 +141,7 @@ class LaunchState:
 
     def assign(self, payload: dict[str, Any], wire: Any) -> Assignment:
         side = bool(self.side_call and self.side_call(payload))
-        return self.threads.assign(request_path(payload, wire, self.patterns), side=side)
+        return self.threads.assign(request_path(payload, wire, self.masking), side=side)
 
     def release(self, assignment: Assignment) -> None:
         self.threads.release(assignment)
@@ -149,9 +150,8 @@ class LaunchState:
 class LaunchRegistry:
     """The launches this proxy is serving. `resolve` reads the store: call it off the loop."""
 
-    def __init__(self, store: Store, patterns: Sequence[str]) -> None:
+    def __init__(self, store: Store) -> None:
         self.store = store
-        self.patterns = tuple(patterns)
         self._states: dict[str, LaunchState] = {}
         self._lock = threading.Lock()
 
@@ -182,7 +182,7 @@ class LaunchRegistry:
                 "tuningfork_launch_interrupted",
             )
         try:
-            fresh = LaunchState(launch, self.patterns, self.store)
+            fresh = LaunchState(launch, self.store)
         except ValueError as exc:
             self.store.end_launch(token, status="interrupted", exit={"reason": str(exc)})
             return Refusal(409, f"launch {token[:8]} cannot be replayed: {exc}", "tuningfork_replay")

@@ -558,6 +558,9 @@ class JobRecord:
 #: A job's columns that change as it goes, and how each is stored.
 _JOB_JSON = ("params", "plan", "progress", "result", "error", "links", "owner", "started_by")
 _JOB_PLAIN = ("status", "started_at", "ended_at")
+#: What a job keeps of its work, masked as the store masks: not its links (ids) or its owner
+#: (the process running it, which liveness is read from).
+_JOB_MASKED = ("params", "plan", "progress", "result", "error", "started_by")
 
 
 def _overrides(exact: Sequence[Any], stable: Sequence[Any]) -> dict[str, Any]:
@@ -654,10 +657,15 @@ def _argument_texts(call: dict[str, Any], shortest: int = 16) -> list[str]:
 class Store:
     """Thread-safe SQLite store. One connection, guarded by a lock."""
 
-    def __init__(self, home: Path) -> None:
+    def __init__(self, home: Path, patterns: Sequence[str] | None = None) -> None:
+        from tuningfork.config import DEFAULT_REDACTIONS
+        from tuningfork.store.masking import Masking
+
         self.home = Path(home)
         self.home.mkdir(parents=True, exist_ok=True)
         self.blobs = BlobStore(self.home / "blobs")
+        #: How everything written here is masked: the one set of patterns every write takes.
+        self.masking = Masking(tuple(patterns) if patterns is not None else DEFAULT_REDACTIONS)
         self._lock = threading.RLock()
         self._maskings: set[str] = set()  # digests kept (`keep_masking`)
         self._conn = sqlite3.connect(self.home / "tuningfork.db", check_same_thread=False)
@@ -895,12 +903,21 @@ class Store:
 
     # --- recording ----------------------------------------------------------------
 
+    def put_given(self, value: Any) -> str:
+        """Keep a JSON value a run is given as a blob, as it was given: a scenario's context, which
+        the proxy puts before the harness's own messages in every call of each launch of it and
+        each fork after. Like a launch's eval, what the model is sent is not changed; the steps
+        that send it are masked as they are recorded."""
+        return self.blobs.put_json(value)
+
     def record_step(
         self,
         *,
         request: dict[str, Any],
         response: dict[str, Any] | None = None,
-        raw_response_blob: str | None = None,
+        raw_response: bytes | None = None,
+        streamed: bool = False,
+        tokens: list[dict[str, Any]] | None = None,
         params: dict[str, Any] | None = None,
         server_defaults: dict[str, Any] | None = None,
         status: int | None = None,
@@ -910,7 +927,7 @@ class Store:
         harness_request: dict[str, Any] | None = None,
         delivered_response: dict[str, Any] | None = None,
         edits: dict[str, Any] | None = None,
-        wire: str | None = None,
+        wire: Any = None,
         normalize: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         assignment: Any = None,
         replay: dict[str, Any] | None = None,
@@ -919,7 +936,8 @@ class Store:
         server_id: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> Step:
-        """Record one model call.
+        """Record one model call, masked as the store masks (`masking`): what it is given is
+        never stored as it came.
 
         `assignment` (a `tuningfork.launches.Assignment`) is where a launched call belongs,
         decided when it arrived; such a call is recorded there, and neither labels nor path
@@ -935,12 +953,59 @@ class Store:
           The model's own output stays the step's response: it is the behaviour.
 
         The request is stored in its own wire format, exactly as sent; responses are in the
-        common shape (an OpenAI `chat.completion`), whatever the format — see `wire`.
+        common shape (an OpenAI `chat.completion`), whatever the format — see `wire`, its
+        name or itself. `raw_response` is the answer's bytes as they came (`streamed` or not),
+        and `tokens` the logprobs a harness asked for, split from the answer: each is kept as
+        the store masks it (`Masking.raw`, `Masking.stream`).
+
+        A value masked in one form of a step is masked in its others: what the request's and
+        the answer's masks took is masked wherever else it stands in the answer, the answer the
+        harness was given, the error, the parameters, what is noted of an edit, a variant, a
+        context or a replay, and the tokens (`config._FOUND`) — in a JSON value's strings only —
+        and raw bytes holding it are written again. Not in the requests: a fork keys a call by
+        the request masked with the patterns alone (`replay.masked_request`). So a value no
+        pattern reads, which the model's answer says bare, stands in clear in the next request,
+        which sends that answer back.
 
         `normalize` gives a message the stable form the tree identifies it by, when a
         harness re-encodes earlier messages from one request to the next. Messages whose
         exact form differs are kept on the step, so `rebuild_request` is still exact.
         """
+        from tuningfork.wire import get_wire
+
+        masking = self.masking
+        wire_format = wire if wire is not None and not isinstance(wire, str) else get_wire(wire)
+        wire_name = wire if wire is None or isinstance(wire, str) else wire.name
+        # Masked before the store is locked: masking reads every payload whole, and other
+        # writers wait on the lock.
+        asked = masking.of(request)
+        request, found = asked.value, set(asked.found)
+        params = {**(params or {}), "masked": asked.made, "redaction": masking.digest}
+        self.keep_masking(masking.digest, masking.patterns)
+        # The harness's own request is masked as the request is, by the patterns alone: a fork
+        # keys a call masked so against the step as it is stored (`replay.masked_request`).
+        harness_request = masking.value(harness_request)
+        answer = response
+        if response is not None:
+            answered = masking.of(response, also=found)
+            response = answered.value
+            found |= answered.found
+        delivered_response = masking.value(delivered_response, also=found)
+        edits, substitution, context, replay = (
+            masking.value(value, also=found) for value in (edits, substitution, context, replay)
+        )
+        error = masking.value(error, also=found)
+        raw_response_blob = None
+        if raw_response is not None:
+            body, how = masking.raw(
+                raw_response, answer=answer, masked=response, wire=wire_format, request=request,
+                streamed=streamed, also=found,
+            )
+            if how:
+                # Its bytes are not the server's: scoring keeps to the answer, a fork refuses it.
+                params["raw_redacted"] = how
+            raw_response_blob = self.blobs.put(body) if body is not None else None
+        params = masking.value(params, also=found)
         exact = request.get("messages") or []
         messages = [normalize(m) for m in exact] if normalize else list(exact)
         overrides = _overrides(exact, messages)
@@ -1047,7 +1112,7 @@ class Store:
                     if delivered_response is not None
                     else None
                 ),
-                wire=wire,
+                wire=wire_name,
                 message_overrides=overrides,
                 replay=replay or {},
                 substitution=substitution or {},
@@ -1087,6 +1152,13 @@ class Store:
                 " AND NOT EXISTS (SELECT 1 FROM steps WHERE run_id = ? AND idx > ?)",
                 (attach_path[-1] if attach_path else "", step.recorded_at, run, run, idx),
             )
+        if tokens:
+            from tuningfork.analysis.tokens import from_entries
+
+            self.add_token_stream(
+                from_entries(tokens), source="recorded", step_id=step.id, server_id=step.server_id,
+                method="chat-logprobs", also=found,
+            )
         return step
 
     def _launched_run(
@@ -1106,7 +1178,8 @@ class Store:
                     assignment.run_id,
                     path[0] if path else "",
                     path[-1] if path else "",
-                    assignment.label,
+                    # An import's label holds its chat's title.
+                    self.masking.value(assignment.label),
                     # Only the task's own conversation is filed under the task: a subagent's
                     # thread is part of a run, not a run of the task.
                     assignment.task_id if assignment.main else None,
@@ -1258,6 +1331,8 @@ class Store:
     def label_next(
         self, label: str, task_id: str | None = None, force: bool = False
     ) -> None:
+        """The label the next new run takes — a person's, or a batch's — masked as the store masks."""
+        label = self.masking.value(label)
         with self._lock:
             self._conn.execute(
                 "INSERT INTO pending_labels (label, task_id, force, created_at)"
@@ -1306,6 +1381,7 @@ class Store:
         model's context window is too small, for instance. The queued label would otherwise
         be picked up by whatever ran next and quietly mislabel it.
         """
+        label = self.masking.value(label)  # as it was queued
         with self._lock:
             self._conn.execute("DELETE FROM pending_labels WHERE label = ?", (label,))
             self._conn.commit()
@@ -1344,6 +1420,10 @@ class Store:
         result: dict[str, Any] | None = None,
         harness: str | None = None,
     ) -> None:
+        """What is known of a run besides its steps. Its label, how it was run and its result —
+        a check's output, and its findings along the run — are masked as the store masks."""
+        masking = self.masking
+        label, parity, result = (masking.value(value) for value in (label, parity, result))
         sets, values = [], []
         for column, value in (
             ("label", label),
@@ -1616,7 +1696,12 @@ class Store:
     # --- servers ------------------------------------------------------------------
 
     def add_server(self, identity: dict[str, Any]) -> str:
-        """Keep a server identity; return its id. The same identity gets the same id."""
+        """Keep a server identity; return its id. The same identity gets the same id. Where it
+        was reached is kept without a user and password (`without_credentials`)."""
+        from tuningfork.config import without_credentials
+
+        if isinstance(identity.get("upstream"), str):
+            identity = {**identity, "upstream": without_credentials(identity["upstream"])}
         server_id = identity_id(identity)
         with self._lock:
             self._conn.execute(
@@ -1636,7 +1721,9 @@ class Store:
         return _loads(row["identity"], {}) if row else None
 
     def set_server_checks(self, server_id: str, checks: dict[str, Any]) -> None:
-        """What a server check found about this server, measured rather than assumed."""
+        """What a server check found about this server, measured rather than assumed: masked
+        as the store masks, since a failed measurement keeps what the server answered."""
+        checks = self.masking.value(checks)
         with self._lock:
             self._conn.execute(
                 "UPDATE servers SET checks = ? WHERE id = ?", (json.dumps(checks), server_id)
@@ -1674,7 +1761,7 @@ class Store:
             self._conn.commit()
         self._maskings.add(digest)
 
-    def masking(self, digest: str | None) -> tuple[str, ...] | None:
+    def masked_with(self, digest: str | None) -> tuple[str, ...] | None:
         """The redaction patterns a step that names `digest` was masked with; None where the store
         keeps none — a step recorded before steps named them."""
         if not digest:
@@ -1739,8 +1826,12 @@ class Store:
         sample_idx: int | None = None,
         token: str | None = None,
     ) -> Launch:
+        """A new launch, running. Its label and settings are masked as the store masks; its
+        eval and variant are kept as they were given, since a fork runs them again."""
         from tuningfork.launches import new_token
         from tuningfork.owners import current_owner
+
+        label, settings = self.masking.value(label), self.masking.value(settings)
 
         launch = Launch(
             id=token or new_token(),
@@ -1838,7 +1929,9 @@ class Store:
 
     def note_launch(self, launch_id: str, **notes: Any) -> None:
         """Add to a launch's settings what happened to it as it ran — where a scenario's run
-        stopped (`stopped_at_skill`) — for the process running it to read."""
+        stopped (`stopped_at_skill`) — for the process running it to read: masked as the store
+        masks."""
+        notes = self.masking.value(notes)
         with self._lock:
             row = self._conn.execute("SELECT settings FROM launches WHERE id = ?", (launch_id,)).fetchone()
             if row is None:
@@ -1887,7 +1980,9 @@ class Store:
         self, launch_id: str, *, status: str = "ended", exit: dict[str, Any] | None = None
     ) -> None:
         """Mark a launch finished. Only a running launch changes: an interruption found by
-        the proxy is not overwritten by the runner's later "ended"."""
+        the proxy is not overwritten by the runner's later "ended". How it ended — what its
+        harness printed, what it was told — is masked as the store masks."""
+        exit = self.masking.value(exit)
         with self._lock:
             self._conn.execute(
                 "UPDATE launches SET status = ?, exit = ?, ended_at = ?"
@@ -2130,8 +2225,23 @@ class Store:
     ) -> Experiment:
         """A new experiment, `running` until whoever runs it says how it ended
         (`finish_experiments`). One sampled at a held call has no step yet (`hold_id`):
-        it is filed under the step the call becomes, whichever is recorded first."""
+        it is filed under the step the call becomes, whichever is recorded first.
+
+        What it sends and how it differs from the recording are masked as the store masks: its
+        request as an arm sent it — given masked (a `Masked`) where it was read back from the store
+        unchanged, as a fork's is; else masked here, a held call not yet recorded, a wording a person
+        typed, or a stored request with an arm's changes, masked again alike in every arm, so an
+        A/B's two arms read apart only by their wording — its changes, variant and notes, and where
+        it sent its calls, without a user and password. Its settings are kept as given: they are the
+        test declared before sampling, read again to judge it, and a target read from masked
+        answers, masked again, could name no behaviour any of them shows."""
+        from tuningfork.config import without_credentials
         from tuningfork.owners import current_owner
+
+        masking = self.masking
+        request = masking.value(request)
+        changes, variant, notes = (masking.value(value) for value in (changes, variant, notes))
+        base_url = without_credentials(base_url) if base_url else base_url
 
         experiment = Experiment(
             id=uuid.uuid4().hex,
@@ -2252,7 +2362,9 @@ class Store:
             self._conn.commit()
 
     def add_experiment_notes(self, experiment_id: str, notes: list[str]) -> None:
-        """Notes learned while an experiment drew its samples, after its first ones."""
+        """Notes learned while an experiment drew its samples, after its first ones: masked as
+        the store masks."""
+        notes = self.masking.value(notes)
         with self._lock:
             row = self._conn.execute("SELECT notes FROM experiments WHERE id = ?", (experiment_id,)).fetchone()
             if row is None:
@@ -2295,6 +2407,16 @@ class Store:
         exclusion: str | None = None,
         forced: dict[str, Any] | None = None,
     ) -> Sample:
+        """Store a sample, masked as the store masks: its answer — given masked already
+        (`Masking.of`, a `Masked`) where its outcome was read from it, or read back from a step —
+        and its error and label, of what the answer's masks took too. Its outcome's key is what
+        behaviours are told apart by: read from the masked answer, it is kept as it is."""
+        masking = self.masking
+        answered = masking.of(response)
+        response, found = answered.value, answered.found
+        error = masking.value(error, also=found)
+        outcome_label = masking.value(outcome_label, also=found)
+        forced = masking.value(forced, also=found)
         sample = Sample(
             id=uuid.uuid4().hex,
             experiment_id=experiment_id,
@@ -2338,7 +2460,7 @@ class Store:
 
     def add_token_stream(
         self,
-        stream: dict[str, Any],
+        stream: Any,
         *,
         source: str,
         step_id: str | None = None,
@@ -2347,8 +2469,13 @@ class Store:
         method: str | None = None,
         exact: bool | None = None,
         notes: dict[str, Any] | None = None,
+        also: Iterable[str] = (),
     ) -> TokenStreamRecord:
-        """Store a token stream in its JSON form (`TokenStream.to_json`), already redacted."""
+        """Store a token stream — a `TokenStream`, or its JSON form — masked token-aware
+        (`Masking.stream`), with the values `also` names: what another form of its answer
+        masked."""
+        stream = self.masking.stream(stream, also=also)
+        notes = self.masking.value(notes, also=also)
         record = TokenStreamRecord(
             id=uuid.uuid4().hex,
             step_id=step_id,
@@ -2572,6 +2699,9 @@ class Store:
         request_id: str | None = None,
         started_by: dict[str, Any] | None = None,
     ) -> JobRecord:
+        """A new job, queued. Its parameters and who asked are masked as the store masks: given
+        masked already (a `Masked`) by a runner that compares them with another job's."""
+        params, started_by = self.masking.value(params), self.masking.value(started_by)
         job = JobRecord(
             id=uuid.uuid4().hex, kind=kind, lane=lane, status="queued", params=params,
             plan=None, progress={}, result=None, error=None, links={}, owner=None,
@@ -2591,9 +2721,13 @@ class Store:
         return job
 
     def update_job(self, job_id: str, **fields: Any) -> None:
-        """Store what changed about a job. JSON columns take their Python value."""
+        """Store what changed about a job. JSON columns take their Python value; what a job
+        keeps of its work is masked as the store masks (`_JOB_MASKED`) — given masked already
+        (a `Masked`) by a runner that shows it as it is kept."""
         sets, values = [], []
         for column, value in fields.items():
+            if column in _JOB_MASKED:
+                value = self.masking.value(value)
             if column in _JOB_JSON:
                 sets.append(f"{column} = ?")
                 values.append(None if value is None else json.dumps(value, default=str))

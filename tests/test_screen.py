@@ -51,7 +51,9 @@ def prepare(store, run_id, arms, **kwargs):
 def test_a_context_masked_as_it_was_recorded_is_said_in_the_plan(store):
     from tuningfork.config import REDACTED
 
-    run_id = record_pilot(store, read=f"id,amount\nkey={REDACTED}\n")
+    from tests.helpers import KEY
+
+    run_id = record_pilot(store, read=f"id,amount\nkey={KEY}\n")
     plan = prepare(store, run_id, [("p1", VARIANT, {"proposal": "a1"})])
     assert [warning for warning in plan.warnings if f"reads {REDACTED} in 1 place," in warning]
 
@@ -64,7 +66,7 @@ def test_a_skill_masked_as_it_was_recorded_is_screened_masked(store):
 
     source = "Read the rows from postgres://report:Tr0ub4dor9@db.internal/app.\n"
     skill = SKILL.replace("Write the totals", source + "Write the totals")
-    run_id = record_pilot(store, skill=skill, masked=True)
+    run_id = record_pilot(store, skill=skill)
     variant = VARIANT.replace("Write the totals", source + "Write the totals")
     plan = prepare_screen(store, run_id, "1", original_text=skill, arms=[("p1", variant, {"proposal": "a1"})],
                           target_spec=TARGET, base_url=UPSTREAM, n=6)

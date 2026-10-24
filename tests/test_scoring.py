@@ -141,7 +141,10 @@ class TestScoring:
 
     async def test_a_prompt_masked_as_it_was_recorded_says_so(self, store, served):
         # Found in the redaction audit: the refusal blamed the server's template.
-        masked = {**REQUEST, "messages": [*REQUEST["messages"][:-1], {"role": "user", "content": f"Key {REDACTED}."}]}
+        from tests.helpers import KEY
+
+        # Stored masked: "Key <redacted>."
+        masked = {**REQUEST, "messages": [*REQUEST["messages"][:-1], {"role": "user", "content": f"Key {KEY}."}]}
         run_id = record(store, served, request=masked, prompt_offset=3)
         with pytest.raises(OperationError, match=f"reads {REDACTED} where text was masked as it was recorded"):
             await score(store, run_id)

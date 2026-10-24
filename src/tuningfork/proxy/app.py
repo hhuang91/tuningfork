@@ -39,13 +39,13 @@ from tuningfork.api.guard import PREFIX, LocalOnly
 from tuningfork.jobs import JobRunner
 from tuningfork.proxy.local import LocalProxy
 from tuningfork.breakpoints import BreakpointEngine, EventBus
-from tuningfork.config import EXPERIMENT_HEADER, Settings
+from tuningfork.config import EXPERIMENT_HEADER, Settings, without_credentials
 from tuningfork.endpoints import find_on_internet
 from tuningfork.launches import split as split_launch
 from tuningfork.proxy.held import BreakpointPath
 from tuningfork.proxy.launches import LaunchRegistry, Refusal, context_note
 from tuningfork.proxy.recorder import ANSWERED, Recorder, Timings, read_upstream
-from tuningfork.proxy.sse import SSEParser, unreadable
+from tuningfork.proxy.sse import SSEParser, json_body, read_as, unreadable
 from tuningfork.snapshots import SnapshotError, Snapshots
 from tuningfork.snapshots import available as git_available
 from tuningfork.ui import ui_routes
@@ -169,19 +169,6 @@ class _Finishing(StreamingResponse):
             await self._finish()
 
 
-def _should_parse_body(headers: Any) -> tuple[bool, bool]:
-    """(parse at all, is it an event stream) for a response we are recording.
-
-    A content-encoded body is forwarded verbatim but not parsed: decoding a copy just to
-    record it would be work for no benefit on a local server, which never compresses.
-    """
-    encoding = (headers.get("content-encoding") or "").strip().lower()
-    if encoding and encoding != "identity":
-        return False, False
-    content_type = (headers.get("content-type") or "").lower()
-    return True, "text/event-stream" in content_type
-
-
 def create_app(
     settings: Settings,
     *,
@@ -210,15 +197,13 @@ def create_app(
     owns_recorder = recorder is None
     recorder = recorder or Recorder(settings)
     bus = engine.bus if engine is not None else EventBus()
-    # The recorder's redactions: the engine predicts where a call lands in the tree the
-    # recorder builds, from the request as it will be stored.
-    engine = engine or BreakpointEngine(
-        recorder.store, bus, redaction_patterns=settings.redaction_patterns
-    )
+    # The engine predicts where a call lands in the tree the store builds, from the request
+    # masked as the store will mask it.
+    engine = engine or BreakpointEngine(recorder.store, bus)
     recorder.bus = bus
     gate = Gate(settings.max_inflight)
     server_address = Upstream(settings.upstream_base_url)
-    launches = LaunchRegistry(recorder.store, settings.redaction_patterns)
+    launches = LaunchRegistry(recorder.store)
     # Work started from the UI (or any front end) runs here, on threads of its own. What
     # an earlier proxy left running is marked as cut off before anything new starts.
     local = LocalProxy(None)
@@ -329,13 +314,14 @@ def create_app(
         # API, which records a harness's calls as `serve --upstream` does, and is said to be one.
         if not any(key in identity for key in ANSWERED) and not read.asks_key:
             raise OperationError(
-                f"nothing answered at {url} as an inference server", field="url",
+                f"nothing answered at {without_credentials(url)} as an inference server", field="url",
                 hint="check the address, and that the server is running",
             )
         current = getattr(app.state, "server", None) or {}
         plan = {
-            "url": url,
-            "current": {"url": server_address.url, "server": current},
+            # Shown, and read without the token: a user and password in it are masked.
+            "url": without_credentials(url),
+            "current": {"url": without_credentials(server_address.url), "server": current},
             "proposed": identity,
             "differences": [
                 {"field": key, "current": current.get(key), "proposed": identity.get(key)}
@@ -364,8 +350,8 @@ def create_app(
             for _ in range(taken):
                 gate.release()
         await refresh_server(app)
-        bus.publish("connections", upstream=url, server=app.state.server)
-        logger.warning("tuningfork now forwards model calls to %s", url)
+        bus.publish("connections", upstream=without_credentials(url), server=app.state.server)
+        logger.warning("tuningfork now forwards model calls to %s", without_credentials(url))
         return {**plan, "switched": True, "server": app.state.server}
 
     async def keep_server_current(app: Starlette) -> None:
@@ -424,8 +410,9 @@ def create_app(
                 "status": "ok",
                 # What a client of another version checks before relying on a newer field.
                 "version": __version__,
-                "upstream": server_address.url,
-                "started_with": settings.upstream_base_url,
+                # Read without the token: a user and password in either are masked.
+                "upstream": without_credentials(server_address.url),
+                "started_with": without_credentials(settings.upstream_base_url),
                 "max_inflight": gate.max_inflight,
                 "max_output": settings.max_output,
                 "inflight": gate.inflight,
@@ -764,7 +751,7 @@ def create_app(
             raise
 
         parse_body, is_event_stream = (
-            _should_parse_body(upstream.headers) if recording else (False, False)
+            read_as(upstream.headers, bool((payload or {}).get("stream"))) if recording else (False, False)
         )
         collected = bytearray() if parse_body else None
         parser = SSEParser() if is_event_stream else None
@@ -822,15 +809,20 @@ def create_app(
             response_json: dict[str, Any] | None = None
             raw = bytes(collected) if collected is not None else None
             error = copy_failed
+            streamed, reader = is_event_stream, assembler
             if error is None:
                 try:
-                    if assembler is not None:
-                        response_json = assembler.result() if assembler.chunk_count else None
+                    if reader is not None and not reader.chunk_count and raw is not None and json_body(raw):
+                        # Read as a stream, and sent at once as JSON: an answer, or an error.
+                        streamed, reader = False, None
+                        response_json = wire.parse(raw, event_stream=False)
+                    elif reader is not None:
+                        response_json = reader.result() if reader.chunk_count else None
                     elif raw is not None and not is_event_stream:
                         response_json = wire.parse(raw, event_stream=False)
                     # An error status is not the only failure: a 200 can carry an error
                     # body, or a stream that errored or was cut off partway.
-                    error = wire.failure(upstream.status_code, response_json, assembler)
+                    error = wire.failure(upstream.status_code, response_json, reader)
                 except Exception as exc:  # noqa: BLE001 - still record the exchange, raw
                     logger.warning("tuningfork could not read a response", exc_info=True)
                     response_json, error = None, unreadable(exc)
@@ -843,7 +835,7 @@ def create_app(
                 timings=timings,
                 response_json=response_json,
                 raw_response=raw,
-                streamed=is_event_stream,
+                streamed=streamed,
                 error=error,
                 wire=wire,
                 assignment=assignment,

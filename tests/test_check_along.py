@@ -271,3 +271,14 @@ def test_a_mistake_every_run_made_is_named_with_the_call_that_made_it(store):
     # A person too.
     printed = CliRunner().invoke(app, ["tally", "--task", "t/1", "--home", str(store.home)], env={"COLUMNS": "220"})
     assert printed.exit_code == 0 and "made:in stock, the document leads to" in printed.output
+
+
+def test_the_check_along_a_run_leaves_its_result_as_it_was_kept(stack):
+    """Kept masked once: masked again with the record beside it, a command's second password would fall
+    too, as masking is not idempotent."""
+    run = one_run(stack)
+    command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+    stack.store.annotate_run(run.id, result={**run.result, "check_output": command})
+    kept = stack.store.get_run(run.id).result["check_output"]
+    check_along(stack.store, run.id)
+    assert stack.store.get_run(run.id).result["check_output"] == kept and "-pZq8xK3vN5wLp" in kept

@@ -147,7 +147,7 @@ class TestStore:
         from tuningfork.runner import final_reply, named_side_call
 
         launch = store.create_launch(kind="batch", label="t/1#b.0", task_id="t/1", harness="hermes")
-        state = LaunchState(launch, ())
+        state = LaunchState(launch)
         answered = (user("go"), {"role": "assistant", "content": "The total is 212.00."})
         for request, response in (
             (chat(user("go")), {"role": "assistant", "content": "The total is 212.00."}),

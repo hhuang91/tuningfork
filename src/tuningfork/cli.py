@@ -24,7 +24,7 @@ from tuningfork.analysis.normalize import DEFAULT_NORMALIZERS, recorded_outcome
 from tuningfork.analysis.stats import p_short, samples_needed
 from tuningfork.backends.base import BackendProfile, Support
 from tuningfork.backends.probe import probe_backend
-from tuningfork.config import Settings, default_home
+from tuningfork.config import Settings, default_home, without_credentials
 from tuningfork.harness.base import HarnessError
 from tuningfork.ops import OperationError
 from tuningfork.ops.catalog import CACHE_HELP, SEED_HELP
@@ -216,7 +216,7 @@ def serve(
 
     console.print(f"[bold]tuningfork[/bold] {__version__}")
     console.print(f"  listening on  http://{host}:{port}/v1")
-    console.print(f"  forwarding to {upstream}")
+    console.print(f"  forwarding to {without_credentials(upstream)}")
     from tuningfork.ops.connections import read_reminder
 
     # Asked before the proxy starts, and only of a server on the internet: no wait for one nearby.

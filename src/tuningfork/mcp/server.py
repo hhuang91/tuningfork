@@ -258,7 +258,7 @@ class ToolServer:
             )
         if call.dry_run:
             return plan_answer(kind, planned)
-        wanted = same_params(kind, call.params)
+        wanted = same_params(kind, call.params, self.context.store.masking)
 
         def under_way() -> list[dict[str, Any]]:
             return [

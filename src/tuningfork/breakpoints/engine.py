@@ -34,7 +34,7 @@ from tuningfork.breakpoints.conditions import (
     response_matches,
 )
 from tuningfork.breakpoints.events import EventBus
-from tuningfork.config import DEFAULT_REDACTIONS, redact_json
+from tuningfork.store.masking import Masking
 from tuningfork.store.db import Store
 from tuningfork.store.tree import node_path
 from tuningfork.wire import DEFAULT as DEFAULT_WIRE
@@ -162,13 +162,12 @@ class BreakpointEngine:
         self,
         store: Store | None = None,
         bus: EventBus | None = None,
-        redaction_patterns: tuple[str, ...] = DEFAULT_REDACTIONS,
     ) -> None:
         self.store = store
         self.bus = bus or EventBus()
-        #: The recorder's: a request is redacted before it is stored, so a prediction of
-        #: where it lands must redact it the same way (see `context_for`).
-        self.redaction_patterns = redaction_patterns
+        #: The store's: a request is masked as it is stored, so a prediction of where it lands
+        #: must mask it the same way (see `context_for`).
+        self.masking = store.masking if store is not None else Masking()
         self._breakpoints: dict[str, Breakpoint] = {}
         self._pending: dict[str, Hold] = {}
         self._recent: deque[Hold] = deque(maxlen=50)
@@ -249,10 +248,10 @@ class BreakpointEngine:
         `tuningfork.launches`); any other is predicted from the store, so call this off the
         event loop."""
         wire = wire or DEFAULT_WIRE
-        # As `record_step` will store it: redacted, then in the tree's stable form. A path
-        # built from the raw request is never found once a redaction has changed a message,
-        # and every step-scoped condition for the rest of that run misfires.
-        stored = redact_json({"messages": request.get("messages") or []}, self.redaction_patterns)
+        # As `record_step` will store it: masked, then in the tree's stable form. A path built
+        # from the raw request is never found once a mask has changed a message, and every
+        # step-scoped condition for the rest of that run misfires.
+        stored = self.masking.value({"messages": request.get("messages") or []})
         messages = [wire.normalize_message(m) for m in stored.get("messages") or []]
         run_id, step, task_id = None, 0, None
         if assignment is not None:

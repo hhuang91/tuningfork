@@ -541,6 +541,9 @@ export async function connectionsView(root, _, scope) {
       state.busy?.length ? h("p", { class: "hint" }, `In use: ${state.busy.join("; ")}.`) : null,
       h("p", { class: "hint" }, "These change only with a restart:"),
       command(proxy.restart),
+      proxy.restart_masked
+        ? h("p", { class: "hint" }, "The upstream's user and password show as <redacted>. Type them back in before you run it.")
+        : null,
     ]));
   }
 

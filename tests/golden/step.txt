@@ -1,6 +1,6 @@
 run <run pilot> step 0
   model   mock-model
-  params  {}
+  params  {"masked": 0, "redaction": "<digest>"}
   server  {"n_ctx": 65536, "temperature": 1.0, "top_p": 0.95}
   timings {}
 
