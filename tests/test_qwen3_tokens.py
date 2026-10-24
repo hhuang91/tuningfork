@@ -313,6 +313,22 @@ def stored_step(store, raw: bytes, *, arguments: list[str] | None = None):
     return store.step(store.get_run("messages").id, 0)
 
 
+def test_bytes_written_again_around_a_secret_are_not_read_for_the_arguments(store):
+    # The recorder wrote them again from the masked answer: not the server's text, which the
+    # stored arguments keep, masked where they stand.
+    stored = ANTHROPIC.canonical_response(ANTHROPIC.parse(STREAMED, event_stream=True))
+    store.begin_run("messages", "t/1")
+    wire = get_wire("anthropic-messages")
+    store.record_step(request=MESSAGES, response=stored, raw_response_blob=store.blobs.put(STREAMED),
+                      params={"streamed": True, "raw_redacted": "rendered"}, wire=wire.name,
+                      normalize=wire.normalize_message)
+
+    message, _ = recorded_message(store, store.step(store.get_run("messages").id, 0))
+
+    arguments = message["tool_calls"][0]["function"]["arguments"]
+    assert arguments == stored["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] != WRITTEN
+
+
 def test_each_call_takes_its_own_streamed_text(store):
     texts = ['{"path": "café.json", "lines": 3}', '{"path": "naïve.csv"}']
     step = stored_step(store, messages_stream(("write_file", [texts[0]]), ("read_file", [texts[1]]), text="Both.\n"))

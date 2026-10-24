@@ -191,6 +191,24 @@ class TestBookkeeping:
             prepare_fork(stack.store, source.run_id, "2", base_url=f"{stack.url}/v1")
         assert "step 0 has no raw response" in refused.value.detail
 
+    @pytest.mark.parametrize("how", ["rendered", "dropped"])
+    def test_a_step_whose_bytes_were_redacted_beyond_the_text_says_so(self, stack, how):
+        # The recorder wrote its bytes again around a secret, or kept none: a fork refuses it on
+        # that word alone, whatever bytes are kept.
+        source = stack.record()
+        first = stack.store.steps(source.run_id)[0]
+        params = json.dumps({**first.params, "raw_redacted": how})
+        blob = first.raw_response_blob if how == "rendered" else None
+        with stack.store._lock:
+            stack.store._conn.execute(
+                "UPDATE steps SET raw_response_blob = ?, params = ? WHERE id = ?", (blob, params, first.id)
+            )
+            stack.store._conn.commit()
+
+        with pytest.raises(OperationError) as refused:
+            prepare_fork(stack.store, source.run_id, "2", base_url=f"{stack.url}/v1")
+        assert "step 0's answer had a secret redacted from it" in refused.value.detail
+
     def test_a_run_recorded_before_launches_needs_its_spec(self, stack):
         from tests.helpers import record_pilot
 

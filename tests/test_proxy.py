@@ -22,9 +22,11 @@ from starlette.routing import Route
 from tuningfork.analysis.normalize import outcome_for
 from tuningfork.analysis.tokens import TokenStream
 from tuningfork.breakpoints import Breakpoint
-from tuningfork.config import EXPERIMENT_HEADER, Settings
+from tuningfork.config import DEFAULT_REDACTIONS, EXPERIMENT_HEADER, REDACTED, Settings, redact
 from tuningfork.proxy.app import create_app, upstream_url
-from tuningfork.proxy.sse import CUT_OFF, ChunkAssembler
+from tuningfork.proxy.recorder import stream_without_secrets
+from tuningfork.proxy.sse import CUT_OFF, ChunkAssembler, reassemble
+from tuningfork.wire.anthropic import AnthropicMessages
 from tests.helpers import all_steps, only_step
 from tests.mock_server import MockTurn
 from tests.test_wire import (
@@ -32,6 +34,7 @@ from tests.test_wire import (
     MESSAGE_STOP,
     OVERLOADED,
     claude_code_request,
+    event,
     message_start,
     text_block,
 )
@@ -48,6 +51,35 @@ def openai_chunk(delta: dict, finish_reason: str | None = None) -> bytes:
     body = {"id": "c1", "object": "chat.completion.chunk", "model": "m",
             "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}]}
     return f"data: {json.dumps(body)}\n\n".encode()
+
+
+def tool_block(name: str, partials: list[str], index: int = 0) -> str:
+    """A Messages tool_use block whose input streams in these pieces."""
+    opening = {"type": "tool_use", "id": "toolu_1", "name": name, "input": {}}
+    return (
+        event("content_block_start", {"type": "content_block_start", "index": index, "content_block": opening})
+        + "".join(
+            event("content_block_delta", {"type": "content_block_delta", "index": index,
+                                          "delta": {"type": "input_json_delta", "partial_json": piece}})
+            for piece in partials
+        )
+        + event("content_block_stop", {"type": "content_block_stop", "index": index})
+    )
+
+
+def thinking_block(pieces: list[str], index: int = 0) -> str:
+    """A Messages thinking block streamed in these pieces, then signed."""
+    opening = {"type": "thinking", "thinking": ""}
+    deltas = [{"type": "thinking_delta", "thinking": piece} for piece in pieces]
+    deltas.append({"type": "signature_delta", "signature": "c2lnbmVk"})
+    return (
+        event("content_block_start", {"type": "content_block_start", "index": index, "content_block": opening})
+        + "".join(
+            event("content_block_delta", {"type": "content_block_delta", "index": index, "delta": delta})
+            for delta in deltas
+        )
+        + event("content_block_stop", {"type": "content_block_stop", "index": index})
+    )
 
 
 def upstream_sending(
@@ -298,10 +330,10 @@ class TestRecording:
         store_raw = recorder._store_raw
         slow = [True]
 
-        def slow_first(raw: bytes) -> str:
+        def slow_first(*args) -> str:
             if slow.pop() if slow else False:
                 time.sleep(0.3)
-            return store_raw(raw)
+            return store_raw(*args)
 
         monkeypatch.setattr(recorder, "_store_raw", slow_first)
         mock_server.script(MockTurn(content="first"), MockTurn(content="second"))
@@ -580,6 +612,169 @@ class TestRedaction:
         assert "<redacted>" in stored["messages"][0]["content"]
         assert stored["model"] == "m"
 
+    async def keep(self, settings, recorder, path, request, *chunks):
+        """What the recorder keeps of an answer the upstream streams in these chunks: the bytes,
+        the step, and the body as it came."""
+        upstream = upstream_sending(*chunks)
+        async with proxy_before(upstream, settings, recorder) as (_, harness):
+            relayed = await harness.post(path, json=request)
+        assert relayed.content == upstream.state.body  # the harness got its answer as it came
+        step = only_step(recorder.store)
+        return recorder.store.blobs.get(step.raw_response_blob), step, upstream.state.body
+
+    async def test_a_key_streamed_in_pieces_is_not_kept_in_the_raw_bytes(self, settings, recorder):
+        """Found in the 0.5.0 review: a model writes a key a token an event, and no pattern sees
+        the pieces whole in the bytes kept beside the answer, which a fork read back and gave the
+        harness again. What is kept reads as the masked answer."""
+        pieces = ["my key:\n", "sk", "-a1B2c3", "D4e5F6g7", "H8i9J0", " is set"]
+        kept, step, _ = await self.keep(settings, recorder, CHAT, simple_request(stream=True),
+                                        *(openai_chunk({"content": piece}) for piece in pieces),
+                                        openai_chunk({}, "stop"), b"data: [DONE]\n\n")
+        assert reassemble(kept)["choices"][0]["message"]["content"] == f"my key:\n{REDACTED} is set"
+        assert recorder.store.response(step)["choices"][0]["message"]["content"] == f"my key:\n{REDACTED} is set"
+        assert step.params["raw_redacted"] == "rendered"
+        assert REDACTED.encode() in kept  # so a fork past it is refused (`replay_problems`)
+
+    async def test_a_key_partly_in_one_event_is_not_kept_either(self, settings, recorder):
+        # Found in review: an event holding enough of the key to match was masked as far as it
+        # held it, and the key's tail, in the events after it, was kept.
+        pieces = ["my key is sk-a1B2c3D4e5F6g7H8i9", "J0K1L2M3N4", "O5P6Q7R8", " ok"]
+        kept, _, _ = await self.keep(settings, recorder, CHAT, simple_request(stream=True),
+                                     *(openai_chunk({"content": piece}) for piece in pieces),
+                                     openai_chunk({}, "stop"), b"data: [DONE]\n\n")
+        assert reassemble(kept)["choices"][0]["message"]["content"] == f"my key is {REDACTED} ok"
+
+    async def test_a_key_in_reasoning_streamed_in_pieces(self, settings, recorder):
+        pieces = ["I will use ", "sk", "-a1B2c3D4", "e5F6g7H8i9J0", " now"]
+        kept, _, _ = await self.keep(settings, recorder, CHAT, simple_request(stream=True),
+                                     *(openai_chunk({"reasoning_content": piece}) for piece in pieces),
+                                     openai_chunk({"content": "done"}), openai_chunk({}, "stop"), b"data: [DONE]\n\n")
+        message = reassemble(kept)["choices"][0]["message"]
+        assert (message["reasoning_content"], message["content"]) == (f"I will use {REDACTED} now", "done")
+
+    async def test_a_call_written_again_keeps_its_id_name_and_finish(self, settings, recorder):
+        opening = {"tool_calls": [{"index": 0, "id": "call_1", "type": "function",
+                                   "function": {"name": "write_file", "arguments": ""}}]}
+        pieces = ['{"content":"KEY=', "sk", "-a1B2c3D4e5F6g7H8i9J0", '"}']
+        kept, _, _ = await self.keep(
+            settings, recorder, CHAT, simple_request(stream=True), openai_chunk(opening),
+            *(openai_chunk({"tool_calls": [{"index": 0, "function": {"arguments": piece}}]}) for piece in pieces),
+            openai_chunk({}, "tool_calls"), b"data: [DONE]\n\n",
+        )
+        choice = reassemble(kept)["choices"][0]
+        (call,) = choice["message"]["tool_calls"]
+        assert (call["id"], call["function"]["name"], choice["finish_reason"]) == ("call_1", "write_file", "tool_calls")
+        assert json.loads(call["function"]["arguments"]) == {"content": f"KEY={REDACTED}"}
+
+    async def test_logprobs_that_spell_a_key_are_not_kept(self, settings, recorder):
+        # Found in review: a server sending several tokens an event, the key whole in one and
+        # masked there, and the event's logprobs spelling it a token at a time.
+        tokens = ["key: sk-a1B2c3", "D4e5F6g7H8i9J0"]
+        entries = [{"id": n, "token": t, "bytes": list(t.encode()), "logprob": -0.1, "top_logprobs": []}
+                   for n, t in enumerate(tokens)]
+        chunk = {"id": "c1", "object": "chat.completion.chunk", "model": "m", "choices": [
+            {"index": 0, "delta": {"content": "".join(tokens)}, "finish_reason": None, "logprobs": {"content": entries}}]}
+        kept, step, _ = await self.keep(settings, recorder, CHAT, simple_request(stream=True, logprobs=True),
+                                        f"data: {json.dumps(chunk)}\n\n", openai_chunk({}, "stop"), b"data: [DONE]\n\n")
+        assert b"a1B2c3" not in kept and b"D4e5F6g7H8i9J0" not in kept
+        assert "logprobs" not in reassemble(kept)["choices"][0]  # their bytes spell it too
+        assert step.params["raw_redacted"] == "rendered"
+
+    async def test_a_key_in_a_claude_code_calls_streamed_input(self, settings, recorder):
+        partials = ['{"command":"echo ', "sk", "-a1B2c3D4", 'e5F6g7H8i9J0"}']
+        kept, step, _ = await self.keep(settings, recorder, MESSAGES, claude_code_request(), message_start(),
+                                        tool_block("Bash", partials), MESSAGE_DELTA, MESSAGE_STOP)
+        (block,) = AnthropicMessages().parse(kept, True)["content"]
+        assert (block["id"], block["name"], block["input"]) == ("toolu_1", "Bash", {"command": f"echo {REDACTED}"})
+        arguments = recorder.store.response(step)["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+        assert json.loads(arguments) == {"command": f"echo {REDACTED}"}
+
+    async def test_a_key_partly_in_one_input_event(self, settings, recorder):
+        partials = ['{"command":"export OPENAI_API_KEY=sk-proj-a1B2c3D4e5F6', 'g7H8i9J0K1L2M3"}']
+        kept, _, _ = await self.keep(settings, recorder, MESSAGES, claude_code_request(), message_start(),
+                                     tool_block("Bash", partials), MESSAGE_DELTA, MESSAGE_STOP)
+        (block,) = AnthropicMessages().parse(kept, True)["content"]
+        assert block["input"] == {"command": f"export OPENAI_API_KEY={REDACTED}"}
+
+    async def test_a_key_in_thinking_streamed_in_pieces(self, settings, recorder):
+        pieces = ["I will use ", "sk", "-a1B2c3D4", "e5F6g7H8i9J0", " now"]
+        kept, _, _ = await self.keep(settings, recorder, MESSAGES, claude_code_request(), message_start(),
+                                     thinking_block(pieces), text_block("done", index=1), MESSAGE_DELTA, MESSAGE_STOP)
+        thinking, text = AnthropicMessages().parse(kept, True)["content"]
+        assert (thinking["thinking"], text["text"]) == (f"I will use {REDACTED} now", "done")
+
+    async def test_a_stream_without_a_secret_is_kept_byte_for_byte(self, settings, recorder):
+        kept, step, body = await self.keep(
+            settings, recorder, MESSAGES, claude_code_request(), message_start(),
+            thinking_block(["Reading ", "the ", "file."]),
+            tool_block("Read", ['{"file_path":', '"/home/user/project/data.csv"}'], index=1),
+            MESSAGE_DELTA, MESSAGE_STOP,
+        )
+        assert kept == body and "raw_redacted" not in step.params
+
+    async def test_a_key_within_one_event_is_masked_where_it_stands(self, settings, recorder):
+        # Nothing to read whole that the events do not show: the server's own bytes are kept.
+        kept, step, body = await self.keep(
+            settings, recorder, CHAT, simple_request(stream=True),
+            openai_chunk({"content": "my key: sk-a1B2c3D4e5F6g7H8i9J0"}), openai_chunk({"content": " is set"}),
+            openai_chunk({}, "stop"), b"data: [DONE]\n\n",
+        )
+        assert kept == redact(body.decode()).encode() and "raw_redacted" not in step.params
+
+    async def test_bytes_that_are_not_utf8_are_redacted_too(self, settings, recorder):
+        # Found in review: a body with one stray byte was kept as it came, unredacted.
+        stray = openai_chunk({"content": "caf"}).replace(b'"caf"', b'"caf\xff"')
+        kept, _, _ = await self.keep(settings, recorder, CHAT, simple_request(stream=True), stray,
+                                     openai_chunk({"content": " key sk-a1B2c3D4e5F6g7H8i9J0"}),
+                                     openai_chunk({}, "stop"), b"data: [DONE]\n\n")
+        assert b"a1B2c3D4e5F6" not in kept
+        assert b'"caf\xff"' in kept  # the rest as it came
+
+    class Wire:
+        """A wire whose reading and writing a test sets."""
+
+        def __init__(self, read=None, render_fails=False, parse_fails=False):
+            self.read, self.render_fails, self.parse_fails = read, render_fails, parse_fails
+
+        def parse(self, raw, event_stream):
+            if self.parse_fails:
+                raise ValueError("unreadable")
+            return self.read if self.read is not None else reassemble(raw)
+
+        def canonical_response(self, native, *, stream=None):
+            return native
+
+        def native_response(self, canonical, original):
+            return canonical
+
+        def render(self, native, *, request):
+            if self.render_fails:
+                raise ValueError("no")
+            return b"rendered"
+
+    PIECES = b"".join([openai_chunk({"content": "sk"}), openai_chunk({"content": "-a1B2c3D4e5F6g7H8i9J0"}),
+                       openai_chunk({}, "stop")])
+    #: What `PIECES` read as when they came: a key.
+    ANSWER = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "sk-a1B2c3D4e5F6g7H8i9J0"}}]}
+
+    def check(self, answer, wire):
+        return stream_without_secrets(self.PIECES, answer, wire, simple_request(stream=True), DEFAULT_REDACTIONS)
+
+    def test_bytes_that_cannot_be_written_again_are_not_kept(self):
+        assert self.check(self.ANSWER, self.Wire(render_fails=True)) == (None, "dropped")
+
+    def test_an_answer_without_a_secret_is_kept_unread(self):
+        quiet = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"}}]}
+        neither = self.Wire(parse_fails=True, render_fails=True)  # read back or written again, it would fail
+        assert self.check(quiet, neither) == (self.PIECES, None)
+        assert self.check(None, neither) == (self.PIECES, None)  # an answer the proxy could not read
+
+    def test_an_answer_that_masking_leaves_unreadable_is_not_kept(self):
+        # Masked bare, a number breaks the answer's JSON: written again, it would be an empty answer.
+        assert self.check({**self.ANSWER, "session_token": 12345678901234567}, self.Wire()) == (None, "dropped")
+
+    def test_bytes_that_cannot_be_read_back_are_written_again(self):
+        assert self.check(self.ANSWER, self.Wire(parse_fails=True)) == (b"rendered", "rendered")
 
 class TestGate:
     async def test_a_harness_gone_before_its_answer_began_leaves_the_gate_free(

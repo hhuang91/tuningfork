@@ -100,7 +100,12 @@ def _as_streamed(store: Store, step: Any, message: dict[str, Any]) -> dict[str, 
     before its wire kept that text stored its calls' inputs written again from the parsed object
     (`wire.anthropic`): the model's own text is in the stream alone."""
     calls = message.get("tool_calls")
-    if not calls or not step.raw_response_blob or not (step.params or {}).get("streamed"):
+    params = step.params or {}
+    if not calls or not step.raw_response_blob or not params.get("streamed"):
+        return message
+    if params.get("raw_redacted"):
+        # Its bytes are the answer written again around a secret, not the server's: the stored
+        # arguments are the server's text, masked where they stand.
         return message
     from tuningfork.wire import get_wire
 

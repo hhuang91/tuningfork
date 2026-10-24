@@ -258,6 +258,59 @@ async def _read_props(client: httpx.AsyncClient, root: str) -> tuple[dict[str, A
     return (body if isinstance(body, dict) else None), response.status_code
 
 
+def stream_without_secrets(
+    body: bytes,
+    answer: dict[str, Any] | None,
+    wire: WireFormat,
+    request: dict[str, Any],
+    patterns: tuple[str, ...],
+    *,
+    masked: dict[str, Any] | None = None,
+) -> tuple[bytes | None, str | None]:
+    """The bytes to keep of a streamed answer, and how they were redacted beyond the text, if
+    they were: "rendered" or "dropped" (a step's `raw_redacted`).
+
+    `body` is the stream redacted as text, and `answer` what the stream read as before that, in
+    the common shape, logprobs apart; `masked`, that answer redacted, where it already is.
+
+    A model's answer streams about a token an event, so a key it writes arrives in pieces that no
+    pattern sees whole, or masked only as far as one event holds it, and a fork reading the bytes
+    back would give it again. So the bytes are kept as they came only where they read as the
+    masked answer — every answer without a secret, and one whose secrets each sat whole in an
+    event, masked there — and carry no logprobs, whose tokens spell a secret too. Otherwise they
+    are the answer written again (`wire.render`) from its masked form; the step says so, and a
+    fork refuses to replay it. That drops what no reader of the bytes needs — logprobs, a cut-off
+    end or an error event (the step keeps its error), usage the request did not ask for, a
+    thinking block's signature, the server's timings. Where the masked answer cannot be written
+    again, no bytes are kept: losing them beats storing the secret. The check sees what the
+    common shape keeps, not a field it leaves out. An answer the proxy could not read at all
+    keeps its bytes as the text left them: its step has an error, which scoring and a fork
+    refuse first.
+    """
+    if not answer:
+        return body, None
+    if masked is None:
+        masked = redact_json(answer, patterns)
+    if masked == answer:
+        return body, None
+    native: dict[str, Any] | None = None
+    try:
+        native = wire.parse(body, True)
+        kept = wire.canonical_response(native, stream=body) if native else None
+    except Exception:  # noqa: BLE001 - bytes that cannot be read back are written again
+        kept = None
+    if isinstance(kept, dict):
+        spelled = any(isinstance(choice, dict) and "logprobs" in choice for choice in kept.get("choices") or [])
+        if split_logprobs(kept)[0] == masked and not spelled:
+            return body, None
+    if "tuningfork_error" in masked:
+        return None, "dropped"  # masked, the answer no longer reads: written again, it would be an empty one
+    try:
+        return wire.render(wire.native_response(masked, native), request={**request, "stream": True}), "rendered"
+    except Exception:  # noqa: BLE001 - see above
+        return None, "dropped"
+
+
 def _answered(response: httpx.Response) -> str:
     """A refusal as the server put it: its status, and its own message if it gave one."""
     message = ""
@@ -349,12 +402,12 @@ class Recorder:
         if output_cap:
             params["output_cap"] = output_cap
 
-        def record_step(raw_blob: str | None) -> Any:
+        def record_step(raw_blob: str | None, response: dict[str, Any] | None) -> Any:
             # Redacted in the worker thread, as the step is stored: redaction reads every
             # payload whole, its JSON escapes read too, and the event loop has calls to serve.
             return self.store.record_step(
                 request=clean(request_payload),
-                response=clean(response_json) if response_json else None,
+                response=response,
                 raw_response_blob=raw_blob,
                 params=params,
                 server_defaults=self.server_defaults,
@@ -377,10 +430,17 @@ class Recorder:
             )
 
         async with self._in_order:
+            # The answer masked once, off the loop: what is stored, and what its bytes must read as.
+            response = await asyncio.to_thread(clean, response_json) if response_json else None
             raw_blob = None
             if raw_response is not None:
-                raw_blob = await asyncio.to_thread(self._store_raw, raw_response)
-            step = await asyncio.to_thread(record_step, raw_blob)
+                raw_blob, raw_redacted = await asyncio.to_thread(
+                    self._store_raw, raw_response, wire, streamed, request_payload, response_json, response
+                )
+                if raw_redacted:
+                    # Its bytes are not the server's: scoring keeps to the answer, a fork refuses it.
+                    params["raw_redacted"] = raw_redacted
+            step = await asyncio.to_thread(record_step, raw_blob, response)
             if holds and step is not None:
                 # What was sampled at these holds is filed under this step from now on.
                 await asyncio.to_thread(
@@ -401,13 +461,22 @@ class Recorder:
             method="chat-logprobs",
         )
 
-    def _store_raw(self, raw: bytes) -> str:
+    def _store_raw(
+        self,
+        raw: bytes,
+        wire: WireFormat,
+        streamed: bool,
+        request: dict[str, Any],
+        answer: dict[str, Any] | None,
+        masked: dict[str, Any] | None = None,
+    ) -> tuple[str | None, str | None]:
+        """The raw bytes kept, and how they were redacted beyond the text (`stream_without_secrets`).
+        Bytes that are not UTF-8 are redacted as text too, and otherwise kept as they came."""
         from tuningfork.config import redact
 
-        try:
-            text = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            return self.store.blobs.put(raw)
-        return self.store.blobs.put(
-            redact(text, self.settings.redaction_patterns).encode()
-        )
+        patterns = self.settings.redaction_patterns
+        body: bytes | None = redact(raw.decode("utf-8", "surrogateescape"), patterns).encode("utf-8", "surrogateescape")
+        how = None
+        if streamed:
+            body, how = stream_without_secrets(body, answer, wire, request, patterns, masked=masked)
+        return (self.store.blobs.put(body) if body is not None else None), how
