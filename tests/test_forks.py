@@ -483,3 +483,203 @@ class TestBreakpoints:
         (fork,) = done
         assert released == 2  # the write and the summary; the read was replayed
         assert fork.usable
+
+
+class TestStoredMasks:
+    """Found in review: a fork keys each call by its request as today's patterns mask it, and a
+    step stored under other patterns was masked where today's keep the text — `token =
+    tokenizer.encode(…)` — so every fork of a run recorded before they changed parted from it."""
+
+    CODE = "ids = tokenizer.encode(text)\ntoken = tokenizer.encode(text)[0]\n"
+
+    def recorded(self, store):
+        from tests.helpers import record_pilot
+
+        # As an earlier pattern stored it: the second line's call masked.
+        return record_pilot(store, read=self.CODE.replace("tokenizer.encode(text)[0]", "<redacted>(text)[0]"))
+
+    def test_a_call_fits_a_step_stored_under_other_masks(self, store):
+        from tuningfork.replay import build_table
+        from tuningfork.wire import get_wire
+
+        run = store.get_run(self.recorded(store))
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        live = json.loads(json.dumps(stored).replace("<redacted>", "tokenizer.encode"))
+        table = build_table(store, run, 1)
+        wire = get_wire("openai-chat")
+        assert table.fitting(live, wire) == table.live_key
+        other = json.loads(json.dumps(live).replace("[0]", "[1]"))
+        assert table.fitting(other, wire) is None
+
+    def test_a_call_that_parts_from_the_recording_after_a_mask_does_not_fit(self, store):
+        """Found in review's second round: a mask stood for any text, so a call whose tool result
+        went on, after the masked text, to say something else took the recorded answer."""
+        from tuningfork.replay import build_table
+        from tuningfork.wire import get_wire
+
+        run = store.get_run(self.recorded(store))
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        parted = json.loads(json.dumps(stored).replace(
+            "<redacted>", "tokenizer.encode(text)[0]\\nERROR: publish.sh refused, nothing was published\\nx = tokenizer.encode"))
+        assert build_table(store, run, 1).fitting(parted, get_wire("openai-chat")) is None
+
+    @pytest.mark.parametrize(
+        "recorded, live",
+        [
+            ('"GITHUB_TOKENS=<redacted>\\nexit 0"', '"GITHUB_TOKENS=A1b2C3d4,E5f6G7h8\\nexit 0"'),
+            ('"GET /api?token=<redacted>&user=bob 200"', '"GET /api?token=A1b2C3d4&admin=true&user=bob 200"'),
+            ('"GET /api?token=<redacted>&key=<redacted> 200"',
+             '"GET /api?token=A1b2C3d4&admin=true&key=E5f6G7h8 200"'),
+        ],
+    )
+    def test_a_mask_stands_for_one_key(self, recorded, live):
+        """Found in review's third round: a mask that stood for any text but a space or a quote took
+        in a second key, an extra parameter. The patterns 0.5.0 and before masked with took a
+        key's characters only."""
+        from tuningfork.replay import fits
+
+        assert not fits(recorded, live)
+        assert fits(recorded, live.replace(",E5f6G7h8", "").replace("&admin=true", ""))
+
+    def test_an_older_mask_over_an_escape_fits(self):
+        # 0.5.0 read JSON written inside strings: a mask there could take a key's letter written
+        # as a `\u` escape.
+        from tuningfork.replay import fits
+
+        assert fits('"key=<redacted> ok"', '"key=ab\\\\u0041cd ok"')
+
+    def test_a_mask_hides_whole_escapes(self):
+        """Found in review's fourth round: the next piece could be found inside a `\\u` escape, the
+        mask before it hiding a lone backslash."""
+        from tuningfork.replay import fits
+
+        escaped = "0" + "\\" + "u0041-10"
+        assert not fits("<redacted><redacted>u<redacted><redacted>", escaped)
+        assert fits("<redacted>-<redacted>", escaped)
+        assert not fits("<redacted>u0041<redacted>", "ab" + "\\" + "u0041c")
+
+    def test_a_megabyte_of_a_keys_characters_is_matched_quickly(self):
+        """Found in review's fifth round: every place a mask could end was kept apart, so twelve
+        masks in a megabyte of a key's characters took 3 s and 210 MB."""
+        from tuningfork.replay import fits
+
+        started = time.perf_counter()
+        assert fits("<redacted>" + "a<redacted>" * 11, "a" * 1_000_000)
+        assert time.perf_counter() - started < 1
+
+    def test_each_place_a_piece_may_stand_is_tried(self):
+        """Found in review's fourth round: a piece looked for at its leftmost place only can cut an
+        escape there, where a later place leaves it whole for the mask before."""
+        from tuningfork.replay import fits
+
+        backslash = "\\"
+        assert fits("<redacted>" + backslash + "<redacted>!", "a" + backslash + "u0041" + backslash + "b!")
+        # And where a mask starts inside an escape, behind another start in its run, the escape's
+        # letters are places it may end — but from a backslash there, the rest of it is one escape.
+        assert fits("<redacted>" + backslash + "<redacted>42<redacted>", "ab" + backslash + "u0041" + backslash + "u0042x")
+        assert not fits("<redacted>" + backslash + "<redacted>042<redacted>",
+                        "a" + backslash * 2 + "u0041" + backslash * 2 + "u0042Z")
+
+    def test_a_last_mask_hides_something(self):
+        # Found in review's sixth round: no test held that the last mask stands for a character or more.
+        from tuningfork.replay import fits
+
+        assert not fits("a<redacted>b", "ab")
+        assert fits("a<redacted>b", "axb")
+
+    def test_a_call_whose_masks_could_start_in_too_many_places_parts(self):
+        """Found in review's sixth round: in a run of escapes a backslash between two masks may stand
+        at every one, and the places multiplied: twelve masks in a megabyte took 5 s, a hundred 49 s."""
+        from tuningfork.replay import fits
+
+        backslash = "\\"
+        started = time.perf_counter()
+        assert not fits("<redacted>" + (backslash + "<redacted>") * 11, (backslash + "u0041") * 170_000)
+        assert time.perf_counter() - started < 1
+
+    def test_a_step_masked_by_patterns_the_store_keeps_is_matched_as_they_mask(self, store):
+        """Found in review's fourth round: a mask stood for a key's characters, as 0.5.0's masks
+        hid, so a step masked by today's patterns where they took punctuation would part from a
+        fork once they change. The store keeps the patterns each step names, and a fork masks a
+        call with them again."""
+        from tests.helpers import record_pilot
+        from tuningfork.config import patterns_digest
+        from tuningfork.replay import build_table
+        from tuningfork.wire import get_wire
+
+        own = (r"pw=(?P<secret>\S+)",)
+        run = store.get_run(record_pilot(store, read="pw=<redacted> ok\n", params={"redaction": patterns_digest(own)}))
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        live = json.loads(json.dumps(stored).replace("<redacted>", "Pa$$w0rd!x"))
+        wire = get_wire("openai-chat")
+        assert build_table(store, run, 1).fitting(live, wire) is None  # its masks hide a key's characters
+        store.keep_masking(patterns_digest(own), own)
+        table = build_table(store, run, 1)
+        assert table.fitting(live, wire) == table.live_key
+        parted = json.loads(json.dumps(stored).replace("<redacted> ok", "Pa$$w0rd!x ok\\nERROR: refused"))
+        assert table.fitting(parted, wire) is None
+
+    def test_a_call_is_matched_in_one_pass(self):
+        """Found in review's third round: matched as a regex, eight masks in one run of letters took
+        20 s, the proxy waiting."""
+        from tuningfork.replay import fits
+
+        recorded = '"' + "<redacted>a" * 12 + '"'
+        live = '"' + "a" * 50 + " " + "a" * 50 + '"'
+        started = time.perf_counter()
+        assert not fits(recorded, live)
+        assert time.perf_counter() - started < 1
+
+    def test_the_patterns_name_says_how_they_mask(self, monkeypatch):
+        from tuningfork import config
+
+        before = config.patterns_digest(config.DEFAULT_REDACTIONS)
+        monkeypatch.setattr(config, "MASKING_VERSION", config.MASKING_VERSION + 1)
+        assert config.patterns_digest(config.DEFAULT_REDACTIONS) != before
+
+    def test_a_step_masked_as_these_patterns_mask_is_found_by_its_key_alone(self, store):
+        from tuningfork.config import DEFAULT_REDACTIONS, patterns_digest
+        from tests.helpers import record_pilot
+        from tuningfork.replay import build_table
+
+        stamped = {"redaction": patterns_digest(DEFAULT_REDACTIONS)}
+        run = store.get_run(record_pilot(store, read=self.CODE.replace("tokenizer.encode(text)[0]", "<redacted>(text)[0]"),
+                                         params=stamped))
+        assert build_table(store, run, 1).masked == []
+
+    def test_a_step_masked_as_these_patterns_mask_is_keyed_as_it_is_stored(self, store):
+        """Found in review's fifth round: masking is not idempotent — one pass masks a command's
+        first `-p`, a second its next — so a step keyed by masking its stored request again parted
+        from a fork whose call was masked once, as the step was."""
+        from tests.helpers import record_pilot
+        from tuningfork.config import DEFAULT_REDACTIONS, patterns_digest
+        from tuningfork.replay import build_table, key_of
+        from tuningfork.wire import get_wire
+
+        today = {"redaction": patterns_digest(DEFAULT_REDACTIONS)}
+        read = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db\n"
+        run = store.get_run(record_pilot(store, read=read, masked=True, params=today))
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        call = json.loads(json.dumps(stored).replace("<redacted>", "Abcd1234X"))
+        table = build_table(store, run, 1)
+        assert key_of(table.text(call, get_wire("openai-chat"))) == table.live_key
+
+    def test_a_fork_goes_live_at_its_step_though_its_mask_fell_elsewhere(self, store):
+        from types import SimpleNamespace
+
+        from tuningfork.config import DEFAULT_REDACTIONS
+        from tuningfork.proxy.replay import ForkReplay
+        from tuningfork.wire import get_wire
+
+        run = store.get_run(self.recorded(store))
+        launch = SimpleNamespace(id="f" * 32, source_run=run.id, source_step=1, workspace=None, home=None,
+                                 variant=None)
+        replay = ForkReplay(store, launch, DEFAULT_REDACTIONS, ())
+        wire = get_wire("openai-chat")
+        first = store.rebuild_request(store.steps(run.id)[0])
+        stored = store.rebuild_request(store.steps(run.id)[1])
+        second = json.loads(json.dumps(stored).replace("<redacted>", "tokenizer.encode"))
+        main = SimpleNamespace(main=True, thread=0, idx=0)
+        assert replay.decide(first, wire, main).served is not None
+        decided = replay.decide(second, wire, SimpleNamespace(main=True, thread=0, idx=1))
+        assert decided.at_step and decided.mismatch is None

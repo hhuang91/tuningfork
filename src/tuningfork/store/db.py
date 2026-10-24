@@ -176,6 +176,15 @@ CREATE TABLE IF NOT EXISTS servers (
     first_seen REAL NOT NULL
 );
 
+-- The redaction patterns steps were masked with, by the digest each step names them by (its
+-- `redaction`; see tuningfork.config.patterns_digest): what a fork masks a call with again, to
+-- match a step masked otherwise than the patterns at hand mask (see tuningfork.replay).
+CREATE TABLE IF NOT EXISTS maskings (
+    digest     TEXT PRIMARY KEY,
+    patterns   TEXT NOT NULL,
+    first_seen REAL NOT NULL
+);
+
 -- Work a running proxy did for someone (see tuningfork.jobs): a resample, an A/B, a batch,
 -- a fork. What it was asked, the plan it ran, how it ended, and what it made. Its progress
 -- event by event lives in memory only; what it made is linked here, and stored as usual.
@@ -650,6 +659,7 @@ class Store:
         self.home.mkdir(parents=True, exist_ok=True)
         self.blobs = BlobStore(self.home / "blobs")
         self._lock = threading.RLock()
+        self._maskings: set[str] = set()  # digests kept (`keep_masking`)
         self._conn = sqlite3.connect(self.home / "tuningfork.db", check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
@@ -963,9 +973,18 @@ class Store:
                         substitution = kept
                     else:
                         context = kept
-                elif harness_overrides:
-                    edits = copy.deepcopy(edits or {})
-                    edits.setdefault("request", {})["harness_overrides"] = harness_overrides
+                else:
+                    changed = (edits or {}).get("request") or {}
+                    if harness_overrides or changed.get("original_extras") is not None:
+                        edits = copy.deepcopy(edits or {})
+                        edit = edits.setdefault("request", {})
+                        if harness_overrides:
+                            edit["harness_overrides"] = harness_overrides
+                        if changed.get("original_extras") is not None:
+                            # A person's edit keeps the harness's own fields, which a fork
+                            # rebuilds its request from: taken from that request as stored,
+                            # masked with it — never as the edit saw them, in clear.
+                            edit["original_extras"] = {k: v for k, v in harness_request.items() if k != "messages"}
             else:
                 attach_path = path
             if assignment is not None:
@@ -1640,6 +1659,29 @@ class Store:
                 " FROM servers s ORDER BY s.first_seen DESC"
             ).fetchall()
         return [(row["id"], _loads(row["identity"], {}), row["first_seen"], row["runs"]) for row in rows]
+
+    # --- maskings -----------------------------------------------------------------
+
+    def keep_masking(self, digest: str, patterns: Sequence[str]) -> None:
+        """Keep the redaction patterns a step was masked with, by the digest it names them by."""
+        if digest in self._maskings:
+            return
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO maskings (digest, patterns, first_seen) VALUES (?,?,?)",
+                (digest, json.dumps(list(patterns)), time.time()),
+            )
+            self._conn.commit()
+        self._maskings.add(digest)
+
+    def masking(self, digest: str | None) -> tuple[str, ...] | None:
+        """The redaction patterns a step that names `digest` was masked with; None where the store
+        keeps none — a step recorded before steps named them."""
+        if not digest:
+            return None
+        with self._lock:
+            row = self._conn.execute("SELECT patterns FROM maskings WHERE digest = ?", (digest,)).fetchone()
+        return tuple(_loads(row["patterns"], [])) if row else None
 
     def runs(
         self,

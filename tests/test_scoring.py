@@ -17,7 +17,7 @@ from tuningfork.backends.llamacpp.anthropic import to_chat
 from tuningfork.backends.llamacpp.raw import aligned
 from tuningfork.backends.raw import RawError
 from tuningfork.cli import app
-from tuningfork.config import EXPERIMENT_HEADER
+from tuningfork.config import EXPERIMENT_HEADER, REDACTED
 from tuningfork.endpoints import ProtectedEndpoint
 from tuningfork.ops.catalog import CATALOG
 from tuningfork.ops.common import OperationError
@@ -135,7 +135,15 @@ class TestScoring:
 
     async def test_a_different_prompt_is_refused(self, store, served):
         run_id = record(store, served, prompt_offset=3)
-        with pytest.raises(OperationError, match="renders to .* tokens here, and the step's had"):
+        with pytest.raises(OperationError, match="renders to .* tokens here, and the step's had") as refused:
+            await score(store, run_id)
+        assert "chat template or settings may have changed" in str(refused.value)
+
+    async def test_a_prompt_masked_as_it_was_recorded_says_so(self, store, served):
+        # Found in the redaction audit: the refusal blamed the server's template.
+        masked = {**REQUEST, "messages": [*REQUEST["messages"][:-1], {"role": "user", "content": f"Key {REDACTED}."}]}
+        run_id = record(store, served, request=masked, prompt_offset=3)
+        with pytest.raises(OperationError, match=f"reads {REDACTED} where text was masked as it was recorded"):
             await score(store, run_id)
 
     async def test_an_answer_rebuilt_approximately_says_so(self, store, served):

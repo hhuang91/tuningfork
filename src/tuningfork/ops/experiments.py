@@ -294,6 +294,8 @@ class ResamplePlan:
     checkpoint: Any
     plan: Any
     base_url: str
+    #: Things a person should know before sampling, which do not stop it.
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def estimate(self) -> Estimate | None:
@@ -306,6 +308,7 @@ class ResamplePlan:
             "sampling": self.plan.as_settings(),
             "base_url": self.base_url,
             "estimate": guess.to_json() if guess else None,
+            "warnings": self.warnings,
         }
 
 
@@ -358,10 +361,14 @@ def prepare_resample(
             f"{checkpoint.step.idx} --score`",
             field="logprobs",
         )
+    from tuningfork.ops.inspect import masked_warning
+
+    masked = masked_warning(checkpoint.request, checkpoint.step)
     return ResamplePlan(
         checkpoint=checkpoint,
         plan=sampling,
         base_url=check_endpoint(base_url or default_upstream(), home=store.home, purpose="sampling"),
+        warnings=[masked] if masked else [],
     )
 
 
@@ -582,7 +589,7 @@ def prepare_ab(
         substitute,
         unapplied,
     )
-    from tuningfork.experiment.skill import diagnose
+    from tuningfork.experiment.skill import MASKED_SKILL, diagnose, masked_in
     from tuningfork.paths import host_path
 
     checkpoint = load(store, run, step)
@@ -648,6 +655,11 @@ def prepare_ab(
         normalizers = target_normalizers
 
     sampling = make_plan(normalizers=normalizers, **plan)
+    from tuningfork.ops.inspect import masked_warning
+
+    masked = masked_warning(checkpoint.request, checkpoint.step)
+    if masked:
+        warnings.append(masked)
     spans = locate(checkpoint.request, original_text)
     if not spans:
         raise OperationError(
@@ -658,6 +670,8 @@ def prepare_ab(
         substitute(checkpoint.request, original_text, variant_text)
     except SkillNotFound as exc:
         raise OperationError(str(exc)) from None
+    if masked_in(checkpoint.request, original_text):
+        warnings.append(MASKED_SKILL)
     from tuningfork.endpoints import check_endpoint
 
     check_endpoint(base_url or default_upstream(), home=store.home, purpose="sampling")

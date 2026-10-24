@@ -139,8 +139,16 @@ def system_prompt(skill: str = SKILL) -> str:
     )
 
 
-def record_pilot(store: Store, *, model: str = "mock-model", server_defaults=DEFAULTS) -> str:
-    """Record a two-step run: read the CSV, then write the report."""
+def record_pilot(
+    store: Store, *, model: str = "mock-model", server_defaults=DEFAULTS, read: str = "id,amount\n1,10\n",
+    skill: str = SKILL, masked: bool = False, params: dict[str, Any] | None = None,
+) -> str:
+    """Record a two-step run: read the CSV (`read`, what the tool gave back), then write the report,
+    `skill` preloaded — each request `masked` as the recorder stores it, if asked, and each step
+    given `params`."""
+    from tuningfork.config import redact_json
+
+    stored = redact_json if masked else (lambda request: request)
     store.begin_run("pilot", "tally-report/1")
     base = {
         "model": model,
@@ -150,19 +158,21 @@ def record_pilot(store: Store, *, model: str = "mock-model", server_defaults=DEF
         "stream_options": {"include_usage": True},
     }
     first = [
-        {"role": "system", "content": system_prompt()},
+        {"role": "system", "content": system_prompt(skill)},
         {"role": "user", "content": "Use the tally-report skill on data.csv."},
     ]
     store.record_step(
-        request={**base, "messages": first},
+        request=stored({**base, "messages": first}),
         response=as_response(READ, finish_reason="tool_calls"),
         server_defaults=server_defaults,
+        params=params,
     )
-    second = [*first, READ, {"role": "tool", "tool_call_id": "c1", "content": "id,amount\n1,10\n"}]
+    second = [*first, READ, {"role": "tool", "tool_call_id": "c1", "content": read}]
     store.record_step(
-        request={**base, "messages": second},
+        request=stored({**base, "messages": second}),
         response=as_response(tool_call_message("write_file", {"path": "report.json"})),
         server_defaults=server_defaults,
+        params=params,
     )
     run = store.get_run("pilot")
     assert run is not None

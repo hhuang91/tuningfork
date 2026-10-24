@@ -1221,6 +1221,8 @@ def tokens(
                 f"[dim]scoring step {prepared.checkpoint.step.idx}'s answer "
                 f"({usage.get('completion_tokens') or '?'} tokens) on {escape(prepared.base_url)}…[/dim]"
             )
+            for warning in prepared.warnings:
+                console.print(f"  [yellow]note[/yellow]      {escape(warning)}")
             found = asyncio.run(execute_score(store, prepared))
         elif sample:
             experiment, _, index = sample.partition(":")
@@ -2908,6 +2910,8 @@ def resample(
         _refuse(error)
     checkpoint, plan = prepared.checkpoint, prepared.plan
     _print_checkpoint(checkpoint, plan, prepared.base_url)
+    for warning in prepared.warnings:
+        console.print(f"  [yellow]note[/yellow]      {escape(warning)}")
     console.print()
 
     result = asyncio.run(
@@ -3428,6 +3432,8 @@ def experiment(
             f"[bold]{found.kind} at run {found.run_id[:8]} step {found.step_idx}[/bold] — {where}"
         )
     _print_notes(found.notes)
+    if report.masked:
+        console.print(f"  [yellow]note[/yellow]      {escape(report.masked)}")
     for key, change in found.changes.items():
         detail = f"sent {key}={change['sent']!r} (recorded: {change['recorded']!r})"
         console.print(f"  [dim]{escape(detail)}[/dim]")

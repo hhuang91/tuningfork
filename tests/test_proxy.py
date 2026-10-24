@@ -612,6 +612,108 @@ class TestRedaction:
         assert "<redacted>" in stored["messages"][0]["content"]
         assert stored["model"] == "m"
 
+    @pytest.mark.parametrize(
+        "asked, taken, secret",
+        [
+            ("Deploy staging.", "DEPLOY_TOKEN=Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1", "Q7bX2kLm9Zr4Tw8Y"),
+            # Found in review's seventh round: a pattern reads across fields, as a command's does
+            # from a message to a tool's description, so the edit's copy of the fields masked
+            # alone kept what the request masked.
+            ("Back up with mysqldump -uroot", "-pZq8xK3vN5wLp", "Zq8xK3vN5wLp"),
+        ],
+        ids=["in-the-field", "across-fields"],
+    )
+    async def test_a_breakpoint_edit_is_stored_masked_and_a_fork_finds_its_step(self, recorder, asked, taken, secret):
+        """Found in review's sixth round: an edit of a field besides the messages kept the harness's
+        own fields as they came (`original_extras`), which a fork rebuilds the harness's request
+        from: a key in a tool's description was stored in clear, and the step, keyed as it is
+        stored, parted from the fork's call."""
+        from types import SimpleNamespace
+
+        from tests.helpers import as_response, tool_call_message
+        from tuningfork.proxy.held import describe_edit
+        from tuningfork.proxy.recorder import Timings
+        from tuningfork.proxy.replay import ForkReplay
+        from tuningfork.wire import get_wire
+
+        wire = get_wire("openai-chat")
+        tools = [{"type": "function", "function": {
+            "name": "deploy", "parameters": {"type": "object", "properties": {}},
+            "description": f"Deploys the site. It takes {taken} to run."}}]
+        first = {"model": "m", "messages": [{"role": "user", "content": asked}], "temperature": 0.7,
+                 "tools": tools}
+        second = {**first, "messages": [*first["messages"], tool_call_message("deploy", {}),
+                                        {"role": "tool", "tool_call_id": "call_1", "content": "deployed"}]}
+
+        async def record(sent, harness=None, edits=None):
+            answer = as_response(tool_call_message("deploy", {}), finish_reason="tool_calls")
+            return await recorder.record(
+                method="POST", path=CHAT, request_body=json.dumps(sent).encode(), request_payload=sent,
+                status=200, timings=Timings(), response_json=answer, raw_response=json.dumps(answer).encode(),
+                streamed=False, harness_request=harness, edits=edits, wire=wire)
+
+        edited = {**first, "temperature": 0.0}  # a person changed a field besides the messages
+        step = await record(edited, harness=first, edits={"request": describe_edit(first, edited)})
+        await record(second)
+        assert secret not in json.dumps(recorder.store.step(step.run_id, 0).edits)
+
+        launch = SimpleNamespace(id="f" * 32, source_run=step.run_id, source_step=1, workspace=None, home=None,
+                                 variant=None)
+        replay = ForkReplay(recorder.store, launch, DEFAULT_REDACTIONS, ())
+        assert replay.decide(first, wire, SimpleNamespace(main=True, thread=0, idx=0)).served is not None
+
+    async def test_a_step_counts_the_masks_it_made(self, proxy_client, mock_server, recorder, settle):
+        """Found in review: a context that read `<redacted>` was taken for a masked one, though a
+        client's debug log writes the word itself: a step counts the masks storage made."""
+        from tuningfork.ops.inspect import masked_warning
+
+        logged = "DEBUG Request options: {'headers': {'Authorization': '<redacted>'}}"
+        await proxy_client.post(CHAT, json={"model": "m", "messages": [{"role": "user", "content": logged}]})
+        await proxy_client.post(CHAT, json={"model": "m", "messages": [
+            {"role": "user", "content": logged + "\nmy key is sk-ABCDEFGHIJKLMNOPQRSTUV"}]})
+        await settle()
+
+        steps = [step for run in recorder.store.runs() for step in recorder.store.steps(run.id)]
+        quiet, masked = sorted(steps, key=lambda step: step.params["masked"])
+        assert quiet.params["masked"] == 0
+        assert masked_warning(recorder.store.rebuild_request(quiet), quiet) is None
+        assert masked.params["masked"] == 1
+        assert f"{REDACTED} in 1 place," in masked_warning(recorder.store.rebuild_request(masked), masked)
+        # And names the patterns that made them, which the store keeps for a fork to mask with.
+        from tuningfork.config import patterns_digest
+
+        assert masked.params["redaction"] == patterns_digest(DEFAULT_REDACTIONS)
+        assert recorder.store.masking(masked.params["redaction"]) == DEFAULT_REDACTIONS
+
+    async def test_a_number_under_a_secrets_name_keeps_a_claude_code_session_whole(
+        self, proxy_client, mock_server, recorder, settle
+    ):
+        """Found in the redaction audit: a long number under `page_token` in a tool's input was
+        masked bare, which broke the request's JSON. The request was dropped, and so was every
+        later one of the session, which repeats the call: each became a run of its own. A number
+        under a password's name is one a password may be, and stays only because it is JSON's."""
+        first = claude_code_request()
+        call = {"type": "tool_use", "id": "t2", "name": "list_items",
+                "input": {"page_token": 1729712345678, "pin_password": 20261023123456}}
+        first["messages"] += [
+            {"role": "assistant", "content": [call]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "3 items"}]},
+        ]
+        second = json.loads(json.dumps(first))
+        second["messages"] += [
+            {"role": "assistant", "content": [{"type": "text", "text": "Three."}]},
+            {"role": "user", "content": [{"type": "text", "text": "And the next page?"}]},
+        ]
+        mock_server.script(MockTurn(content="Three."), MockTurn(content="None left."))
+        await proxy_client.post(MESSAGES, json=first)
+        await proxy_client.post(MESSAGES, json=second)
+        await settle()
+
+        runs = recorder.store.runs()
+        assert len(runs) == 1 and runs[0].step_count == 2
+        stored = recorder.store.rebuild_request(recorder.store.steps(runs[0].id)[1])
+        assert stored["messages"][4]["content"][0]["input"] == call["input"]
+
     async def keep(self, settings, recorder, path, request, *chunks):
         """What the recorder keeps of an answer the upstream streams in these chunks: the bytes,
         the step, and the body as it came."""
@@ -770,8 +872,12 @@ class TestRedaction:
         assert self.check(None, neither) == (self.PIECES, None)  # an answer the proxy could not read
 
     def test_an_answer_that_masking_leaves_unreadable_is_not_kept(self):
-        # Masked bare, a number breaks the answer's JSON: written again, it would be an empty answer.
-        assert self.check({**self.ANSWER, "session_token": 12345678901234567}, self.Wire()) == (None, "dropped")
+        # The default patterns mask inside strings only. A pattern of a person's own can mask a bare
+        # number, which breaks the answer's JSON: written again, it would be an empty answer.
+        patterns = (*DEFAULT_REDACTIONS, r"12345678901234567")
+        answer = {**self.ANSWER, "session_token": 12345678901234567}
+        kept = stream_without_secrets(self.PIECES, answer, self.Wire(), simple_request(stream=True), patterns)
+        assert kept == (None, "dropped")
 
     def test_bytes_that_cannot_be_read_back_are_written_again(self):
         assert self.check(self.ANSWER, self.Wire(parse_fails=True)) == (b"rendered", "rendered")

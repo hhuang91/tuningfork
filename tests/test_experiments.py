@@ -28,8 +28,10 @@ from tuningfork.experiment import (
     resolve_target,
     run_ab,
     run_resample,
+    substitute,
 )
 from tuningfork.analysis.tokens import TokenStream
+from tuningfork.config import REDACTED
 from tests.helpers import PROPS, SKILL, VARIANT, as_response, record_pilot, text_message
 from tests.mock_server import MockTurn
 
@@ -254,6 +256,94 @@ class TestResample:
 
         (outcome,) = experiment_outcomes(store, experiment)
         assert outcome.kind == "truncated"
+
+
+class TestAMaskedContext:
+    """Found in the redaction audit: a resample or an A/B sends the step's request as it is stored,
+    and where text was masked as the step was recorded, every sample is sent `<redacted>` where the
+    model saw the text — another prompt than the recorded one — and nothing said so."""
+
+    MASKED = f"id,amount\nkey={REDACTED}\n"
+
+    def test_a_resample_says_so(self, store):
+        from tuningfork.ops.experiments import prepare_resample
+
+        plan = prepare_resample(store, record_pilot(store, read=self.MASKED), "1", base_url=UPSTREAM)
+        assert [warning for warning in plan.warnings if f"reads {REDACTED} in 1 place," in warning]
+        assert plan.to_json()["warnings"] == plan.warnings
+
+    def test_a_context_without_a_mask_says_nothing(self, store):
+        from tuningfork.ops.experiments import prepare_resample
+
+        assert prepare_resample(store, record_pilot(store), "1", base_url=UPSTREAM).warnings == []
+
+    def test_an_ab_says_so(self, store, tmp_path):
+        from tuningfork.ops.experiments import prepare_ab
+
+        (tmp_path / "SKILL.md").write_text(SKILL, encoding="utf-8")
+        (tmp_path / "variant.md").write_text(VARIANT, encoding="utf-8")
+        plan = prepare_ab(
+            store, record_pilot(store, read=self.MASKED), "1", variant=tmp_path / "variant.md",
+            original=tmp_path / "SKILL.md", base_url=UPSTREAM,
+        )
+        assert [warning for warning in plan.warnings if f"reads {REDACTED}" in warning]
+
+    async def test_its_report_says_so_where_its_plan_did(self, store, mock_server, client):
+        """Found in review: the plan's warning was the only word of it, and an agent over MCP saw
+        a plan only on a dry run: the report says it again, as its page, the CLI and MCP read it."""
+        from tuningfork.ops import compact
+        from tuningfork.ops.inspect import experiment_report
+
+        mock_server.script(MockTurn(content="abc"))
+        checkpoint = load_checkpoint(store, record_pilot(store, read=self.MASKED), 1)
+        experiment = await run_resample(store, checkpoint, SamplingPlan(n=1), base_url=UPSTREAM, client=client)
+        report = experiment_report(store, experiment.id).to_json()
+        assert f"reads {REDACTED} in 1 place," in report["masked"]
+        assert f"warning: {report['masked']}" in compact.experiment_lines(compact.experiment(report))
+
+    SOURCE = "Read the rows from postgres://report:Tr0ub4dor9@db.internal/app.\n"
+
+    def test_an_ab_of_a_skill_masked_as_it_was_recorded_sends_each_wording_masked(self, store, tmp_path):
+        """Found in review: a skill holding an example credential is stored masked, and an A/B of it
+        was refused, the skill "not in the context at this step"."""
+        from tuningfork.experiment.skill import MASKED_SKILL
+        from tuningfork.ops.experiments import prepare_ab
+
+        skill = SKILL.replace("Write the totals", self.SOURCE + "Write the totals")
+        (tmp_path / "SKILL.md").write_text(skill, encoding="utf-8")
+        (tmp_path / "variant.md").write_text(VARIANT.replace("Write the totals", self.SOURCE + "Write the totals"),
+                                             encoding="utf-8")
+        run = record_pilot(store, skill=skill, masked=True)
+        plan = prepare_ab(store, run, "1", variant=tmp_path / "variant.md", original=tmp_path / "SKILL.md",
+                          base_url=UPSTREAM)
+        assert MASKED_SKILL in plan.warnings
+        sent, _ = substitute(plan.checkpoint.request, plan.original_text, plan.variant_text)
+        system = sent["messages"][0]["content"]
+        assert f"postgres://report:{REDACTED}@db.internal" in system and "row_count and amount_total" in system
+        assert "Tr0ub4dor9" not in json.dumps(sent)
+
+    def test_an_edit_inside_masked_text_is_said_to_be_one(self, store, tmp_path):
+        from tuningfork.experiment.skill import NothingToCompare
+
+        skill = SKILL.replace("Write the totals", self.SOURCE + "Write the totals")
+        run = record_pilot(store, skill=skill, masked=True)
+        checkpoint = load_checkpoint(store, run, 1)
+        with pytest.raises(NothingToCompare, match="the edit falls inside text storage masks"):
+            substitute(checkpoint.request, skill, skill.replace("Tr0ub4dor9", "Tr0ub4dor8"))
+
+    def test_a_skill_masked_otherwise_than_storage_masks_it_now_is_said_to_be(self, store, tmp_path):
+        from tuningfork.ops.common import OperationError
+        from tuningfork.ops.experiments import prepare_ab
+
+        skill = SKILL.replace("Write the totals", self.SOURCE + "Write the totals")
+        (tmp_path / "SKILL.md").write_text(skill, encoding="utf-8")
+        (tmp_path / "variant.md").write_text(VARIANT, encoding="utf-8")
+        # Stored under other patterns: masked where today's would not mask it.
+        run = record_pilot(store, skill=skill.replace("db.internal/app", f"{REDACTED}/app"))
+        with pytest.raises(OperationError) as refused:
+            prepare_ab(store, run, "1", variant=tmp_path / "variant.md", original=tmp_path / "SKILL.md",
+                       base_url=UPSTREAM)
+        assert "holds text storage masks" in refused.value.detail
 
 
 class TestLogprobs:

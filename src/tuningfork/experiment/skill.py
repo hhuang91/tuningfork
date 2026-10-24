@@ -235,16 +235,53 @@ def _occurrences(request: dict[str, Any], skill_text: str) -> list[tuple[Path, S
 
 def locate(request: dict[str, Any], skill_text: str) -> list[Span]:
     """Every occurrence of the skill in the request, each in the most specific form it takes."""
-    return [span for _, span, _ in _occurrences(request, skill_text)]
+    return [span for _, span, _ in _occurrences(request, as_stored(request, skill_text))]
+
+
+def as_stored(request: dict[str, Any], skill_text: str) -> str:
+    """The skill's text as `request` holds it: as written, or masked as storage masks text. A
+    recorded step's context holds a skill with an example credential in it masked
+    (`postgres://app:<redacted>@db`): found in review, an A/B of such a skill was refused, the
+    skill "not in the context at this step"."""
+    if _occurrences(request, skill_text):
+        return skill_text
+    from tuningfork.config import redact
+
+    masked = redact(skill_text)
+    if masked != skill_text and _occurrences(request, masked):
+        return masked
+    return skill_text
+
+
+def masked_in(request: dict[str, Any], skill_text: str) -> bool:
+    """Whether `request` holds the skill only as storage masked it."""
+    return as_stored(request, skill_text) != skill_text
+
+
+#: What a plan says when the skill it swaps is held masked (`masked_in`).
+MASKED_SKILL = (
+    "the skill's own text reads <redacted> at this step, where it was masked as it was recorded: each "
+    "wording is sent masked as storage masks text"
+)
 
 
 def diagnose(request: dict[str, Any], skill_text: str) -> str:
     """Explain why the skill could not be found, pointing at the likely cause."""
+    from tuningfork.config import REDACTED, redact
+
     _, body = split_frontmatter(normalize_newlines(skill_text))
     probe = next((line.strip() for line in body.splitlines() if line.strip()), "")
     if probe:
         for _, index, role, _, text in _fields(request):
-            position = text.find(probe)
+            position = max(text.find(probe), text.find(redact(probe)))
+            if position >= 0 and REDACTED in text and redact(skill_text) != skill_text:
+                return (
+                    f"The skill's first line ({probe!r}) appears in message {index} ({role}) at char "
+                    f"{position}, and the skill holds text storage masks: that message reads {REDACTED} "
+                    "where text was masked as it was recorded, and the skill is found neither as written "
+                    "nor masked as storage masks it now. A step recorded before its masks changed holds "
+                    "them where they fell then."
+                )
             if position >= 0:
                 return (
                     f"The skill's first line ({probe!r}) appears in message {index} "
@@ -280,9 +317,17 @@ def substitute(
     """A copy of `request` with every occurrence of the original skill replaced.
 
     Every occurrence, not the first: if the skill appears twice (preloaded, then viewed
-    again through a tool), replacing one would leave the model reading both wordings.
+    again through a tool), replacing one would leave the model reading both wordings. Where
+    the request holds the skill masked (`as_stored`), the variant goes in masked as storage
+    masks text.
     Raises `NothingToCompare` if the result is the request unchanged.
     """
+    stored = as_stored(request, original_text)
+    masked = stored != original_text
+    if masked:
+        from tuningfork.config import redact
+
+        original_text, variant_text = stored, redact(variant_text)
     found = _occurrences(request, original_text)
     if not found:
         raise SkillNotFound(diagnose(request, original_text))
@@ -302,7 +347,9 @@ def substitute(
     spans = [span for _, span, _ in found]
     if changed == request:
         detail = " ".join(unapplied(original_text, variant_text, spans)) or (
-            "the variant's text, in the form the model sees it here, is identical"
+            "the edit falls inside text storage masks, which both wordings read as <redacted> here"
+            if masked
+            else "the variant's text, in the form the model sees it here, is identical"
         )
         raise NothingToCompare(
             f"Both arms would send the same request: {detail}. Nothing would be measured."

@@ -275,6 +275,15 @@ class TestJobs:
         assert done.structured_content["status"] == "done" and "remaining_s" not in (done.structured_content.get("progress") or {})
         assert [entry["kind"] for entry in done.structured_content["events"]][-1] == "sample"
 
+    async def test_a_plans_warning_reaches_the_agent(self, lab, store):
+        """Found in review: an agent saw a plan's warnings on a dry run only, so a context that
+        read `<redacted>` went unsaid once its resample started."""
+        server, _ = lab
+        said = "step 1's context reads <redacted> in 1 place"
+        result = await call(server, "start_count", {"steps": 2, "warn": said, "wait_seconds": 5})
+        assert f"warning: {said}" in text(result)
+        assert result.structured_content["warnings"] == [said]
+
     async def test_the_same_work_asked_again_is_not_started_again(self, lab, store):
         server, runner = lab
         first = await call(server, "start_count", {"steps": 100, "delay": 0.05, "wait_seconds": 0})
