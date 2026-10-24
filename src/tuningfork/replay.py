@@ -61,17 +61,34 @@ def key_of(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+#: What a mask made before steps named their patterns hid: those patterns masked a key's
+#: characters only, some written as `\u` escapes where 0.5.0 read JSON written inside strings.
+_HIDDEN = re.compile(r"(?:[A-Za-z0-9._\-]|\\++u[0-9a-fA-F]{4})*+")
+
+
 def fits(recorded: str, text: str) -> bool:
     """Whether `text` reads as `recorded` does but where `recorded` holds a mask, each standing
-    for what a mask hides: one or more characters, no space and no quote — a call keyed as
-    today's patterns mask it, against a request stored under others. Found in review, every
-    fork of a run recorded before the patterns changed parted from its recording where they had
-    masked code they now keep; and a mask that stood for any text let a call that parted from
-    the recording right after one take its answer."""
+    for what such a mask hid: one or more of a key's characters — a call keyed as today's
+    patterns mask it, against a request stored under others. Found in review, every fork of a
+    run recorded before the patterns changed parted from its recording where they had masked code
+    they now keep; a mask that stood for any text let a call that parted from the recording right
+    after one take its answer; and matching it as a regex took exponential time.
+
+    In one pass: each mask hides the run of a key's characters where it stands, as far as the
+    next piece of the recording, found leftmost within that run."""
     if REDACTED not in recorded:
         return recorded == text
-    hidden = r'[^\s"]+?'
-    return re.fullmatch(hidden.join(re.escape(piece) for piece in recorded.split(REDACTED)), text) is not None
+    first, *middle, last = recorded.split(REDACTED)
+    if not (text.startswith(first) and text.endswith(last)) or len(text) < len(first) + len(last):
+        return False
+    at, end = len(first), len(text) - len(last)
+    for piece in middle:
+        run = _HIDDEN.match(text, at, end).end()
+        found = text.find(piece, at + 1, min(run + len(piece), end))
+        if found < 0:
+            return False
+        at = found + len(piece)
+    return at < end and _HIDDEN.match(text, at, end).end() == end
 
 
 @dataclass(slots=True)

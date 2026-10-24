@@ -278,6 +278,10 @@ class TestRedactionMasksKeysNotCode:
             'lastSignificantToken = "?InterpolationInTemplate";',
             'UNTRACKED_CAPPED_AT_KEY = "\\0capped_at_ns"',
             "const UNEXPECTED_TOKEN = /^Unexpected token '?(.)'?(,)? /;",
+            # Found in review's third round: a call of a name in lower case or a dotted one.
+            '"apiKey": "os.getenv(\'X\')"',
+            'token: "Buffer.from(raw).toString()"',
+            '{"password": "getPassword()"}',
         ],
     )
     def test_code_and_words_are_kept(self, text):
@@ -383,6 +387,9 @@ class TestRedactionMasksKeysNotCode:
             ("password: password123", "password123"),
             ("TEST_PASS=Zq8xK3vN5wLp", "Zq8xK3vN5wLp"),
             ('password: "?Xk2Lq9zWm7"', "?Xk2Lq9zWm7"),
+            # Found in review's third round: `PASS` before a colon is a test's result, not here.
+            ("PASS=Zq8xK3vN5wLp", "Zq8xK3vN5wLp"),
+            ("export PASS='Zq8xK3vN5wLp'", "Zq8xK3vN5wLp"),
             ("token: \x1b[1;38;2;255;255;255;48;2;0;0;0mghp" "_Q7bX2kLm9Zr4Tw8Yp3Hn6Jc1Vb5Pm8Ks0Ar2\x1b[0m",
              "Q7bX2kLm9Zr4Tw8Y"),
             # A random key whose case cuts into many short words reads as no name.
@@ -454,6 +461,22 @@ class TestRedactionMasksKeysNotCode:
         compact JSON — `["Password:",128,true]` — and a quoted value opened on the string's
         closing quote, to mask `,128,true]],` up to the next string."""
         assert redact_json(as_a_tool_result(text)) == as_a_tool_result(text)
+
+    @pytest.mark.parametrize("prefix", ["", "b"])
+    def test_a_key_written_as_bytes_escapes_is_masked(self, prefix):
+        # Found in review's third round: a value led by a backslash was taken for an escape.
+        key = "\\x8f\\x12\\xab\\xcd\\xef\\x01\\x23\\x45\\x67\\x89"
+        stored = redact_json(as_a_tool_result(f'SECRET_KEY = {prefix}"{key}"\n'))["messages"][0]["content"]
+        assert stored == f'SECRET_KEY = {prefix}"{REDACTED}"\n'
+
+    def test_a_python_repr_still_reads(self):
+        """Found in review's third round: a repr's escaped quote (`\\'`) closed a single-quoted value
+        as JSON writes it, and the mask ended between the backslash and the quote."""
+        import ast
+
+        text = repr({"password": "Xy7zQ2mL'9vK4\"x", "n": 1})
+        stored = redact_json(as_a_tool_result(text))["messages"][0]["content"]
+        assert ast.literal_eval(stored)["n"] == 1
 
     def test_json_written_in_a_string_stays_json(self):
         # Found building the fix: a quoted value that read `\"` whole took the quotes of a JSON

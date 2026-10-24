@@ -35,9 +35,10 @@ from typing import Any
 
 #: The characters a value is written in, as each kind of pattern reads one: bare, as `.env`
 #: files, YAML, headers and command lines write it; in double or single quotes, as code and JSON
-#: do (anything but spaces and that quote — and an escape read whole, since a backslash masked
-#: alone breaks the JSON, but `\"`, which in JSON written inside a string is a quote that ends
-#: one); a bearer token; Base64; a password in a URL; a key alone; a command's argument.
+#: do (anything but spaces and that quote, and an escape read whole: a backslash masked alone
+#: breaks the JSON); a bearer token; Base64; a password in a URL; a key alone; a command's
+#: argument. A quoted value opens only where a string does, never on a JSON escape, `{` or `[`,
+#: so JSON written inside the string it is in keeps its quotes.
 _BARE = r"A-Za-z0-9_\-.~+/=!@#$%^&*"
 _DOUBLE_QUOTED = r"^\s\"\\"
 _SINGLE_QUOTED = r"^\s\"'\\"
@@ -105,32 +106,34 @@ def _not_a_key(chars: str, *, numbers: bool = True, password: bool | str = False
     `password` (or where the group of that name matched), one word and digits (`rootpass123`,
     `Welcome2024`), as a person makes a password up, where a constant's name holds an id
     (`sessionid2`), unless it numbers a password's field (`password2`); a key's random letters
-    and digits read as no name. Not a number, where `numbers` and the value is no password's (a
-    count, a time, a page's place), nor a key's id or an address in hex (`0x4AEE18F83AFDEB23`);
-    not a path to a file that holds one (`~/.ssh/id_ed25519`), nor a reference to where one is
-    kept (`op://…`, `vault://…`); not a mask's stars, nor an example cut short (`sk-...`); not a
+    and digits read as no name. Not a call or an index of a name in lower case or a dotted one
+    (`getPassword()`, `os.getenv('X')`), where a password may read as a capital's
+    (`Summer(2024)`). Not a number, where `numbers` and the value is no password's (a count, a
+    time, a page's place), nor a key's id or an address in hex (`0x4AEE18F83AFDEB23`); not a path
+    to a file that holds one (`~/.ssh/id_ed25519`), nor a reference to where one is kept
+    (`op://…`, `vault://…`); not a mask's stars, nor an example cut short (`sk-...`); not a
     variable or a placeholder (`$TOKEN`, `${{ secrets.X }}`, `<your-key>`, `%KEY%`, `@rematch`,
-    `[KEY]`), an escape, a regex (`/^…`), nor, where it is no password, a state a tokenizer names
-    (`?InterpolationInTemplate`)."""
+    `[KEY]`), an escape but bytes' (`\\0capped`, not `\\x8f\\x12…`), a regex (`/^…`), nor, where
+    the group names no password, a state a tokenizer names (`?InterpolationInTemplate`)."""
     end = "[.!=]?(?![" + chars + "])"
     made_up = (
         r"(?!(?!(?:pass(?:word|wd)?|pwd)[0-9]" + end + r")(?:[A-Z]?" + _LOWER + r"{1,40}+|[A-Z]{1,40}+)[0-9]{1,6}+"
         + end + ")"
     )
     number = r"-?[0-9]{1,40}+(?:\.[0-9]{1,40}+)?+(?:[eE][-+]?[0-9]{1,3}+)?+" + end
-    name = _PASSWORD_NAME if password is True else _NAME
-    state = "" if password is True else r"|\?"
+    name, state = _PASSWORD_NAME if password is True else _NAME, ""
     if isinstance(password, str):
         made_up, number = f"(?({password}){made_up})", f"(?({password})(?!)|{number})"
         name, state = f"(?({password}){_PASSWORD_NAME}|{_NAME})", rf"|(?({password})(?!)|\?)"
     return (
         r"(?!" + (made_up if password else "") + r"!{0,2}+" + name + end + "|" + _LONG_NAME
+        + r"|(?:(?=[a-z])|(?=[A-Za-z0-9_$]{1,64}+\.))" + name + r"[(\[]"
         + (("|" + number) if numbers else "")
         + r"|0x(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{16}|[0-9a-fA-F]{8})" + end
         + r"|(?:~|\.{1,2})?/{1,2}+\.?(?:" + _PIECE + "|" + _SHORT_PIECE + ")(?:/|" + end + ")"
         + r"|[A-Za-z][A-Za-z0-9+.\-]{0,31}+://"
         + "|[" + chars + r"]{0,64}?(?:\.\.\.|…|\*{3})"
-        + r"|[$%{<@\[(\\]|/\^" + state + ")"
+        + r"|[$%{<@\[(]|\\(?!x[0-9a-fA-F]{2})|/\^" + state + ")"
     )
 
 
@@ -157,13 +160,14 @@ _WORD_START = r"(?<![A-Za-z0-9_]{})"
 #: `clientSecret`, `GITHUB_TOKEN`, `DB_PASS`, `dbPass`, and an upper-case `…_KEY`, `…_AUTH`,
 #: `…_PAT` or `…_CREDENTIALS` as a `.env` file writes one — but a public key's (`…_PUBLIC_KEY`,
 #: `…_PUBLISHABLE_KEY`). Not a page's token (`next_page_token`, `nextPageToken`): opaque, but no
-#: key, and an agent sends it back in its next call. Not `PASS` on its own, as a test's result
-#: (Go's `--- PASS: TestA`).
+#: key, and an agent sends it back in its next call. Not `PASS` on its own before a colon, as a
+#: test's result (Go's `--- PASS: TestA`); `PASS=` is one.
 _SECRET_NAME = (
     r"[AaSsPpEeMmTt_](?:(?<=[Aa])(?i:pi[_\-]?key|ccess[_\-]?key|ccount[_\-]?key)"
     r"|(?<=[Ss])(?i:ecret[_\-]?key|igning[_\-]?key|ecret)"
     r"|(?<=[Pp])(?i:rivate[_\-]?key)"
-    r"|(?P<password>(?<=[Pp])(?i:assword|asswd|assphrase|ass(?<![a-z]pass))(?<!(?<!_)PASS)|(?<=P)ass(?<=[a-z0-9]Pass))"
+    r"|(?P<password>(?<=[Pp])(?i:assword|asswd|assphrase|ass(?<![a-z]pass))(?!(?<=PASS)(?<!_PASS):)"
+    r"|(?<=P)ass(?<=[a-z0-9]Pass))"
     r"|(?<=[Ee])(?i:ncryption[_\-]?key)|(?<=[Mm])(?i:aster[_\-]?key)"
     r"|(?<=[Tt])(?i:oken" + "".join(
         f"(?<!{page}{joint}token)"
@@ -268,17 +272,19 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     + "[" + _TOKEN68 + "]{16,}+=*)",
     _SECRET_FLAG + r"(?:[ \t]+|=)[\"']?(?P<secret>(?!-)" + _not_a_key(_BARE, password="password")
     + "[" + _BARE + "]{8,}+)",
-    # A value under a secret's name, in quotes or bare, a type perhaps named between them. A
+    # A value under a secret's name, in quotes (a string's prefix perhaps before them: `b"…"`)
+    # or bare, a type perhaps named between them. A
     # quoted name takes a quoted value only — `"page_token": 1729712345678` is a number, and
     # masked bare it would no longer be JSON — and neither crosses a line, but into a YAML
     # block (`api_key: |`): `if not api_key:` is no assignment of the next line. A bare value
     # before `(` or `[` is a call or an index; how far its run goes is looked at within a key's
     # length, so a run of names is read once.
     _SECRET_NAME + r"(?P<kq>[\"'])?[ \t]*" + _TYPED + r"(?:=>|:=|:|=(?!=))[ \t]*(?:[|>][-+]?[ \t]*(?:\n|\\n)[ \t]+)?"
+    r"(?:[bBrRuUfF]{1,2}(?=[\"']))?"
     r"(?:\"(?P<secret>(?![,:;)\]}])" + _not_a_key(_DOUBLE_QUOTED, password="password") + r"(?:["
-    + _DOUBLE_QUOTED + r"]|\\[^\"]){8,}+)\""
+    + _DOUBLE_QUOTED + r"]|\\.){8,}+)\""
     r"|'(?P<secret_single>(?![,:;)\]}])" + _not_a_key(_SINGLE_QUOTED, password="password") + r"(?:["
-    + _SINGLE_QUOTED + r"]|\\[^\"]){8,}+)'"
+    + _SINGLE_QUOTED + r"]|\\.){8,}+)(?<!\\)'"
     r"|(?(kq)(?!)|(?P<secret_bare>" + _not_a_key(_BARE, password="password") + "(?![" + _BARE
     + "]{8,256}+[(\\[])[" + _BARE + r"]{8,}+)))",
     # A value under any other name ending in `key` (`azure_openai_key`, `mistralKey`), where it
@@ -547,10 +553,17 @@ def redact_json_counted(obj: Any, patterns: tuple[str, ...] = DEFAULT_REDACTIONS
         return {"tuningfork_error": "redaction produced invalid JSON; payload dropped"}, made
 
 
+#: How masks fall besides the patterns: how escapes are read (`JSON_DEPTH`), keys kept apart
+#: (`_apart`). Raised when that changes, as a change of the patterns changes their digest.
+MASKING_VERSION = 1
+
+
 def patterns_digest(patterns: tuple[str, ...]) -> str:
-    """What names a set of patterns: kept with each step as `redaction`, so what reads a step
-    again knows whether it was masked as the patterns at hand mask (a fork's `replay.fits`)."""
-    return hashlib.sha256("\n".join(patterns).encode("utf-8")).hexdigest()[:16]
+    """What names a set of patterns and how they mask: kept with each step as `redaction`, so
+    what reads a step again knows whether it was masked as the patterns at hand mask (a fork's
+    `replay.fits`)."""
+    named = f"masking {MASKING_VERSION}\n" + "\n".join(patterns)
+    return hashlib.sha256(named.encode("utf-8")).hexdigest()[:16]
 
 
 def masks_in(request: Any, params: dict[str, Any] | None) -> int:

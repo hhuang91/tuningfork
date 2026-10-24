@@ -523,6 +523,47 @@ class TestStoredMasks:
             "<redacted>", "tokenizer.encode(text)[0]\\nERROR: publish.sh refused, nothing was published\\nx = tokenizer.encode"))
         assert build_table(store, run, 1).fitting(parted, get_wire("openai-chat")) is None
 
+    @pytest.mark.parametrize(
+        "recorded, live",
+        [
+            ('"GITHUB_TOKENS=<redacted>\\nexit 0"', '"GITHUB_TOKENS=A1b2C3d4,E5f6G7h8\\nexit 0"'),
+            ('"GET /api?token=<redacted>&user=bob 200"', '"GET /api?token=A1b2C3d4&admin=true&user=bob 200"'),
+        ],
+    )
+    def test_a_mask_stands_for_one_key(self, recorded, live):
+        """Found in review's third round: a mask that stood for any text but a space or a quote took
+        in a second key, an extra parameter. The patterns 0.5.0 and before masked with took a
+        key's characters only."""
+        from tuningfork.replay import fits
+
+        assert not fits(recorded, live)
+        assert fits(recorded, live.replace(",E5f6G7h8", "").replace("&admin=true", ""))
+
+    def test_an_older_mask_over_an_escape_fits(self):
+        # 0.5.0 read JSON written inside strings: a mask there could take a key's letter written
+        # as a `\u` escape.
+        from tuningfork.replay import fits
+
+        assert fits('"key=<redacted> ok"', '"key=ab\\\\u0041cd ok"')
+
+    def test_a_call_is_matched_in_one_pass(self):
+        """Found in review's third round: matched as a regex, eight masks in one run of letters took
+        20 s, the proxy waiting."""
+        from tuningfork.replay import fits
+
+        recorded = '"' + "<redacted>a" * 12 + '"'
+        live = '"' + "a" * 50 + " " + "a" * 50 + '"'
+        started = time.perf_counter()
+        assert not fits(recorded, live)
+        assert time.perf_counter() - started < 1
+
+    def test_the_patterns_name_says_how_they_mask(self, monkeypatch):
+        from tuningfork import config
+
+        before = config.patterns_digest(config.DEFAULT_REDACTIONS)
+        monkeypatch.setattr(config, "MASKING_VERSION", config.MASKING_VERSION + 1)
+        assert config.patterns_digest(config.DEFAULT_REDACTIONS) != before
+
     def test_a_step_masked_as_these_patterns_mask_is_found_by_its_key_alone(self, store):
         from tuningfork.config import DEFAULT_REDACTIONS, patterns_digest
         from tests.helpers import record_pilot
