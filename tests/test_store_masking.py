@@ -13,6 +13,9 @@ from tuningfork.store.masking import Masked
 from tests.helpers import KEY, as_response, text_message
 from tests.test_store import request_with
 
+#: A backslash, as JSON's escapes begin.
+BS = chr(92)
+
 #: Masked by the patterns only where a password's name stands before it.
 PASSWORD = "Tr0ub4dor3xyz"
 NAMED = f"log in with password={PASSWORD} please"
@@ -83,23 +86,45 @@ class TestARecordedStep:
                                  wire="openai-chat", error="tuningfork could not read the response")
         assert store.blobs.get(step.raw_response_blob) == f"<html>login refused for {REDACTED}</html>".encode()
 
-    def test_json_written_inside_a_string_stays_json(self, store):
+    def test_json_written_inside_a_string_is_masked_where_the_value_stands(self, store):
         """Found in review: a call's arguments are a string holding JSON, and a value a mask took was
-        masked in a number there, or cut an escape there, as it was one level up."""
-        from tests.helpers import tool_call_message
+        masked in a number there, or cut an escape there, as it was one level up — and then, read as
+        JSON and written again, the rest of it changed: a key named twice, `1e2`, the spacing."""
 
-        def call(arguments):
-            return as_response(tool_call_message("write_file", arguments), "tool_calls")
+        def arguments(written):
+            call = {"id": "c1", "type": "function", "function": {"name": "write_file", "arguments": written}}
+            return as_response({"role": "assistant", "content": "", "tool_calls": [call]}, "tool_calls")
 
-        def arguments(step):
-            return json.loads(store.response(step)["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"])
+        def stored(step):
+            return store.response(step)["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
 
+        compact = '{"path":"cfg.json","note":"pin 17613123","retries":1e2,"path":"other.json","pin":17613123}'
         digits = store.record_step(request=request_with([text_message("mysql -uroot -p17613123 app")]),
-                                   response=call({"pin": 17613123, "user": "root", "note": "pin 17613123"}))
-        assert arguments(digits) == {"pin": 17613123, "user": "root", "note": f"pin {REDACTED}"}
-        escaped = store.record_step(request=request_with([text_message("password=nT0ub4dor3xyz")]),
-                                    response=call({"content": "one\nT0ub4dor3xyz", "then": "nT0ub4dor3xyz"}))
-        assert arguments(escaped) == {"content": "one\nT0ub4dor3xyz", "then": REDACTED}
+                                   response=arguments(compact))
+        assert stored(digits) == compact.replace("pin 17613123", f"pin {REDACTED}")
+        # Each escape whole, where it starts or ends the value as where it stands inside it.
+        escaped = ('{"content":"one\\nT0ub4dor3xyz","then":"nT0ub4dor3xyz","x":"Tr0ub4dor\\u00333xyz",'
+                   '"y":"Tr0ub4dor33xy\\u007a"}')
+        step = store.record_step(request=request_with([text_message("password=nT0ub4dor3xyz password=Tr0ub4dor33xyz")]),
+                                 response=arguments(escaped))
+        assert stored(step) == escaped.replace('"nT0ub4dor3xyz"', f'"{REDACTED}"').replace(
+            "Tr0ub4dor\\u00333xyz", REDACTED).replace("Tr0ub4dor33xy\\u007a", REDACTED)
+
+    def test_json_inside_a_string_is_read_as_json_reads_it(self, store):
+        """A quote escaped inside one of its strings ends no string there, and a pair of `\\u` escapes
+        is one character, as JSON reads them."""
+        from tuningfork.store.masking import Masking
+
+        value = "\U0001F600Tr0ub4dor3xyz"
+        written = json.dumps({"said": f'one " then {value}'})  # ASCII: the emoji as two escapes
+        assert BS + "ud83d" + BS + "ude00" in written
+        masked = Masking().of({"arguments": written}, also=[value]).value["arguments"]
+        assert masked == written.replace(json.dumps(value)[1:-1], REDACTED)
+
+    def test_a_reply_written_as_json_keeps_its_layout(self, store):
+        written = json.dumps({"user": "root", "note": f"pw {PASSWORD}"}, indent=2)
+        step = store.record_step(request=request_with([text_message(NAMED)]), response=as_response(text_message(written)))
+        assert store.response(step)["choices"][0]["message"]["content"] == written.replace(PASSWORD, REDACTED)
 
     def test_a_value_a_mask_took_is_masked_in_a_key_too(self, store):
         assert store.masking.of({PASSWORD: 1}, also=[PASSWORD]).value == {REDACTED: 1}
