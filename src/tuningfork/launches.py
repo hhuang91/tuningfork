@@ -32,7 +32,6 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
-from tuningfork.config import DEFAULT_REDACTIONS, redact_json
 from tuningfork.store.tree import node_path
 
 PREFIX = "/_launch/"
@@ -70,16 +69,16 @@ def proxy_root(base_url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
 
 
-def request_path(
-    request: dict[str, Any], wire: Any = None, patterns: Sequence[str] = DEFAULT_REDACTIONS
-) -> list[str]:
-    """The request's node path, exactly as `Store.record_step` will build it: redacted with
-    the recorder's patterns, then in the wire format's stable form.
+def request_path(request: dict[str, Any], wire: Any = None, masking: Any = None) -> list[str]:
+    """The request's node path, exactly as `Store.record_step` will build it: masked as the
+    store masks (`masking`, the store's `Masking`), then in the wire format's stable form.
 
-    A path built from the raw request would never be found once a redaction had changed a
-    message — and neither would every step after it.
+    A path built from the raw request would never be found once a mask had changed a message
+    — and neither would every step after it.
     """
-    stored = redact_json({"messages": request.get("messages") or []}, tuple(patterns))
+    from tuningfork.store.masking import Masking
+
+    stored = (masking or Masking()).value({"messages": request.get("messages") or []})
     messages = stored.get("messages") or []
     if wire is not None:
         messages = [wire.normalize_message(m) for m in messages]

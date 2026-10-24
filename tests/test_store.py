@@ -463,7 +463,8 @@ class TestTokenStreams:
         assert [r.id for r in store.token_streams(step_id=step.id)] == [second.id, first.id]
         found = store.token_stream(first.id)
         assert (found.tokens, found.top_k, found.exact, found.notes) == (2, 2, True, {"rebuilt": 2})
-        assert store.token_stream_data(found) == self.STREAM
+        # kept as the store masks it: in its own JSON form
+        assert store.token_stream_data(found) == {**self.STREAM, "format": None}
         assert store.steps_with_token_streams([step.id])[step.id].id == second.id
 
     def test_a_samples_streams(self, store):

@@ -579,17 +579,21 @@ def tool_choice(
 # --- redaction ------------------------------------------------------------------------------
 
 
-def redact_stream(stream: TokenStream, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> TokenStream:
+def redact_stream(
+    stream: TokenStream, patterns: tuple[str, ...] = DEFAULT_REDACTIONS, also: Iterable[str] = ()
+) -> TokenStream:
     """The stream with every token that overlaps a secret masked — its id, piece and the
     alternatives weighed there — so a secret split across tokens is not stored piece by piece.
-    The redaction patterns are the ones storage applies to text."""
+    The redaction patterns are the ones storage applies to text; `also` names values masked in
+    another form of the same answer, which no pattern finds as the model writes them here — a
+    key in its own call syntax (Gemma 4's `api_key:<|"|>…<|"|>`, Qwen's `<parameter=api_key>`)."""
     groups = display_groups(stream)
     text, spans_by_group = "", []
     for start, end, piece in groups:
         spans_by_group.append((len(text), len(text) + len(piece), start, end))
         text += piece
     masked: set[int] = set()
-    for secret_start, secret_end in redact_spans(text, patterns):
+    for secret_start, secret_end in redact_spans(text, patterns, also):
         for char_start, char_end, start, end in spans_by_group:
             if char_start < secret_end and secret_start < char_end:
                 masked.update(range(start, end))

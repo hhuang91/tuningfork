@@ -38,7 +38,7 @@ class ForkReplay:
     """One fork launch's replay state. Built when its first call arrives; lives as long
     as the proxy does, like the rest of a launch's state."""
 
-    def __init__(self, store: Store, launch: Launch, patterns: Any, volatile: Any) -> None:
+    def __init__(self, store: Store, launch: Launch, patterns: Any = None, volatile: Any = ()) -> None:
         source = store.get_run(launch.source_run or "")
         if source is None or launch.source_step is None:
             raise ValueError(f"fork {launch.id[:8]} names no recorded run to replay")

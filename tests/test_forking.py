@@ -58,10 +58,11 @@ def served(monkeypatch, mock_server):
     return mock_server
 
 
-async def recorded_and_scored(store, served, answers, recorded_raw, request=REQUEST) -> str:
-    """A step whose answer was `recorded_raw`, scored on the toy model holding `answers`."""
+async def recorded_and_scored(store, served, answers, recorded_raw, request=REQUEST, counted=None) -> str:
+    """A step whose answer was `recorded_raw`, scored on the toy model holding `answers` — its prompt
+    counted as `counted` renders, where given: the server's count of another text."""
     served.toy.answers = answers
-    usage = {"prompt_tokens": served.toy.input_tokens(request),
+    usage = {"prompt_tokens": served.toy.input_tokens(counted or request),
              "completion_tokens": len(served.toy.tokenize(recorded_raw)) + 1}
     store.begin_run("probed", "t/1")
     wire = get_wire("openai-chat")
@@ -84,8 +85,15 @@ class TestProbe:
         token count lets through one that renders to the count the step recorded."""
         from tuningfork.config import REDACTED
 
-        masked = {**REQUEST, "messages": [*REQUEST["messages"][:1], {"role": "user", "content": f"Summarize {REDACTED}."}]}
-        run_id = await recorded_and_scored(store, served, FORK_IN_ANSWER, FORK_IN_ANSWER[0][0], request=masked)
+        from tests.helpers import KEY
+
+        # Stored masked: "Summarize <redacted>." — counted by the server as the mask renders, so the
+        # count lets it through.
+        def asked(content):
+            return {**REQUEST, "messages": [*REQUEST["messages"][:1], {"role": "user", "content": content}]}
+
+        run_id = await recorded_and_scored(store, served, FORK_IN_ANSWER, FORK_IN_ANSWER[0][0],
+                                           request=asked(f"Summarize {KEY}."), counted=asked(f"Summarize {REDACTED}."))
         plan = prepare_forking(store, run_id, "0", n=4, base_url=UPSTREAM)
         assert [warning for warning in plan.warnings if f"step 0's context reads {REDACTED} in 1 place," in warning]
         assert [warning for warning in prepare_score(store, run_id, "0", base_url=UPSTREAM).warnings

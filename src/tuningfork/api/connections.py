@@ -19,6 +19,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from tuningfork.api.control import CONTROL_HEADER
+from tuningfork.config import without_credentials
 from tuningfork.ops.common import OperationError
 
 PREFIX = "/_tuningfork/api/connections"
@@ -105,8 +106,9 @@ def connection_routes() -> list[Route]:
         sandbox = (await asyncio.to_thread(sandbox_status)).to_json()
         return JSONResponse({
             "server": {
-                "url": state.upstream.url,
-                "started_with": settings.upstream_base_url,
+                # Read without the token: a user and password in either are masked.
+                "url": without_credentials(state.upstream.url),
+                "started_with": without_credentials(settings.upstream_base_url),
                 "identity": server,
                 "checks": checks,
                 # What each measurement is and what needs it, and the token work it rules out.
@@ -130,7 +132,7 @@ def connection_routes() -> list[Route]:
                 "max_output": settings.max_output,
                 "jobs": settings.jobs,
                 "protected": [str(endpoint) for endpoint in protected(settings.home)],
-                "restart": restart_command(settings, state.upstream.url),
+                "restart": restart_command(settings, without_credentials(state.upstream.url)),
             },
             "busy": busy,
         })

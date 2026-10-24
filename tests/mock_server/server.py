@@ -57,6 +57,9 @@ class MockTurn:
     extra_headers: dict[str, str] = field(default_factory=dict)
     #: How many choices to return, for servers that honour `n` (many local ones do not).
     n_choices: int = 1
+    #: An error a stream sends in place of its end, at status 200: llama.cpp's
+    #: `data: {"error": …}` when an exception is raised while it streams.
+    error_event: dict[str, Any] | None = None
 
     @property
     def resolved_finish_reason(self) -> str:
@@ -417,6 +420,10 @@ class MockServer:
                     ]
                 }
             )
+
+        if turn.error_event is not None:
+            yield f"data: {json.dumps({'error': turn.error_event})}\n\n".encode()
+            return
 
         yield chunk({}, finish_reason=turn.resolved_finish_reason, logprobs=turn.logprobs)
 

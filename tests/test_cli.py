@@ -526,6 +526,28 @@ def test_runs_can_be_chosen_by_their_verdict(cli, tmp_path):
     assert unjudged not in newest_failed + every_passed
 
 
+def test_serve_says_where_it_forwards_without_a_password(cli, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from tuningfork.config import REDACTED
+    from tests.helpers import KEY
+
+    class Server:
+        def __init__(self, app, *, host, port):
+            pass
+
+        def run(self):
+            pass
+
+    def create_app(settings):
+        return SimpleNamespace(settings=settings, state=SimpleNamespace(access=SimpleNamespace(token="t")))
+
+    monkeypatch.setattr("tuningfork.proxy.app.create_app", create_app)
+    monkeypatch.setattr("tuningfork.proxy.app.ProxyServer", Server)
+    result = cli("serve", "--upstream", f"http://tuningfork:{KEY}@127.0.0.1:1", "--home", str(tmp_path / "home"))
+    assert KEY not in result.output and f"forwarding to http://{REDACTED}@127.0.0.1:1" in result.output
+
+
 def test_serve_reads_its_settings_from_the_environment(cli, tmp_path, monkeypatch):
     """`TUNINGFORK_HOST`, `TUNINGFORK_PORT` and `TUNINGFORK_MAX_INFLIGHT` were read only by a
     settings function nothing called, so setting them changed nothing."""

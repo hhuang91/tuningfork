@@ -473,3 +473,71 @@ def test_many_jobs_at_once_are_each_run_exactly_once(store):
         assert [job["result"] for job in results] == [{"counted": 2}] * 12
     finally:
         runner.shutdown(10)
+
+
+@dataclass
+class SaidParams:
+    said: str = ""
+    fail: bool = False
+    #: Seconds it waits before saying it, on its cancel.
+    delay: float = 0.0
+
+
+class Said:
+    def __init__(self, params: SaidParams) -> None:
+        self.params = params
+
+    def to_json(self) -> dict:
+        return {"said": self.params.said}
+
+
+def execute_said(context, prepared: Said, *, progress, cancel):
+    if cancel.wait(prepared.params.delay):
+        raise Cancelled(cancel.reason)
+    emit(progress, "sample", said=prepared.params.said)
+    if prepared.params.fail:
+        raise OperationError(f"refused: {prepared.params.said}")
+    return {"said": prepared.params.said}
+
+
+class TestWhatAJobKeeps:
+    """What a job keeps of its work — its parameters, plan, events, result and error — is shown as
+    the store keeps it: masked, to the pages and the agents watching it as it runs and after."""
+
+    @pytest.fixture
+    def saying(self, store):
+        made = JobRunner(store, Bus(), Proxy(), catalog=kinds(
+            said=Kind("said", BACKGROUND, "Say.", SaidParams, lambda context, params: Said(params), execute_said)))
+        yield made
+        made.shutdown(10)
+
+    def test_it_is_masked_where_it_is_shown_and_where_it_is_kept(self, saying, store):
+        import dataclasses
+        import json
+
+        from tuningfork.config import REDACTED
+        from tests.helpers import KEY
+
+        done = settled(saying, saying.submit("said", {"said": f"api_key={KEY}"})["id"])
+        failed = settled(saying, saying.submit("said", {"said": f"api_key={KEY}", "fail": True})["id"])
+        shown = json.dumps([done, failed, saying.get(done["id"], after=0), saying.bus.events], default=str)
+        kept = json.dumps([dataclasses.asdict(store.get_job(job["id"])) for job in (done, failed)], default=str)
+        assert KEY not in shown and KEY not in kept
+        assert done["result"] == done["plan"] == {"said": f"api_key={REDACTED}"}
+        assert failed["error"]["message"] == f"refused: api_key={REDACTED}"
+
+    def test_a_plan_asked_for_first_reads_as_the_one_kept(self, saying):
+        from tuningfork.config import REDACTED
+        from tests.helpers import KEY
+
+        assert saying.plan("said", {"said": f"api_key={KEY}"})["plan"] == {"said": f"api_key={REDACTED}"}
+
+    def test_the_same_job_asked_again_is_found_though_its_parameters_are_masked(self, saying):
+        from tests.helpers import KEY
+
+        # Masked once: masked again, its second password would fall too, and it would be another job.
+        said = f"api_key={KEY} mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        first = saying.submit("said", {"said": said, "delay": 30}, dedupe=True)
+        again = saying.submit("said", {"said": said, "delay": 30}, dedupe=True)
+        assert again["deduplicated"] and again["id"] == first["id"]
+        saying.cancel(first["id"])

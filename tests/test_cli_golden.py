@@ -31,6 +31,8 @@ UPSTREAM = "http://upstream.test"
 WHEN = re.compile(r"\b\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?\b")
 SECONDS = re.compile(r"\b\d+\.\d+s\b")
 MINUTES = re.compile(r"\b\d+\.\d+ min\b")
+#: The patterns a step was masked with, named by their digest: another with each change of them.
+DIGEST = re.compile(r'"redaction": "[0-9a-f]{16}"')
 
 
 def write_keys(keys: dict) -> MockTurn:
@@ -125,6 +127,7 @@ class Scenario:
             text = re.sub(rf"\b{full[:8]}\b", name, text)
         text = WHEN.sub("<when>", text)
         text = MINUTES.sub("<minutes>", text)
+        text = DIGEST.sub("\"redaction\": \"<digest>\"", text)
         return SECONDS.sub("<seconds>", text)
 
 

@@ -32,11 +32,11 @@ from collections import deque
 from contextlib import nullcontext
 from typing import Any
 
-from tuningfork.config import redact_json
 from tuningfork.ops.catalog import BACKGROUND, CATALOG, INTERACTIVE, JobContext, Kind
 from tuningfork.ops.common import Cancel, Cancelled, Event, OperationError
 from tuningfork.owners import current_owner, owner_alive
 from tuningfork.store.db import JobRecord, Store
+from tuningfork.store.masking import Masked, Masking
 
 logger = logging.getLogger("tuningfork.jobs")
 
@@ -142,17 +142,18 @@ def asked_by(value: Any) -> dict[str, str] | None:
     return kept
 
 
-def kept_params(parsed: Any) -> dict[str, Any]:
+def kept_params(parsed: Any, masking: Masking | None = None) -> dict[str, Any]:
     """A job's parameters as they are kept and shown — on the Jobs page, to whoever reads the
-    jobs API — redacted, and a harness's options as its plan shows them: every value under an
-    MCP server's `headers` or `env` masked, whatever its name, which no pattern would know for
-    a secret (`shown_options`). The job runs with them as given; what is kept is never run."""
+    jobs API — masked as the store masks (`masking`, its own), and a harness's options as its
+    plan shows them: every value under an MCP server's `headers` or `env` masked, whatever its
+    name, which no pattern would know for a secret (`shown_options`). The job runs with them as
+    given; what is kept is never run."""
     from tuningfork.ops.batch import shown_options
 
     data = dataclasses.asdict(parsed)
     if isinstance(data.get("harness_options"), dict):
         data["harness_options"] = shown_options(data["harness_options"])
-    return redact_json(data)
+    return (masking or Masking()).value(data)
 
 
 def plain(value: Any) -> Any:
@@ -220,8 +221,10 @@ class JobRunner:
         parsed = kind.parse(params)
         context = JobContext(store=self.store, proxy=self.proxy, job_id="")
         prepared = kind.prepare(context, parsed)
-        # `total`: the samples, forks or runs it would make, which is what a budget counts.
-        return {"kind": kind.name, "lane": kind.lane, "plan": plain(prepared), "total": kind.total(prepared)}
+        # `total`: the samples, forks or runs it would make, which is what a budget counts. The
+        # plan as a started job's is kept and shown: masked.
+        return {"kind": kind.name, "lane": kind.lane, "plan": self._kept(plain(prepared)).value,
+                "total": kind.total(prepared)}
 
     def submit(
         self,
@@ -247,7 +250,7 @@ class JobRunner:
         kind = self._kind(kind_name)
         parsed = kind.parse(params)
         started_by = asked_by(started_by)
-        stored_params = kept_params(parsed)
+        stored_params = kept_params(parsed, self.store.masking)
         # Work that may be asked for twice is checked for and made one submission at a time:
         # found in review, a second asked while the first was being prepared passed the check
         # too, and the work started twice.
@@ -275,7 +278,8 @@ class JobRunner:
             # when it starts, since what it depends on can change while it waits.
             kind.prepare(JobContext(store=self.store, proxy=self.proxy, job_id=""), parsed)
             record = self.store.create_job(
-                kind=kind.name, lane=kind.lane, params=stored_params, request_id=request_id,
+                # Masked once: what a job asked again is compared with.
+                kind=kind.name, lane=kind.lane, params=Masked(stored_params), request_id=request_id,
                 started_by=started_by,
             )
             record.owner = self.owner
@@ -372,10 +376,11 @@ class JobRunner:
         status, result, error = "done", None, None
         try:
             prepared = kind.prepare(context, job.params)
+            plan = self._kept(plain(prepared))
             with self._lock:
-                job.record.plan = plain(prepared)
+                job.record.plan = plan.value
                 job.record.progress = {"done": 0, "total": kind.total(prepared), "waiting": None}
-            self.store.update_job(job.id, plan=job.record.plan, progress=job.record.progress)
+            self.store.update_job(job.id, plan=plan, progress=job.record.progress)
             self._announce(job)
             job.cancel.check()  # cancelled while it was being prepared
             outcome = kind.execute(context, prepared, progress=lambda event: self._progress(job, event), cancel=job.cancel)
@@ -393,7 +398,14 @@ class JobRunner:
             error = {"message": f"{type(failure).__name__}: {failure}", "code": "internal"}
         self._finish(job, status, result=result, error=error)
 
+    def _kept(self, value: Any) -> Masked:
+        """What a job keeps of its work, as the store keeps it — masked once, here, so the pages
+        and the agents watching it see what is stored (`Store.update_job`)."""
+        return self.store.masking.of(value)
+
     def _finish(self, job: Job, status: str, *, result: Any = None, error: Any = None) -> None:
+        kept_result, kept_error = self._kept(result), self._kept(error)
+        result, error = kept_result.value, kept_error.value
         with self._lock:
             job.record.status = status
             job.record.result = result
@@ -412,7 +424,7 @@ class JobRunner:
                 del self._jobs[job_id]
         try:
             self.store.update_job(
-                job.id, status=status, result=result, error=error, ended_at=job.record.ended_at,
+                job.id, status=status, result=kept_result, error=kept_error, ended_at=job.record.ended_at,
                 progress=job.record.progress, links=job.record.links,
             )
             if status == "interrupted":
@@ -425,7 +437,8 @@ class JobRunner:
     def _progress(self, job: Job, event: Event) -> None:
         """An event from the operation, on its worker thread: keep it, link what it made,
         and tell the pages watching."""
-        entry = {"seq": 0, "at": time.time(), "event": event.to_json()}
+        # Masked as the store masks: shown to the pages and the agents watching the job.
+        entry = {"seq": 0, "at": time.time(), "event": self._kept(event.to_json()).value}
         link = None
         with self._lock:
             job.seq += 1

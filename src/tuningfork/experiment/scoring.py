@@ -33,7 +33,7 @@ from typing import Any, AsyncIterator
 import httpx
 
 from tuningfork.analysis.normalize import outcome_for, recorded_outcome
-from tuningfork.analysis.tokens import from_entries, redact_stream
+from tuningfork.analysis.tokens import from_entries
 from tuningfork.backends.formats import FormatError, format_for, known_models
 from tuningfork.store.db import Store
 
@@ -244,7 +244,7 @@ async def score_answer(
     if recorded_answer is not None and len(alike) > 1:
         notes["texts_alike"] = len(alike)  # with the recorded count; the likelier kept
     return store.add_token_stream(
-        redact_stream(stream).to_json(),
+        stream,
         source="scored",
         step_id=step.id,
         server_id=server_id,

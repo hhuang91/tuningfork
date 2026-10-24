@@ -37,6 +37,22 @@ def unreadable(exc: BaseException) -> str:
     return f"tuningfork could not read the response: {type(exc).__name__}: {exc}"
 
 
+def read_as(headers: Any, asked: bool) -> tuple[bool, bool]:
+    """(read at all, read as an event stream) for an answer being recorded.
+
+    A stream is read as one where the request asked for one (`asked`, its `stream`) whatever
+    its label but JSON: one labelled `text/plain` and kept as text would keep whole a key the
+    model sent in pieces. A JSON body is an error the server sent instead, read as JSON. A
+    content-encoded body is forwarded verbatim but not read: decoding a copy just to record it
+    would be work for no benefit on a local server, which never compresses.
+    """
+    encoding = (headers.get("content-encoding") or "").strip().lower()
+    if encoding and encoding != "identity":
+        return False, False
+    content_type = (headers.get("content-type") or "").lower()
+    return True, "text/event-stream" in content_type or (asked and "json" not in content_type)
+
+
 def event_index(value: Any, default: int) -> int:
     """A stream event's `index`, which ties its fragments together. A server may send
     null, and anything but an integer would break putting the fragments in order."""

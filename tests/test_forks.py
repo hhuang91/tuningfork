@@ -19,7 +19,8 @@ import pytest
 from tuningfork.ops import OperationError
 from tuningfork.ops.forks import execute_forks, prepare_fork
 from tuningfork.store.db import Store
-from tests.helpers import VARIANT, control_headers, task_stack
+from tests.helpers import VARIANT, control_headers, tally_model, task_stack
+from tests.mock_server import MockTurn
 
 
 @pytest.fixture
@@ -256,6 +257,26 @@ class TestToEnd:
         samples = stack.store.samples(experiment.id)
         assert [s.passed for s in samples] == [False, False, False]
         assert all(s.run_id and s.exclusion is None for s in samples)
+
+    def test_a_forks_answer_at_its_step_is_kept_as_its_step_stored_it(self, stack, cli):
+        """Masked once, as the step was: masked again, a command's second password falls too, and the
+        sample reads another answer than the step."""
+        source = stack.record()
+        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+
+        def model(payload):
+            if sum(message["role"] == "tool" for message in payload["messages"]) == 1:
+                return MockTurn(content=command)
+            return tally_model(payload)
+
+        stack.mock.responder = model
+        cli("resample", source.run_id[:8], "write_file", "-n", "1", "--to-end")
+
+        (experiment,) = stack.store.experiments(limit=5)
+        (sample,) = stack.store.samples(experiment.id)
+        step = next(s for s in stack.store.steps(sample.run_id) if s.idx == 1 and not s.served)
+        assert stack.store.sample_response(sample) == stack.store.response(step)
+        assert "-pZq8xK3vN5wLp" in json.dumps(stack.store.sample_response(sample))
 
     def test_runs_lists_the_task_and_says_what_it_left_out(self, stack, cli):
         """Found re-running the guide: the list showed 16 runs over a footer counting 57,
@@ -495,8 +516,8 @@ class TestStoredMasks:
     def recorded(self, store):
         from tests.helpers import record_pilot
 
-        # As an earlier pattern stored it: the second line's call masked.
-        return record_pilot(store, read=self.CODE.replace("tokenizer.encode(text)[0]", "<redacted>(text)[0]"))
+        # As an earlier pattern stored it, before steps named their patterns: the second line's call masked.
+        return record_pilot(store, read=self.CODE.replace("tokenizer.encode(text)[0]", "<redacted>(text)[0]"), params={})
 
     def test_a_call_fits_a_step_stored_under_other_masks(self, store):
         from tuningfork.replay import build_table
@@ -658,7 +679,7 @@ class TestStoredMasks:
 
         today = {"redaction": patterns_digest(DEFAULT_REDACTIONS)}
         read = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db\n"
-        run = store.get_run(record_pilot(store, read=read, masked=True, params=today))
+        run = store.get_run(record_pilot(store, read=read, params=today))
         stored = store.rebuild_request(store.steps(run.id)[1])
         call = json.loads(json.dumps(stored).replace("<redacted>", "Abcd1234X"))
         table = build_table(store, run, 1)

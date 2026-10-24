@@ -27,7 +27,7 @@ import math
 import time
 import uuid
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 import httpx
 
@@ -47,11 +47,12 @@ from tuningfork.analysis.normalize import (
 )
 from tuningfork.analysis.tokens import split_logprobs
 from tuningfork.backends.probe import server_root
-from tuningfork.config import EXPERIMENT_HEADER, redact_json
+from tuningfork.config import EXPERIMENT_HEADER
 from tuningfork.ops.common import Event, Progress, emit
 from tuningfork.experiment.skill import Span, substitute, text_sha256, unapplied
 from tuningfork.proxy.recorder import fetch_server_defaults
 from tuningfork.store.db import Experiment, Run, Step, Store
+from tuningfork.store.masking import Masked
 from tuningfork.store.tree import describe_message
 from tuningfork.wire import WireFormat, get_wire
 
@@ -422,16 +423,17 @@ def _summarize_response(response: dict[str, Any] | None) -> tuple[str | None, di
     return choices[0].get("finish_reason"), usage, reasoning
 
 
-def store_sample_tokens(store: Store, sample: Any, entries: list[dict[str, Any]], plan: SamplingPlan) -> None:
+def store_sample_tokens(
+    store: Store, sample: Any, entries: list[dict[str, Any]], plan: SamplingPlan, also: Iterable[str] = ()
+) -> None:
     """A sample's tokens, as the server reported them with it: parts marked by the model's
-    output format when it is known, redacted token-aware, stored beside the sample."""
-    from tuningfork.analysis.tokens import from_entries, redact_stream
+    output format when it is known, stored beside the sample — masked token-aware by the store,
+    with what the sample's answer masked (`also`)."""
+    from tuningfork.analysis.tokens import from_entries
     from tuningfork.backends.formats import get_format
 
     stream = from_entries(entries, top_k=plan.logprobs).mark_parts(get_format(plan.format))
-    store.add_token_stream(
-        redact_stream(stream).to_json(), source="sampled", sample_id=sample.id, method="chat-logprobs",
-    )
+    store.add_token_stream(stream, source="sampled", sample_id=sample.id, method="chat-logprobs", also=also)
 
 
 async def draw_samples(
@@ -488,21 +490,22 @@ async def draw_samples(
             error = f"{type(exc).__name__}: {exc}"
         seconds = time.monotonic() - started
 
-        # Token data comes out before the response is redacted, and is redacted token-aware.
+        # Token data comes out before the response is masked, and is masked token-aware.
         response_json, entries = split_logprobs(response_json)
-        # Outcomes are computed from what is stored, so a later report recomputing them
-        # from the database can never disagree with what was printed now.
+        # Outcomes are computed from what is stored — the answer masked as the store masks it,
+        # and handed it so — so a later report recomputing them from the database can never
+        # disagree with what was printed now.
         stored = (
-            redact_json(wire.canonical_response(response_json))
+            store.masking.of(wire.canonical_response(response_json))
             if response_json is not None
-            else None
+            else Masked(None)
         )
         outcome = (
             Outcome("error", "error", error)
             if error is not None
-            else outcome_for(stored, plan.normalizers)
+            else outcome_for(stored.value, plan.normalizers)
         )
-        finish_reason, usage, reasoning = _summarize_response(stored)
+        finish_reason, usage, reasoning = _summarize_response(stored.value)
         sample = await asyncio.to_thread(
             store.add_sample,
             experiment.id,
@@ -519,7 +522,7 @@ async def draw_samples(
             error=error,
         )
         if entries:
-            await asyncio.to_thread(store_sample_tokens, store, sample, entries, plan)
+            await asyncio.to_thread(store_sample_tokens, store, sample, entries, plan, stored.found)
         outcomes[index] = outcome
         if progress is not None:
             event = SampleEvent(
@@ -603,7 +606,8 @@ async def run_arm(
         step_idx=anchor.step_idx,
         step_id=anchor.step_id,
         hold_id=anchor.hold_id,
-        request=redact_json(sent),
+        # Masked by the store: it holds a wording as a person typed it, or a held call's request.
+        request=sent,
         settings={**plan.as_settings(), **(annotations or {})},
         changes=changes,
         variant=variant,

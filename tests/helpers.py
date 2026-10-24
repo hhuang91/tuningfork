@@ -25,6 +25,9 @@ from tuningfork.specs import Eval, TaskSpec, TuningforkOptions
 from tuningfork.store.db import Step, Store
 from tests.mock_server import MockTurn
 
+#: A key the store masks whole, as `<redacted>`: what a step "masked as it was recorded" was given.
+KEY = "sk-a1B2c3D4e5F6g7H8i9J0"
+
 #: Each launch's threads, as the proxy would track them, for harnesses that record directly.
 _THREADS: dict[str, LaunchThreads] = {}
 
@@ -141,14 +144,12 @@ def system_prompt(skill: str = SKILL) -> str:
 
 def record_pilot(
     store: Store, *, model: str = "mock-model", server_defaults=DEFAULTS, read: str = "id,amount\n1,10\n",
-    skill: str = SKILL, masked: bool = False, params: dict[str, Any] | None = None,
+    skill: str = SKILL, params: dict[str, Any] | None = None,
 ) -> str:
     """Record a two-step run: read the CSV (`read`, what the tool gave back), then write the report,
-    `skill` preloaded — each request `masked` as the recorder stores it, if asked, and each step
-    given `params`."""
-    from tuningfork.config import redact_json
-
-    stored = redact_json if masked else (lambda request: request)
+    `skill` preloaded — each request masked as the store masks it — and each step's parameters, where
+    given, replaced by `params`: a step as it was recorded otherwise, before steps named the patterns
+    that masked them (`{}`), or under other patterns."""
     store.begin_run("pilot", "tally-report/1")
     base = {
         "model": model,
@@ -162,21 +163,29 @@ def record_pilot(
         {"role": "user", "content": "Use the tally-report skill on data.csv."},
     ]
     store.record_step(
-        request=stored({**base, "messages": first}),
+        request={**base, "messages": first},
         response=as_response(READ, finish_reason="tool_calls"),
         server_defaults=server_defaults,
-        params=params,
     )
     second = [*first, READ, {"role": "tool", "tool_call_id": "c1", "content": read}]
     store.record_step(
-        request=stored({**base, "messages": second}),
+        request={**base, "messages": second},
         response=as_response(tool_call_message("write_file", {"path": "report.json"})),
         server_defaults=server_defaults,
-        params=params,
     )
     run = store.get_run("pilot")
     assert run is not None
+    if params is not None:
+        restamp(store, run.id, params)
     return run.id
+
+
+def restamp(store: Store, run_id: str, params: dict[str, Any]) -> None:
+    """Each of a run's steps given `params` in place of what the store stamped it with: a step
+    recorded before steps named the patterns that masked them (`{}`), or under other patterns."""
+    with store._lock:
+        store._conn.execute("UPDATE steps SET params = ? WHERE run_id = ?", (json.dumps(params), run_id))
+        store._conn.commit()
 
 
 def record_run(

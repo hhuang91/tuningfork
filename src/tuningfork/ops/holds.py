@@ -235,7 +235,7 @@ async def execute_console(
 ) -> ConsoleReply:
     import httpx
 
-    from tuningfork.config import EXPERIMENT_HEADER, redact_json
+    from tuningfork.config import EXPERIMENT_HEADER
     from tuningfork.endpoints import guard_hooks
     from tuningfork.ops.experiments import _cancellable
 
@@ -257,9 +257,9 @@ async def execute_console(
         raise OperationError(f"the model's server answered {response.status_code}: {message}")
     from tuningfork.analysis.tokens import split_logprobs
 
-    # A held harness request may have asked for logprobs: the answer's text is what is kept.
+    # A held harness request may have asked for logprobs: the answer's text is what is kept —
+    # masked with the job's result, as the store keeps it.
     common, _ = split_logprobs(prepared.wire.canonical_response(body))
-    common = redact_json(common)
     choices = common.get("choices") or [{}]
     message = (choices[0] or {}).get("message") or {}
     return ConsoleReply(

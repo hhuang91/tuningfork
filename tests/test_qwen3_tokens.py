@@ -284,7 +284,7 @@ def record_messages(store, served, *, stream_kept: bool) -> str:
     store.begin_run("messages", "t/1")
     wire = get_wire("anthropic-messages")
     store.record_step(request=MESSAGES, response={**stored, "usage": usage},
-                      raw_response_blob=store.blobs.put(STREAMED) if stream_kept else None,
+                      raw_response=STREAMED if stream_kept else None, streamed=stream_kept,
                       params={"streamed": stream_kept}, wire=wire.name, normalize=wire.normalize_message)
     return store.get_run("messages").id
 
@@ -308,7 +308,7 @@ def stored_step(store, raw: bytes, *, arguments: list[str] | None = None):
         call_["function"]["arguments"] = text
     store.begin_run("messages", "t/1")
     wire = get_wire("anthropic-messages")
-    store.record_step(request=MESSAGES, response=stored, raw_response_blob=store.blobs.put(raw),
+    store.record_step(request=MESSAGES, response=stored, raw_response=raw, streamed=True,
                       params={"streamed": True}, wire=wire.name, normalize=wire.normalize_message)
     return store.step(store.get_run("messages").id, 0)
 
@@ -319,7 +319,7 @@ def test_bytes_written_again_around_a_secret_are_not_read_for_the_arguments(stor
     stored = ANTHROPIC.canonical_response(ANTHROPIC.parse(STREAMED, event_stream=True))
     store.begin_run("messages", "t/1")
     wire = get_wire("anthropic-messages")
-    store.record_step(request=MESSAGES, response=stored, raw_response_blob=store.blobs.put(STREAMED),
+    store.record_step(request=MESSAGES, response=stored, raw_response=STREAMED, streamed=True,
                       params={"streamed": True, "raw_redacted": "rendered"}, wire=wire.name,
                       normalize=wire.normalize_message)
 

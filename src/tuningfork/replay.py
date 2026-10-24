@@ -253,9 +253,12 @@ def build_table(
     run: Run,
     step: int,
     *,
-    patterns: Sequence[str] = DEFAULT_REDACTIONS,
+    patterns: Sequence[str] | None = None,
     volatile: Iterable[tuple[str, str]] = (),
 ) -> ReplayTable:
+    """The calls a fork of `run` at `step` is answered from, each keyed as a call masked with
+    `patterns` reads — the store's own (`Store.masking`) unless others are named."""
+    patterns = tuple(patterns) if patterns is not None else store.masking.patterns
     volatile = tuple(volatile)
     entries: dict[str, deque[Served]] = {}
     expected: dict[int, str] = {}
@@ -280,7 +283,7 @@ def build_table(
         plain = masked_request(request, wire, (), volatile)
         if REDACTED in plain:
             if digest not in kept:
-                kept[digest] = store.masking(digest)
+                kept[digest] = store.masked_with(digest)
             masked.append((key_of(text), plain, kept[digest]))
     live_text = expected[step]
     return ReplayTable(
@@ -309,7 +312,7 @@ def replay_problems(store: Store, run: Run, step: int) -> list[str]:
             problems.append(f"{where} failed ({recorded.error or recorded.status}), so there is no answer to replay")
             continue
         if (recorded.params or {}).get("raw_redacted"):
-            # Its bytes were written again around a secret, or not kept (`recorder.stream_without_secrets`).
+            # Its bytes were written again around a secret, or not kept (`masking.bytes_without_secrets`).
             problems.append(f"{where}'s answer had a secret redacted from it, so it cannot be replayed as it was")
             continue
         if not recorded.raw_response_blob:

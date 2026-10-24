@@ -24,7 +24,7 @@ from tuningfork.analysis.tokens import TokenStream
 from tuningfork.breakpoints import Breakpoint
 from tuningfork.config import DEFAULT_REDACTIONS, EXPERIMENT_HEADER, REDACTED, Settings, redact
 from tuningfork.proxy.app import create_app, upstream_url
-from tuningfork.proxy.recorder import stream_without_secrets
+from tuningfork.store.masking import bytes_without_secrets
 from tuningfork.proxy.sse import CUT_OFF, ChunkAssembler, reassemble
 from tuningfork.wire.anthropic import AnthropicMessages
 from tests.helpers import all_steps, only_step
@@ -327,15 +327,15 @@ class TestRecording:
         first — and a conversation outside any launch split into two runs."""
         import time
 
-        store_raw = recorder._store_raw
+        record_step = recorder.store.record_step
         slow = [True]
 
-        def slow_first(*args) -> str:
+        def slow_first(**kwargs):
             if slow.pop() if slow else False:
                 time.sleep(0.3)
-            return store_raw(*args)
+            return record_step(**kwargs)
 
-        monkeypatch.setattr(recorder, "_store_raw", slow_first)
+        monkeypatch.setattr(recorder.store, "record_step", slow_first)
         mock_server.script(MockTurn(content="first"), MockTurn(content="second"))
         first = simple_request()
         await proxy_client.post(CHAT, json=first)
@@ -683,7 +683,7 @@ class TestRedaction:
         from tuningfork.config import patterns_digest
 
         assert masked.params["redaction"] == patterns_digest(DEFAULT_REDACTIONS)
-        assert recorder.store.masking(masked.params["redaction"]) == DEFAULT_REDACTIONS
+        assert recorder.store.masked_with(masked.params["redaction"]) == DEFAULT_REDACTIONS
 
     async def test_a_number_under_a_secrets_name_keeps_a_claude_code_session_whole(
         self, proxy_client, mock_server, recorder, settle
@@ -805,6 +805,28 @@ class TestRedaction:
         thinking, text = AnthropicMessages().parse(kept, True)["content"]
         assert (thinking["thinking"], text["text"]) == (f"I will use {REDACTED} now", "done")
 
+    async def test_a_stream_asked_for_is_read_as_one_whatever_its_label(self, settings, recorder):
+        """Found in the redaction audit: a stream labelled `text/plain` was kept as text, a key the
+        model sent in pieces whole in it."""
+        pieces = ["my key:\n", "sk", "-a1B2c3", "D4e5F6g7", "H8i9J0", " is set"]
+        upstream = upstream_sending(*(openai_chunk({"content": piece}) for piece in pieces),
+                                    openai_chunk({}, "stop"), b"data: [DONE]\n\n", media_type="text/plain")
+        async with proxy_before(upstream, settings, recorder) as (_, harness):
+            await harness.post(CHAT, json=simple_request(stream=True))
+        step = only_step(recorder.store)
+        assert step.error is None and step.params["raw_redacted"] == "rendered"
+        assert recorder.store.response(step)["choices"][0]["message"]["content"] == f"my key:\n{REDACTED} is set"
+        assert b"D4e5F6g7" not in recorder.store.blobs.get(step.raw_response_blob)
+
+    async def test_an_error_sent_as_json_for_a_stream_is_read_as_json(self, settings, recorder):
+        refused = json.dumps({"error": {"message": "the model is still loading", "type": "unavailable"}})
+        upstream = upstream_sending(refused, status=503, media_type="application/json")
+        async with proxy_before(upstream, settings, recorder) as (_, harness):
+            await harness.post(CHAT, json=simple_request(stream=True))
+        step = only_step(recorder.store)
+        assert step.params["streamed"] is False
+        assert recorder.store.response(step)["error"]["message"] == "the model is still loading"
+
     async def test_a_stream_without_a_secret_is_kept_byte_for_byte(self, settings, recorder):
         kept, step, body = await self.keep(
             settings, recorder, MESSAGES, claude_code_request(), message_start(),
@@ -860,7 +882,7 @@ class TestRedaction:
     ANSWER = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "sk-a1B2c3D4e5F6g7H8i9J0"}}]}
 
     def check(self, answer, wire):
-        return stream_without_secrets(self.PIECES, answer, wire, simple_request(stream=True), DEFAULT_REDACTIONS)
+        return bytes_without_secrets(self.PIECES, answer, wire, simple_request(stream=True), DEFAULT_REDACTIONS)
 
     def test_bytes_that_cannot_be_written_again_are_not_kept(self):
         assert self.check(self.ANSWER, self.Wire(render_fails=True)) == (None, "dropped")
@@ -876,11 +898,24 @@ class TestRedaction:
         # number, which breaks the answer's JSON: written again, it would be an empty answer.
         patterns = (*DEFAULT_REDACTIONS, r"12345678901234567")
         answer = {**self.ANSWER, "session_token": 12345678901234567}
-        kept = stream_without_secrets(self.PIECES, answer, self.Wire(), simple_request(stream=True), patterns)
+        kept = bytes_without_secrets(self.PIECES, answer, self.Wire(), simple_request(stream=True), patterns)
         assert kept == (None, "dropped")
 
     def test_bytes_that_cannot_be_read_back_are_written_again(self):
         assert self.check(self.ANSWER, self.Wire(parse_fails=True)) == (b"rendered", "rendered")
+
+    def test_a_key_in_what_the_answer_leaves_out_is_not_kept(self):
+        """The bytes are read back whole, not only as the answer reads: a field the common shape
+        leaves out can hold a key the stream sent in pieces."""
+        quiet = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"}}]}
+
+        class Leaving(self.Wire):
+            def canonical_response(self, native, *, stream=None):
+                return {key: value for key, value in native.items() if key != "extra"}
+
+        read = {**quiet, "extra": "sk-a1B2c3D4e5F6g7H8i9J0"}
+        assert self.check(quiet, Leaving(read=read)) == (b"rendered", "rendered")
+        assert self.check(quiet, Leaving(read=quiet)) == (self.PIECES, None)
 
 class TestGate:
     async def test_a_harness_gone_before_its_answer_began_leaves_the_gate_free(

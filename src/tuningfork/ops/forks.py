@@ -559,7 +559,7 @@ def execute_to_end(
     import time
 
     from tuningfork.analysis.normalize import recorded_outcome
-    from tuningfork.config import redact_json
+    from tuningfork.store.masking import Masked
 
     checkpoint = plan.checkpoint
     variant = plan.variant.to_json() if plan.variant else {}
@@ -569,7 +569,8 @@ def execute_to_end(
         run_id=checkpoint.run.id,
         step_idx=checkpoint.step.idx,
         step_id=checkpoint.step.id,
-        request=redact_json(checkpoint.request),
+        # Read back from the store, masked as it stores it.
+        request=Masked(checkpoint.request),
         settings={
             "n": n,
             "concurrency": concurrency,
@@ -602,7 +603,8 @@ def execute_to_end(
             experiment.id,
             outcome.index,
             seed=None,
-            response=response,
+            # The fork's step, as the store keeps it: masked already.
+            response=Masked(response),
             outcome_kind=found.kind,
             outcome_key=found.key,
             outcome_label=found.label,

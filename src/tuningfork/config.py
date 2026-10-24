@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -333,22 +333,64 @@ def server_root(base_url: str) -> str:
     return root[: -len("/v1")] if root.endswith("/v1") else root
 
 
-def redact(text: str, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> str:
-    """Mask secrets in `text`, as it stands and as its JSON escapes read (`_read_spans`). The
-    replacement is quote-free, and replaces whole escapes, so JSON stays parseable."""
-    return _masked(text, patterns)[0]
+def without_credentials(url: str) -> str:
+    """`url` as it is kept and shown: what stands before its host's `@` — a user and password,
+    or a token alone — masked whole, whatever the patterns would read in it."""
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return redact(url)
+    if "@" not in parts.netloc:
+        return url
+    return urlunsplit(parts._replace(netloc=f"{REDACTED}@{parts.netloc.rpartition('@')[2]}"))
+
+
+#: A value a mask took that is masked wherever else it stands in a step — its tokens, its raw
+#: bytes, an error that quotes it (`also`): a key's length or more, and no quote, backslash or
+#: space, which no string's edge holds, so masking it never crosses one.
+_FOUND = re.compile(r"[^\"\\\s]{8,}")
+
+
+def redact(text: str, patterns: tuple[str, ...] = DEFAULT_REDACTIONS, also: Iterable[str] = ()) -> str:
+    """Mask secrets in `text`, as it stands and as its JSON escapes read (`_read_spans`), and
+    every place a value `also` names stands. The replacement is quote-free, and replaces whole
+    escapes, so JSON stays parseable."""
+    return _masking(text, patterns, also)[0]
 
 
 def _masked(text: str, patterns: tuple[str, ...]) -> tuple[str, int]:
     """`text` redacted, and how many masks that made."""
-    spans = _merged(_read_spans(text, patterns))
+    return _masking(text, patterns, ())[:2]
+
+
+def _masking(text: str, patterns: tuple[str, ...], also: Iterable[str]) -> tuple[str, int, list[str]]:
+    """`text` redacted, how many masks that made, and the values they took that are masked
+    wherever else they stand (`_FOUND`)."""
+    spans = _merged(_read_spans(text, patterns) + _found_spans(text, also))
     if not spans:
-        return text, 0
-    pieces, at = [], 0
+        return text, 0, []
+    pieces, taken, at = [], [], 0
     for start, end in spans:
         pieces += [text[at:start], REDACTED]
+        if _FOUND.fullmatch(text, start, end):
+            taken.append(text[start:end])
         at = end
-    return "".join(pieces) + text[at:], len(spans)
+    return "".join(pieces) + text[at:], len(spans), taken
+
+
+def _found_spans(text: str, also: Iterable[str]) -> list[tuple[int, int]]:
+    """Every place in `text` a value a mask took elsewhere stands."""
+    spans = []
+    for value in also:
+        if not _FOUND.fullmatch(value):
+            continue
+        start = text.find(value)
+        while start >= 0:
+            spans.append((start, start + len(value)))
+            start = text.find(value, start + 1)
+    return spans
 
 
 def _masked_spans(text: str, patterns: tuple[str, ...]) -> list[tuple[int, int]]:
@@ -429,15 +471,18 @@ def _json_escaped(text: str) -> tuple[str, list[int]]:
     return "".join(out), origin
 
 
-def redact_spans(text: str, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> list[tuple[int, int]]:
+def redact_spans(
+    text: str, patterns: tuple[str, ...] = DEFAULT_REDACTIONS, also: Iterable[str] = ()
+) -> list[tuple[int, int]]:
     """The spans of `text` a redaction masks, merged and in order.
 
     For text that is stored in pieces — an answer as its tokens — where masking the joined text
     is not possible. Patterns run over the text as storage reads it: as it stands and as its
     JSON escapes read (a model that writes JSON writes them), and as JSON escapes it, as it is
-    stored — so a secret any of these would mask is masked here.
+    stored — so a secret any of these would mask is masked here; and every place a value `also`
+    names stands, a value masked in another form of the same answer.
     """
-    spans = _read_spans(text, patterns)
+    spans = _read_spans(text, patterns) + _found_spans(text, also)
     escaped, origin = _json_escaped(text)
     for start, end in _masked_spans(escaped, patterns):
         if end > start:
@@ -460,7 +505,6 @@ class Settings:
     #: While a streaming call is held at a breakpoint, an SSE comment is sent this often so
     #: that a client or intermediary with an idle timeout keeps the connection open.
     keepalive_interval: float = 10.0
-    redaction_patterns: tuple[str, ...] = DEFAULT_REDACTIONS
     #: Background jobs run at once (`tuningfork.jobs`). On one GPU, more is slower.
     jobs: int = 1
     #: The access token to require for state changes (`tuningfork.access`); a new one is
@@ -548,18 +592,27 @@ def redact_json(obj: Any, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> Any
 def redact_json_counted(obj: Any, patterns: tuple[str, ...] = DEFAULT_REDACTIONS) -> tuple[Any, int]:
     """`redact_json`, and how many masks it made: what a step keeps (`masked`), since text that
     reads `<redacted>` on its own — a client's debug log writes it — is no mask."""
+    return redact_json_found(obj, patterns)[:2]
+
+
+def redact_json_found(
+    obj: Any, patterns: tuple[str, ...] = DEFAULT_REDACTIONS, also: Iterable[str] = ()
+) -> tuple[Any, int, frozenset[str]]:
+    """`redact_json_counted`, masking too every place a value `also` names stands, and the
+    values its masks took that are masked wherever else they stand: what a step's other forms —
+    its answer's tokens, its raw bytes, an error quoting it — are masked of (`redact`'s `also`)."""
     try:
         text = json.dumps(obj, ensure_ascii=False)
     except (TypeError, ValueError):
-        return obj, 0
-    redacted, made = _masked(text, patterns)
+        return obj, 0, frozenset()
+    redacted, made, taken = _masking(text, patterns, also)
     if not made:
-        return obj, 0
+        return obj, 0, frozenset()
     try:
-        return json.loads(redacted, object_pairs_hook=_apart), made
+        return json.loads(redacted, object_pairs_hook=_apart), made, frozenset(taken)
     except json.JSONDecodeError:
         # A pattern broke the structure. Losing the recording beats storing the secret.
-        return {"tuningfork_error": "redaction produced invalid JSON; payload dropped"}, made
+        return {"tuningfork_error": "redaction produced invalid JSON; payload dropped"}, made, frozenset(taken)
 
 
 #: How masks fall besides the patterns: how escapes are read (`JSON_DEPTH`), keys kept apart

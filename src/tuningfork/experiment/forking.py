@@ -24,12 +24,12 @@ from typing import Any
 
 from tuningfork.analysis.distribution import Target
 from tuningfork.analysis.normalize import NORMALIZER_VERSION, Outcome, outcome_for
-from tuningfork.analysis.tokens import TokenStream, from_entries, redact_stream
+from tuningfork.analysis.tokens import TokenStream, from_entries
 from tuningfork.backends.formats import FormatError, get_format
 from tuningfork.backends.raw import RawError
-from tuningfork.config import redact_json
 from tuningfork.ops.common import emit
 from tuningfork.store.db import Store
+from tuningfork.store.masking import Masked
 
 #: A sample whose answer the output format could not read keeps its text under this key.
 UNPARSED = "tuningfork_unparsed"
@@ -184,8 +184,8 @@ async def run_forking(store: Store, plan: ForkingPlan, *, progress: Any = None) 
             run_id=checkpoint.run.id,
             step_idx=checkpoint.step.idx,
             step_id=checkpoint.step.id,
-            # A reference, never the prompt's token ids: those would bypass redaction.
-            request=redact_json({"base_stream": plan.base.id, "arms": plan.arms}),
+            # A reference, never the prompt's token ids: those would bypass masking.
+            request={"base_stream": plan.base.id, "arms": plan.arms},
             settings={**plan.settings(), "sampling": prompt.sampling, "server": server, "warnings": plan.warnings},
             base_url=plan.base_url,
             server_defaults=server_defaults,
@@ -210,7 +210,7 @@ async def run_forking(store: Store, plan: ForkingPlan, *, progress: Any = None) 
                 except RawError as failed:
                     error = str(failed)
             seconds = time.monotonic() - started
-            stored, finish = None, None
+            stored, finish = Masked(None), None
             if generation is not None:
                 text = plan.stream.text(0, position) + arm["text"] + generation.text
                 finish = "length" if generation.stop == "limit" else None
@@ -219,24 +219,26 @@ async def run_forking(store: Store, plan: ForkingPlan, *, progress: Any = None) 
                     message = fmt.parse(text, tools=prompt.tools, parallel=prompt.parallel,
                                         thinking=thinking, offered=prompt.offered)
                     finish = finish or ("tool_calls" if message.get("tool_calls") else "stop")
-                    stored = {"choices": [{"index": 0, "message": message, "finish_reason": finish}], "usage": usage}
+                    answer = {"choices": [{"index": 0, "message": message, "finish_reason": finish}], "usage": usage}
                 except FormatError as unreadable:
                     finish = finish or "stop"
-                    stored = {"choices": [{"index": 0, "message": {"role": "assistant", "content": text},
+                    answer = {"choices": [{"index": 0, "message": {"role": "assistant", "content": text},
                                            "finish_reason": finish}], "usage": usage, UNPARSED: str(unreadable)}
-                stored = redact_json(stored)
-            outcome = Outcome("error", "error", error) if error else forking_outcome(stored, plan.normalizers)
+                # Masked as the store masks it, and handed it so: the outcome is read from what is stored.
+                stored = store.masking.of(answer)
+            outcome = Outcome("error", "error", error) if error else forking_outcome(stored.value, plan.normalizers)
             sample = await asyncio.to_thread(
                 store.add_sample, experiment.id, index, seed=seed, response=stored,
                 outcome_kind=outcome.kind, outcome_key=outcome.key, outcome_label=outcome.label,
-                finish_reason=finish, usage=(stored or {}).get("usage") or {},
+                finish_reason=finish, usage=(stored.value or {}).get("usage") or {},
                 timings={"total_ms": round(seconds * 1000, 2)}, error=error, forced=dict(arm),
             )
             if generation is not None and generation.entries:
-                stream = redact_stream(from_entries(generation.entries, top_k=1))
                 await asyncio.to_thread(
-                    store.add_token_stream, stream.to_json(), source="continuation",
-                    sample_id=sample.id, server_id=server, method="completion",
+                    lambda: store.add_token_stream(
+                        from_entries(generation.entries, top_k=1), source="continuation",
+                        sample_id=sample.id, server_id=server, method="completion", also=stored.found,
+                    )
                 )
             event = SampleEvent(
                 arm=_arm_label(arm), index=index, seed=seed, outcome=outcome, seconds=seconds,

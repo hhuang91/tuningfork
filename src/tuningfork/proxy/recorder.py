@@ -1,7 +1,7 @@
 """Turn observed traffic into a durable record.
 
-Writes into the SQLite message tree. Redaction happens here, on the way to disk, and never
-on forwarded traffic.
+Writes into the SQLite message tree, which masks what it is given (`Store.masking`) on the way
+to disk. Forwarded traffic is never masked.
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from typing import Any
 
 import httpx
 
-from tuningfork.analysis.tokens import from_entries, redact_stream, split_logprobs
-from tuningfork.config import Settings, patterns_digest, redact_json, redact_json_counted, server_root
+from tuningfork.analysis.tokens import split_logprobs
+from tuningfork.config import Settings, server_root, without_credentials
 from tuningfork.store.db import Step, Store
 from tuningfork.wire import DEFAULT as DEFAULT_WIRE
 from tuningfork.wire import WireFormat
@@ -192,7 +192,7 @@ async def read_upstream(client: httpx.AsyncClient, base_url: str) -> ServerRead:
     from pathlib import PurePosixPath
 
     root = server_root(base_url)
-    identity: dict[str, Any] = {"upstream": root}
+    identity: dict[str, Any] = {"upstream": without_credentials(root)}
     problem: str | None = None
     try:
         response = await client.get(f"{root}/v1/models", timeout=_READ)
@@ -256,59 +256,6 @@ async def _read_props(client: httpx.AsyncClient, root: str) -> tuple[dict[str, A
     except ValueError:
         return None, response.status_code
     return (body if isinstance(body, dict) else None), response.status_code
-
-
-def stream_without_secrets(
-    body: bytes,
-    answer: dict[str, Any] | None,
-    wire: WireFormat,
-    request: dict[str, Any],
-    patterns: tuple[str, ...],
-    *,
-    masked: dict[str, Any] | None = None,
-) -> tuple[bytes | None, str | None]:
-    """The bytes to keep of a streamed answer, and how they were redacted beyond the text, if
-    they were: "rendered" or "dropped" (a step's `raw_redacted`).
-
-    `body` is the stream redacted as text, and `answer` what the stream read as before that, in
-    the common shape, logprobs apart; `masked`, that answer redacted, where it already is.
-
-    A model's answer streams about a token an event, so a key it writes arrives in pieces that no
-    pattern sees whole, or masked only as far as one event holds it, and a fork reading the bytes
-    back would give it again. So the bytes are kept as they came only where they read as the
-    masked answer — every answer without a secret, and one whose secrets each sat whole in an
-    event, masked there — and carry no logprobs, whose tokens spell a secret too. Otherwise they
-    are the answer written again (`wire.render`) from its masked form; the step says so, and a
-    fork refuses to replay it. That drops what no reader of the bytes needs — logprobs, a cut-off
-    end or an error event (the step keeps its error), usage the request did not ask for, a
-    thinking block's signature, the server's timings. Where the masked answer cannot be written
-    again, no bytes are kept: losing them beats storing the secret. The check sees what the
-    common shape keeps, not a field it leaves out. An answer the proxy could not read at all
-    keeps its bytes as the text left them: its step has an error, which scoring and a fork
-    refuse first.
-    """
-    if not answer:
-        return body, None
-    if masked is None:
-        masked = redact_json(answer, patterns)
-    if masked == answer:
-        return body, None
-    native: dict[str, Any] | None = None
-    try:
-        native = wire.parse(body, True)
-        kept = wire.canonical_response(native, stream=body) if native else None
-    except Exception:  # noqa: BLE001 - bytes that cannot be read back are written again
-        kept = None
-    if isinstance(kept, dict):
-        spelled = any(isinstance(choice, dict) and "logprobs" in choice for choice in kept.get("choices") or [])
-        if split_logprobs(kept)[0] == masked and not spelled:
-            return body, None
-    if "tuningfork_error" in masked:
-        return None, "dropped"  # masked, the answer no longer reads: written again, it would be an empty one
-    try:
-        return wire.render(wire.native_response(masked, native), request={**request, "stream": True}), "rendered"
-    except Exception:  # noqa: BLE001 - see above
-        return None, "dropped"
 
 
 def _answered(response: httpx.Response) -> str:
@@ -388,43 +335,33 @@ class Recorder:
         if delivered_response is not None:
             delivered_response = wire.canonical_response(delivered_response)
         # A harness that asked for logprobs gets them; they are stored as the step's tokens,
-        # redacted token-aware, never through JSON redaction (see `split_logprobs`).
+        # masked token-aware, never through JSON masking (see `split_logprobs`).
         response_json, token_entries = split_logprobs(response_json)
         delivered_response, _ = split_logprobs(delivered_response)
-
-        patterns = self.settings.redaction_patterns
-
-        def clean(value: dict[str, Any] | None) -> dict[str, Any] | None:
-            return redact_json(value, patterns) if value is not None else None
-
         params = summarize_params(request_payload)
         params["streamed"] = streamed
         if output_cap:
             params["output_cap"] = output_cap
 
-        def record_step(raw_blob: str | None, response: dict[str, Any] | None) -> Any:
-            # Redacted in the worker thread, as the step is stored: redaction reads every
-            # payload whole, its JSON escapes read too, and the event loop has calls to serve.
-            # The step counts its masks — a request can read `<redacted>` where nothing was masked —
-            # and names the patterns that made them, which the store keeps: a fork masks a call
-            # with them again, to match a step masked otherwise than the patterns it has.
-            request, params["masked"] = redact_json_counted(request_payload, patterns)
-            params["redaction"] = patterns_digest(patterns)
-            self.store.keep_masking(params["redaction"], patterns)
+        def record_step() -> Step:
+            # In a worker thread: the store masks every payload whole as it stores it, its JSON
+            # escapes read too, and the event loop has calls to serve.
             return self.store.record_step(
-                request=request,
-                response=response,
-                raw_response_blob=raw_blob,
+                request=request_payload,
+                response=response_json or None,
+                raw_response=raw_response,
+                streamed=streamed,
+                tokens=token_entries,
                 params=params,
                 server_defaults=self.server_defaults,
                 status=status,
                 timings=timings.as_dict(),
                 error=error,
                 harness=harness,
-                harness_request=clean(harness_request),
-                delivered_response=clean(delivered_response),
+                harness_request=harness_request,
+                delivered_response=delivered_response,
                 edits=edits,
-                wire=wire.name,
+                wire=wire,
                 normalize=wire.normalize_message,
                 assignment=assignment,
                 replay=replay,
@@ -436,53 +373,14 @@ class Recorder:
             )
 
         async with self._in_order:
-            # The answer masked once, off the loop: what is stored, and what its bytes must read as.
-            response = await asyncio.to_thread(clean, response_json) if response_json else None
-            raw_blob = None
-            if raw_response is not None:
-                raw_blob, raw_redacted = await asyncio.to_thread(
-                    self._store_raw, raw_response, wire, streamed, request_payload, response_json, response
-                )
-                if raw_redacted:
-                    # Its bytes are not the server's: scoring keeps to the answer, a fork refuses it.
-                    params["raw_redacted"] = raw_redacted
-            step = await asyncio.to_thread(record_step, raw_blob, response)
+            step = await asyncio.to_thread(record_step)
             if holds and step is not None:
                 # What was sampled at these holds is filed under this step from now on.
                 await asyncio.to_thread(
                     self.store.link_holds, holds, step, edited=bool((edits or {}).get("request"))
                 )
-            if token_entries and step is not None:
-                await asyncio.to_thread(self._store_tokens, step, token_entries)
         if self.bus is not None and step is not None:
             self.bus.publish(
                 "step", run_id=step.run_id, idx=step.idx, edited=step.edited, error=step.error
             )
         return step
-
-    def _store_tokens(self, step: Step, entries: list[dict[str, Any]]) -> None:
-        stream = redact_stream(from_entries(entries), self.settings.redaction_patterns)
-        self.store.add_token_stream(
-            stream.to_json(), source="recorded", step_id=step.id, server_id=step.server_id,
-            method="chat-logprobs",
-        )
-
-    def _store_raw(
-        self,
-        raw: bytes,
-        wire: WireFormat,
-        streamed: bool,
-        request: dict[str, Any],
-        answer: dict[str, Any] | None,
-        masked: dict[str, Any] | None = None,
-    ) -> tuple[str | None, str | None]:
-        """The raw bytes kept, and how they were redacted beyond the text (`stream_without_secrets`).
-        Bytes that are not UTF-8 are redacted as text too, and otherwise kept as they came."""
-        from tuningfork.config import redact
-
-        patterns = self.settings.redaction_patterns
-        body: bytes | None = redact(raw.decode("utf-8", "surrogateescape"), patterns).encode("utf-8", "surrogateescape")
-        how = None
-        if streamed:
-            body, how = stream_without_secrets(body, answer, wire, request, patterns, masked=masked)
-        return (self.store.blobs.put(body) if body is not None else None), how

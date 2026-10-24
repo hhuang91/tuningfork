@@ -541,6 +541,24 @@ class TestResponsesThatGoWrong:
         assert response.content == upstream.state.body
         assert only_step(recorder.store).error == "upstream_error: Overloaded"
 
+    async def test_a_stream_asked_for_is_read_as_one_whatever_its_label(self, settings, recorder):
+        """As on the ordinary path: a stream labelled `text/plain` is read as a stream, and a key it
+        sent in pieces is not kept in its raw bytes."""
+        from tests.test_proxy import openai_chunk
+
+        pieces = ["my key: ", "sk", "-a1B2c3", "D4e5F6g7", "H8i9J0", " is set"]
+        upstream = upstream_sending(*(openai_chunk({"content": piece}) for piece in pieces),
+                                    openai_chunk({}, "stop"), b"data: [DONE]" + bytes([10, 10]), media_type="text/plain")
+        async with proxy_before(upstream, settings, recorder) as (app, harness):
+            # Buffers the response on the breakpoint path, then never matches it.
+            app.state.engine.add(Breakpoint(phase="response", tool="Write"))
+            response = await harness.post(CHAT, json=streaming())
+
+        assert response.headers["x-tuningfork"] == "breakpoint-path"
+        step = only_step(recorder.store)
+        assert step.error is None and step.params["raw_redacted"] == "rendered"
+        assert b"D4e5F6g7" not in recorder.store.blobs.get(step.raw_response_blob)
+
 
 class TestMalformedCalls:
     @pytest.mark.parametrize(

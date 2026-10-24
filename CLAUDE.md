@@ -609,7 +609,8 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                mirrored; formats/, model output formats (Gemma 4; Qwen3.5 and 3.6;
                                Qwen3 and Qwen2.5)
     src/tuningfork/harness/    harness adapters (hermes, claude-code, generic)
-    src/tuningfork/store/      content-addressed blobs + SQLite message tree; token streams
+    src/tuningfork/store/      content-addressed blobs + SQLite message tree; token streams; masking
+                               (what every write is masked as, once)
     src/tuningfork/analysis/   normalizers, Wilson/Fisher/Holm, distributions, divergence;
                                tokens (entropy, margin, the step's sampler, redaction), forking;
                                screen (each proposal against one baseline, Holm over the family);
@@ -640,7 +641,13 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                the one TUNINGFORK_WSL_DISTRO names (tests/test_wsl_wrapper.py)
 
 A request is never stored whole: messages live in the content-addressed tree and are
-rebuilt by `Store.rebuild_request`. Never report a rate without its interval — see
+rebuilt by `Store.rebuild_request`. Everything the store keeps it masks itself, once, with its one
+set of patterns (`Store.masking`, `store/masking.py`): a writer hands it what it has — or, where it
+must read a value as it will be stored first (an outcome computed from an answer), the `Masked`
+it asked the store's masking for. Masking is not idempotent, and a fork matches a call masked once
+against a step stored masked once; `tests/test_store_masking.py` fails on code elsewhere that masks
+or writes a blob itself, and `tests/test_canaries.py` plants a key in every input of the loop and
+searches every row and blob for it. Never report a rate without its interval — see
 `analysis/stats.py`.
 
 Server- and harness-specific knowledge lives behind the `backends/`, `harness/` and `wire/`

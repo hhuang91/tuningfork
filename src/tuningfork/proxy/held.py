@@ -40,7 +40,7 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from tuningfork.breakpoints import BreakpointEngine, Decision, ExchangeContext, Hold
 from tuningfork.config import Settings
 from tuningfork.proxy.recorder import Recorder, Timings
-from tuningfork.proxy.sse import SSEParser, unreadable
+from tuningfork.proxy.sse import SSEParser, read_as, unreadable
 from tuningfork.wire import Assembler, WireFormat
 from tuningfork.wire.base import cap_output
 
@@ -104,13 +104,6 @@ def describe_edit(before: dict[str, Any], after: dict[str, Any]) -> dict[str, An
         # Needed to rebuild the harness's own request later; see Store.harness_request.
         summary["original_extras"] = {k: v for k, v in before.items() if k != "messages"}
     return summary
-
-
-def _event_stream(headers: Any) -> tuple[bool, bool]:
-    encoding = (headers.get("content-encoding") or "").strip().lower()
-    if encoding and encoding != "identity":
-        return False, False
-    return True, "text/event-stream" in (headers.get("content-type") or "").lower()
 
 
 def _parse(
@@ -374,7 +367,7 @@ class BreakpointPath:
         timings.finish()
 
         raw = upstream.content
-        parse, event_stream = _event_stream(upstream.headers)
+        parse, event_stream = read_as(upstream.headers, bool(payload.get("stream")))
         # `produced` is in the call's own format. Conditions, holds and edits work on the
         # common shape; an edit is turned back into the harness's format to be delivered.
         try:

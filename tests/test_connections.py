@@ -606,3 +606,37 @@ def test_the_restart_command_keeps_what_the_proxy_was_started_with(tmp_path):
     command = restart_command(started, "http://u.test")
     for part in ("--max-output 8192", "--mcp-tools refine-to-end", "--mcp-results text", "--mcp-max-wait 110"):
         assert part in command
+
+
+def test_an_upstream_s_password_is_neither_kept_nor_shown(tmp_path, caplog):
+    """Found in the redaction audit: `--upstream http://user:password@host` was kept in the
+    server's identity and shown by `/_tuningfork/health`, which answers without the token."""
+    import json
+    import logging
+
+    from tuningfork.config import REDACTED
+    from tuningfork.control import ControlClient
+    from tests.helpers import KEY, serving
+
+    server = MockServer()
+    server.props = PROPS
+    upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app))
+    address = f"http://tuningfork:{KEY}@a.test"
+    app = create_app(Settings(upstream_base_url=address, home=tmp_path / "home"), client=upstream)
+    store = app.state.recorder.store
+    published, publish = [], app.state.bus.publish
+    app.state.bus.publish = lambda kind, **payload: (published.append(payload), publish(kind, **payload))
+    caplog.set_level(logging.WARNING)
+    try:
+        with serving(app) as url, ControlClient(url) as client:
+            switched = client.switch_upstream(address)
+            health = httpx.get(f"{url}/_tuningfork/health", timeout=5).text
+            shown = client.connections()
+        kept = [identity for _, identity, _, _ in store.servers()]
+    finally:
+        store.close()
+        asyncio.run(upstream.aclose())
+    assert switched["switched"] and kept
+    for said in (json.dumps(switched), health, json.dumps(shown), json.dumps(kept), json.dumps(published),
+                 caplog.text):
+        assert KEY not in said and f"{REDACTED}@a.test" in said

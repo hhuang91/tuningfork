@@ -18,6 +18,7 @@ from typing import Any, Sequence
 from tuningfork.ops.common import OperationError
 from tuningfork.specs import CHECK_KEPT
 from tuningfork.store.db import Run, Store
+from tuningfork.store.masking import Masked
 
 #: How long a tried check may run, unless asked otherwise: one that takes longer is worth
 #: knowing about before a batch runs it once a run.
@@ -320,7 +321,9 @@ def execute_check_along(
         emit(progress, "state", done=index + 1, total=len(plan.states))
     record = {"states": states, "steps": plan.steps, "at": time.time()}
     run = store.get_run(plan.trial.run.id)
-    store.annotate_run(run.id, result={**(run.result or {}), ALONG: record})
+    # The result as it is stored, masked already, and the record masked once beside it: masked
+    # again, a command's second password would fall too.
+    store.annotate_run(run.id, result=Masked({**(run.result or {}), ALONG: store.masking.value(record)}))
     return {"run": run.id, **record, "made": made_by_calls(record) or []}
 
 
