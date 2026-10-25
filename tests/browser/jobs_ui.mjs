@@ -401,7 +401,7 @@ try {
   check(variants.some((variant) => variant.name === variantName), "the variant was saved when the A/B started");
   await until(() => page.eval(`!!document.querySelector(".verdict-block.significant")`), "the verdict on the job page");
   // The job's page says it in a line, with what it counts, and leaves the behaviours' table to the A/B's page.
-  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What you count"
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What was counted:"
     && !document.querySelector(".table tr.is-target") && !document.querySelector(".diff-line")`),
     "the A/B's job page says what it found and what it counts, and leaves the rest to the A/B's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
@@ -417,7 +417,7 @@ try {
     return block.classList.contains("significant") && !block.classList.contains("tone-ok")
       && block.firstElementChild.classList.contains("verdict-target")
       && block.querySelector(".verdict-target-text").textContent.startsWith("A from resample ")
-      && block.querySelector(".verdict-big").textContent === "What you count happened less often with the variant: 0 of 6 samples, against 6 of 6 with the original. That is more than chance would explain.";
+      && block.querySelector(".verdict-big").textContent === "What was counted happened less often with the variant: 0 of 6 samples, against 6 of 6 with the original. That is more than chance would explain.";
   })()`), "the result says the target first, then which way the variant moved it, in the accent's colour, not green");
   const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
     [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
@@ -1179,7 +1179,44 @@ try {
     `the page leads with the step whose behaviour best predicts a pass (${lead.first}: ${lead.big})`);
   check(lead.ways === `Open step ${best.index} in run ${best.run_id.slice(0, 8)}=#/runs/${best.run_id}/${best.index} | Resample step ${best.index}…=#/runs/${best.run_id}/${best.index}?start=resample`
     && /^\(p = /.test(lead.p || ""), `with the ways to it, and its p last (${lead.ways}; ${lead.p})`);
-  const tallied = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What the failed runs' checks said")`;
+  // Under the lead, one step at a time, opening where the runs first split, and every step a
+  // click away: the first split is often not the step that decides.
+  console.log("the divergence page, step by step");
+  const splitAt = split.divergence_index;
+  const shownStep = () => page.eval(`(() => {
+    const panel = document.querySelector(".at-step");
+    return {
+      title: panel?.querySelector(".panel-head h2")?.textContent,
+      current: [...panel.querySelectorAll(".step-pick")].filter((pick) => pick.getAttribute("aria-pressed") === "true").map((pick) => pick.textContent).join(","),
+      shaded: [...panel.querySelectorAll(".step-pick.diverged")].map((pick) => pick.textContent).join(","),
+      note: panel.querySelector(".step-note")?.textContent,
+      hash: location.hash,
+    };
+  })()`);
+  const atSplit = await shownStep();
+  check(atSplit.title === `At step ${splitAt}` && atSplit.current === String(splitAt)
+    && atSplit.shaded === split.steps.filter((step) => step.diverged).map((step) => step.index).join(",")
+    && atSplit.note.startsWith("The runs split here for the first time"),
+    `the section opens at the first split, every step offered and the ones where the runs split shaded (${JSON.stringify(atSplit)})`);
+  const other = split.steps.find((step) => step.index > splitAt) || split.steps.find((step) => step.index !== splitAt);
+  await page.eval(`[...document.querySelectorAll(".at-step .step-pick")].find((pick) => pick.textContent === "${other.index}").click()`);
+  const moved = await shownStep();
+  check(moved.title === `At step ${other.index}` && moved.current === String(other.index)
+    && moved.note.startsWith(other.diverged ? "The runs split here" : "Every run did the same here")
+    && moved.hash === `#/divergence/${encodeURIComponent("tally-report/1")}?step=${other.index}`,
+    `a click shows another step in its place, said in a line, the address naming it (${JSON.stringify(moved)})`);
+  await page.eval(`document.querySelector(".at-step .step-pick.current").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))`);
+  const back = await shownStep();
+  check(back.current === String(Math.max(0, other.index - 1)) && await page.eval(`document.activeElement?.classList.contains("current")`),
+    `the arrow keys move along, the step shown keeping the focus (${back.current})`);
+  await page.eval(`[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "Every step")
+    .querySelector("tbody tr:last-child td a").click()`);
+  const fromTable = await shownStep();
+  check(fromTable.title === `At step ${split.steps.length - 1}`, `a step's number in Every step shows it above (${fromTable.title})`);
+  await page.eval(`location.hash = "#/divergence/${encodeURIComponent("tally-report/1")}?step=0"`);
+  await until(async () => (await shownStep()).title === "At step 0", "the address's step, opened");
+  check(true, "an address naming a step opens the page there");
+  const tallied =`[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What the failed runs' checks said")`;
   check(await page.eval(`(() => {
     const panel = ${tallied};
     return !!panel && panel.querySelector("th").textContent === "failed runs that printed it"
@@ -1234,13 +1271,31 @@ try {
   const forkJobId = await until(async () => jobIdIn(await page.eval("location.hash")), "the probe's job page");
   const forkJob = await finished(forkJobId, 120000);
   check(forkJob.status === "done" && forkJob.result.forking.flips === 1, "the probe found the token that decides the answer");
-  // Its job's page says so in a line, and hands off to the probe's own page for the rest.
+  // Its job's page says so in a line, which token beside the run's own in another, and hands off
+  // to the probe's own page for the rest.
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 forced token changed what the model did"`), "what the probe found, on its job's page");
-  check(await page.eval(`!document.querySelector(".fork-position")`), "the probe's job page says what it found in a line, and leaves the positions to the probe's page");
+  const flipLine = await page.eval(`[...document.querySelectorAll(".verdict-block ul.verdict-lines li")].map((li) => li.textContent).join(" | ")`);
+  check(flipLine === `At [${forkSpot.position}], "search_files" forced in place of the run's own "read_file": what was counted happened in 0 of 6 continuations, against 6 of 6.`,
+    `and names the token, beside the run's own, with what each did (${flipLine})`);
+  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".flips-table")`),
+    "the probe's job page says what it found in lines, and leaves the tables to the probe's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
-  await until(() => page.eval(`location.hash.startsWith("#/experiments/") && [...document.querySelectorAll(".chip")].some((c) => c.textContent === "flips away")`), "the result, marked where it forks");
-  check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => c.textContent.startsWith("flips")).every((c) => c.classList.contains("tone-accent"))`),
-    "a flip is the accent's colour, its direction in words: a result, not a check's red");
+  await until(() => page.eval(`location.hash.startsWith("#/experiments/") && [...document.querySelectorAll(".chip")].some((c) => c.textContent === "less often")`), "the result, marked where it forks");
+  check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => /^(less|more) often$/.test(c.textContent)).every((c) => c.classList.contains("tone-accent"))`),
+    "a forced token that changed what the model did is the accent's colour, its direction in words: a result, not a check's red");
+  // The block the page leads with: what was counted on a line of its own, then the forced token
+  // beside the run's own — what each led to, how many did what was counted, which way it moved.
+  const probeLead = await page.eval(`(() => {
+    const block = document.querySelector(".verdict-block");
+    const rows = [...block.querySelectorAll(".flips-table tbody tr")].map((row) => [...row.children].map((cell) => cell.textContent.trim()));
+    return { label: block.querySelector(".verdict-target .label").textContent, rows };
+  })()`);
+  const [place, own, forced] = probeLead.rows;
+  check(probeLead.label === "What was counted:" && probeLead.rows.length === 3 && place[0].startsWith(`[${forkSpot.position}]`)
+    && own[0] === "the run's own" && own[1].startsWith('"read_file"') && own[2].includes("read_file(") && own[3].startsWith("6/6")
+    && forced[0] === "forced" && forced[1].startsWith('"search_files"') && forced[2].includes("search_files(") && forced[3].startsWith("0/6")
+    && forced[4].startsWith("less often"),
+    `the probe's page leads with the forced token beside the run's own: what each led to, how often it was counted, and which way it moved (${JSON.stringify(probeLead.rows)})`);
 
   console.log("from a probe's result to the token it forced, and back");
   const probeId = forkJob.result.experiment.id;
@@ -1445,12 +1500,12 @@ try {
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal beat the original by more than chance would explain."`), "the verdict on the job's page");
   // The job's page says it in a line, and hands off: the test's own page has the rest.
   check(await page.eval(`!document.querySelector(".screen-table") && [...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "What it found")
-    && document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do"
+    && document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do:"
     && !document.querySelector(".verdict-block.tone-ok")`),
     "the test's job page says what it found and what the model should do, in the accent, and leaves the table to the test's own page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
-  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do"
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do:"
     && [...document.querySelectorAll(".screen-table th")].some((th) => th.textContent === "did what it should")`),
     "a refinement's test at its step names what it counts as the refinement does: what the model should do");
   // At the step, a survivor is a shift of a behaviour, not a check passed: the accent's, never green.

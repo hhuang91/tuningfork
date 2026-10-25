@@ -514,7 +514,11 @@ greyed and saying why, and its foot is a status strip — the proxy, the server 
 from `GET /connections`. Its front page is `#/guide` — setup, where you left off, a map of the
 loop and the ways in — and its words have a page of their own, `#/words`, each living once in
 `ops/glossary.py`. Each page leads with its take-away: a run its verdict strip; the divergence
-page the step whose behaviour best predicts the verdict, in a callout with the ways to it;
+page the step whose behaviour best predicts the verdict, in a callout with the ways to it, then the
+runs side by side one step at a time, from the first split, every step a click away (`atStep` in
+`views/compare.js`: the first split is often not the step that decides); a forking-token probe the
+forced tokens that changed what the model did, each beside the run's own token there — what each
+led to, and how often it did what was counted (`flipsTable` in `results.js`);
 Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model, a
 word and a colour each, the server in the status strip's words (`serverWord`), and what that means
 in at most three sentences (`whatItMeans`); a refinement its four stages in a line (`stagesOf` in
@@ -704,8 +708,9 @@ than on a hardcoded assumption about which server is running.
 - The UI puts every string on the page as a text node — payloads are full of markup-looking
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
 - The web UI says some terms more plainly than the CLI, MCP and the docs, which keep the precise
-  words: an arm is a *wording*, a target *what you count* (a refinement's, *what the model should
-  do*), a screen a *test at this step*, a validation *full test runs*, a spec a *task file*.
+  words: an arm is a *wording*, a target *what you count* (in a result, *what was counted*, its
+  label on a line of its own; a refinement's, *what the model should do*), a screen a *test at this
+  step*, a validation *full test runs*, a spec a *task file*.
   `ui/static/js/words.js` holds the phrase for each term the glossary defines (a term's `ui`;
   `tests/test_words.py` holds the two together), the Words page shows both, and `tuningfork
   glossary` finds a term by its page phrase too. A sentence the server writes — a refusal, a plan's

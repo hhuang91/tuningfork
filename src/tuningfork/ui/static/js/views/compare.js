@@ -6,6 +6,7 @@ import {
 } from "../dom.js";
 import { field, input, numberOf, planForm } from "../forms.js";
 import { live } from "../live.js";
+import { settle } from "../nav.js";
 import { responseView } from "../payload.js";
 import { formatP, tallyView } from "../results.js";
 import { whereForm } from "../where.js";
@@ -103,7 +104,7 @@ function mixedSkillsBanner() {
     "A difference between them may be the wording change rather than the model.");
 }
 
-export async function divergenceView(root, [task, conditionId]) {
+export async function divergenceView(root, [task, conditionId], scope) {
   replace(root, loading());
   const summary = (await api.get("/tasks")).find((candidate) => candidate.task_id === task);
   const conditions = summary?.conditions || [];
@@ -117,9 +118,24 @@ export async function divergenceView(root, [task, conditionId]) {
   const tally = await api.get(`/tally${query({ task })}`).catch(() => null);
   const at = report.divergence_index;
   const split = at === null ? null : report.steps[at];
-  // The lead above offers to resample its step: the split's panel does not offer it again.
   const best = report.verdict_split?.best;
-  const resampledAbove = Boolean(best?.run_id) && best.kind !== "ended" && best.index === at;
+
+  // The step shown, one at a time and each a click away: the address's, else where the runs first
+  // split. The first split is often not the step that decides — the runs can agree again after it,
+  // or reach the same end by other calls — so every step is there to look at.
+  const address = (index) => `#/divergence/${enc(task)}${conditionId ? `@${conditionId}` : ""}?step=${index}`;
+  const asked = /^\d+$/.test(scope?.query?.get("step") || "") ? Number(scope.query.get("step")) : null;
+  const first = asked !== null && asked < report.steps.length ? asked : at ?? 0;
+  let section = null;
+  const show = (index, { focus = false, scroll = false } = {}) => {
+    const next = atStep(report, index, { verdicts: report.verdicts || {}, best, show });
+    section.replaceWith(next);
+    section = next;
+    settle(address(index));
+    if (focus) next.querySelector(".step-pick.current")?.focus();
+    if (scroll) next.scrollIntoView({ block: "start" });
+  };
+  section = report.steps.length ? atStep(report, first, { verdicts: report.verdicts || {}, best, show }) : null;
 
   replace(
     root,
@@ -134,16 +150,78 @@ export async function divergenceView(root, [task, conditionId]) {
     h("div", { class: "stack" },
       // The take-away first: which step's behaviour goes with passing, and the way to it.
       predictorsView(report),
-      split ? panel(`At step ${at}`, [groupsView(split, at, report.verdicts || {}), nextStep(split, at, { resampledAbove })], {
-        meta: h("span", { class: "muted", title: "Wilson score intervals" }, "Intervals are 95%. With few runs, they are wide."),
-      }) : null,
+      section,
       tallyView(tally, { only: chosen?.id || null }),
       live.mode === "live" ? alongPanel(task) : null,
       panel("Where does it hold?", whereForm(task, { condition: chosen?.id || null }), {
         meta: h("span", { class: "muted" }, "One question of every run: the call that made the difference."),
       }),
-      panel("Every step", stepsTable(report))),
+      panel("Every step", stepsTable(report, (index) => ({
+        href: address(index),
+        onclick: (event) => {
+          event.preventDefault();
+          show(index, { scroll: true });
+        },
+      })))),
   );
+}
+
+/** One step of the runs side by side: each behaviour they took there, the runs that took it
+ *  coloured by their verdicts, and the ways into the step — every other step a click away above
+ *  it, shaded where the runs split. The lead above offers to resample its own step: this panel
+ *  does not offer it again there. */
+function atStep(report, index, { verdicts, best, show }) {
+  const step = report.steps[index];
+  const resampledAbove = Boolean(best?.run_id) && best.kind !== "ended" && best.index === index;
+  return panel(`At step ${index}`, [
+    stepPicker(report, index, show),
+    h("p", { class: "step-note" }, stepNote(report, step)),
+    groupsView(step, index, verdicts),
+    nextStep(step, index, { resampledAbove }),
+  ], {
+    meta: h("span", { class: "muted", title: "Wilson score intervals" }, "Intervals are 95%. With few runs, they are wide."),
+    className: "at-step",
+  });
+}
+
+/** Every step of the runs, to show each in turn: shaded where they split, the one shown in the
+ *  accent; the arrow keys move along. */
+function stepPicker(report, index, show) {
+  const last = report.steps.length - 1;
+  const at = report.divergence_index;
+  const said = (step) =>
+    `Step ${step.index}: ${step.diverged ? "the runs split here" : "every run did the same"}${step.index === at ? ", for the first time" : ""}`;
+  const keys = (event) => {
+    const next = index + ({ ArrowLeft: -1, ArrowRight: 1 }[event.key] || 0);
+    if (next === index || next < 0 || next > last) return;
+    event.preventDefault();
+    show(next, { focus: true });
+  };
+  return h("div", { class: "step-picker", onkeydown: keys },
+    h("button", { class: "btn btn-small", type: "button", disabled: index <= 0, title: "The step before", "aria-label": "The step before", onclick: () => show(index - 1) }, "‹"),
+    h("div", { class: "step-picks", role: "group", "aria-label": "Steps" }, report.steps.map((step) =>
+      h("button", {
+        class: ["step-pick", step.diverged && "diverged", step.index === index && "current"], type: "button",
+        "aria-pressed": String(step.index === index), title: said(step), onclick: () => show(step.index),
+      }, String(step.index)))),
+    h("button", { class: "btn btn-small", type: "button", disabled: index >= last, title: "The step after", "aria-label": "The step after", onclick: () => show(index + 1) }, "›"),
+    h("span", { class: "faint small" }, "Shaded where the runs split."));
+}
+
+/** What the runs did at a step, in a sentence: split there, first or again, or all alike — before
+ *  the first split, or again after it. A run that had ended is no behaviour of its own here. */
+function stepNote(report, step) {
+  const at = report.divergence_index;
+  if (!step.diverged) {
+    if (at === null) return "Every run did the same here, as at every step.";
+    return step.index < at ? `Every run did the same here. They first split at step ${at}.` : `Every run did the same here again, after splitting at step ${at}.`;
+  }
+  const ended = step.groups.filter((group) => group.outcome.kind === "ended").reduce((total, group) => total + group.run_ids.length, 0);
+  const behaviours = step.groups.length - (ended ? 1 : 0);
+  const gone = ended ? ` ${plural(ended, "run")} had ended before this step.` : "";
+  return behaviours > 1
+    ? `The runs split here${step.index === at ? " for the first time" : ""}, into ${plural(behaviours, "behaviour")}.${gone}`
+    : `The runs that got this far did the same here.${gone}`;
 }
 
 /** The task's check run along its runs (the `check-along` job): on each run's workspace as it
@@ -266,7 +344,9 @@ function groupsView(step, index, verdicts) {
         h("div", { class: "run-chips" },
           group.run_ids.slice(0, 16).map((id) => {
             const [tone, said] = RUN_VERDICT[verdicts[id]] || ["muted", "no verdict"];
-            return h("a", { class: `chip tone-${tone} mono`, href: `#/runs/${id}/${index}`, title: `run ${short(id)}: ${said}` }, short(id));
+            // A run that had ended has no such step: the chip opens the run.
+            const href = group.outcome.kind === "ended" ? `#/runs/${id}` : `#/runs/${id}/${index}`;
+            return h("a", { class: `chip tone-${tone} mono`, href, title: `run ${short(id)}: ${said}` }, short(id));
           }),
           group.run_ids.length > 16 ? h("span", { class: "faint small" }, `+${group.run_ids.length - 16} more`) : null)))),
     judged
@@ -276,7 +356,11 @@ function groupsView(step, index, verdicts) {
 }
 
 function nextStep(step, index, { resampledAbove = false } = {}) {
-  const example = step.groups[0].run_ids[0];
+  // The behaviours runs took at the step, each with its letter: a run that had ended took none.
+  const took = step.groups.map((group, position) => [group, LETTERS[position % LETTERS.length]])
+    .filter(([group]) => group.outcome.kind !== "ended");
+  if (!took.length) return null;
+  const example = took[0][0].run_ids[0];
   return h("div", null,
     resampledAbove ? null : [
       h("p", { class: "hint", style: { marginBottom: "6px" } }, "A handful of runs cannot tell you how often each happens. Resample the step to measure it:"),
@@ -285,19 +369,21 @@ function nextStep(step, index, { resampledAbove = false } = {}) {
         : command(`tuningfork resample ${short(example)} ${index} -n 20`),
     ],
     h("p", { class: "hint", style: { margin: resampledAbove ? "0 0 6px" : "10px 0 6px" } },
-      `${resampledAbove ? "Look" : "Or look"} inside the step: how sure each run's model was of each token, and which token split them.`),
-    h("div", { class: "run-chips" }, step.groups.map((group, position) =>
+      `${resampledAbove ? "Look" : "Or look"} inside the step: how sure ${took.length > 1 ? "each run's model was of each token, and which token split them" : "the model was of each token"}.`),
+    h("div", { class: "run-chips" }, took.map(([group, letter]) =>
       h("a", { class: "btn btn-small", href: `#/runs/${group.run_ids[0]}/${index}?view=tokens` },
-        `${LETTERS[position % LETTERS.length]}: run ${short(group.run_ids[0])}'s tokens`))));
+        `${letter}: run ${short(group.run_ids[0])}'s tokens`))));
 }
 
-function stepsTable(report) {
+/** Every step in a table, the behaviours at each: `link(index)` gives each step's number the
+ *  props that show it in the section above. */
+function stepsTable(report, link) {
   const behaviours = (step) =>
     h("div", { class: "stack", style: { gap: "4px" } }, step.groups.map((group) =>
       h("div", null, outcome(group.outcome), h("span", { class: "faint small" }, `  ×${group.run_ids.length}`))));
   const rows = report.steps.map((step) =>
     h("tr", { class: [step.diverged && "diverged", step.index === report.divergence_index && "first-divergence"] },
-      h("td", { class: "num" }, String(step.index)),
+      h("td", { class: "num" }, h("a", { ...link(step.index), title: `Show step ${step.index} above, its runs side by side` }, String(step.index))),
       h("td", null, behaviours(step))));
   return h("div", { class: "table-wrap" }, h("table", { class: "table" },
     h("thead", null, h("tr", null, h("th", { class: "num" }, "#"), h("th", null, "behaviours"))),

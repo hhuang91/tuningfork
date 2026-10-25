@@ -1076,6 +1076,28 @@ pre.code { color: var(--muted); }
 .group-rates { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 13px; }
 .group-rates .what { color: var(--muted); margin-right: 8px; }
 .run-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+/* A task's steps, to open each in turn on the divergence page: where the runs split shaded as
+   the Every step table shades it, the step shown in the accent. */
+.step-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.step-picks { display: flex; flex-wrap: wrap; gap: 4px; }
+.step-pick {
+  min-width: 30px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.step-pick:hover { background: var(--panel-2); color: var(--text); }
+.step-pick.diverged { border-color: var(--accent-soft); background: var(--accent-soft); color: var(--accent); }
+.step-pick.current { border-color: var(--accent); background: var(--accent); color: #fff; }
+.step-picker > .btn { height: 28px; padding: 0 10px; font-size: 16px; line-height: 1; }
+.step-note { margin: 10px 0 12px; }
 
 .verdict-block {
   display: flex;
@@ -1095,10 +1117,22 @@ pre.code { color: var(--muted); }
 .verdict-block.tone-bad { border-color: var(--bad); background: var(--bad-soft); }
 .verdict-block.tone-warn { border-color: var(--warn); background: var(--warn-soft); }
 .verdict-big { font-size: 16px; font-weight: 650; }
-.verdict-block > .verdict-target, .verdict-block > .verdict-big, .verdict-block > .verdict-lines { flex-basis: 100%; }
-.verdict-target { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 14px; }
-.verdict-target .label { margin: 0; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11.5px; }
+.verdict-block > .verdict-target, .verdict-block > .verdict-big, .verdict-block > .verdict-lines, .verdict-block > .flips { flex-basis: 100%; }
+/* What was counted: its label on a line of its own, the target under it. */
+.verdict-target { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.verdict-target .label { margin: 0; font-size: 13px; }
+.verdict-target-body { padding-left: 18px; }
 .verdict-target-text { font-weight: 600; overflow-wrap: anywhere; }
+/* A probe's forced tokens that changed what the model did, under its headline: each position's
+   line, then the run's own token and each forced one, as the tables below have them. */
+.flips { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.flips p { margin: 0; }
+.flips-table { background: var(--panel); }
+.flips-table tr.flip-at td { padding-top: 10px; padding-bottom: 2px; border-bottom: none; }
+.flips-table .fork-context { white-space: pre; }
+.reached { display: flex; flex-direction: column; gap: 3px; }
+.reached-one { display: flex; align-items: baseline; gap: 6px; }
+.reached-label { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .verdict-block.tone-ok .verdict-big { color: var(--ok); }
 .verdict-block.tone-bad .verdict-big { color: var(--bad); }
 .verdict-block.tone-warn .verdict-big { color: var(--warn); }
