@@ -4148,6 +4148,9 @@ def refine_validate(
                       + (f"; a copy kept at {escape(shown['private']['kept_at'])}" if shown["private"]["kept_at"] else ""),
                       soft_wrap=True)
     console.print(f"  runs      {plan.total} in all, through {escape(plan.proxy_url)}")
+    if plan.harness_options:
+        console.print(f"  options   every run launched with the harness options the checkpoint's run had: "
+                      f"{escape(json.dumps(plan.harness_options))}", soft_wrap=True)
     for warning in plan.warnings:
         console.print(f"  [yellow]{escape(warning)}[/yellow]", soft_wrap=True)
     if dry_run:

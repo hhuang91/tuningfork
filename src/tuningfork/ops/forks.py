@@ -42,6 +42,12 @@ class ForkPlan:
     #: The variables its check may read besides those its task names, read from the configs
     #: here, once (`specs.configured_check_env`).
     check_env: list[str] = field(default_factory=list)
+    #: The harness's own options, as its source's launch recorded them but for its MCP
+    #: servers: what the adapter was given.
+    harness_options: dict[str, Any] = field(default_factory=dict)
+    #: The MCP servers its source had, by name, which the fork runs without: a launch records
+    #: a server by name only.
+    dropped_servers: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -131,11 +137,11 @@ def prepare_fork(
     # layouts were recorded was laid out flat. Set up as it was, too: a harness option
     # changes what the model is told (Hermes's self_improvement, its system prompt), and a
     # fork told otherwise departs from the recording at its first step.
-    recorded = dict((launch.settings.get("harness") if launch else None) or {})
-    servers = recorded.pop("mcp_servers", None)
+    options = dict((launch.settings.get("harness") if launch else None) or {})
+    servers = options.pop("mcp_servers", None)
     adapter = adapter_for(
         store.home, harness, layout=(launch.settings.get("layout") if launch else None) or "flat",
-        options=recorded or None,
+        options=options or None,
     )
     check_launchable(adapter)
     workdir = Path(workdir) if workdir else store.home / "forks"
@@ -271,6 +277,8 @@ def prepare_fork(
         adapter=adapter,
         sandbox=sandbox,
         check_env=every_check,
+        harness_options=options,
+        dropped_servers=sorted(servers or ()),
     )
 
 

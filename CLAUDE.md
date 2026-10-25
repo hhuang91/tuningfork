@@ -283,7 +283,9 @@ checkpoint to the end, full runs of the training task with the edit from the fir
 full runs of each held-out eval through a private proxy (`ops/private.py`) that records into
 a 0700 temp folder outside the home and is deleted after — its calls reach the server through
 a relay launch the main proxy forwards and never records (`LaunchState.records`), and only
-verdicts leave. It is refused when the skill's file, its other files or the training eval
+verdicts leave. Every part is set up as the checkpoint's run was, with the harness options its
+launch recorded, as its forks are (`ForkPlan.harness_options`: an MCP server, recorded by name
+only, is not carried, and the plan warns). It is refused when the skill's file, its other files or the training eval
 changed since the checkpoint's run, and unless the proposal survived its latest complete
 screen (`validate.latest_screen`: a screen of more proposals, or one run to the end, can undo
 an earlier survival). Its record, `refinements/<id>/validations/<vid>.json`, is

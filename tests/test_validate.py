@@ -21,12 +21,23 @@ from tuningfork.ops.common import Cancel, Cancelled, OperationError
 from tuningfork.ops.private import PREFIX
 from tuningfork.ops.screen import execute_screen
 from tuningfork.specs import Eval, TuningforkOptions
-from tests.helpers import CHECK, task_stack
+from tests.helpers import CHECK, FakeAgent, task_stack
 
 MARKER = "HELD-OUT-MARKER"
 RULES = [{"if": "calls", "value": "write_file"}, {"if": "contains", "value": "row_count"}]
 KEYS = {"old": "Write the totals to report.json.",
         "new": "Write the totals to report.json, using the keys row_count and amount_total."}
+
+
+class SetUp(FakeAgent):
+    """The fake agent, taking options as Hermes does: each kept in its launch's settings."""
+
+    def __init__(self, executable=None, *, options=None):
+        self.options = dict(options or {})
+
+    @property
+    def settings(self):
+        return {"harness": dict(self.options)} if self.options else {}
 
 
 @pytest.fixture
@@ -46,11 +57,11 @@ def stack(tmp_path, mock_server, monkeypatch, request):
         yield built
 
 
-def screened(stack, n: int = 5):
+def screened(stack, n: int = 5, harness_options=None):
     """A run of the training task, a refinement at its write step, the keys fix proposed, and
     a complete screen it survived."""
     plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
-                         model="m", harness="fake", n=1)
+                         model="m", harness="fake", n=1, harness_options=harness_options)
     execute_batch(stack.store, plan)
     (run,) = stack.store.runs(limit=5, task_id="tally-report/1")
     made = refine.create(stack.store, run.id, "write_file", target_rules=RULES)
@@ -200,6 +211,38 @@ def test_the_held_out_runs_are_held_to_the_proxys_cap(stack, monkeypatch):
     monkeypatch.setattr(private, "run_verdict_only", lambda *args, **kwargs: asked.append(kwargs["max_output"]) or [])
     validate.execute_validate(stack.store, plan)
     assert asked == [50, 50]  # the held-out task's two arms
+
+
+def test_every_run_is_set_up_as_the_checkpoints_run_was(stack, monkeypatch):
+    """A harness option changes what the model is told (Hermes's self_improvement takes away the
+    tool that patches a skill), and a launch records its options. The forks take them from the
+    checkpoint's launch, and so do the training and held-out runs: found in review, they were
+    launched with the harness's defaults. An MCP server, which a launch records by name only,
+    reaches none of them, and the plan says so."""
+    from tuningfork.harness import ADAPTERS
+    from tuningfork.store.db import Store
+
+    monkeypatch.setitem(ADAPTERS, "fake", SetUp)
+    monkeypatch.setattr(validate, "MINIMUM", 1)
+    made, proposal = screened(stack, harness_options={"self_improvement": False, "mcp_servers": {"tf": "http://127.0.0.1:1/mcp"}})
+    keep = stack.tmp / "kept"
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url, keep_private=keep)
+    quiet = {"self_improvement": False}
+    assert plan.harness_options == plan.to_json()["harness_options"] == quiet
+    assert any("the training and held-out runs are launched without" in warning and "MCP server(s), tf," in warning
+               for warning in plan.warnings), plan.warnings
+
+    record = validate.execute_validate(stack.store, plan).record
+    assert record["harness_options"] == quiet
+    launches = [stack.store.get_launch(stack.store.get_run(verdict["run_id"]).launch_id)
+                for part in ("forward", "training") for arm in ("original", "edit") for verdict in record[part][arm]]
+    for arm in ("original", "edit"):
+        private = Store(keep / f"2-{arm}")
+        try:
+            launches += [private.get_launch(run.launch_id) for run in private.runs(limit=10)]
+        finally:
+            private.close()
+    assert [launch.settings.get("harness") for launch in launches] == [quiet] * 6
 
 
 def test_cancelled_it_keeps_what_finished_and_gives_no_verdict(stack, monkeypatch):

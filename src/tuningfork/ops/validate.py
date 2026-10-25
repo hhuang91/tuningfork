@@ -11,6 +11,9 @@ three ways, each arm against the original and drawn fresh:
 - **held out:** full runs of each held-out eval of the spec, verdicts only (`ops.private`):
   does it break a task it was not made for?
 
+Every run is set up as the checkpoint's run was: its harness, its model, and the harness
+options it was launched with, as its forks have them.
+
 n is fixed in the plan, and a validation stands alone: it is never topped up or pooled with
 another. Its record is kept in the refinement's folder, `validations/<id>.json`: every
 verdict, which the gate reads (`analysis.validation`). A job's plan and result carry no
@@ -62,6 +65,9 @@ class ValidatePlan:
     #: The proxy's cap on a call's output: the held-out runs, which it never records, are
     #: held to it by their private proxy, as every other run here is by the proxy itself.
     max_output: int | None = None
+    #: The harness's own options, which every part's runs are given: the checkpoint's run's,
+    #: as its forks have them (`ForkPlan.harness_options`).
+    harness_options: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -87,6 +93,7 @@ class ValidatePlan:
             "minimum": MINIMUM,
             "harness": self.harness,
             "model": self.model,
+            "harness_options": self.harness_options,
             "screen": self.screen,
             "private": {
                 "under": str(self.private_base) if self.private_base else None,
@@ -250,12 +257,17 @@ def prepare_validate(
         store, run.id, str(refinement.step_idx), n=n, concurrency=concurrency, variant=variant,
         alpha=alpha, base_url=base_url, proxy=proxy,
     )
-    # Every part runs the harness and model the checkpoint's run had: the forks' own.
+    # Every part runs the harness and model the checkpoint's run had, set up as it was: the
+    # forks' own. A harness option changes what the model is told (Hermes's self_improvement
+    # takes away the tool that patches a skill), and a fresh run set up otherwise would measure
+    # the edit under another setup than the forks and the screen did.
     harness, model = forward.original.harness, forward.original.model
+    options = dict(forward.original.harness_options)
     training_plans = {
         arm: prepare_batch(
             store, spec, eval_id=training.id, n=runs, model=model, harness=harness, skill_file=path,
             concurrency=concurrency, base_url=base_url, proxy=forward.original.proxy,
+            harness_options=options or None,
         )
         for arm, path in (("original", baseline), ("edit", variant))
     }
@@ -263,12 +275,17 @@ def prepare_validate(
                                                 if note.level == "warning")]:
         if found not in warnings:
             warnings.append(found)
+    if forward.original.dropped_servers:
+        warnings.append(
+            f"the training and held-out runs are launched without run {run.id[:8]}'s MCP server(s), "
+            f"{', '.join(forward.original.dropped_servers)}, as its forks are: a launch records a server by name only"
+        )
     return ValidatePlan(
         refinement=refinement, proposal=proposal, spec=spec, training=training, held_out=held,
         n=n, runs=runs, alpha=alpha, concurrency=concurrency, harness=harness, model=model,
         proxy_url=proxy_url, forward=forward, training_plans=training_plans, screen=screen,
         held_out_recorded=held_recorded, private_base=private_base, keep_private=keep_private,
-        max_output=forward.original.proxy.raw.get("max_output"), warnings=warnings,
+        max_output=forward.original.proxy.raw.get("max_output"), harness_options=options, warnings=warnings,
     )
 
 
@@ -344,6 +361,7 @@ def execute_validate(
     record: dict[str, Any] = {
         "id": vid, "refinement": plan.refinement.id, "proposal": plan.proposal.id,
         "created_at": time.time(), "task": plan.task_id, "harness": plan.harness, "model": plan.model,
+        "harness_options": plan.harness_options,
         # The process running it: a record still "running" after that process died was cut off.
         "pid": os.getpid(),
         "alpha": plan.alpha, "minimum": MINIMUM,
@@ -380,6 +398,7 @@ def execute_validate(
                 keep = plan.keep_private / f"{entry.id}-{arm}" if plan.keep_private else None
                 arms[arm] = [verdict.to_json() for verdict in run_verdict_only(
                     store, plan.spec, entry, n=plan.runs, harness=plan.harness, model=plan.model,
+                    harness_options=plan.harness_options or None,
                     proxy_url=plan.proxy_url, skill_file=skill, concurrency=plan.concurrency, keep=keep,
                     max_output=plan.max_output, label=f"held-out {entry.id}, {arm}", progress=progress, cancel=cancel,
                 )]

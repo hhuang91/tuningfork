@@ -499,7 +499,8 @@ class TestToEnd:
         launch = stack.store.get_launch(stack.store.get_run(recorded.run_id).launch_id)
         assert launch.settings["harness"] == {"self_improvement": False, "mcp_servers": servers}
         plan = prepare_fork(stack.store, recorded.run_id, "1", base_url=f"{stack.url}/v1")
-        assert plan.adapter.options == {"self_improvement": False}
+        assert plan.adapter.options == plan.harness_options == {"self_improvement": False}
+        assert plan.dropped_servers == ["tf"]
         assert any("MCP server(s) tf" in warning and "without them" in warning for warning in plan.warnings), plan.warnings
 
         plain = stack.record()  # recorded with no options: forked with none
