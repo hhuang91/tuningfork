@@ -254,7 +254,9 @@ the check, and a screen's plan, say when a call before the step changed the work
 findings §31.42: a screen after a delivery was booked saw neither an edit's gain nor its harm).
 And one prefix is one draw of the model's path, so the forks
 are drawn from several checkpoints by default (`--checkpoints`, `choose_checkpoints`): the
-refinement's own run and others of its task at the same step — each run's own such step when
+refinement's own run and others of its task set up as it was (`ops.launch.Setup`: harness, model,
+harness options, layout, sandbox and clock; a later screen chooses again where the latest drew
+from a run set up otherwise) at the same step — each run's own such step when
 the step was named by what the run did there (`ops.experiments.find_step`: the first call of a
 tool, `write_file`, or `write_file|execute_code` for whichever came first; `changed:<path>`, the
 call that first changed that file; `made:<words>`, the call that first made a finding of the
@@ -283,9 +285,10 @@ checkpoint to the end, full runs of the training task with the edit from the fir
 full runs of each held-out eval through a private proxy (`ops/private.py`) that records into
 a 0700 temp folder outside the home and is deleted after — its calls reach the server through
 a relay launch the main proxy forwards and never records (`LaunchState.records`), and only
-verdicts leave. Every part runs the checkpoint's harness and model with the harness options
-its launch recorded, as its forks do (`ForkPlan.harness_options`); an MCP server, recorded by
-name only, reaches none of them, and the plan says so once.
+verdicts leave. Every part is set up as the checkpoint's run was, as its forks are
+(`ops.launch.Setup`, `prepare_batch`'s `setup`): its harness, model, harness options, layout,
+sandbox and clock; an MCP server, recorded by name only, reaches none of them, and the plan
+says so once.
 It is refused when the skill's file, its other files or the training eval
 changed since the checkpoint's run, and unless the proposal survived its latest complete
 screen (`validate.latest_screen`: a screen of more proposals, or one run to the end, can undo
@@ -396,7 +399,8 @@ its scripts and keys belong. `TUNINGFORK_SANDBOX=off` turns it off — the suite
 `tests/test_sandbox.py` turns it back on where bubblewrap can run. `TUNINGFORK_CLOCK=YYYY-MM-DD
 HH:MM:SS` starts every launch's clock at that instant (libfaketime under `LD_PRELOAD`, monotonic
 clocks left real): the harness reads the same date whichever day a run is made — the model
-reads it, and at a knife edge it decides — a fork reads its source's, the launch records it,
+reads it, and at a knife edge it decides — a fork reads its source's, as does every run of a
+validation, the launch records it,
 and a plan warns where the library is missing (`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere). The normalizer masks the
 sandbox's paths as it masks a launch's own (`NORMALIZER_VERSION` 3).
 

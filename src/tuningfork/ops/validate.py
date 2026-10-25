@@ -11,8 +11,9 @@ three ways, each arm against the original and drawn fresh:
 - **held out:** full runs of each held-out eval of the spec, verdicts only (`ops.private`):
   does it break a task it was not made for?
 
-Every run is given the harness and the model the checkpoint's run had, and the harness options
-its launch recorded, as its forks are: all but an MCP server, which a launch records by name only.
+Every run is set up as the checkpoint's run was, as its forks are (`ops.launch.Setup`): its
+harness and model, the harness options its launch recorded but an MCP server, which a launch
+records by name only, its layout, its sandbox and its clock.
 
 n is fixed in the plan, and a validation stands alone: it is never topped up or pooled with
 another. Its record is kept in the refinement's folder, `validations/<id>.json`: every
@@ -65,9 +66,9 @@ class ValidatePlan:
     #: The proxy's cap on a call's output: the held-out runs, which it never records, are
     #: held to it by their private proxy, as every other run here is by the proxy itself.
     max_output: int | None = None
-    #: The harness's own options, which every part's runs are given: the checkpoint's run's,
-    #: as its forks have them (`ForkPlan.harness_options`).
-    harness_options: dict[str, Any] = field(default_factory=dict)
+    #: How every part's runs are set up: as the checkpoint's run was, as its forks are
+    #: (`ForkPlan.setup`).
+    setup: Any = None
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -93,7 +94,7 @@ class ValidatePlan:
             "minimum": MINIMUM,
             "harness": self.harness,
             "model": self.model,
-            "harness_options": self.harness_options,
+            "setup": self.setup.to_json() if self.setup is not None else None,
             "screen": self.screen,
             "private": {
                 "under": str(self.private_base) if self.private_base else None,
@@ -257,22 +258,22 @@ def prepare_validate(
         store, run.id, str(refinement.step_idx), n=n, concurrency=concurrency, variant=variant,
         alpha=alpha, base_url=base_url, proxy=proxy,
     )
-    # Every part runs the harness and model the checkpoint's run had, with the harness options
-    # its launch recorded: the forks' own. A harness option changes what the model is told
-    # (Hermes's self_improvement takes away the tool that patches a skill), and a fresh run
-    # without it would measure the edit under another setup than the forks and the screen did.
+    # Every part runs the harness and model the checkpoint's run had, set up as its forks are:
+    # the harness options its launch recorded, its layout, its sandbox and its clock. Each
+    # changes what the model is told — Hermes's self_improvement takes away the tool that
+    # patches a skill, the clock gives the date — and a fresh run set up otherwise would measure
+    # the edit under another setup than the forks and the screen did.
     harness, model = forward.original.harness, forward.original.model
-    options = dict(forward.original.harness_options)
+    setup = forward.original.setup
     training_plans = {
         arm: prepare_batch(
             store, spec, eval_id=training.id, n=runs, model=model, harness=harness, skill_file=path,
-            concurrency=concurrency, base_url=base_url, proxy=forward.original.proxy,
-            harness_options=options or None,
+            concurrency=concurrency, base_url=base_url, proxy=forward.original.proxy, setup=setup,
         )
         for arm, path in (("original", baseline), ("edit", variant))
     }
     # The forks' warning that the run's MCP servers are left out, said once for every part.
-    dropped = forward.original.dropped_servers
+    dropped = setup.dropped_servers
     left_out = servers_warning(run.id, dropped) if dropped else None
     parts = "its forks, the training runs and the held-out runs" if held else "its forks and the training runs"
     for found in [*forward.original.warnings, *(note.message for note in training_plans["edit"].notes
@@ -288,7 +289,7 @@ def prepare_validate(
         n=n, runs=runs, alpha=alpha, concurrency=concurrency, harness=harness, model=model,
         proxy_url=proxy_url, forward=forward, training_plans=training_plans, screen=screen,
         held_out_recorded=held_recorded, private_base=private_base, keep_private=keep_private,
-        max_output=forward.original.proxy.raw.get("max_output"), harness_options=options, warnings=warnings,
+        max_output=forward.original.proxy.raw.get("max_output"), setup=setup, warnings=warnings,
     )
 
 
@@ -364,9 +365,9 @@ def execute_validate(
     record: dict[str, Any] = {
         "id": vid, "refinement": plan.refinement.id, "proposal": plan.proposal.id,
         "created_at": time.time(), "task": plan.task_id, "harness": plan.harness, "model": plan.model,
-        "harness_options": plan.harness_options,
-        # Which of the run's MCP servers every part went without: a launch records one by name only.
-        "dropped_servers": list(plan.forward.original.dropped_servers),
+        # How every part's runs were set up, the held-out ones among them, whose launches go with
+        # their private folders: the run's harness options, the MCP servers they went without.
+        "setup": plan.setup.to_json() if plan.setup is not None else None,
         # The process running it: a record still "running" after that process died was cut off.
         "pid": os.getpid(),
         "alpha": plan.alpha, "minimum": MINIMUM,
@@ -402,8 +403,7 @@ def execute_validate(
                 emit(progress, "validation", part="held_out", id=vid, eval=entry.id, arm=arm)
                 keep = plan.keep_private / f"{entry.id}-{arm}" if plan.keep_private else None
                 arms[arm] = [verdict.to_json() for verdict in run_verdict_only(
-                    store, plan.spec, entry, n=plan.runs, harness=plan.harness, model=plan.model,
-                    harness_options=plan.harness_options or None,
+                    store, plan.spec, entry, n=plan.runs, harness=plan.harness, model=plan.model, setup=plan.setup,
                     proxy_url=plan.proxy_url, skill_file=skill, concurrency=plan.concurrency, keep=keep,
                     max_output=plan.max_output, label=f"held-out {entry.id}, {arm}", progress=progress, cancel=cancel,
                 )]

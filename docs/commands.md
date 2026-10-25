@@ -461,8 +461,9 @@ it says what an arm would need to survive, and it refuses to run when nothing co
   at most 6); `-n N` — samples an arm, the original's included (default 20); `--alpha`.
 - `--to-end` — each arm's samples forks run to the end through the harness, the task's check
   deciding. They are drawn from several runs of the task at the same step (`--checkpoints`,
-  default 4), passing and failing by turns, and the report says whether the effect held at every
-  one. The original's forks an earlier screen drew there count again (`--fresh-original` draws
+  default 4), each set up as the run being refined was (the same harness, model, harness options,
+  sandbox and clock), passing and failing by turns, and the report says whether the effect held
+  at every one. The original's forks an earlier screen drew there count again (`--fresh-original` draws
   them anew). `--quick` forks each proposal 8 times and the original not at all: rates beside the
   original's earlier forks, never a verdict.
 - `--dry-run` — the plan, and what could survive; nothing sampled.
@@ -473,9 +474,9 @@ Validates a screened proposal with full runs, each arm against a fresh arm of th
 forks from the step to the end (does hitting the target carry the task?), full runs of the task
 with the edit from the first step (does it disturb an earlier step?), and full runs of each
 held-out task, kept only as verdicts (does it break what it was not made for?). Every run is
-given the harness, the model and the harness options of the run being refined, as its launch
-recorded them, except an MCP server, which a launch records by name only. Its record is what
-the gate reads: nine checks, G0–G8, each with its counts.
+set up as the run being refined was, as its launch recorded it: the harness, the model, the
+harness options but an MCP server (which a launch records by name only), the sandbox and the
+clock. Its record is what the gate reads: nine checks, G0–G8, each with its counts.
 
 - `-n N` forks an arm and `--runs N` full runs an arm (each default 5, at least 5).
 - `--keep-private <folder>` — keep the held-out runs' private recordings there, to debug them;

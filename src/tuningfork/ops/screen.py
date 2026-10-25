@@ -26,6 +26,7 @@ from typing import Any, Sequence
 
 from tuningfork.ops.common import Cancel, Cancelled, OperationError, Progress
 from tuningfork.ops.experiments import _cancellable, _stopped, _tracking, default_upstream, estimate, load, make_plan
+from tuningfork.ops.launch import setup_of
 from tuningfork.store.db import Store
 
 #: Proposals one screen may hold. Each costs n samples, and each widens the correction.
@@ -484,10 +485,11 @@ def choose_checkpoints(
     there: a tool, a file's first change, a finding's making (`ops.experiments.find_step`),
     or a list of tools — the step is each run's own such step; else the same index.
 
-    A run serves when its step exists and is the same kind of answer as the refinement's
-    (a call, or a reply), has the skill's text in its context — so the proposals' wording
-    can be swapped in there — and can be replayed up to it. The notes say which were
-    passed over, and why."""
+    A run serves when it was set up as the refinement's was (`ops.launch.Setup`: its harness,
+    model, harness options, layout, sandbox and clock, each forked as it was), when its step
+    exists and is the same kind of answer as the refinement's (a call, or a reply), has the
+    skill's text in its context — so the proposals' wording can be swapped in there — and can
+    be replayed up to it. The notes say which were passed over, and why."""
     from tuningfork.analysis.normalize import recorded_outcome
     from tuningfork.experiment.skill import locate
     from tuningfork.ops.experiments import find_step, not_done, tools_called
@@ -500,6 +502,7 @@ def choose_checkpoints(
         return chosen, notes
     own_kind = recorded_outcome(store.response(checkpoint.step), checkpoint.step.error).kind
     own_verdict = verdict_of(checkpoint.run)
+    own_setup = setup_of(store, checkpoint.run)
 
     def prefix(run_id: str, index: int) -> tuple[tuple[str, ...], ...]:
         return tuple(tuple(tools_called(store, found)) for found in store.steps(run_id) if found.idx < index)
@@ -510,6 +513,12 @@ def choose_checkpoints(
             continue
         verdict = verdict_of(other)
         if verdict is None:
+            continue
+        # Pooled with the refinement's own, its forks must be told what they are told: a run
+        # set up otherwise is another condition, not another draw of the same one.
+        otherwise = own_setup.differences(setup_of(store, other))
+        if otherwise:
+            notes.append(f"run {other.id[:8]} was set up otherwise: {'; '.join(otherwise)}")
             continue
         index = find_step(store, other, aligned) if aligned else checkpoint.step.idx
         if index is None:
@@ -691,14 +700,24 @@ def prepare_screen_to_end(
     chosen: list[Any] = []
     notes: list[str] = []
     again = None if fresh_original else earlier_checkpoints(store, checkpoint, refinement, wanted)
+    redrawn = None
     if again:
-        # Where the latest screen drew from, so that the original's forks there count again.
+        # Where the latest screen drew from, so that the original's forks there count again —
+        # unless it drew from a run set up otherwise, as a screen did before setups were compared.
         try:
             chosen = [checkpoint, *(load(store, run_id, str(index)) for run_id, index in again[1:])]
         except OperationError:
             chosen = []
+        own_setup = setup_of(store, checkpoint.run)
+        otherwise = [found.run.id[:8] for found in chosen[1:] if own_setup.differences(setup_of(store, found.run))]
+        if otherwise:
+            redrawn = (f"the latest screen drew from run(s) {', '.join(otherwise)}, set up otherwise than "
+                       f"run {checkpoint.run.id[:8]}: the checkpoints are chosen again")
+            chosen = []
     if not chosen:
         chosen, notes = choose_checkpoints(store, checkpoint, wanted, original_text=original_text, aligned=aligned)
+        if redrawn:
+            notes.insert(0, redrawn)
     prepared: dict[str, list[Any]] = {name: [] for name, _, _ in arms}
     baselines: list[Any] = []
     kept: list[Any] = []
@@ -724,7 +743,8 @@ def prepare_screen_to_end(
                 warnings.extend(f"{name}: {warning}" for warning in plans[name].warnings)
     if wanted > 1 and len(kept) < wanted:
         warnings.append(f"{len(kept)} checkpoint(s) of the {wanted} asked for: the task's other recorded runs "
-                        "serve only where the same step exists, has the skill in its context and replays"
+                        "serve only if set up as the refinement's was, and where the same step exists, has the "
+                        "skill in its context and replays"
                         + (" (" + "; ".join(notes[:3]) + ")" if notes else ""))
     replayed = [warning for warning in (replay_warning(store, found.run, found.step.idx) for found in kept) if warning]
     if replayed:

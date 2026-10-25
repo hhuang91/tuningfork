@@ -1162,9 +1162,13 @@ function validatePreview(plan) {
         ? `${plural(plan.training.runs_per_arm, "full run")} for each wording of each of: ${plan.held_out.map((entry) => entry.eval).join(", ")} — only their verdicts are kept`
         : "none, so the approval checks will refuse it"],
       ["runs", `${plan.total} in all`],
-      ["harness options", plan.harness_options && Object.keys(plan.harness_options).length
-        ? h("span", null, h("span", { class: "mono" }, JSON.stringify(plan.harness_options)),
+      ["harness options", plan.setup?.harness_options && Object.keys(plan.setup.harness_options).length
+        ? h("span", null, h("span", { class: "mono" }, JSON.stringify(plan.setup.harness_options)),
             `, given to every run, as run ${short(plan.checkpoint.run_id)} was launched with them`)
+        : null],
+      ["clock", plan.setup?.clock
+        ? h("span", null, "every run starts at ", h("span", { class: "mono" }, plan.setup.clock),
+            `, as run ${short(plan.checkpoint.run_id)} did`)
         : null],
     ]),
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),

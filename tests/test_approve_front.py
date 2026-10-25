@@ -34,7 +34,22 @@ class TestValidateFromATerminal:
                      "held out  5 full runs an arm of each of: 2", "only their verdicts are kept", "30 in all"):
             assert line in shown.output, (line, shown.output)
         assert MARKER not in shown.output
-        assert "  options   " not in shown.output  # the run was launched with none
+        assert "  options   " not in shown.output and "  clock     " not in shown.output  # nor pinned its clock
+
+    def test_the_plan_names_the_instant_every_run_starts_at(self, held_out_stack, monkeypatch):
+        import tuningfork.sandbox
+        from tuningfork.sandbox import FROM_ENV, SWITCH, Sandbox
+
+        made, proposal = screened(held_out_stack)
+        launch_id = held_out_stack.store.get_run(made.run_id).launch_id
+        held_out_stack.store.note_launch(launch_id, sandbox={"kind": "bubblewrap", "clock": "2026-10-08 09:00:00"})
+        monkeypatch.delenv(SWITCH, raising=False)
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, *, own=(), clock=FROM_ENV: (
+            Sandbox("/usr/bin/bwrap", "0.11.1", clock=None if clock == FROM_ENV else clock, clock_library="/lib/x.so"), None))
+        shown = invoke(held_out_stack.store.home, "refine", "validate", made.id[:8], proposal.id[:8],
+                       "--proxy", held_out_stack.url, "--dry-run")
+        assert shown.exit_code == 0, shown.output
+        assert "  clock     every run starts at 2026-10-08 09:00:00, as the checkpoint's run did" in shown.output
 
     def test_the_plan_names_the_options_every_run_is_launched_with(self, held_out_stack, monkeypatch):
         from tuningfork.harness import ADAPTERS

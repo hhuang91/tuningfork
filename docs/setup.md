@@ -351,7 +351,8 @@ readable, your home included, and the network is reachable: see [`SECURITY.md`](
 
 The harness puts the date in the model's prompt, and at a knife edge the date decides.
 `TUNINGFORK_CLOCK="2026-10-01 09:00:00"` starts every launch's clock at that instant, so the
-harness reads the same date whichever day a run is made, and a fork reads its source's. It uses
+harness reads the same date whichever day a run is made, and a fork reads its source's, as does
+every run of a validation. It uses
 libfaketime (`sudo apt install libfaketime`) under `LD_PRELOAD`, monotonic clocks left real;
 `TUNINGFORK_CLOCK_LIBRARY` names the library if it is elsewhere, and a plan warns when it is
 missing.

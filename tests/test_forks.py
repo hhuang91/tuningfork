@@ -499,8 +499,8 @@ class TestToEnd:
         launch = stack.store.get_launch(stack.store.get_run(recorded.run_id).launch_id)
         assert launch.settings["harness"] == {"self_improvement": False, "mcp_servers": servers}
         plan = prepare_fork(stack.store, recorded.run_id, "1", base_url=f"{stack.url}/v1")
-        assert plan.adapter.options == plan.harness_options == {"self_improvement": False}
-        assert plan.dropped_servers == ["tf"]
+        assert plan.adapter.options == plan.setup.options == {"self_improvement": False}
+        assert plan.setup.dropped_servers == ["tf"]
         assert any("MCP server(s) tf" in warning and "without them" in warning for warning in plan.warnings), plan.warnings
 
         plain = stack.record()  # recorded with no options: forked with none
@@ -747,3 +747,27 @@ class TestStoredMasks:
         assert replay.decide(first, wire, main).served is not None
         decided = replay.decide(second, wire, SimpleNamespace(main=True, thread=0, idx=1))
         assert decided.at_step and decided.mismatch is None
+
+
+def test_a_setup_says_how_another_one_differs():
+    """What a screen's notes say of a run it passed over (`Setup.differences`): every part of
+    how a launch was set up that changes what the model reads, the clock only where both ran in
+    the sandbox, and nothing of which run each was read from."""
+    from tuningfork.ops.launch import Setup
+
+    own = Setup(harness="hermes", model="m", run="a" * 32, recorded={"self_improvement": False}, layout="install",
+                sandbox={"kind": "bubblewrap", "clock": "2026-10-08 09:00:00"})
+    assert own.differences(Setup(harness="hermes", model="m", run="b" * 32, recorded={"self_improvement": False},
+                                 layout="install", sandbox={"kind": "bubblewrap", "version": "0.12",
+                                                            "clock": "2026-10-08 09:00:00"})) == []
+    other = Setup(harness="claude-code", model="n", recorded={}, layout=None, sandbox={"kind": "bubblewrap"})
+    assert own.differences(other) == [
+        "harness claude-code, not hermes", "model n, not m", 'harness options none, not {"self_improvement": false}',
+        "layout flat, not install", "its clock at the real time, not 2026-10-08 09:00:00",
+    ]
+    assert own.differences(Setup(harness="hermes", model="m", recorded={"self_improvement": False},
+                                 layout="install")) == ["without the sandbox, not in it"]
+    servers = Setup(harness="hermes", model="m", recorded={"self_improvement": False, "mcp_servers": {"tf": "x", "a": "y"}})
+    assert servers.options == {"self_improvement": False} and servers.dropped_servers == ["a", "tf"]
+    assert servers.to_json() == {"harness_options": {"self_improvement": False}, "dropped_servers": ["a", "tf"],
+                                 "layout": None, "sandboxed": False, "clock": None}
