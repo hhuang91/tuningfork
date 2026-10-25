@@ -387,7 +387,9 @@ tuningfork's own settings under a `tuningfork` key.
   line, gets its findings counted across the failed runs (`tuningfork tally`).
 - **`check_env`** names environment variables of yours a shell check may read, such as an LLM
   judge's key: `["OPENAI_API_KEY"]`. A check gets no others but a few like `PATH` and `LANG`
-  ([the sandbox](#the-sandbox)), and never one of tuningfork's own keys.
+  ([the sandbox](#the-sandbox)), and never one of tuningfork's own keys. Whatever the check runs
+  reads the variables it gets too, code the model left in the workspace included, and the network
+  is reachable.
 - **`held_out`** marks a task that judges an edit rather than shaping one: a batch never picks
   it, no agent may read its runs, and a validation runs it in a private folder that keeps only
   its verdicts.

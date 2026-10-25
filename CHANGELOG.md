@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.6.1 — a task's check runs in its run's sandbox
+
+A task's shell check can run what the model left in the workspace: a `conftest.py` its `pytest`
+finds, a module its `python -m` imports. It ran on the machine itself, with your environment.
+Where bubblewrap runs, it now runs in its run's sandbox, and everywhere it gets only a few of your
+variables. It still runs as you, as the run does.
+
+- **A check runs in its run's sandbox** where bubblewrap runs. It works in `/home/user/project`,
+  finds the final reply at `/home/user/reply.txt`, and has an empty home of its own. The rest of
+  the machine is read-only, and its `/tmp` and processes are its own. The recordings folder, the
+  runs' folders and the folders `TUNINGFORK_SANDBOX_HIDE` names are empty. Its task's folder shows
+  through, read-only, and so does a venv on its `PATH` that a hidden folder holds.
+- **A check's environment is made from scratch**, with the sandbox or without it. It gets the
+  variables a launch gets: `PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`. It also
+  gets those its task names in `check_env`, a new setting beside `check`, such as an LLM judge's
+  key: `"check_env": ["OPENAI_API_KEY"]`. tuningfork's own key variables (`TUNINGFORK_TOKEN`,
+  `TUNINGFORK_MCP_TOKEN`, `TUNINGFORK_PROPOSER_KEY`) never reach it, and a task whose `check_env`
+  names one is refused. `$TUNINGFORK_REPLY` and `$TUNINGFORK_SPEC_DIR` are given as before.
+- **A check tried runs the same way**, and so does one run along a run: `tuningfork recheck`, the
+  web UI's *Test this check…*, `check-along`, and the same through MCP. Each hides what its run's
+  launch hid, as the launch recorded it. A launch now also records which of those folders were
+  tuningfork's own.
+- **A fork is kept from what its source was kept from**, its launch and its check alike.
+- **Where there is no sandbox, it is said.** A batch's plan, `recheck`, `check-along` and *Test
+  this check…* say the check runs on the machine itself, unless you turned the sandbox off;
+  Connections says it either way.
+
+Changed:
+
+- **A check that read your environment** gets a variable only by name now: list what it reads
+  in `check_env`, a proxy's settings included (`https_proxy`, `SSL_CERT_FILE`).
+- **In the sandbox, a check's home is an empty one of its own**, so the tools it runs find none
+  of the settings and caches in yours (`~/.gitconfig`, pip's and uv's, `~/.netrc`, a model
+  cache), though your home stays readable where it is. `uv run --with …` downloads what it
+  installs. A check cannot read its run's home, where the harness kept its files.
+- **In the sandbox, a check writes nowhere but its workspace, its home and its `/tmp`.**
+- **In the sandbox, a check sees its own task's folder, and no other folder
+  `TUNINGFORK_SANDBOX_HIDE` names.** Keep its scripts and the files they read in its task's
+  folder. A batch's plan warns of a task file whose check could not see what is kept beside it,
+  such as one directly in `/tmp`.
+
+Runs launched before keep the task they were given, which names no `check_env`: their forks, and
+a check tried or run along them, get only the few variables a launch gets, none that the task
+names now. A task that names `check_env` now is a changed task, so a refinement begun from an
+earlier run of it is refused its validation: refine again from a run of the task as it is now. A
+screen run to the end counts the original's forks drawn before, judged as 0.6.0 judged them:
+`--fresh-original`, or *Draw the original's forks anew*, draws them again.
+
 ## 0.6.0 — on PyPI, a demo without a GPU, and redaction reworked
 
 tuningfork is on PyPI as `tuningfork-lab`, and `tuningfork demo` shows the whole loop in the web
