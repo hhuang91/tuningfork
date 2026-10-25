@@ -39,5 +39,7 @@ What it does **not** do:
   readable inside, your home included, and the network is reachable. It keeps runs alike,
   not an agent contained.
 - **It runs what you give it, as you.** A harness tuningfork launches runs with your
-  permissions, and a task's check is a shell command from its spec. Run harnesses, tasks and
+  permissions, and so does a task's check, a shell command from its spec. Where bubblewrap
+  runs, the check runs in its run's sandbox with none of your environment variables but those
+  its task names (`check_env`), and it can read what a launch can. Run harnesses, tasks and
   specs you trust.

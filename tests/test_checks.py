@@ -86,6 +86,50 @@ class TestAgainstARun:
         assert counts(stack.store) == before
         assert stack.store.get_run(run_id).result == result
 
+    def test_a_command_runs_where_a_runs_check_does(self, launched, monkeypatch):
+        """In the sandbox a launch's check runs in, its task's folder shown to it: a tried
+        command can run what the model left in the workspace as much as the task's own can."""
+        import tuningfork.sandbox
+
+        seen: dict = {}
+
+        class Recorded:
+            def check_command(self, command, *, workspace, environment, reply_file=None, spec_dir=None):
+                seen.update(command=command, spec_dir=spec_dir, reply_file=reply_file)
+                return ["/bin/sh", "-c", command], environment
+
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide: (Recorded(), None))
+        stack, run_id = launched
+        trial = try_check(stack.store, "test -f report.json", run=run_id)
+        assert trial.passed, trial.output
+        assert trial.to_json()["sandboxed"] is True and "unsandboxed" not in trial.to_json()
+        assert seen["command"] == "test -f report.json" and seen["reply_file"].name == "reply.txt"
+        assert seen["spec_dir"].resolve() == stack.spec.path.parent.resolve()
+        # A reply check runs nothing, so it needs no sandbox.
+        assert try_check(stack.store, {"reply_contains": "written"}, run=run_id).to_json()["sandboxed"] is False
+
+
+def test_a_check_reads_the_variables_its_task_names_and_no_others(tmp_path, mock_server, monkeypatch):
+    """An LLM judge's key, say: named in the task (`check_env`), it reaches the batch's check
+    and a check tried on the run; a variable the task does not name reaches neither."""
+    monkeypatch.setenv("JUDGE_KEY", "for-the-judge")
+    monkeypatch.setenv("CLOUD_API_KEY", "sk-not-for-a-check")
+    with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+        stack.item.tuningfork.check = 'test "$JUDGE_KEY" = for-the-judge && test -z "${CLOUD_API_KEY:-}"'
+        stack.item.tuningfork.check_env = ["JUDGE_KEY"]
+        stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+        plan = prepare_batch(
+            stack.store, stack.spec.path, n=1, model="m", harness="fake",
+            base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+        )
+        (outcome,) = execute_batch(stack.store, plan).outcomes
+        assert outcome.passed, outcome.check.output
+        trial = try_check(stack.store, run=outcome.run_id)
+        assert trial.plan.check_env == ["JUDGE_KEY"] and trial.passed, trial.output
+        # A check written here, not the task's, gets what the task lets its check read.
+        assert try_check(stack.store, 'test "$JUDGE_KEY" = for-the-judge', run=outcome.run_id).passed
+        assert not try_check(stack.store, 'test -n "${CLOUD_API_KEY:-}"', run=outcome.run_id).passed
+
 
 class TestWrittenHere:
     def test_a_reply_and_files(self, store):
@@ -167,3 +211,19 @@ def test_recheck_prints_the_verdict_beside_the_runs(launched):
     assert "pass — the run was judged fail when it ran" in other.output
     sample = CliRunner().invoke(app, ["recheck", "--reply", "no", "--reply-contains", "yes", "--home", home])
     assert sample.exit_code == 1 and "a reply and files you gave" in sample.output
+
+
+def test_recheck_says_when_the_check_cannot_run_in_the_sandbox(launched, monkeypatch):
+    import tuningfork.sandbox
+    from tuningfork.cli import app
+
+    stack, run_id = launched
+    home = str(stack.store.home)
+    monkeypatch.delenv(tuningfork.sandbox.SWITCH, raising=False)
+    monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide: (None, "bubblewrap is not installed"))
+    shown = CliRunner().invoke(app, ["recheck", run_id, "--home", home])
+    assert "not sandboxed: bubblewrap is not installed" in shown.output
+    # Turned off by the person, it is said nowhere, as a batch's plan says nothing then.
+    monkeypatch.setenv(tuningfork.sandbox.SWITCH, "off")
+    quiet = CliRunner().invoke(app, ["recheck", run_id, "--home", home])
+    assert "not sandboxed" not in quiet.output

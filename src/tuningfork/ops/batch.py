@@ -155,7 +155,7 @@ def prepare_batch(
     from tuningfork.ops.launch import check_launchable, check_proxy
     from tuningfork.paths import host_path
     from tuningfork.runner import lookalike_skill_files
-    from tuningfork.sandbox import for_launches, turned_off as sandbox_turned_off
+    from tuningfork.sandbox import for_launches, holds_kept, turned_off as sandbox_turned_off
     from tuningfork.specs import SpecError, load_spec, missing_files
 
     if harness not in ADAPTERS:
@@ -274,11 +274,18 @@ def prepare_batch(
         notes.append(Note(
             "warning",
             f"runs are not sandboxed: {unsandboxed}. Each sees its own folders, whose paths "
-            "differ from run to run, and the model reads them",
+            "differ from run to run, and the model reads them; and the task's check runs on this "
+            "machine itself, where it can run what the model wrote",
         ))
     if sandbox is not None and sandbox.clock_problem:
         notes.append(Note(
             "warning", f"{sandbox.clock_problem}: each run's date is the day it is made, which the model reads",
+        ))
+    if sandbox is not None and item.tuningfork.check and holds_kept(spec.directory):
+        notes.append(Note(
+            "warning",
+            f"the task file is in {spec.directory}, which a sandboxed check never sees whole: the check will not "
+            "find what is kept beside the task file. Move the task file into a folder of its own",
         ))
     if item.tuningfork.held_out:
         notes.append(Note(

@@ -129,10 +129,28 @@ class TestValidation:
             ({"tuningfork": {"max_turns": 0}}, "evals[0].tuningfork.max_turns"),
             ({"tuningfork": {"max_turns": 2.5}}, "evals[0].tuningfork.max_turns"),
             ({"tuningfork": {"max_turns": True}}, "evals[0].tuningfork.max_turns"),
+            ({"tuningfork": {"check_env": "OPENAI_API_KEY"}}, "evals[0].tuningfork.check_env"),
+            ({"tuningfork": {"check_env": ["OPENAI API KEY"]}}, "evals[0].tuningfork.check_env"),
+            ({"tuningfork": {"check_env": [3]}}, "evals[0].tuningfork.check_env"),
         ],
     )
     def test_each_field_of_an_eval(self, fields, expected):
         assert where(spec(**fields)) == [expected]
+
+    @pytest.mark.parametrize("name", ["TUNINGFORK_TOKEN", "TUNINGFORK_MCP_TOKEN", "TUNINGFORK_PROPOSER_KEY", "TUNINGFORK_REPLY"])
+    def test_a_check_is_never_given_a_variable_tuningfork_keeps_for_itself(self, name):
+        (problem,) = validate_spec(spec(tuningfork={"check_env": ["OPENAI_API_KEY", name]}))
+        assert problem.where == "evals[0].tuningfork.check_env"
+        assert f"keeps for itself: {name}" in problem.message
+
+    def test_the_variables_a_check_may_read_are_kept_and_written_back(self):
+        data = spec(tuningfork={"check": "true", "check_env": ["OPENAI_API_KEY", "JUDGE_URL"]})
+        assert validate_spec(data) == []
+        options = TuningforkOptions.from_dict(data["evals"][0]["tuningfork"])
+        assert options.check_env == ["OPENAI_API_KEY", "JUDGE_URL"]
+        assert options.to_dict()["check_env"] == ["OPENAI_API_KEY", "JUDGE_URL"]
+        # A spec that names none is written back without the key, as it was read.
+        assert "check_env" not in TuningforkOptions.from_dict({"check": "true"}).to_dict()
 
     @pytest.mark.parametrize(
         "check",
@@ -171,6 +189,50 @@ class TestValidation:
         both = run_check({"reply_matches": r"(?=.*212\.00)(?=.*process-receipt)"}, tmp_path, reply=reply)
         missing = run_check({"reply_matches": r"(?=.*212\.00)(?=.*archive)"}, tmp_path, reply=reply)
         assert both.passed and not missing.passed
+
+
+class TestACheckEnvironment:
+    """A shell check can run what the model left in the workspace (a `conftest.py` its `pytest`
+    finds), so it gets an environment made from scratch: a launch's few variables, and those
+    its task names — none of the person's others, sandbox or not."""
+
+    #: What the shell running a check may set by itself.
+    SHELL_MADE = {"PWD", "OLDPWD", "SHLVL", "_"}
+
+    def seen(self, tmp_path, **options) -> dict[str, str]:
+        from tuningfork.specs import run_check
+
+        result = run_check("env", tmp_path, keep=None, **options)
+        assert result.passed, result.output
+        return dict(line.split("=", 1) for line in result.output.splitlines() if "=" in line)
+
+    def test_none_of_the_persons_variables_reach_it_but_a_launchs(self, tmp_path, monkeypatch):
+        from tuningfork.specs import CHECK_INHERITED
+
+        monkeypatch.setenv("CLOUD_API_KEY", "sk-not-for-a-check")
+        monkeypatch.setenv("LANG", "C.UTF-8")
+        seen = self.seen(tmp_path)
+        assert "CLOUD_API_KEY" not in seen
+        assert seen["LANG"] == "C.UTF-8"
+        assert set(seen) - self.SHELL_MADE <= set(CHECK_INHERITED)
+
+    def test_it_reads_the_variables_its_task_names(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("JUDGE_KEY", "for-the-judge")
+        monkeypatch.setenv("CLOUD_API_KEY", "sk-not-for-a-check")
+        seen = self.seen(tmp_path, check_env=["JUDGE_KEY", "UNSET_ONE"])
+        assert seen["JUDGE_KEY"] == "for-the-judge"
+        assert "CLOUD_API_KEY" not in seen and "UNSET_ONE" not in seen
+
+    def test_never_a_key_of_tuningforks_own_however_a_spec_names_it(self, tmp_path, monkeypatch):
+        """A launch's eval is read back leniently: a name validation would refuse still gives
+        the check nothing."""
+        monkeypatch.setenv("TUNINGFORK_TOKEN", "the-proxys-key")
+        assert "TUNINGFORK_TOKEN" not in self.seen(tmp_path, check_env=["TUNINGFORK_TOKEN"])
+
+    def test_it_finds_the_reply_and_the_spec_folder(self, tmp_path):
+        reply = tmp_path / "reply.txt"
+        seen = self.seen(tmp_path, reply_file=reply, spec_dir=tmp_path)
+        assert seen["TUNINGFORK_REPLY"] == str(reply) and seen["TUNINGFORK_SPEC_DIR"] == str(tmp_path.resolve())
 
     def test_an_unknown_normalizer_is_named_with_the_known_ones(self):
         (problem,) = validate_spec(spec(tuningfork={"normalizers": ["tool_name", "vibes"]}))

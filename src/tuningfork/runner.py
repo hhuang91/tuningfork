@@ -504,7 +504,11 @@ class Launcher:
         # Beside the workspace, not in it: in no snapshot, and not among the run's files.
         reply_file = workspace.parent / "reply.txt"
         reply_file.write_text(reply, encoding="utf-8")
-        check = run_check(item.tuningfork.check, workspace, reply=reply, reply_file=reply_file, spec_dir=spec_dir)
+        # In the sandbox the launch ran in, if it ran in one: the check can run what the model wrote.
+        check = run_check(
+            item.tuningfork.check, workspace, reply=reply, reply_file=reply_file, spec_dir=spec_dir,
+            check_env=item.tuningfork.check_env, sandbox=self.sandbox,
+        )
         told = None
         if (
             self.tell and item.tuningfork.check and not timed_out and exited.stopped is None

@@ -164,7 +164,13 @@ workspace as it is, and the run counts, its result saying where it stopped (`sto
 
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
-agent's sight). A check that prints what it found wrong, one finding a line, gets a tally
+agent's sight). It can run what the model wrote — a `conftest.py` its `pytest` finds — so its
+environment is made from scratch, sandbox or not (`specs.check_environment`: a launch's few
+variables and those its task names in `check_env`, never tuningfork's keys), and where its run
+was sandboxed it runs in that sandbox (`Sandbox.check_command`): the workspace as
+`/home/user/project`, an empty home, the task's folder shown read-only, and a Python environment
+on its `PATH` that a hidden folder holds shown too. A check tried (`ops/checks.py`) and one run
+along a run run the same way. A check that prints what it found wrong, one finding a line, gets a tally
 (`ops/tally.py`; `tuningfork tally`, MCP's tally_failures, the divergence and experiment pages):
 each finding counted across a task's failed runs by condition, or a screen's failed forks by
 arm, its numbers and colours masked and a run counted once, the most common first — the failure to fix
@@ -372,7 +378,8 @@ name only, is not carried, and the plan warns). Where bubblewrap runs, every lau
 its home as `/home/user` and works in `/home/user/project`, the same in every run, because
 a few digits of a launch's own folder name were seen to change what the model did; the
 rest of the machine read-only, `/tmp` and its processes its own, and the recordings folder,
-the runs' folder and the spec's folder empty inside. A launch records its sandbox, a fork of
+the runs' folder and the spec's folder empty inside; its check runs there too, the spec's
+folder shown to it. A launch records its sandbox, a fork of
 a sandboxed run is refused without one, and a batch's plan warns when there is none.
 `TUNINGFORK_SANDBOX_HIDE` names folders every launch sees empty besides tuningfork's own, as
 PATH is written — where a benchmark keeps its checks' keys, which an agent given the file

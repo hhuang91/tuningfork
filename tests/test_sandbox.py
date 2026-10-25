@@ -66,6 +66,20 @@ def folders(tmp_path: Path) -> tuple[Path, Path]:
     return root / "home", root / "workspace"
 
 
+#: A check that says what it finds: run in a workspace, given the folder it should find empty
+#: and the person's home.
+LOOK = """\
+import json, os, sys
+hidden, real_home = sys.argv[1], sys.argv[2]
+print(json.dumps({
+    "cwd": os.getcwd(), "home": os.environ["HOME"], "files": sorted(os.listdir(".")),
+    "reply": open(os.environ["TUNINGFORK_REPLY"]).read(), "key": os.environ.get("CLOUD_API_KEY"),
+    "real_home_writable": os.access(real_home, os.W_OK), "hidden": sorted(os.listdir(hidden)),
+    "task": sorted(os.listdir(os.environ["TUNINGFORK_SPEC_DIR"])),
+}))
+"""
+
+
 class TestTheCommand:
     def test_paths_to_a_launchs_folders_are_written_as_it_sees_them(self):
         mounts = [(Path("/data/rec/batches/ab12cd34/0/workspace"), WORKSPACE),
@@ -171,6 +185,74 @@ class TestTheCommand:
         assert "sandbox" not in layout_setting(FakeAgent())
 
 
+class TestTheCheck:
+    """A run's check runs in the sandbox its launch ran in (`Sandbox.check_command`): it can run
+    what the model left in the workspace."""
+
+    def command(self, tmp_path: Path, *, hide=(), spec_dir=None, path="/usr/bin:/bin"):
+        workspace = tmp_path / "runs" / "0" / "workspace"
+        workspace.mkdir(parents=True)
+        reply = workspace.parent / "reply.txt"
+        reply.write_text("The report is written.")
+        environment = {"PATH": path, "TUNINGFORK_REPLY": str(reply)}
+        if spec_dir is not None:
+            environment["TUNINGFORK_SPEC_DIR"] = str(spec_dir)
+        argv, env = Sandbox("/usr/bin/bwrap", "0.11.1", hide=tuple(hide)).check_command(
+            "python3 check.py", workspace=workspace, environment=environment, reply_file=reply, spec_dir=spec_dir,
+        )
+        return argv, env, workspace, reply
+
+    def test_it_works_where_its_launch_worked_and_finds_the_reply_beside_it(self, tmp_path, elsewhere):
+        argv, env, workspace, reply = self.command(tmp_path)
+        assert argv[0] == "/usr/bin/bwrap" and argv[-4:] == ["--", "/bin/sh", "-c", "python3 check.py"]
+        joined = " ".join(argv)
+        assert f"--bind {workspace.resolve()} /home/user/project" in joined
+        assert f"--ro-bind {reply.resolve()} /home/user/reply.txt" in joined
+        assert "--chdir /home/user/project" in joined and "--unshare-pid" in joined
+        assert env["TUNINGFORK_REPLY"] == "/home/user/reply.txt"
+        assert (env["HOME"], env["TMPDIR"], env["PWD"]) == ("/home/user", "/tmp", "/home/user/project")
+
+    def test_its_tasks_folder_shows_through_a_folder_hidden_from_launches(self, tmp_path, elsewhere):
+        """A benchmark hides its whole folder from every launch, and its checks live in it."""
+        bench = tmp_path / "bench"
+        spec_dir = bench / "specs" / "design-md"
+        spec_dir.mkdir(parents=True)
+        argv, env, *_ = self.command(tmp_path, hide=[bench], spec_dir=spec_dir)
+        hidden_at, shown_at = argv.index(str(bench.resolve())), argv.index(str(spec_dir.resolve()))
+        assert argv[hidden_at - 1] == "--tmpfs" and argv[shown_at - 1] == "--ro-bind-try" and hidden_at < shown_at
+        assert env["TUNINGFORK_SPEC_DIR"] == str(spec_dir)  # shown where it is
+
+    @pytest.mark.parametrize("folder", [Path("/"), Path("/tmp"), Path("/home"), Path.home()])
+    def test_a_tasks_folder_that_holds_what_the_sandbox_keeps_is_not_shown_whole(self, tmp_path, folder):
+        """A task file at / or in /tmp itself: shown whole, its folder would bring back the
+        machine's /tmp — other programs' files and sockets — or other people's homes."""
+        argv, *_ = self.command(tmp_path, spec_dir=folder)
+        shown = [argv[at + 1] for at, part in enumerate(argv) if part == "--ro-bind-try"]
+        assert str(folder.resolve()) not in shown
+
+    def test_a_folder_hidden_inside_its_tasks_folder_stays_hidden(self, tmp_path, elsewhere):
+        spec_dir = tmp_path / "work"
+        recordings = spec_dir / ".tuningfork"
+        recordings.mkdir(parents=True)
+        argv, *_ = self.command(tmp_path, hide=[recordings], spec_dir=spec_dir)
+        shown_at, hidden_at = argv.index(str(spec_dir.resolve())), argv.index(str(recordings.resolve()))
+        assert argv[shown_at - 1] == "--ro-bind-try" and argv[hidden_at - 1] == "--tmpfs" and shown_at < hidden_at
+
+    def test_a_python_environment_a_hidden_folder_holds_stays_on_its_path(self, tmp_path, elsewhere):
+        """A venv kept in the recordings folder: a check's `python3` is often its own."""
+        recordings = tmp_path / "recordings"
+        venv = recordings / "venv"
+        (venv / "bin").mkdir(parents=True)
+        (venv / "pyvenv.cfg").write_text("home = /usr/bin\n")
+        tools = recordings / "tools"
+        tools.mkdir()
+        path = os.pathsep.join([str(venv / "bin"), str(tools), "/usr/bin"])
+        argv, env, *_ = self.command(tmp_path, hide=[recordings], path=path)
+        assert env["PATH"].split(os.pathsep) == [str(venv / "bin"), "/usr/bin"]
+        assert argv[argv.index(str(venv.resolve())) - 1] == "--ro-bind-try"
+        assert str(tools.resolve()) not in argv
+
+
 class TestTheBatchPlan:
     @pytest.fixture
     def stack(self, tmp_path, mock_server, monkeypatch):
@@ -192,6 +274,16 @@ class TestTheBatchPlan:
         monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide: (Sandbox("/usr/bin/bwrap", "0.11.1"), None))
         data = self.prepare(stack).to_json()
         assert data["sandbox"]["workspace"] == "/home/user/project" and data["notes"] == []
+
+    def test_a_task_file_in_tmp_itself_is_warned_of(self, stack, monkeypatch):
+        """Its check's scripts beside it are in the machine's /tmp, which a sandboxed check
+        never sees: shown whole, it would bring back other programs' files and sockets."""
+        import tuningfork.sandbox
+
+        monkeypatch.setattr(tuningfork.sandbox, "TMP", stack.spec.path.parent.resolve())
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide: (Sandbox("/usr/bin/bwrap", "0.11.1"), None))
+        (note,) = self.prepare(stack).to_json()["notes"]
+        assert note["level"] == "warning" and "never sees whole" in note["message"]
 
     def test_without_it_a_warning_says_why_and_what_changes(self, stack, monkeypatch):
         import tuningfork.sandbox
@@ -239,7 +331,7 @@ class TestInBubblewrap:
             )
             outcomes = runner.run(stack.spec, stack.item, 2).outcomes
             # Judged as ever: the original wording's report has the wrong keys, and the check,
-            # run outside the sandbox, found it where the harness wrote it.
+            # run in the sandbox too, found it where the harness wrote it.
             assert [(outcome.usable, outcome.passed) for outcome in outcomes] == [(True, False)] * 2, outcomes[0].stderr
             launch = stack.store.get_launch(stack.store.get_run(outcomes[0].run_id).launch_id)
             assert json.loads((Path(launch.workspace) / "report.json").read_text()) == {"count": 4, "total": 61.5}
@@ -248,6 +340,49 @@ class TestInBubblewrap:
             assert requests[0] == requests[1]  # nothing in the prompt tells one run from another
             assert launch.settings["sandbox"]["workspace"] == "/home/user/project"
             assert (Path(launch.home) / "project").is_dir()  # the mount point, made by tuningfork
+
+    def test_a_check_runs_where_its_launch_ran_and_sees_its_tasks_folder(self, sandboxed, tmp_path, monkeypatch):
+        from tuningfork.specs import run_check
+
+        _, workspace = folders(tmp_path)
+        (workspace / "look.py").write_text(LOOK)
+        reply = workspace.parent / "reply.txt"
+        reply.write_text("The report is written.")
+        monkeypatch.setenv("CLOUD_API_KEY", "sk-not-for-a-check")
+        spec_dir = FIXTURES / "formats"  # the task's folder, inside a folder hidden from launches
+        sandbox = Sandbox(sandboxed.executable, sandboxed.version, hide=(FIXTURES,))
+        result = run_check(
+            f'python3 look.py "{FIXTURES}" "{Path.home()}"', workspace, 60,
+            reply_file=reply, spec_dir=spec_dir, sandbox=sandbox, keep=None,
+        )
+        assert result.passed, result.output
+        seen = json.loads(result.output)
+        assert (seen["cwd"], seen["home"]) == ("/home/user/project", "/home/user")
+        assert seen["files"] == ["look.py"] and seen["reply"] == "The report is written."
+        assert seen["key"] is None and seen["real_home_writable"] is False
+        assert seen["task"] == sorted(os.listdir(spec_dir))
+        if hideable([FIXTURES], real_home=Path.home()):
+            assert seen["hidden"] == ["formats"]  # empty inside, but for its task's folder
+
+    def test_a_check_keeps_a_python_environment_the_recordings_folder_holds(self, sandboxed, tmp_path, monkeypatch, elsewhere):
+        """The recordings folder is empty inside, its keys with it — but for the venv on the
+        check's PATH that it holds."""
+        from tuningfork.specs import run_check
+
+        recordings = tmp_path / "recordings"
+        venv = recordings / "venv"
+        (venv / "bin").mkdir(parents=True)
+        (venv / "pyvenv.cfg").write_text("home = /usr/bin\n")
+        judge = venv / "bin" / "judge"
+        judge.write_text("#!/bin/sh\necho judged\n")
+        judge.chmod(0o755)
+        (recordings / ".access-token").write_text("the proxy's key")
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        monkeypatch.setenv("PATH", f"{venv / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}")
+        sandbox = Sandbox(sandboxed.executable, sandboxed.version, hide=(recordings,))
+        result = run_check(f'judge && test ! -e "{recordings / ".access-token"}"', workspace, 60, sandbox=sandbox)
+        assert result.passed and "judged" in result.output, result.output
 
     def test_a_fork_runs_where_its_source_ran_or_not_at_all(self, sandboxed, tmp_path, mock_server, monkeypatch):
         with task_stack(tmp_path, mock_server, monkeypatch) as stack:

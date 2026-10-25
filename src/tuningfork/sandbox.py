@@ -39,6 +39,9 @@ from tuningfork.harness.base import LaunchSpec
 #: What every launch's harness sees as its home, and as the folder it works in.
 HOME = PurePosixPath("/home/user")
 WORKSPACE = HOME / "project"
+#: Where a check finds the run's final reply: beside the workspace, as a run's is, in no
+#: snapshot and among none of the run's files.
+REPLY = HOME / "reply.txt"
 
 #: Every launch's own, and empty: nothing of the machine's there is seen inside.
 TMP = Path("/tmp")
@@ -244,6 +247,51 @@ class Sandbox:
             cwd=Path(workspace),
         )
 
+    def check_command(
+        self, command: str, *, workspace: Path, environment: dict[str, str],
+        reply_file: Path | None = None, spec_dir: Path | None = None,
+    ) -> tuple[list[str], dict[str, str]]:
+        """A task's shell check, run as its launch ran, and the environment it runs with: the
+        workspace seen as `WORKSPACE`, the reply as `REPLY`, the machine read-only, tuningfork's
+        folders and the ones the person hides empty, and a `/tmp` and processes of its own — a
+        check can run code the model wrote, and nothing it starts outlives it. Two kinds of
+        folder show through what is hidden, read-only: the task's own (`spec_dir`), where its
+        check scripts are, which a launch never sees; and a Python environment on the check's
+        `PATH` that a hidden folder holds — a venv kept in the recordings folder, its `python3`
+        — which holds no secret. Its clock is the machine's, as a check's always was."""
+        real_home = Path.home()
+        hidden = hideable(self.hide, real_home=real_home)
+        path = environment.get("PATH", "")
+        shown = _environments(path, hidden)
+        # Not the person's home, shown already, nor a folder that would bring back what every
+        # launch is kept from (`holds_kept`).
+        if spec_dir is not None and not holds_kept(spec_dir) and not _within(real_home.resolve(), Path(spec_dir).resolve()):
+            shown.insert(0, Path(spec_dir).resolve())
+        mounts = [(Path(workspace), WORKSPACE), *([(Path(reply_file), REPLY)] if reply_file is not None else [])]
+        env = {key: translate(value, mounts) for key, value in environment.items()}
+        if "PATH" in env:
+            # A folder of programs that is empty inside leaves its PATH, as it leaves a launch's.
+            env["PATH"] = os.pathsep.join(
+                entry for entry in path.split(os.pathsep)
+                if any(_within(Path(entry).resolve(), folder) for folder in shown)
+                or not any(_within(Path(entry).resolve(), folder) for folder in hidden)
+            )
+        env.update({"HOME": str(HOME), "TMPDIR": "/tmp", "PWD": str(WORKSPACE)})
+        arguments = [self.executable, *_base_arguments(real_home)]
+        # Outer folders before inner ones, a folder hidden before the same one shown: one shown
+        # inside a hidden folder shows, and one hidden inside a shown folder stays hidden.
+        ordered = sorted(
+            [*((folder, False) for folder in hidden), *((folder, True) for folder in shown)],
+            key=lambda pair: (len(pair[0].parts), pair[1]),
+        )
+        for folder, show in ordered:
+            arguments += ["--ro-bind-try", str(folder), str(folder)] if show else ["--tmpfs", str(folder)]
+        arguments += ["--bind", str(Path(workspace).resolve()), str(WORKSPACE)]
+        if reply_file is not None:
+            arguments += ["--ro-bind", str(Path(reply_file).resolve()), str(REPLY)]
+        arguments += ["--chdir", str(WORKSPACE), "--", "/bin/sh", "-c", command]
+        return arguments, env
+
 
 def for_launches(
     hide: Iterable[Path | str | None] = (), *, clock: str | None = FROM_ENV
@@ -322,6 +370,25 @@ def hideable(
             continue
         found.append(folder)
     return found
+
+
+def holds_kept(folder: Path | str) -> bool:
+    """Whether `folder` holds what the sandbox keeps from every launch, the machine's `/tmp`
+    or other people's homes: a task's folder like that is never shown to its check, since
+    shown whole it would bring them back — other programs' files and sockets among them."""
+    folder = Path(folder).resolve()
+    return any(_within(kept, folder) for kept in (TMP, Path("/home")))
+
+
+def _environments(path: str, hidden: Sequence[Path]) -> list[Path]:
+    """The Python environments on `path` that a hidden folder holds: a folder of programs
+    whose parent keeps a `pyvenv.cfg`, as a venv's `bin` does."""
+    found: list[Path] = []
+    for entry in filter(None, path.split(os.pathsep)):
+        folder = Path(entry).resolve().parent
+        if (folder / "pyvenv.cfg").is_file() and any(_within(folder, each) for each in hidden):
+            found.append(folder)
+    return list(dict.fromkeys(found))
 
 
 def _within(path: Path, folder: Path) -> bool:
