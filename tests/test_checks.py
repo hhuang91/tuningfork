@@ -196,6 +196,13 @@ class TestWrittenHere:
         trial = try_check(store, {"reply_contains": "done"}, reply="y" * (REPLY_SHOWN - 19) + " " + key + " done")
         assert trial.passed and key[:16] not in json.dumps(trial.to_json())
 
+    def test_a_long_reply_is_masked_as_far_as_it_is_shown(self, store, monkeypatch):
+        """From its start, as far as is masked (`specs.MASKED_MOST`): masking reads a text many times
+        over, in the process running the trial."""
+        monkeypatch.setattr("tuningfork.ops.checks.MASKED_MOST", 1000)
+        trial = try_check(store, {"reply_contains": "done"}, reply="a" * 2000 + " done")
+        assert trial.passed and trial.to_json()["reply"] == "a" * 1000
+
 
 class TestRefusals:
     @pytest.mark.parametrize(

@@ -391,6 +391,31 @@ class TestWhatACheckPrints:
         said = run_check("cat said.txt", tmp_path, check_env=list(values), masking=Masking()).output
         assert "K3vN5wLp" not in said and "rich2024" not in said, said
 
+    def test_a_long_output_is_masked_from_its_end(self, tmp_path, monkeypatch):
+        """Masking reads a text many times over, in the process running the check (found in review):
+        a long output is masked as far as its end needs, and even a caller keeping it whole is given
+        that much, the rest said cut."""
+        from tuningfork.specs import run_check
+        from tuningfork.store.masking import Masking
+
+        monkeypatch.setattr("tuningfork.specs.MASKED_MOST", 3000)
+        printed = "y" * 9000 + "\n" + self.KEY + "\n" + "x" * 1900
+        (tmp_path / "out.txt").write_text(printed, encoding="utf-8")
+        shorter = len(self.KEY) - len("<redacted>")  # what the mask takes off
+        kept = run_check("cat out.txt", tmp_path, masking=Masking())
+        assert self.KEY[-20:] not in kept.output and kept.output.endswith("<redacted>\n" + "x" * 1900)
+        assert len(kept.output) == 2000 and kept.cut == len(printed) - 2000 - shorter
+        whole = run_check("cat out.txt", tmp_path, masking=Masking(), keep=None)
+        assert len(whole.output) == 3000 - shorter and whole.cut == len(printed) - 3000
+
+    def test_a_long_reply_is_masked_from_its_start(self, tmp_path, monkeypatch):
+        from tuningfork.specs import REPLY_QUOTED, run_check
+        from tuningfork.store.masking import Masking
+
+        monkeypatch.setattr("tuningfork.specs.MASKED_MOST", 1000)
+        judged = run_check({"reply_contains": "a"}, tmp_path, reply="a" * 3000, masking=Masking())
+        assert judged.output.endswith("a" * REPLY_QUOTED + f"… (+{3000 - REPLY_QUOTED} chars)")
+
     def test_the_values_given_mask_every_text_it_masks(self, tmp_path):
         """A reply check masks what it looked for and the reply apart: values given once, as an
         iterator, mask both (found in review)."""

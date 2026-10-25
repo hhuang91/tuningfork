@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from tuningfork.ops.common import OperationError
-from tuningfork.specs import CHECK_KEPT
+from tuningfork.specs import CHECK_KEPT, MASKED_MOST
 from tuningfork.store.db import Run, Store
 from tuningfork.store.masking import Masked
 
@@ -247,7 +247,7 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None 
                            spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, check_env=plan.check_env,
                            sandbox=plan.sandbox, keep=keep, masking=store.masking, also=held)
     return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found,
-                      cut=result.cut, reply_shown=store.masking.text(plan.reply, also=held).value)
+                      cut=result.cut, reply_shown=store.masking.text(plan.reply[:MASKED_MOST], also=held).value)
 
 
 def try_check(store: Store, check: Any = None, **options: Any) -> CheckTrial:
@@ -348,8 +348,11 @@ def execute_check_along(
             reply = plan.trial.reply if end else ""
             seen[key] = execute_check_trial(store, replace(plan.trial, commit=commit, reply=reply), keep=None)
         trial = seen[key]
+        # An output past what is masked (`specs.MASKED_MOST`) is given from its end: its findings
+        # are not all there, and none of the run's is placed.
+        found = kept_findings(trial.output) | ({"findings_cut": True} if trial.cut else {})
         states.append({"before_step": before, "end": end, "commit": commit, "passed": trial.passed,
-                       "output": trial.output[-CHECK_KEPT:], **kept_findings(trial.output)})
+                       "output": trial.output[-CHECK_KEPT:], **found})
         emit(progress, "state", done=index + 1, total=len(plan.states))
     record = {"states": states, "steps": plan.steps, "at": time.time()}
     run = store.get_run(plan.trial.run.id)

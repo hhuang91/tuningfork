@@ -474,7 +474,8 @@ class TestTheEscapedReading:
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
-        assert peak < 10 * len(text), peak
+        # A place for each character, even in a compact array, would take some ten times its size.
+        assert peak < 4 * len(text), peak
 
 
 class TestOneBoundary:

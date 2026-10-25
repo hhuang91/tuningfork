@@ -178,7 +178,8 @@ still. A check tried (`ops/checks.py`) and one run along a run run in one like i
 bubblewrap runs, hiding what the run's launch hid. What a check prints is masked where it runs,
 every way storage reads a text (`run_check`'s `masking`, `Masking.text`, `config.text_spans`),
 before it is cut, kept or told to a harness — a reply check's reply before it is cut to its
-quote — and so is every place, written as it is or with JSON's escapes, where the value of a
+quote; a long output from its end, `MASKED_MOST` characters, where check-along places none of
+the run's findings — and so is every place, written as it is or with JSON's escapes, where the value of a
 variable it got whose name is a secret's stands
 (`config.secret_name`), or one of tuningfork's own keys (`access.held_secrets`), each eight
 characters or more as a mask takes a value (`config._FOUND`). A run's result, its launch's exit

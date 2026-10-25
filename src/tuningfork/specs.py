@@ -682,6 +682,12 @@ REPLY_QUOTED = 500
 #: The end of a check's output a verdict keeps, in characters.
 CHECK_KEPT = 2000
 
+#: How much of a check's output is masked to keep its end, and of a reply to quote its start, in
+#: characters: far more than a key's length, so what is kept lies wholly inside what was masked,
+#: and far less than a check can print. Masking reads a text many times over — seven to eighteen
+#: bytes for each where escapes are dense — in the process running the check, `serve` for a job.
+MASKED_MOST = 1_000_000
+
 
 def check_env_sources(home: Path | None = None) -> list[tuple[Path, list[str]]]:
     """Where the variables every check here may read are named, besides those its task names,
@@ -780,7 +786,9 @@ def run_check(
 
     The output is masked with `masking`, the store's (`tuningfork.store.masking.Masking`), every
     way storage reads a text (`Masking.text`), before it is cut: cut first, a key the cut fell
-    inside would keep its end. A reply check's reply is masked before it is cut to its quote.
+    inside would keep its end. A reply check's reply is masked before it is cut to its quote. A
+    long output is masked from its end, and a long reply from its start (`MASKED_MOST`): a caller
+    keeping the output whole is given that end, the rest counted as cut.
     Masked too, wherever it stands, is a value `also` names, and the value of each variable the
     check got whose name is a secret's (`config.secret_name`) — a key its task let it read, which
     a request that failed may print — each as a mask takes a value: eight characters or more,
@@ -819,14 +827,17 @@ def run_check(
     except subprocess.TimeoutExpired:
         return CheckResult(passed=False, output=f"check timed out after {timeout}s")
     output = ((completed.stdout or "") + (completed.stderr or "")).strip()
+    skipped = 0
     if masking is not None:
-        output = masking.text(output, also=[*also, *secret]).value
+        # Its end, if it is long: even a caller keeping it whole is given that, the rest said cut.
+        skipped = max(0, len(output) - MASKED_MOST)
+        output = masking.text(output[skipped:], also=[*also, *secret]).value
     kept = output[-keep:] if keep is not None else output
     return CheckResult(
         passed=completed.returncode == 0,
         output=kept,
         returncode=completed.returncode,
-        cut=len(output) - len(kept),
+        cut=skipped + len(output) - len(kept),
     )
 
 
@@ -843,12 +854,15 @@ def _reply_check(
         # (?=.*A)(?=.*B). Found on a real check: without it, A and B had to share a line.
         passed = re.search(wanted, reply, re.DOTALL) is not None
         verdict = f"the reply {'matches' if passed else 'does not match'} /{wanted}/"
+    more = 0
     if masking is not None:
-        verdict, reply = (masking.text(text, also=also).value for text in (verdict, reply))
+        # Its start, if it is long (`MASKED_MOST`): the quote is.
+        more = max(0, len(reply) - MASKED_MOST)
+        verdict, reply = (masking.text(text, also=also).value for text in (verdict, reply[:MASKED_MOST]))
     if not reply:
         quoted = "(none: the run ended without a reply)"
-    elif len(reply) > REPLY_QUOTED:
-        quoted = f"{reply[:REPLY_QUOTED]}… (+{len(reply) - REPLY_QUOTED} chars)"
+    elif len(reply) + more > REPLY_QUOTED:
+        quoted = f"{reply[:REPLY_QUOTED]}… (+{len(reply) + more - REPLY_QUOTED} chars)"
     else:
         quoted = reply
     return CheckResult(passed=passed, output=f"{verdict}\n\nthe reply:\n{quoted}", returncode=None)
