@@ -179,7 +179,7 @@ bubblewrap runs, hiding what the run's launch hid. What a check prints is masked
 every way storage reads a text (`run_check`'s `masking`, `Masking.text`, `config.text_spans`),
 before it is cut, kept or told to a harness — a reply check's reply before it is cut to its
 quote; a long output from its end, `MASKED_MOST` characters, read on before it (`MASKED_MARGIN`,
-`Masking.part`) so that a key where it starts is left out whole, and where check-along places none
+`Masking.part`) so that a key where it starts, up to that long, is left out whole, and where check-along places none
 of the run's findings — and so is every place, written as it is or with JSON's escapes, where the value of a
 variable it got whose name is a secret's stands
 (`config.secret_name`), or one of tuningfork's own keys (`access.held_secrets`), each eight

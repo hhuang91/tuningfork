@@ -326,9 +326,16 @@ def test_every_key_planted_reaches_the_store_where_nothing_masks_it(tmp_path, mo
     try:
         trials = [json.loads(row[0]) for row in connection.execute(
             "SELECT result FROM jobs WHERE kind = 'check-trial' AND result IS NOT NULL")]
+        (along,) = [json.loads(row[0])["check_along"] for row in connection.execute(
+            "SELECT result FROM runs WHERE json_extract(result, '$.check_along') IS NOT NULL")]
     finally:
         connection.close()
     for name, field in (("reply cut to its quote", "output"), ("reply cut to what a trial shows", "reply")):
         start, end = pieces(keys[name])
         cut = [trial[field] for trial in trials if start in (trial.get(field) or "")]
         assert cut and not any(end in text for text in cut), name
+    # So does where the run's last check's output is given from: check-along, given it whole, keeps
+    # the key's end and not its start.
+    start, end = pieces(keys["check output given from inside it"])
+    last = "\n".join(along["states"][-1]["findings"])
+    assert end in last and start not in last

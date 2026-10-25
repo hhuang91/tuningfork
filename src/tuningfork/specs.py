@@ -686,7 +686,8 @@ CHECK_KEPT = 2000
 #: characters: far less than a check can print. Masking reads a text many times over — seven to
 #: eighteen bytes for each where escapes are dense — in the process running the check, `serve` for
 #: a job. It reads `MASKED_MARGIN` more, on the side where the part given starts or ends, so that
-#: a key that place falls inside is found whole and left out (`Masking.part`).
+#: a key that place falls inside is found whole and left out (`Masking.part`): a key, or a value
+#: under a secret's name, up to that long — a PEM private key is a few thousand characters.
 MASKED_MOST = 1_000_000
 MASKED_MARGIN = 65_536
 
