@@ -1,7 +1,7 @@
 """The canary sweep: a key planted in each input of the loop, run as a person runs it — batches
-through the proxy with the fake agent, a scenario's among them, jobs, a held call edited and asked
-about, a label queued, an import, a server's errors — and every row and blob the recordings
-folder's store holds searched for each key.
+through the proxy with the fake agent, a scenario's among them, a chain told what its check
+printed, jobs, a held call edited and asked about, a label queued, an import, a server's errors —
+and every row and blob the recordings folder's store holds searched for each key's end.
 
 Only what a run is given, kept as it was given by design, may hold one: a launch's eval and
 variant, and a scenario's context, which a fork runs again as they were written.
@@ -21,11 +21,12 @@ from pathlib import Path
 import httpx
 import pytest
 
+from tuningfork.access import PROPOSER_KEY_FILE, write_secret
 from tuningfork.config import Settings
 from tuningfork.control import ControlClient
 from tuningfork.harness import ADAPTERS
 from tuningfork.proxy.app import create_app
-from tuningfork.specs import Eval, TaskSpec, TuningforkOptions
+from tuningfork.specs import CHECK_KEPT, Eval, TaskSpec, TuningforkOptions
 from tuningfork.demo.mock import MockTurn
 from tests.helpers import FakeAgent, serving
 
@@ -38,10 +39,17 @@ PLANTED = (
     "sampled answer", "imported chat", "check trial reply", "check trial file", "server error",
     "server error event", "edit at a breakpoint", "upstream password", "label queued", "wording tried",
     "question at a held call", "scenario's context", "password a server's error quotes",
+    "check output its cut falls inside", "variable named as a secret", "key of tuningfork's own",
 )
 #: Keys no pattern reads alone: masked by a password's name in a call, then quoted bare by the
 #: server's error — masked there only as a value the call's own mask took.
 NAMED_ONLY = ("password a server's error quotes",)
+#: Keys no pattern reads at all: masked by where they stand — a check's variable whose name is a
+#: secret's, printed bare; a key tuningfork holds, which a check found in its file.
+BY_PLACE = ("variable named as a secret", "key of tuningfork's own")
+#: How much of a key the sweep looks for: its random end, which is all of it that stands where a
+#: cut fell inside it.
+SEARCHED = 20
 
 SKILL = "---\nname: tally-report\n---\n\n# Tally report\n\nWrite the totals to config.json.\n"
 
@@ -56,9 +64,12 @@ def canaries() -> dict[str, str]:
     keys = {}
     for number, name in enumerate(PLANTED):
         while True:
-            key = ("Pw" if name in NAMED_ONLY else "sk-tfcanary") + f"{number:02d}" + "".join(
-                draw.choices(string.ascii_letters + string.digits, k=20))
-            if key not in redact(f"password={key}" if name in NAMED_ONLY else key):
+            key = ("Pw" if name in NAMED_ONLY + BY_PLACE else "sk-tfcanary") + f"{number:02d}" + "".join(
+                draw.choices(string.ascii_letters + string.digits, k=SEARCHED))
+            if name in BY_PLACE:
+                if redact(f"said={key}") == f"said={key}":
+                    break
+            elif key not in redact(f"password={key}" if name in NAMED_ONLY else key):
                 break
         keys[name] = key
     return keys
@@ -83,6 +94,8 @@ def model(keys: dict[str, str]):
                 "code": 500, "message": f"login refused for {keys[NAMED_ONLY[0]]}", "type": "server_error"})
         if last.startswith("edit me"):
             return MockTurn(content="Edited.")
+        if last.startswith("I ran my check"):
+            return MockTurn(content="Noted.")
         system = str(messages[0].get("content") or "") if messages else ""
         found = re.search(r"Working directory: (\S+)", system)
         workdir = found.group(1) if found else "."
@@ -102,7 +115,8 @@ def model(keys: dict[str, str]):
 
 
 def found_in_rows(database: Path, keys: dict[str, str]) -> list[str]:
-    """Each place a key stands in the database, as `<key> in <table>.<column>`, but where kept as given."""
+    """Each place a key's end stands in the database, as `<key> in <table>.<column>`, but where kept
+    as given."""
     connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
     try:
         places = []
@@ -113,7 +127,7 @@ def found_in_rows(database: Path, keys: dict[str, str]) -> list[str]:
                     continue
                 for name, key in keys.items():
                     if connection.execute(
-                        f"SELECT 1 FROM {table} WHERE instr(CAST({column} AS TEXT), ?) > 0 LIMIT 1", (key,)
+                        f"SELECT 1 FROM {table} WHERE instr(CAST({column} AS TEXT), ?) > 0 LIMIT 1", (key[-SEARCHED:],)
                     ).fetchone():
                         places.append(f"{name} in {table}.{column}")
         return places
@@ -122,7 +136,7 @@ def found_in_rows(database: Path, keys: dict[str, str]) -> list[str]:
 
 
 def found_in_blobs(home: Path, keys: dict[str, str]) -> list[str]:
-    """Each blob a key stands in, but a scenario's context, which its launches name."""
+    """Each blob a key's end stands in, but a scenario's context, which its launches name."""
     connection = sqlite3.connect(f"file:{home / 'tuningfork.db'}?mode=ro", uri=True)
     try:
         given = {row[0] for row in connection.execute(
@@ -133,7 +147,7 @@ def found_in_blobs(home: Path, keys: dict[str, str]) -> list[str]:
     return [
         f"{name} in blob {path.parent.name}{path.name}"
         for path in sorted((home / "blobs").rglob("*")) if path.is_file() and path.parent.name + path.name not in given
-        for name, key in keys.items() if key.encode() in path.read_bytes()
+        for name, key in keys.items() if key[-SEARCHED:].encode() in path.read_bytes()
     ]
 
 
@@ -145,23 +159,32 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
 
     monkeypatch.setitem(ADAPTERS, "fake", FakeAgent)
     monkeypatch.setenv("TF_CANARY_ENVIRONMENT", keys["environment"])
+    monkeypatch.setenv("TF_CANARY_TOKEN", keys["variable named as a secret"])
     mock_server.responder = model(keys)
     mock_server.props = {"default_generation_settings": {"n_ctx": 65536, "params": {"temperature": 1.0}}}
     skill = tmp_path / "spec" / "skills-src" / "tally-report"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    # A key tuningfork holds, which no check is given, but one finds in its file.
+    home = tmp_path / "home"
+    held = write_secret(home / PROPOSER_KEY_FILE, keys["key of tuningfork's own"])
+    # The check ends on a key, then just enough more that the cut a verdict makes falls inside it.
+    cut = keys["check output its cut falls inside"]
     check = (
-        f"cat config.json; echo; echo env=$TF_CANARY_ENVIRONMENT; echo literal={keys['check command']}; "
+        f"cat config.json; echo; echo env=$TF_CANARY_ENVIRONMENT; echo said=$TF_CANARY_TOKEN; cat {held}; "
+        f"echo literal={keys['check command']}; printf '%s' {cut}; "
+        f"python3 -c \"import sys; sys.stdout.write('x' * {CHECK_KEPT - (len(cut) - 6)})\"; "
         "python3 -c \"import json,sys; d=json.load(open('config.json')); sys.exit(0 if d.get('row_count')==4 else 1)\""
     )
-    # The check reads the planted variable as its task lets it (`check_env`): it gets no other
+    # The check reads the planted variables as its task lets it (`check_env`): it gets no other
     # of the person's.
     item = Eval(
         id="1",
         prompt=f"Read .env and write config.json with row_count 4. My key is {keys['prompt']}.",
         files=[{"path": ".env", "content": f"OPENAI_API_KEY={keys['input file']}\n"}],
         tuningfork=TuningforkOptions(
-            check=check, check_env=["TF_CANARY_ENVIRONMENT"], skills=["tally-report"], max_turns=6, timeout=60,
+            check=check, check_env=["TF_CANARY_ENVIRONMENT", "TF_CANARY_TOKEN"], skills=["tally-report"],
+            max_turns=6, timeout=60,
         ),
     )
     spec = TaskSpec(skill_name="tally-report", evals=[item], path=tmp_path / "spec" / "spec.json",
@@ -176,11 +199,10 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
     scenario = TaskSpec(
         skill_name="tally-report", path=tmp_path / "spec" / "scenario.json", skill_dir="skills-src/tally-report",
         evals=[Eval(id="2", prompt=item.prompt, files=item.files, tuningfork=TuningforkOptions(
-            check=check, check_env=["TF_CANARY_ENVIRONMENT"], skills=["tally-report"], max_turns=6, timeout=60,
-            context="context.json"))],
+            check=check, check_env=["TF_CANARY_ENVIRONMENT", "TF_CANARY_TOKEN"], skills=["tally-report"],
+            max_turns=6, timeout=60, context="context.json"))],
     )
     scenario.path.write_text(json.dumps(scenario.to_dict()), encoding="utf-8")
-    home = tmp_path / "home"
     upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_server.app), timeout=30)
     settings = Settings(upstream_base_url=f"http://tuningfork:{keys['upstream password']}@upstream.test", home=home,
                         max_inflight=4)
@@ -201,6 +223,8 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
             # A batch run through the proxy: the ordinary recording, and its check; and a scenario's.
             (run_id,) = job("batch", {"spec": str(spec.path), "n": 1, "harness": "fake", "model": "m"})["links"]["runs"]
             job("batch", {"spec": str(scenario.path), "n": 1, "harness": "fake", "model": "m"})
+            # A chain whose harness is told what the check printed.
+            job("chain", {"spec": str(spec.path), "n": 1, "harness": "fake", "model": "m", "tell": True})
             # Jobs on it: a resample, an A/B of a wording, a fork to the end, the check tried and run along it.
             job("resample", {"run": run_id, "step": "1", "n": 2})
             job("ab", {"run": run_id, "step": "1", "n": 1, "exploratory": True, "variant_name": "canary",
@@ -256,6 +280,7 @@ def test_no_key_planted_in_a_run_is_kept_by_the_store(tmp_path, mock_server, mon
 def test_every_key_planted_reaches_the_store_where_nothing_masks_it(tmp_path, mock_server, monkeypatch):
     """The sweep's control: with no patterns, each key is found — so each input does reach the store,
     and the sweep finding none means the store masked it. An upstream's password is taken from its
-    address by its place, whatever the patterns."""
+    address by its place, whatever the patterns, and so are the value of a check's variable named as
+    a secret's and a key tuningfork holds."""
     found = swept(tmp_path, mock_server, monkeypatch, canaries(), patterns=())
-    assert {place.split(" in ")[0] for place in found} == set(PLANTED) - {"upstream password"}
+    assert {place.split(" in ")[0] for place in found} == set(PLANTED) - {"upstream password", *BY_PLACE}

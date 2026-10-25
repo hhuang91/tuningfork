@@ -221,7 +221,8 @@ def prepare_check_trial(
 def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None = CHECK_KEPT) -> CheckTrial:
     """Run the check in a throwaway folder laid out as a run's: the workspace, and the reply
     in a file beside it (`$TUNINGFORK_REPLY`). Nothing is kept, and nothing recorded. The
-    output is its last `keep` characters, as a verdict keeps it; None, all of it."""
+    output is masked as a verdict's is, and is its last `keep` characters; None, all of it."""
+    from tuningfork.access import held_secrets
     from tuningfork.snapshots import Snapshots
     from tuningfork.specs import inside, run_check
 
@@ -241,7 +242,7 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None 
         reply_file.write_text(plan.reply, encoding="utf-8")
         result = run_check(plan.check, workspace, plan.timeout, reply=plan.reply, reply_file=reply_file,
                            spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, check_env=plan.check_env,
-                           sandbox=plan.sandbox, keep=keep)
+                           sandbox=plan.sandbox, keep=keep, masking=store.masking, also=held_secrets(store.home))
     return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found,
                       cut=result.cut)
 
@@ -349,9 +350,9 @@ def execute_check_along(
         emit(progress, "state", done=index + 1, total=len(plan.states))
     record = {"states": states, "steps": plan.steps, "at": time.time()}
     run = store.get_run(plan.trial.run.id)
-    # The result as it is stored, masked already, and the record masked once beside it: masked
-    # again, a command's second password would fall too.
-    store.annotate_run(run.id, result=Masked({**(run.result or {}), ALONG: store.masking.value(record)}))
+    # The result as it is stored, masked already, and the record beside it, made of what the check
+    # printed, masked where it ran: masked again, a command's second password would fall too.
+    store.annotate_run(run.id, result=Masked({**(run.result or {}), ALONG: record}))
     return {"run": run.id, **record, "made": made_by_calls(record) or []}
 
 

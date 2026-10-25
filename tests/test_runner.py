@@ -414,6 +414,20 @@ class TestBatchRunner:
         stored = store.get_run(outcome.run_id).result
         assert stored["passed"] is passed and stored["check_output"] == outcome.check.output
 
+    def test_what_the_check_printed_is_kept_as_it_was_masked_where_it_ran(self, store, tmp_path):
+        """Masked once, where the check ran, before it was cut: masked again as the run's result is
+        kept, a command's second password would fall too."""
+        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        key = "sk-" "tfcheckprints4Q7xZ2mN8pL4vR6tY"
+        spec, item = make_spec(tmp_path, check=f"echo '{command}'; echo 'key {key}'; exit 1")
+        runner = make_runner(store, tmp_path, GOOD_REPORT)
+        runner.adapter = RecordingHarness(GOOD_REPORT, store)
+
+        (outcome,) = runner.run(spec, item, 1).outcomes
+
+        assert key not in outcome.check.output and "-pZq8xK3vN5wLp" in outcome.check.output
+        assert store.get_run(outcome.run_id).result["check_output"] == outcome.check.output
+
     def test_a_shell_check_finds_the_reply_in_a_file_beside_the_workspace(self, store, tmp_path):
         spec, item = make_spec(tmp_path, check='grep -q "Total: 61.5" "$TUNINGFORK_REPLY"')
         runner = make_runner(store, tmp_path, GOOD_REPORT)

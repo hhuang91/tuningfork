@@ -188,10 +188,11 @@ tuningfork chain show <id> --diff
 ```
 
 `--tell` gives each run's harness the check's verdict and output as the user's next turn, before
-its review: what a person who looked at the result would say. `await_review` lets Hermes's review
-finish before the process exits, and `review_every_turn` makes it due after every turn; without
-both, Hermes's loop never acts in a one-shot launch. `--budget-seconds N` stops once the links'
-model calls have taken N seconds, so two loops can be given the same time. `chain show --diff`
-shows who changed the skill after each run, and the lines they changed; the web UI's Chains page
-shows the same. The [case study](../examples/hermes-architecture-diagram/README.md) sets this
-loop against an agent with tuningfork's tools.
+its review: what a person who looked at the result would say. The output is masked as tuningfork
+keeps it, so a key the check printed reaches the harness as `<redacted>`. `await_review` lets
+Hermes's review finish before the process exits, and `review_every_turn` makes it due after every
+turn; without both, Hermes's loop never acts in a one-shot launch. `--budget-seconds N` stops
+once the links' model calls have taken N seconds, so two loops can be given the same time.
+`chain show --diff` shows who changed the skill after each run, and the lines they changed; the
+web UI's Chains page shows the same. The [case study](../examples/hermes-architecture-diagram/README.md)
+sets this loop against an agent with tuningfork's tools.

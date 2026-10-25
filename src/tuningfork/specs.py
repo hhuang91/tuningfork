@@ -761,6 +761,8 @@ def run_check(
     check_env: Sequence[str] = (),
     sandbox: Any = None,
     keep: int | None = CHECK_KEPT,
+    masking: Any = None,
+    also: Iterable[str] = (),
 ) -> CheckResult:
     """Judge a finished run: a shell command run in its workspace, or a reply check.
 
@@ -776,15 +778,28 @@ def run_check(
     person's), and, given the `sandbox` its launch ran in, runs there
     (`tuningfork.sandbox.Sandbox.check_command`).
 
+    The output is masked with `masking`, the store's (`tuningfork.store.masking.Masking`),
+    before it is cut: cut first, a key the cut fell inside would keep its end. Masked too is
+    every place where a value `also` names stands, and the value of each variable the check got
+    whose name is a secret's (`config.secret_name`): a key its task let it read, which a request
+    that failed may print. What keeps the output, shows it or tells it to a harness passes the
+    store's masking; None masks nothing.
+
     No check means no verdict — recorded as `None`-ish rather than silently passing, since
     a check that does not run must never look like a success.
     """
+    from tuningfork.config import secret_name
+
     kind = check_kind(command)
     if kind is None:
         return CheckResult(passed=False, output="no check command defined", returncode=None)
     if kind in REPLY_CHECKS:
-        return _reply_check(kind, command[kind], reply or "")
+        judged = _reply_check(kind, command[kind], reply or "")
+        if masking is not None:
+            judged.output = masking.value(judged.output, also=also)
+        return judged
     environment = check_environment(check_env, reply_file=reply_file, spec_dir=spec_dir)
+    secret = [value for name, value in environment.items() if secret_name(name)]
     if sandbox is not None:
         argv, environment = sandbox.check_command(
             command, workspace=Path(workspace), environment=environment, reply_file=reply_file, spec_dir=spec_dir,
@@ -804,6 +819,8 @@ def run_check(
     except subprocess.TimeoutExpired:
         return CheckResult(passed=False, output=f"check timed out after {timeout}s")
     output = ((completed.stdout or "") + (completed.stderr or "")).strip()
+    if masking is not None:
+        output = masking.value(output, also=[*also, *secret])
     kept = output[-keep:] if keep is not None else output
     return CheckResult(
         passed=completed.returncode == 0,

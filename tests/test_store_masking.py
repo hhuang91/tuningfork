@@ -269,6 +269,21 @@ class TestTheRestOfTheStore:
         run = store.get_run(step.run_id)
         assert KEY not in json.dumps([run.label, run.parity, run.result])
 
+    def test_a_field_masked_where_it_was_made_is_kept_as_it_is(self, store):
+        """A check's output, masked where the check ran, before it was cut: the rest of a run's
+        result, and of its launch's exit, is masked as the store masks."""
+        output = store.masking.value(COMMAND)
+        assert "-pZq8xK3vN5wLp" in output  # masked once, the second password stands
+        step = store.record_step(request=request_with([text_message("hi")]))
+        result = {"check_output": output, "told": {"message": output}, "label": f"api_key={KEY}"}
+        store.annotate_run(step.run_id, result=store.masking.of(result, masked=("check_output", "told")))
+        kept = store.get_run(step.run_id).result
+        assert kept["check_output"] == output and kept["told"] == {"message": output}
+        assert KEY not in kept["label"] and set(kept) == set(result)
+        launch = store.create_launch(kind="batch", eval={})
+        store.end_launch(launch.id, exit=store.masking.of({"told": {"message": output}}, masked=("told",)))
+        assert store.get_launch(launch.id).exit == {"told": {"message": output}}
+
     def test_a_launch_s_eval_and_variant_are_kept_as_given(self, store):
         """A fork runs them again as they were written: masked where they are shown or sent."""
         launch = store.create_launch(

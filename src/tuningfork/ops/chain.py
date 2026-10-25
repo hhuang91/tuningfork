@@ -413,6 +413,9 @@ def skill_edits(
     side_call = getattr(adapter, "side_call", None)
     edits: list[dict[str, Any]] = []
     review: dict[str, Any] | None = None
+    # The message is the check's output masked where it ran; the request that carried it is kept
+    # masked again, which can mask more (masking is not idempotent).
+    told_as = {told, _as_requested(store, told)} if told else set()
     for run in store.launch_runs(launch_id):
         for step in store.steps(run.id):
             request = store.harness_request(step)
@@ -423,7 +426,7 @@ def skill_edits(
                 review["ended"] = not step.error and (step.status or 200) < 400
             elif not run.is_thread:
                 thread = "task"
-            elif told and _last_user(request) == told:
+            elif _last_user(request) in told_as:
                 thread = "told"
             else:
                 thread = run.role or "thread"
@@ -446,6 +449,15 @@ def skill_edits(
                 if thread == "review" and review is not None:
                     review["edit_calls"] += 1
     return edits, review
+
+
+def _as_requested(store: Store, message: str) -> str:
+    """`message` as the store keeps a request that carries it as the user's turn."""
+    kept = store.masking.value({"messages": [{"role": "user", "content": message}]})
+    try:
+        return str(kept["messages"][0]["content"])
+    except (KeyError, IndexError, TypeError):
+        return message
 
 
 def _last_user(request: dict[str, Any]) -> str:

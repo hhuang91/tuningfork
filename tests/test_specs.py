@@ -262,6 +262,87 @@ class TestACheckEnvironment:
         assert seen["TUNINGFORK_REPLY"] == str(reply) and seen["TUNINGFORK_SPEC_DIR"] == str(tmp_path.resolve())
 
 
+class TestWhatACheckPrints:
+    """What a check prints is masked where it runs, with the store's masking, before it is cut,
+    kept or told to a harness."""
+
+    #: A key in a shape every pattern set masks whole, written in two pieces as tests write keys.
+    KEY = "sk-" "tfcheckprints4Q7xZ2mN8pL4vR6tY"
+
+    def test_a_key_the_cut_falls_inside_is_masked_whole(self, tmp_path):
+        """Found mapping the store's second half: the output was cut to its end before anything
+        masked it, and a key the cut fell inside kept its end, which no pattern reads alone."""
+        from tuningfork.specs import CHECK_KEPT, run_check
+        from tuningfork.store.masking import Masking
+
+        tail = self.KEY[6:]
+        (tmp_path / "out.txt").write_text(self.KEY + "x" * (CHECK_KEPT - len(tail)), encoding="utf-8")
+        assert run_check("cat out.txt", tmp_path).output.startswith(tail)  # unmasked, the cut keeps its end
+        masked = run_check("cat out.txt", tmp_path, masking=Masking())
+        assert tail not in masked.output and masked.output.startswith("<redacted>")
+
+    def test_a_variable_named_as_a_secret_is_masked_wherever_its_value_stands(self, tmp_path, monkeypatch):
+        """A key its task lets the check read, printed by a request that failed: no pattern reads
+        it alone, but its name is a secret's. A variable named otherwise is printed as it is."""
+        from tuningfork.specs import run_check
+        from tuningfork.store.masking import Masking
+
+        monkeypatch.setenv("JUDGE_API_TOKEN", "Pw4judge" "Q8zK2mX7")
+        monkeypatch.setenv("JUDGE_REGION", "eu-west-" "1abcdefgh")
+        command = 'echo "refused $JUDGE_API_TOKEN in $JUDGE_REGION"'
+        names = ["JUDGE_API_TOKEN", "JUDGE_REGION"]
+        printed = run_check(command, tmp_path, check_env=names).output
+        assert printed == "refused Pw4judgeQ8zK2mX7 in eu-west-1abcdefgh" and Masking().value(printed) == printed
+        said = run_check(command, tmp_path, check_env=names, masking=Masking()).output
+        assert said == "refused <redacted> in eu-west-1abcdefgh"
+
+    def test_tuningforks_own_keys_are_masked_wherever_they_stand(self, tmp_path, monkeypatch):
+        """No check is given one, but one can find a key in a file the model's code read."""
+        from tuningfork.access import held_secrets, mcp_token_path, write_secret, write_token
+        from tuningfork.specs import run_check
+        from tuningfork.store.masking import Masking
+
+        for name in ("TUNINGFORK_TOKEN", "TUNINGFORK_MCP_TOKEN"):
+            monkeypatch.delenv(name, raising=False)
+        home = tmp_path / "home"
+        write_token(home, "proxys-own-" "key-4Q7xZ2")
+        write_secret(mcp_token_path(home), "mcp-own-" "key-8pL4vR")
+        monkeypatch.setenv("TUNINGFORK_PROPOSER_KEY", "proposer-" "key-6tY0aB")
+        held = held_secrets(home)
+        assert set(held) == {"proxys-own-key-4Q7xZ2", "mcp-own-key-8pL4vR", "proposer-key-6tY0aB"}
+        (tmp_path / "found.txt").write_text(" ".join(held), encoding="utf-8")
+        said = run_check("cat found.txt", tmp_path, masking=Masking(), also=held).output
+        assert said == "<redacted> <redacted> <redacted>"
+        # A reply check quotes the reply, which can hold one too.
+        quoted = run_check({"reply_contains": "found"}, tmp_path, reply=f"found {held[0]}", masking=Masking(),
+                           also=held).output
+        assert held[0] not in quoted and "found <redacted>" in quoted
+
+    def test_a_reply_checks_output_is_masked_too(self, tmp_path):
+        """It quotes the reply, which a trial takes as a person typed it."""
+        from tuningfork.specs import run_check
+        from tuningfork.store.masking import Masking
+
+        judged = run_check({"reply_contains": "done"}, tmp_path, reply=f"done with {self.KEY}", masking=Masking())
+        assert judged.passed and self.KEY not in judged.output and "done with <redacted>" in judged.output
+
+    def test_without_the_stores_masking_nothing_is_masked(self, tmp_path):
+        from tuningfork.specs import run_check
+
+        assert run_check(f"echo {self.KEY}", tmp_path).output == self.KEY
+
+    @pytest.mark.parametrize(("name", "secret"), [
+        ("OPENAI_API_KEY", True), ("DB_PASSWORD", True), ("DB_PASS", True), ("GITHUB_TOKEN", True),
+        ("AWS_SECRET_ACCESS_KEY", True), ("client_secret", True), ("STRIPE_KEY", True),
+        ("HTTPS_PROXY", False), ("SSL_CERT_FILE", False), ("NEXT_PAGE_TOKEN", False), ("BYPASS", False),
+        ("PATH", False), ("STRIPE_PUBLIC_KEY", False), ("API_KEY_FILE", False), ("TOKEN_URL", False),
+    ])
+    def test_a_variables_name_is_a_secrets_as_the_patterns_read_one(self, name, secret):
+        from tuningfork.config import secret_name
+
+        assert secret_name(name) is secret
+
+
 class TestTheMachinesCheckEnv:
     """What every check on a machine reads goes in its config, beside the endpoints it protects:
     a proxy's settings, which belong to no task file."""

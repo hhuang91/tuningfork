@@ -175,7 +175,12 @@ run ran in (`Sandbox.check_command`): the workspace as
 one of tuningfork's own, `own`, nor one holding `/tmp` or `/home`), a Python environment on its
 `PATH` that a hidden folder holds shown too, and what is hidden inside a shown folder hidden
 still. A check tried (`ops/checks.py`) and one run along a run run in one like it wherever
-bubblewrap runs, hiding what the run's launch hid. A check that prints what it found wrong, one finding a line, gets a tally
+bubblewrap runs, hiding what the run's launch hid. What a check prints is masked where it runs,
+with the store's masking (`run_check`'s `masking`), before it is cut, kept or told to a harness —
+with every place too where the value of a variable it got whose name is a secret's stands
+(`config.secret_name`), or one of tuningfork's own keys (`access.held_secrets`) — and a run's
+result, its launch's exit and its check along it keep it so, masked once.
+A check that prints what it found wrong, one finding a line, gets a tally
 (`ops/tally.py`; `tuningfork tally`, MCP's tally_failures, the divergence and experiment pages):
 each finding counted across a task's failed runs by condition, or a screen's failed forks by
 arm, its numbers and colours masked and a run counted once, the most common first — the failure to fix
@@ -663,7 +668,9 @@ rebuilt by `Store.rebuild_request`. What the store keeps of what happened — st
 their tokens, jobs, runs' results, launches' exits, servers — it masks itself, once, with its one
 set of patterns (`Store.masking`, `store/masking.py`): a writer hands it what it has — or, where it
 must read a value as it will be stored first (an outcome computed from an answer), the `Masked`
-it asked the store's masking for. What a run is given is kept as it was given, since a fork runs
+it asked the store's masking for; a check's output, masked where the check ran, is one field of a
+run's result kept as it is (`Masking.of`'s `masked`). What a run is given is kept as it was
+given, since a fork runs
 it again — a launch's eval and variant, a scenario's context (`Store.put_given`) — and so is an
 experiment's settings, the test it declared. Masking is not idempotent, and a fork matches a call
 masked once against a step stored masked once; `tests/test_store_masking.py` fails on code

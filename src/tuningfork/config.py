@@ -185,6 +185,16 @@ _SECRET_NAME = (
     r"|PAT(?<=[A-Z0-9]_PAT)|CREDENTIALS(?<=[A-Z0-9]_CREDENTIALS)))"
 )
 
+#: A whole name that is a secret's (`secret_name`).
+_SECRET_NAME_ENDS = re.compile(f"(?:{_SECRET_NAME})\\Z")
+
+
+def secret_name(name: str) -> bool:
+    """Whether a variable's name is a secret's, as an environment or a `.env` file writes one:
+    `OPENAI_API_KEY`, `DB_PASSWORD`, `GITHUB_TOKEN`; not `HTTPS_PROXY`, nor `NEXT_PAGE_TOKEN`."""
+    return _SECRET_NAME_ENDS.search(name) is not None
+
+
 #: Names ending in `key` whose value is no secret, though random: a request's idempotency key, a
 #: cache's, a table's.
 _NOT_SECRET_KEYS = ("idempotency", "cache", "sort", "partition", "primary", "foreign", "object", "row",

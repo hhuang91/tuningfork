@@ -37,16 +37,22 @@ class Masking:
     def digest(self) -> str:
         return patterns_digest(self.patterns)
 
-    def of(self, value: Any, *, also: Iterable[str] = ()) -> Masked:
+    def of(self, value: Any, *, also: Iterable[str] = (), masked: Iterable[str] = ()) -> Masked:
         """`value` masked — text as text, anything else as the JSON it is written as — and every
-        place a value `also` names stands. A `Masked` is kept as it is."""
+        place a value `also` names stands. A `Masked` is kept as it is, and so are the fields of an
+        object that `masked` names: masked where they were made — a check's output, before it was
+        cut — and masked again, a command's second password would fall too."""
         if isinstance(value, Masked) or value is None:
             return value if isinstance(value, Masked) else Masked(None)
         if isinstance(value, str):
             text, made, taken = _masking(value, self.patterns, tuple(also))
             return Masked(text, made, frozenset(taken))
-        masked, made, found = redact_json_found(value, self.patterns, tuple(also))
-        return Masked(masked, made, found)
+        if isinstance(value, dict) and masked:
+            kept = {key: value[key] for key in masked if key in value}
+            rest = self.of({key: item for key, item in value.items() if key not in kept}, also=also)
+            return Masked({**rest.value, **kept}, rest.made, rest.found)
+        written, made, found = redact_json_found(value, self.patterns, tuple(also))
+        return Masked(written, made, found)
 
     def value(self, value: Any, *, also: Iterable[str] = ()) -> Any:
         """`value` masked, for a write that keeps no count."""

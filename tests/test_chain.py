@@ -193,6 +193,28 @@ class TestChain:
         kept = get_chain(stack.store, plan.id)
         assert kept["tell"] is True and kept["links"][0]["told"]["message"].endswith("It passed.")
 
+    def test_the_harness_is_told_what_the_check_printed_masked(self, stack):
+        """Masked where the check ran: the harness, its command line and its own session files are
+        given the masked text, and the run's result and the chain keep it as it was told."""
+        from tuningfork.demo.task import CHECK
+
+        key = "sk-" "tftoldkey4Q7xZ2mN8pL4vR6tY0a"
+        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        data = stack.spec.to_dict()
+        data["evals"][0]["tuningfork"]["check"] = f"echo 'the key is {key}'; echo '{command}'; {CHECK}"
+        stack.spec.path.write_text(json.dumps(data), encoding="utf-8")
+        report = execute_chain(stack.store, prepare(stack, n=1, tell=True))
+
+        (link,) = report.links
+        assert "It passed.\n\nthe key is <redacted>\n" in link.told["message"]
+        sent = [payload for payload in stack.mock.requests
+                if str(payload["messages"][-1].get("content") or "").startswith("I ran my check")]
+        assert len(sent) == 1 and key not in json.dumps(sent) and "<redacted>" in json.dumps(sent)
+        # Kept as it was told: masked again, the command's second password would fall too.
+        assert "-pZq8xK3vN5wLp" in link.told["message"]
+        assert stack.store.get_run(link.run_id).result["told"] == link.told
+        assert stack.store.get_launch(link.launch_id).exit["told"] == link.told
+
     def test_telling_needs_a_harness_that_resumes_and_a_check(self, stack, monkeypatch):
         resumes = FakeAgent.continue_launch
         monkeypatch.delattr(FakeAgent, "continue_launch")
@@ -301,6 +323,40 @@ class TestWhoEdited:
             assert summary == {"steps": 1, "ended": True, "edit_calls": 1}
             without = skill_edits(store, HermesAdapter(), launch.id)
             assert without[0][0]["thread"] == "review" and without[1] == summary
+        finally:
+            store.close()
+
+    def test_a_told_turn_kept_masked_again_is_still_the_told_turn(self, tmp_path):
+        """The harness is told the check's output masked once, where the check ran; the request that
+        carried it is kept masked again, which can mask more: a command's second password."""
+        from tuningfork.harness.hermes import HermesAdapter
+        from tuningfork.ops.chain import skill_edits
+        from tuningfork.store.db import Store
+        from tests.helpers import as_response, record_launched, text_message, tool_call_message
+
+        store = Store(tmp_path / "store")
+        try:
+            launch = store.create_launch(
+                kind="batch", label="t#g.0", harness="hermes", model="m", task_id="t/1", eval={},
+                spec_path=None, skill_dir=None, workspace=str(tmp_path / "w"), home=str(tmp_path / "h"),
+                settings={},
+            )
+            task = [{"role": "user", "content": "do the task"}]
+            record_launched(store, launch.id, {"model": "m", "messages": task},
+                            response=as_response(text_message("Done.")))
+            told = "I ran my check on what you produced. It failed.\n\n" + store.masking.value(
+                "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db")
+            assert "-pZq8xK3vN5wLp" in told
+            # The told turn in a process of its own, its conversation new: a thread.
+            record_launched(store, launch.id, {"model": "m", "messages": [{"role": "user", "content": told}]},
+                            response=as_response(tool_call_message(
+                                "skill_manage", {"action": "patch", "name": "design-md"})))
+            store.finalize_threads(launch.id, HermesAdapter.subagent_tools)
+            (thread,) = [run for run in store.launch_runs(launch.id) if run.is_thread]
+            assert "-pZq8xK3vN5wLp" not in json.dumps(store.harness_request(store.steps(thread.id)[0]))
+
+            edits, _ = skill_edits(store, HermesAdapter(), launch.id, told=told)
+            assert [edit["thread"] for edit in edits] == ["told"]
         finally:
             store.close()
 

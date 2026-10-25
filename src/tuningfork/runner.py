@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Sequence
 
+from tuningfork.access import held_secrets
 from tuningfork.analysis.conditions import exclusion_from
 from tuningfork.analysis.conditions import pass_rate  # noqa: F401 - long imported from here
 from tuningfork.harness.base import HarnessError, LaunchSpec
@@ -179,6 +180,12 @@ class RunOutcome:
         if self.stopped is not None:
             result["stopped_at_skill"] = self.stopped
         return result
+
+
+#: What a run's result and its launch's exit hold that was masked where it was made: the check's
+#: output, before it was cut (`run_check`), and what the harness was told of it, which the harness
+#: was given masked. The store keeps them as they are.
+MASKED_WHERE_MADE = ("check_output", "told")
 
 
 def told_message(template: str, check: CheckResult) -> str:
@@ -510,10 +517,12 @@ class Launcher:
         reply_file = workspace.parent / "reply.txt"
         reply_file.write_text(reply, encoding="utf-8")
         # In the sandbox the launch ran in, if it ran in one: the check can run what the model wrote.
-        # It reads what its task names, and what the configs name for every check, as planned.
+        # It reads what its task names, and what the configs name for every check, as planned. Its
+        # output is masked there, before it is cut, kept or told to the harness.
         check = run_check(
             item.tuningfork.check, workspace, reply=reply, reply_file=reply_file, spec_dir=spec_dir,
             check_env=[*self.check_env, *item.tuningfork.check_env], sandbox=self.sandbox,
+            masking=self.store.masking, also=held_secrets(self.store.home),
         )
         told = None
         if (
@@ -524,12 +533,12 @@ class Launcher:
             duration = time.monotonic() - started
         self.store.end_launch(
             launch.id,
-            exit={
+            exit=self.store.masking.of({
                 "returncode": returncode, "timed_out": timed_out, "duration_s": round(duration, 2),
                 **({"told": told} if told else {}),
                 **({"stopped_at_skill": exited.stopped} if exited.stopped else {}),
                 **({"cap_seconds": self.launch_seconds} if self.launch_seconds is not None else {}),
-            },
+            }, masked=MASKED_WHERE_MADE),
         )
         self.store.set_launch_snapshots(
             launch.id, final_commit=self._snap(workspace, launch, "final")
@@ -709,7 +718,7 @@ class Launcher:
             self.store.annotate_run(
                 main.id,
                 harness=self.adapter.name,
-                result=outcome.to_result(),
+                result=self.store.masking.of(outcome.to_result(), masked=MASKED_WHERE_MADE),
                 **annotate,
             )
         return outcome
