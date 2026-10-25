@@ -48,7 +48,8 @@ class CheckTrialPlan:
     own: bool = False
     #: The folder of the spec the run was launched from: `$TUNINGFORK_SPEC_DIR` for the check.
     spec_dir: str | None = None
-    #: The variables the run's task lets its check read (`check_env`).
+    #: The variables the check may read: those this machine's config names for every check
+    #: (`specs.configured_check_env`), and those the run's task names (`check_env`).
     check_env: list[str] = field(default_factory=list)
     #: Where a shell check runs: a `tuningfork.sandbox.Sandbox`, as a launch does, or None —
     #: and then why not (`unsandboxed`), unless the person turned it off.
@@ -126,7 +127,7 @@ def prepare_check_trial(
     from tuningfork.ops.experiments import resolve_run
     from tuningfork.runner import final_reply
     from tuningfork.snapshots import available
-    from tuningfork.specs import Eval, SpecError, check_kind, check_problems, inside
+    from tuningfork.specs import Eval, SpecError, check_kind, check_problems, configured_check_env, inside
 
     found: Run | None = None
     commit = None
@@ -211,7 +212,8 @@ def prepare_check_trial(
     )
     return CheckTrialPlan(
         check=check, run=found, commit=commit, reply=reply or "", files=written,
-        timeout=timeout, recorded=recorded, own=own, spec_dir=spec_dir, check_env=check_env,
+        timeout=timeout, recorded=recorded, own=own, spec_dir=spec_dir,
+        check_env=[*configured_check_env(store.home), *check_env] if kind == "shell" else [],
         sandbox=sandbox, unsandboxed=None if turned_off() else unsandboxed,
     )
 
@@ -428,6 +430,10 @@ def prepare_check_along_runs(
         try:
             plans.append(prepare_check_along(store, found.id, timeout=timeout))
         except OperationError as error:
+            if error.code == "check_env":
+                # The configs' list cannot be read: the whole job is refused, once, rather than
+                # every run passed over in turn.
+                raise
             skipped.append(f"run {found.id[:8]}: {error.message}")
     return CheckAlongRunsPlan(task_id=task, plans=plans, skipped=skipped)
 

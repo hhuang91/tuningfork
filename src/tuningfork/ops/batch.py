@@ -48,6 +48,9 @@ class BatchPlan:
     #: The sandbox every run is launched in (`tuningfork.sandbox.Sandbox`), or None: each
     #: run then sees its own folders, and a note says why.
     sandbox: Any = None
+    #: The variables every run's check may read besides those its task names, read from the
+    #: configs once, here (`specs.check_env_sources`): every run is judged alike.
+    check_env: list[str] = field(default_factory=list)
     #: The harness's own options, as given; what the adapter made of them is in each
     #: launch's settings.
     harness_options: dict[str, Any] = field(default_factory=dict)
@@ -156,7 +159,7 @@ def prepare_batch(
     from tuningfork.paths import host_path
     from tuningfork.runner import lookalike_skill_files
     from tuningfork.sandbox import for_launches, turned_off as sandbox_turned_off
-    from tuningfork.specs import SpecError, check_kind, load_spec, missing_files
+    from tuningfork.specs import SpecError, check_env_sources, check_kind, load_spec, missing_files
 
     if harness not in ADAPTERS:
         raise OperationError(
@@ -282,6 +285,16 @@ def prepare_batch(
         notes.append(Note(
             "warning", f"{sandbox.clock_problem}: each run's date is the day it is made, which the model reads",
         ))
+    # Read once, here, for a check that runs a command: a list that cannot be read is refused
+    # before a run is launched, and every run is judged with the same.
+    sources = check_env_sources(store.home) if check_kind(item.tuningfork.check) == "shell" else []
+    every_check = list(dict.fromkeys(name for _, names in sources for name in names))
+    if sources:
+        notes.append(Note(
+            "note",
+            "each run's check may also read "
+            + "; ".join(f"{', '.join(names)}, named for every check in {path}" for path, names in sources),
+        ))
     if sandbox is not None and check_kind(item.tuningfork.check) == "shell" and not sandbox.shows(spec.directory):
         notes.append(Note(
             "warning",
@@ -346,7 +359,7 @@ def prepare_batch(
         spec=spec, item=item, n=n, harness=harness, model=model, base_url=base_url,
         proxy=proxy, workdir=workdir, concurrency=concurrency, skill_dir=skill_dir,
         skill_file=Path(skill_file) if skill_file else None, parity=parity, notes=notes,
-        adapter=adapter, sandbox=sandbox, harness_options=dict(harness_options or {}),
+        adapter=adapter, sandbox=sandbox, harness_options=dict(harness_options or {}), check_env=every_check,
     )
 
 
@@ -447,6 +460,7 @@ def execute_batch(
         concurrency=plan.concurrency,
         sandbox=plan.sandbox,
         tell=tell,
+        check_env=plan.check_env,
     )
     runner.on_launch = lambda launch, index: emit(
         progress, "launch", subject=launch, launch_id=launch.id, index=index, label=launch.label

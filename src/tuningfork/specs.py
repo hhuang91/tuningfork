@@ -35,8 +35,9 @@ REPLY_ENV = "TUNINGFORK_REPLY"
 SPEC_DIR_ENV = "TUNINGFORK_SPEC_DIR"
 #: What a shell check keeps of the machine's environment, as a launch does: where programs
 #: are, the language, the terminal, the temporary folder, who runs it. Nothing else of the
-#: person's but what its task names (`check_env`): a check can run code the model wrote, and a
-#: variable can hold a key.
+#: person's but what its task names (`check_env`) and what the machine's config names for every
+#: check (`configured_check_env`): a check can run code the model wrote, and a variable can hold
+#: a key.
 CHECK_INHERITED = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "USER")
 #: A variable's name, as a shell writes one.
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -680,6 +681,55 @@ REPLY_QUOTED = 500
 
 #: The end of a check's output a verdict keeps, in characters.
 CHECK_KEPT = 2000
+
+
+def check_env_sources(home: Path | None = None) -> list[tuple[Path, list[str]]]:
+    """Where the variables every check here may read are named, besides those its task names,
+    and which: `"check_env"` in the machine's config (`config.machine_config_path()`) and in the
+    recordings folder's `config.json` — a proxy's settings, say, which belong to the machine and
+    to no task file. The machine's is read strictly, as `endpoints` reads it: a file that does
+    not parse is refused, saying where. The recordings folder's is read as its other settings
+    are: one that does not parse names nothing. In either, a list that is not one of your
+    variables' names is refused; a file that is not there, or an empty list, names none."""
+    from tuningfork.config import HOME_CONFIG, machine_config_path, read_home_config
+    from tuningfork.ops.common import OperationError
+
+    places: list[tuple[Path, dict[str, Any]]] = []
+    machine = machine_config_path()
+    # Fixed, not removed: removed, it no longer protects the endpoints it names either.
+    refusal = {"hint": "fix the file; removing it would drop the endpoints it protects too",
+               "code": "check_env", "field": "check_env"}
+    try:
+        data = json.loads(machine.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        data = {}
+    except (OSError, ValueError) as error:
+        raise OperationError(f"the machine's config, {machine}, cannot be read: {error}", **refusal) from None
+    if not isinstance(data, dict):
+        raise OperationError(f"the machine's config, {machine}, holds no settings object", **refusal)
+    places.append((machine, data))
+    if home is not None:
+        places.append((Path(home) / HOME_CONFIG, read_home_config(home)))
+    found: list[tuple[Path, list[str]]] = []
+    for path, settings in places:
+        if "check_env" not in settings:
+            continue
+        problem = check_env_problem(settings["check_env"])
+        if problem:
+            raise OperationError(
+                f'"check_env" in {path} {problem}',
+                hint='name your own variables, as a list: {"check_env": ["https_proxy", "SSL_CERT_FILE"]}',
+                code="check_env", field="check_env",
+            )
+        if settings["check_env"]:
+            found.append((path, list(settings["check_env"])))
+    return found
+
+
+def configured_check_env(home: Path | None = None) -> list[str]:
+    """The variables every check here may read besides those its task names, from wherever
+    they are named (`check_env_sources`), each once."""
+    return list(dict.fromkeys(name for _, names in check_env_sources(home) for name in names))
 
 
 def check_environment(

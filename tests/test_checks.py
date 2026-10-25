@@ -256,6 +256,38 @@ def test_recheck_prints_the_verdict_beside_the_runs(launched):
     assert sample.exit_code == 1 and "a reply and files you gave" in sample.output
 
 
+def test_a_check_reads_what_the_machines_config_names_for_every_check(tmp_path, mock_server, monkeypatch):
+    """A proxy's settings, say: named once in the machine's config, every task's check reads them,
+    the batch's and a check tried alike, and the batch's plan says so."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    machine = tmp_path / "config" / "tuningfork" / "config.json"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(json.dumps({"check_env": ["CORP_SETTING"]}), encoding="utf-8")
+    monkeypatch.setenv("CORP_SETTING", "this-machines")
+    with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+        stack.item.tuningfork.check = 'test "$CORP_SETTING" = this-machines'
+        stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+        plan = prepare_batch(
+            stack.store, stack.spec.path, n=1, model="m", harness="fake",
+            base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+        )
+        assert any("CORP_SETTING" in note["message"] and str(machine) in note["message"] for note in plan.to_json()["notes"])
+        # Read once, by the plan: a config changed while the batch runs changes none of its checks.
+        machine.write_text(json.dumps({"check_env": "CORP_SETTING"}), encoding="utf-8")
+        (outcome,) = execute_batch(stack.store, plan).outcomes
+        assert outcome.passed, outcome.check.output
+        machine.write_text(json.dumps({"check_env": ["CORP_SETTING"]}), encoding="utf-8")
+        assert try_check(stack.store, run=outcome.run_id).passed
+        # A list that cannot be read is refused before a run is launched.
+        machine.write_text(json.dumps({"check_env": "CORP_SETTING"}), encoding="utf-8")
+        with pytest.raises(OperationError) as refused:
+            prepare_batch(
+                stack.store, stack.spec.path, n=1, model="m", harness="fake",
+                base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+            )
+        assert refused.value.code == "check_env"
+
+
 def test_recheck_says_when_the_check_cannot_run_in_the_sandbox(launched, monkeypatch):
     import tuningfork.sandbox
     from tuningfork.cli import app

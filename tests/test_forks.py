@@ -67,6 +67,24 @@ def test_a_fork_is_kept_from_what_its_source_was_kept_from(stack, monkeypatch):
     assert runs in asked["hide"] and runs in asked["own"]
 
 
+def test_a_fork_reads_the_configs_list_once_and_only_for_a_check_that_runs_a_command(stack, monkeypatch):
+    """A list that cannot be read refuses a fork of a task whose check runs a command, before
+    its harness is launched; a fork of a task judged on its reply never reads it, and runs to its
+    end."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(stack.tmp / "config"))
+    machine = stack.tmp / "config" / "tuningfork" / "config.json"
+    machine.parent.mkdir(parents=True)
+    source = stack.record()
+    stack.item.tuningfork.check = {"reply_contains": "written"}
+    replied = stack.record()
+    machine.write_text(json.dumps({"check_env": "https_proxy"}), encoding="utf-8")
+    with pytest.raises(OperationError) as refused:
+        prepare_fork(stack.store, source.run_id, "write_file", base_url=f"{stack.url}/v1", workdir=stack.tmp / "forks")
+    assert refused.value.code == "check_env"
+    _, (fork,) = stack.fork(replied.run_id, "write_file")
+    assert fork.usable and fork.passed
+
+
 class TestReplay:
     def test_a_fork_is_answered_from_the_recording_then_goes_live(self, stack):
         source = stack.record()

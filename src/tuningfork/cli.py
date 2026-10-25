@@ -4329,7 +4329,8 @@ def _control(proxy: Optional[str]):
 
 
 def _or_exit(call):
-    """Run a control call, turning a refusal into a readable error rather than a traceback."""
+    """Run a control call, turning a refusal into a readable error rather than a traceback: the
+    proxy's, or this machine's own before anything is sent (a config that cannot be read)."""
     from tuningfork.control import ControlError
 
     try:
@@ -4337,6 +4338,8 @@ def _or_exit(call):
     except ControlError as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from None
+    except OperationError as error:
+        _refuse(error)
 
 
 @break_app.command("add")
@@ -4770,7 +4773,16 @@ def connections_show(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)
             f"\n[bold]sandbox[/bold]   [yellow]none: {escape(str(sandbox.get('reason')))}[/yellow] — each launch "
             "sees its own folders"
         )
+    check_env = found.get("check_env") or {}
+    if check_env.get("problem"):
+        console.print(f"  [yellow]{escape(check_env['problem'])}[/yellow]")
+    for source in check_env.get("sources") or []:
+        console.print(f"  every check may also read {escape(', '.join(source['names']))}, named in "
+                      f"{escape(source['path'])}")
     console.print(f"\n[bold]proxy[/bold]     {escape(found['proxy']['home'])}")
+    if found["proxy"].get("config_problem"):
+        console.print(f"  [yellow]{escape(found['proxy']['config_problem'])}[/yellow]. Nothing is sent anywhere "
+                      "until it is fixed.")
     if found.get("busy"):
         console.print(f"  in use: {escape('; '.join(found['busy']))}")
     console.print(f"  [dim]restart with: {escape(found['proxy']['restart'])}[/dim]")

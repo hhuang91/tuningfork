@@ -102,6 +102,21 @@ def test_it_is_run_from_the_terminal_once_a_run(stack):
     assert stack.store.get_run(run.id).result[ALONG]
 
 
+def test_a_list_that_cannot_be_read_refuses_the_whole_job_once(stack, monkeypatch):
+    """Not each run in turn, passed over with the same refusal, and the job done with nothing
+    run along."""
+    from tuningfork.ops.checks import prepare_check_along_runs
+
+    one_run(stack)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(stack.tmp / "config"))
+    machine = stack.tmp / "config" / "tuningfork" / "config.json"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(json.dumps({"check_env": ["TUNINGFORK_TOKEN"]}), encoding="utf-8")
+    with pytest.raises(OperationError) as refused:
+        prepare_check_along_runs(stack.store, task=TASK)
+    assert refused.value.code == "check_env" and str(machine) in refused.value.message
+
+
 def test_it_says_when_the_check_cannot_run_in_the_sandbox(stack, monkeypatch):
     import tuningfork.sandbox
 
