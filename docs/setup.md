@@ -437,7 +437,9 @@ sends it nothing — not a resample, not a probe, not a harness's call. List it 
 
 or in `TUNINGFORK_PROTECTED` (a comma-separated list of `host:port`, where either side may be
 `*`), or in a recordings folder's own `config.json`. The lists add up; none takes back another's
-entry. A list that cannot be read stops all of tuningfork's traffic until it is fixed.
+entry. A list that cannot be read stops all of tuningfork's traffic until it is fixed, and so does
+a machine's config that does not parse; a recordings folder's `config.json` that does not parse
+protects nothing, as for its other settings.
 
 ## Environment variables
 

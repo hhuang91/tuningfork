@@ -696,18 +696,17 @@ def check_env_sources(home: Path | None = None) -> list[tuple[Path, list[str]]]:
 
     places: list[tuple[Path, dict[str, Any]]] = []
     machine = machine_config_path()
+    # Fixed, not removed: removed, it no longer protects the endpoints it names either.
+    refusal = {"hint": "fix the file; removing it would drop the endpoints it protects too",
+               "code": "check_env", "field": "check_env"}
     try:
         data = json.loads(machine.read_text(encoding="utf-8"))
     except FileNotFoundError:
         data = {}
     except (OSError, ValueError) as error:
-        raise OperationError(
-            f"the machine's config, {machine}, cannot be read: {error}", hint="fix the file, or remove it",
-            code="check_env", field="check_env",
-        ) from None
+        raise OperationError(f"the machine's config, {machine}, cannot be read: {error}", **refusal) from None
     if not isinstance(data, dict):
-        raise OperationError(f"the machine's config, {machine}, holds no settings object",
-                             hint="fix the file, or remove it", code="check_env", field="check_env")
+        raise OperationError(f"the machine's config, {machine}, holds no settings object", **refusal)
     places.append((machine, data))
     if home is not None:
         places.append((Path(home) / HOME_CONFIG, read_home_config(home)))
