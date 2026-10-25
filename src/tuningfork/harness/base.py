@@ -116,6 +116,13 @@ class HarnessAdapter(Protocol):
       Hermes's nudge to go on after a cut reply, Claude Code's reminders — or None for a
       person's turn, which a run's page shows as a new exchange (`ops.timeline`). Without
       one, every user message is a person's.
+    - `for_server(server)`: the adapter set up for the server it will talk to, from the
+      server's identity (`n_ctx`, …) — for a harness that does not ask the server itself:
+      OpenClaw is told its context window. A batch calls it (`ops.batch`); what it sets is
+      the adapter's `settings`, so a fork, set up from its source's, needs none.
+    - `version_problem(output)`: why a harness that answers `--version` still cannot launch,
+      read from what that printed (OpenClaw on a Node it does not run on), or None — what the
+      Connections page and `connections show` say beside its version (`ops.connections`).
     """
 
     name: str

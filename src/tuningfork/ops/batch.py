@@ -251,6 +251,11 @@ def prepare_batch(
             )
 
     server = proxy.raw.get("server") or {}
+    # A harness that does not ask the server what it holds is told it (OpenClaw's context
+    # window); the launches record it, and a fork is told what its source was.
+    fitted = getattr(adapter, "for_server", None)
+    if fitted is not None:
+        adapter = fitted(server)
     served = [m for m in server.get("models") or [] if isinstance(m, str)]
     if not model:
         if len(served) == 1:

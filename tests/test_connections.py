@@ -150,6 +150,27 @@ class TestHarnesses:
         assert not any(Path(home).exists() for home in homes)  # thrown away after
         assert found["hermes"].requirements[0]["what"] == "n_ctx"
 
+    def test_an_openclaw_that_answers_but_cannot_launch_says_why(self, tmp_path, monkeypatch):
+        """Found installing it: on Ubuntu's Node 22, OpenClaw answers --version with a warning
+        on stderr, and `agent exec` exits before its first call."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        program = bin_dir / "openclaw"
+        program.write_text(
+            "#!/bin/sh\n"
+            "echo 'OpenClaw 2026.10.7 (157d8c2)'\n"
+            "echo 'Running on an unsupported Node (22.22.1); diagnostics may show truncated text' >&2\n",
+            encoding="utf-8",
+        )
+        program.chmod(program.stat().st_mode | stat.S_IXUSR)
+        monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+        (openclaw,) = [info for info in detect_harnesses(tmp_path / "store") if info.name == "openclaw"]
+        assert openclaw.version == "OpenClaw 2026.10.7 (157d8c2)"
+        assert "22.22.1" in openclaw.error and "launch" in openclaw.error
+        program.write_text("#!/bin/sh\necho 'OpenClaw 2026.10.7 (157d8c2)'\n", encoding="utf-8")
+        (openclaw,) = [info for info in detect_harnesses(tmp_path / "store") if info.name == "openclaw"]
+        assert openclaw.error is None
+
     def test_a_missing_harness_is_reported_not_raised(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PATH", str(tmp_path / "empty"))
         found = {info.name: info for info in detect_harnesses(tmp_path / "store")}

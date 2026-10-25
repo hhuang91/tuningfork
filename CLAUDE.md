@@ -51,7 +51,9 @@ Inspecting and experimenting (all take `--home <recordings dir>`):
     tuningfork batch ... --concurrency 4  # runs at once; each is its own launch
     tuningfork batch ... --eval 2 --include-held-out   # a held-out eval: never the default
     tuningfork batch ... -o self_improvement=false   # a harness option (Hermes: self_improvement,
-                                          #   await_review, review_every_turn, mcp_servers), recorded with each run
+                                          #   await_review, review_every_turn, mcp_servers; OpenClaw:
+                                          #   tool_search, skill_workshop, memory_flush, mcp_servers,
+                                          #   context_window), recorded with each run
     tuningfork chain run <spec.json> -n 10 --tell -o await_review=true -o review_every_turn=true
                                           # runs in order, the skill each leaves given to the next:
                                           #   what the harness's own self-improvement makes of it;
@@ -619,7 +621,7 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                llama.cpp implementation and the server's Messages conversion,
                                mirrored; formats/, model output formats (Gemma 4; Qwen3.5 and 3.6;
                                Qwen3 and Qwen2.5)
-    src/tuningfork/harness/    harness adapters (hermes, claude-code, generic)
+    src/tuningfork/harness/    harness adapters (hermes, claude-code, openclaw, generic)
     src/tuningfork/store/      content-addressed blobs + SQLite message tree; token streams; masking
                                (what every write is masked as, once)
     src/tuningfork/analysis/   normalizers, Wilson/Fisher/Holm, distributions, divergence;

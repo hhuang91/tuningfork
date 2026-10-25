@@ -142,9 +142,11 @@ class HarnessInfo:
         }
 
 
-def _version(path: str) -> tuple[str | None, str | None]:
+def _version(path: str, problem: Any = None) -> tuple[str | None, str | None]:
     """A harness's `--version`, run where it can touch nothing real: a throwaway home, its
-    own config dirs pointed there, no input."""
+    own config dirs pointed there, no input. `problem` is its adapter's reading of what it
+    printed (`version_problem`): what answers --version and still cannot launch — OpenClaw on
+    a Node it does not support."""
     with tempfile.TemporaryDirectory(prefix="tuningfork-detect-") as scratch:
         env = {
             "PATH": os.environ.get("PATH", ""),
@@ -168,7 +170,8 @@ def _version(path: str) -> tuple[str | None, str | None]:
     lines = [line.strip() for line in (done.stdout or done.stderr or "").splitlines() if line.strip()]
     if done.returncode != 0:
         return None, f"--version exited {done.returncode}: {lines[0] if lines else 'no output'}"
-    return (lines[0] if lines else None), None
+    said = problem(f"{done.stdout or ''}\n{done.stderr or ''}") if problem is not None else None
+    return (lines[0] if lines else None), said
 
 
 def detect_harnesses(home: Path | str) -> list[HarnessInfo]:
@@ -195,7 +198,7 @@ def detect_harnesses(home: Path | str) -> list[HarnessInfo]:
                 requirements,
             ))
             continue
-        version, error = _version(path)
+        version, error = _version(path, getattr(adapter, "version_problem", None))
         found.append(HarnessInfo(
             name, chosen, path, "override" if name in named else "PATH", version, error, requirements,
         ))

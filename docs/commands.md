@@ -56,7 +56,7 @@ tuningfork batch examples/tally-report.evals.json -n 8 --harness claude-code
 ```
 
 - `-n N` — how many runs (default 5).
-- `--harness hermes|claude-code` — the harness (default `hermes`).
+- `--harness hermes|claude-code|openclaw` — the harness (default `hermes`).
 - `--eval <id>` — which task of the spec to run.
 - `--model <id>` — the model the harness asks for; by default, the one the server lists.
 - `--skill <file>` — that file as the skill's `SKILL.md` in every run: how to confirm an edit
@@ -67,7 +67,9 @@ tuningfork batch examples/tally-report.evals.json -n 8 --harness claude-code
   that reach the server.
 - `-o key=value` — an option the harness takes, recorded with each run. Hermes takes
   `self_improvement`, `await_review`, `review_every_turn` and `mcp_servers`
-  ([what each does](adapters/hermes.md#options-a-launch-takes)).
+  ([what each does](adapters/hermes.md#options-a-launch-takes)); OpenClaw takes `tool_search`,
+  `skill_workshop`, `memory_flush`, `mcp_servers` and `context_window`
+  ([what each does](adapters/openclaw.md#options-a-launch-takes)).
 - `--include-held-out` — runs a held-out task named with `--eval` anyway, with a warning: its
   runs are then recorded where agents reading the recordings can see them.
 
@@ -568,8 +570,10 @@ token alone; `--mcp` prints the MCP token, and `--header-json` the header an MCP
 
 ### `connections show`, `connections switch`, `connections harness`, `connections check`
 
-- `show` — the server the proxy forwards to, what was measured of it, and the harnesses found;
-  for a hosted model's API, that tuningfork is built for a model you run yourself.
+- `show` — the server the proxy forwards to, what was measured of it, and the harnesses found,
+  each with its version, and why one that answers its version still cannot launch (OpenClaw on a
+  Node it does not run on); for a hosted model's API, that tuningfork is built for a model you
+  run yourself.
 - `switch <url>` — points the proxy at another server, while nothing is using it (`--dry-run`).
   A hosted API that asks for a key can be switched to, for recording; the plan says what it is.
 - `harness <name> --executable <path>` — names the program a harness runs as, kept in the

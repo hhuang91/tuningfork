@@ -10,11 +10,13 @@ from tuningfork.harness.base import (
 )
 from tuningfork.harness.claude_code import ClaudeCodeAdapter
 from tuningfork.harness.hermes import HermesAdapter
+from tuningfork.harness.openclaw import OpenClawAdapter
 
 #: Adapters by name, for CLI selection and for contributors adding their own.
 ADAPTERS = {
     "hermes": HermesAdapter,
     "claude-code": ClaudeCodeAdapter,
+    "openclaw": OpenClawAdapter,
     "generic": GenericHarness,
 }
 
@@ -26,6 +28,7 @@ __all__ = [
     "HarnessError",
     "HermesAdapter",
     "LaunchSpec",
+    "OpenClawAdapter",
     "Requirement",
     "SkillSpan",
 ]

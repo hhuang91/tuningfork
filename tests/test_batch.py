@@ -8,6 +8,7 @@ and the mock server plays the model (see `tests/helpers.task_stack`).
 from __future__ import annotations
 
 import json
+import os
 import threading
 
 import pytest
@@ -245,6 +246,23 @@ class TestHarnessOptionsAndSkillFolder:
             prepare(stack, harness_options={"await_review": True})
         assert refused.value.field == "harness_options" and "takes no harness options" in refused.value.message
         assert launches(stack.store) == 0
+
+    @pytest.mark.skipif(os.name != "posix", reason="the stand-in harness is a shell script")
+    def test_openclaw_is_told_the_servers_context_window_and_its_runs_record_it(self, stack, monkeypatch):
+        """OpenClaw never asks the server: of a model its config does not size it assumes
+        200,000 tokens, and would not compact before a smaller server refused the prompt."""
+        bin_dir = stack.tmp / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "openclaw").write_text("#!/bin/sh\n", encoding="utf-8")
+        (bin_dir / "openclaw").chmod(0o755)
+        monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+        stack.app.state.server = {"id": "s", "models": ["m"], "n_ctx": 65536}
+        plan = prepare(stack, harness="openclaw")
+        assert plan.adapter.options.context_window == 65536
+        assert plan.parity["harness_options"] == {"context_window": 65536}
+        given = prepare(stack, harness="openclaw", harness_options={"context_window": 40000, "tool_search": False})
+        assert given.adapter.options.context_window == 40000
+        assert given.parity["harness_options"] == {"tool_search": False, "context_window": 40000}
 
     def test_a_servers_headers_and_environment_are_shown_masked(self):
         from tuningfork.ops.batch import shown_options

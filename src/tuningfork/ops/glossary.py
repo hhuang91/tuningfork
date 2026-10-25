@@ -49,7 +49,7 @@ TERMS: tuple[Term, ...] = (
     Term("proxy", "The recording proxy, `tuningfork serve`: it sits between a harness and the inference server, "
          "records every model call as a step, and holds a call where a breakpoint says to.",
          "recording", aka=("serve",), see=("step", "breakpoint"), where="tuningfork serve"),
-    Term("harness", "The agent program that drives the model — Hermes, Claude Code, or any OpenAI-compatible one: "
+    Term("harness", "The agent program that drives the model — Hermes, Claude Code, OpenClaw, or any OpenAI-compatible one: "
          "it gives the model the skill and runs the tools the model calls.",
          "recording", aka=("agent",), see=("launch", "skill"), where="Connections page"),
     Term("server", "The inference server that answers model calls (llama-server, LM Studio). Each step records which "

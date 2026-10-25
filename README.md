@@ -21,8 +21,8 @@ makes. If the LLM is the CPU and a skill is source code written in natural langu
 is the debugger you have been missing: it finds the step where a run goes wrong, shows why the
 model went that way, down to the odds of each word, and tests your edit to the skill to tell a real fix from luck.
 
-It works with **Hermes Agent** and **Claude Code** on **llama.cpp**, from a terminal, a web UI,
-or an agent over MCP.
+It works with **Hermes Agent**, **Claude Code** and **OpenClaw** on **llama.cpp**, from a terminal,
+a web UI, or an agent over MCP.
 Any model that llama.cpp serves can be recorded and tested. Seeing the odds of each word works for
 Gemma 4, Qwen3.6, Qwen3.5, Qwen3-Coder, Qwen3 and Qwen2.5 so far, and the list will grow as the
 repo evolves ([how to serve them](docs/setup.md#the-model-server)).
@@ -79,8 +79,9 @@ The last line activates the environment, so that `tuningfork` and `python` are t
 ### On your own agent
 
 You need a GPU that fits your model, [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
-`llama-server`, and a harness: [Hermes Agent](https://github.com/NousResearch/hermes-agent) or
-[Claude Code](https://code.claude.com/docs/en/overview) ([the versions we use](docs/setup.md#the-harnesses)).
+`llama-server`, and a harness: [Hermes Agent](https://github.com/NousResearch/hermes-agent),
+[Claude Code](https://code.claude.com/docs/en/overview) or [OpenClaw](https://github.com/openclaw/openclaw)
+([the versions we use](docs/setup.md#the-harnesses)).
 On Linux, install [bubblewrap](https://github.com/containers/bubblewrap) too (`sudo apt install
 bubblewrap`), so that every run sees the same folders: the model reads them
 ([why it matters](docs/setup.md#the-sandbox)).
@@ -121,7 +122,7 @@ bubblewrap`), so that every run sees the same folders: the model reads them
    ([the format](docs/setup.md#a-task)). This one is the repository's example, in a clone:
 
    ```bash
-   tuningfork batch examples/tally-report.evals.json -n 8 --harness hermes    # or --harness claude-code
+   tuningfork batch examples/tally-report.evals.json -n 8 --harness hermes    # or claude-code, or openclaw
    ```
 
    Or start from what your agent did: a conversation it already had imports as a run
@@ -142,7 +143,7 @@ goes through it unchanged.
 
 ```mermaid
 flowchart LR
-    harness["Agent harness<br>Hermes Agent<br>Claude Code"] -- "OpenAI or<br>Anthropic API" --> proxy["tuningfork<br>recording proxy"]
+    harness["Agent harness<br>Hermes Agent<br>Claude Code<br>OpenClaw"] -- "OpenAI or<br>Anthropic API" --> proxy["tuningfork<br>recording proxy"]
     proxy --> server["Inference server<br>llama.cpp"]
     proxy --> store[("Recordings<br>each call's exact context")]
     store --> tools["CLI<br>web UI<br>MCP tools"]
@@ -272,7 +273,7 @@ is labelled exploratory and corrected for every comparison it makes.
 
 | | Today |
 |---|---|
-| **Harnesses** | Hermes Agent and Claude Code, which tuningfork launches, forks and validates. Any other harness that takes a custom base URL is recorded as it runs. Hermes Agent's session files and exports import as runs. |
+| **Harnesses** | Hermes Agent, Claude Code and OpenClaw, which tuningfork launches, forks and validates. Any other harness that takes a custom base URL is recorded as it runs. Hermes Agent's session files and exports import as runs. |
 | **Inference servers** | llama.cpp's `llama-server`, for everything. LM Studio, and other servers that speak OpenAI chat completions or Anthropic Messages, for recording and experiments at a step; `tuningfork connections check` measures what yours supports. A hosted model's API, for recording only: tuningfork sends no API key of its own ([cloud models](docs/setup.md#cloud-models)). |
 | **Token-level work** | llama.cpp, with a model whose raw output tuningfork reads: Gemma 4, Qwen2.5, Qwen3, Qwen3.5, Qwen3.6 or Qwen3-Coder. |
 | **Systems** | Linux, natively or under WSL 2 on Windows, with Python 3.12, 3.13 or 3.14. macOS is untested, and the sandbox needs Linux. |
