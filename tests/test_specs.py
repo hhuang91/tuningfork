@@ -306,6 +306,23 @@ class TestTheMachinesCheckEnv:
             configured_check_env()
         assert str(machine) in refused.value.message
 
+    def test_a_recordings_folders_config_that_does_not_parse_names_nothing(self, tmp_path):
+        """Read as its other settings are, and as it was before: a hand-broken file there blocks
+        no batch, whatever its check."""
+        from tuningfork.specs import check_env_sources
+
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "config.json").write_text('{"check_env": ["https_proxy"],', encoding="utf-8")
+        assert check_env_sources(home) == []
+
+    def test_an_empty_list_names_nothing(self, tmp_path, monkeypatch):
+        from tuningfork.specs import check_env_sources
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        self.write(tmp_path / "config" / "tuningfork" / "config.json", {"check_env": []})
+        assert check_env_sources() == []
+
     def test_a_list_in_the_recordings_folders_config_that_cannot_be_read_names_that_file(self, tmp_path):
         from tuningfork.ops.common import OperationError
         from tuningfork.specs import configured_check_env

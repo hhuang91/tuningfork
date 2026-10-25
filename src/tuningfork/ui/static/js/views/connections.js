@@ -456,7 +456,7 @@ export async function connectionsView(root, _, scope) {
   // --- harnesses ------------------------------------------------------------------------
 
   function drawHarnesses() {
-    replace(harnessesEl, [sandboxCard(state.sandbox, state.check_env), ...state.harnesses.map(harnessCard)]);
+    replace(harnessesEl, [sandboxCard(state.sandbox, state.proxy?.config_problem ? {} : state.check_env), ...state.harnesses.map(harnessCard)]);
   }
 
   // A harness's need in the page's words, as the server test's measurement of it is named; the
@@ -483,9 +483,9 @@ export async function connectionsView(root, _, scope) {
         : h("div", { class: "banner banner-warn" },
             `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them. Their checks run on this machine itself.`),
       // What the configs let every check read, with the sandbox or without it, each by the
-      // file that names it.
+      // file that names it. (A config that cannot be read at all is the proxy panel's to say.)
       checkEnv?.problem
-        ? h("div", { class: "banner banner-warn" }, checkEnv.problem)
+        ? h("div", { class: "banner banner-warn" }, `${capital(checkEnv.problem)}. Checks that run a command are refused until it is fixed.`)
         : (checkEnv?.sources || []).map((source) => h("p", { class: "muted small" },
           `Every check may also read ${source.names.join(", ")}, named in `, h("span", { class: "mono" }, source.path), ".")));
   }
@@ -536,7 +536,7 @@ export async function connectionsView(root, _, scope) {
     const proxy = state.proxy;
     replace(proxyEl, panel("This proxy", [
       // A config that cannot be read stops every call the proxy would send, until it is fixed.
-      proxy.config_problem ? h("div", { class: "banner banner-warn" }, `${proxy.config_problem}. Nothing is sent anywhere until it is fixed.`) : null,
+      proxy.config_problem ? h("div", { class: "banner banner-warn" }, `${capital(proxy.config_problem)}. Nothing is sent anywhere until it is fixed.`) : null,
       kv([
         ["recordings", h("span", { class: "mono" }, proxy.home)],
         ["listening on", h("span", { class: "mono" }, `${proxy.host}:${proxy.port}`)],
@@ -545,7 +545,9 @@ export async function connectionsView(root, _, scope) {
           ? `at most ${proxy.max_output} tokens: a harness that asks for more is sent this, and what it asked is recorded`
           : "as each harness asks"],
         ["jobs at once", String(proxy.jobs)],
-        ["never forwards to", proxy.protected.length ? h("span", { class: "mono" }, proxy.protected.join(", ")) : "nothing protected"],
+        ["never forwards to", proxy.config_problem
+          ? "anything, until the config is fixed"
+          : proxy.protected.length ? h("span", { class: "mono" }, proxy.protected.join(", ")) : "nothing protected"],
       ]),
       state.busy?.length ? h("p", { class: "hint" }, `In use: ${state.busy.join("; ")}.`) : null,
       h("p", { class: "hint" }, "These change only with a restart:"),

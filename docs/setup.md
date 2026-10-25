@@ -332,15 +332,17 @@ A proxy's settings (`https_proxy`, `SSL_CERT_FILE`) belong to the machine, not t
 them once in its config, `~/.config/tuningfork/config.json`, beside any endpoints it protects:
 `{"protected": ["localhost:1234"], "check_env": ["https_proxy", "SSL_CERT_FILE"]}`. A recordings
 folder's `config.json` takes the same list, the two adding up. A batch's plan and Connections say
-which file names what. A file there that cannot be read stops all of tuningfork's traffic until it
-is fixed, as for a protected endpoint.
+which file names what. A list in either that is not one of variable names is refused, naming the
+file. The machine's config that cannot be read at all stops all of tuningfork's traffic until it
+is fixed, as it always has; a recordings folder's that cannot be read names nothing, as for its
+other settings.
 
 A tool's cache starts empty, so a check that installs a package each time (`uv run --with …`)
 downloads it. It writes nowhere but the workspace, its own home and its own `/tmp`, and it cannot
-read the run's home. A check tried with `tuningfork
-recheck`, or run along a run, runs the same way. Keep a task file in a folder of its own: one
-directly in `/tmp`, or in the recordings folder itself, leaves its check without what is kept
-beside it, since a check never sees either, and a batch's plan says so.
+read the run's home. A check tried with `tuningfork recheck`, or run along a run, runs the same
+way. Keep a task file in a folder of its own: one directly in `/tmp`, or in the recordings folder
+itself, leaves its check without what is kept beside it, since a check never sees either, and a
+batch's plan says so.
 
 It keeps runs alike; it is not a security boundary. Inside, the rest of the machine stays
 readable, your home included, and the network is reachable: see [`SECURITY.md`](../SECURITY.md).

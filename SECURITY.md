@@ -41,5 +41,6 @@ What it does **not** do:
 - **It runs what you give it, as you.** A harness tuningfork launches runs with your
   permissions, and so does a task's check, a shell command from its spec. A check gets only a
   few of your environment variables, such as `PATH` and `LANG`, and those named in `check_env`:
-  by its task, by this machine's config, or by the recordings folder's. Where bubblewrap runs, it runs in its run's sandbox, and can read what a
-  launch can, and its task's folder. Run harnesses, tasks and specs you trust.
+  by its task, by this machine's config, or by the recordings folder's. Where bubblewrap runs,
+  it runs in its run's sandbox, and can read what a launch can, and its task's folder. Run
+  harnesses, tasks and specs you trust.

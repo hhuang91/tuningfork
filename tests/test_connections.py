@@ -86,6 +86,22 @@ async def test_connections_say_what_every_check_may_read(two_servers, tmp_path, 
     assert str(machine) in response.json()["proxy"]["config_problem"]
 
 
+def test_connections_show_says_why_when_the_machines_config_cannot_be_read(tmp_path, monkeypatch):
+    """Refused before anything is sent: said as a refusal, never a traceback."""
+    from typer.testing import CliRunner
+
+    from tuningfork.cli import app
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    machine = tmp_path / "config" / "tuningfork" / "config.json"
+    machine.parent.mkdir(parents=True)
+    machine.write_text('{"protected": [', encoding="utf-8")
+    shown = CliRunner().invoke(app, ["connections", "show", "--proxy", "http://127.0.0.1:9"], env={"COLUMNS": "400"})
+    assert shown.exit_code == 1, shown.output
+    assert "cannot be read" in shown.output and "fix the file" in shown.output
+    assert not isinstance(shown.exception, OperationError)
+
+
 class TestSwitchingTheServer:
     async def test_a_dry_run_says_what_would_change_and_changes_nothing(self, two_servers):
         app, first, second = two_servers
