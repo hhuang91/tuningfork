@@ -181,7 +181,10 @@ def _version(path: str, problem: Any = None) -> tuple[str | None, str | None, st
 
 #: The programs `launch_problem` found nothing wrong with, by path, mtime and the PATH they ran
 #: with: a batch's plan asks, and so does each fork's, and `--version` takes a second or two. A
-#: problem found is not kept, so a Node put right counts at the next launch.
+#: problem found is not kept, so a Node put right counts at the next launch. What it cannot see:
+#: a Node changed for the worse in place after a clean answer (kept until the process ends),
+#: and a Node found on a PATH folder the sandbox hides — either way each run ends before its
+#: first call and is left out, as before this check.
 _LAUNCHABLE: set[tuple[str, float, str]] = set()
 
 

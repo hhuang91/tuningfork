@@ -109,16 +109,17 @@ _UNSUPPORTED = re.compile(r"Running on an unsupported Node \(([^)\s]+)\)")
 #: A server's name, as a folder name is: nothing a config path could be built from.
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
-#: What `read` answers in place of a skill the system prompt lists, in OpenClaw 2026.10.7
-#: (`src/agents/agent-tools.read.ts`): refused, where the whole file would not fit the call's
-#: budget — a listed skill is never served in part — and read again in the same context.
+#: What `read` answers in place of a skill OpenClaw has loaded — listed in the system prompt or
+#: not — in OpenClaw 2026.10.7 (`src/agents/agent-tools.read.ts`): refused, where the whole file
+#: would not fit the call's budget — such a skill is never served in part — and read again in
+#: the same context.
 NOT_SERVED = (
     "Skill instructions cannot be partially served:",
     "Skill instructions were already served whole earlier in the current model context.",
 )
-#: What `read` writes after a page of a longer file, in each of its three wordings
-#: (`src/agents/sessions/tools/read-page.ts`): OpenClaw's words, not the file's. A skill the
-#: system prompt lists is never paged, but a SKILL.md it does not list is.
+#: What `read` writes after a part of a longer file, in each of its three wordings
+#: (`src/agents/sessions/tools/read-page.ts`): OpenClaw's words, not the file's. A skill
+#: OpenClaw has loaded is never cut so, but any other SKILL.md is.
 _MORE = re.compile(
     r"\n\n\[(?:\d+ more lines? in file|Read output capped at [^\]\n]+ for this call|Showing [^\]\n]+ limit\))\. "
     r"Use (?:read with )?offset=\d+(?:, cursor=\d+)?(?:, limit=\d+)? to continue\.\]\Z"
@@ -450,13 +451,13 @@ class OpenClawAdapter:
     def skill_spans(self, request: dict[str, Any]) -> list[SkillSpan]:
         """Skills loaded in an OpenClaw payload, each a tool result holding the SKILL.md's text:
 
-        - a `read` of the file, as the model finds it listed with Tool Search on. A skill the
-          system prompt lists is served whole — any paging the call asks for dropped — its line
-          endings made LF and a byte-order mark dropped, as `read` gives any file. Too long for
-          the call's budget, it is refused, and read again in the same context, OpenClaw says it
-          was already served: neither notice is the skill (`NOT_SERVED`). A SKILL.md it does not
-          list is read as any file is, a page at a time, a note after each saying where the rest
-          begins, which is left out (`_MORE`);
+        - a `read` of the file, as the model finds it listed with Tool Search on. A skill
+          OpenClaw has loaded, listed or not, is served whole — any paging the call asks for
+          dropped — its line endings made LF and a byte-order mark dropped, as `read` gives any
+          file. Too long for the call's budget, it is refused, and read again in the same
+          context, OpenClaw says it was already served: neither notice is the skill
+          (`NOT_SERVED`). Any other SKILL.md is read as any file is, a part at a time, a note
+          after each saying where the rest begins, which is left out (`_MORE`);
         - `skills_read`, with Tool Search off — the file's text as it is;
         - `skills_read` through `tool_call` — the same text, inside the JSON `tool_call` returns.
 

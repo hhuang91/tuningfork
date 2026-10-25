@@ -198,7 +198,8 @@ export async function connectionsView(root, _, scope) {
       lines.filter(Boolean).map((line) => h("div", { class: "glance-line" }, line)));
   }
 
-  /** A harness in a word: found, not found, or found and unable to run against this server. */
+  /** A harness in a word: found, not found, or found and unable to run — on this machine, as its
+   *  --version said, or against this server. */
   function harnessWord(harness) {
     if (!harness.path) return ["not found", "warn", harness.error || "Not on PATH, and no program named for it"];
     if (harness.problem) return ["cannot run here", "warn", harness.problem];

@@ -90,12 +90,14 @@ The config tuningfork writes, `~/.openclaw/openclaw.json` (JSON5, so a comment l
   OpenClaw's docs say a custom provider pointed at llama-server must ask.
 - **`contextWindow`**: OpenClaw never asks the server, and of a model its config does not size
   it assumes 200,000 tokens. It compacts a conversation by this, and bounds each answer below
-  it. A batch writes the server's own (`n_ctx`), as OpenClaw's own discovery of a server it
-  manages does, a fork its source's, and the harness option `context_window` another. OpenClaw
-  counts tokens its own way, though: on a log full of digits it counted about a third fewer
-  than the server (below), so a conversation can outgrow the server's window before OpenClaw
-  compacts it. The server then refuses the call, and OpenClaw compacts and asks again (source);
-  tuningfork, finding a failed call, leaves such a run out.
+  it. A batch writes the server's own (`n_ctx`), as OpenClaw's own llama.cpp provider does for
+  a server it finds running (from its `/props`), a fork its source's, and the harness option
+  `context_window` another. OpenClaw counts tokens its own way, though: on a log full of digits
+  it counted about a third fewer than the server (below), so a conversation can outgrow the
+  server's window before OpenClaw compacts it. The server then refuses the call, and OpenClaw
+  compacts and asks again (source). tuningfork, finding a failed call, leaves such a run out of
+  a batch's pass rate, and a fork out of its arm's count to the end, since a failed call is no
+  timeout: an edit that makes runs longer is then measured only on the runs that fit the window.
 - **The output limit** is left to OpenClaw: 8,192 tokens, sent as `max_completion_tokens`,
   which llama-server honours (measured: `finish_reason: length` at the limit, as for
   `max_tokens`).
@@ -180,9 +182,9 @@ node=v26.12.1 | active_node=unknown | active_node_identity=unknown | model=local
 ```
 
 The system prompt asks the model to begin a reply with `[[reply_to_current]]`, which OpenClaw
-takes out before a person sees it, and the model mostly does — 14 of the 16 batch runs' final
-replies here began with it. A reply check reads the reply as the model wrote it, so allow for
-it.
+takes out before a person sees it, and the model mostly does: of the 16 final replies the batch
+runs here gave, 14 began with it. A reply check reads the reply as the model wrote it, so allow
+for it.
 
 ### Tools
 
@@ -221,11 +223,12 @@ How the model loads a skill depends on Tool Search:
 Each way the result is the SKILL.md as a text tool result, **frontmatter included**: from
 `skills_read`, the file as it is; through `tool_call`, the same inside the JSON it returns
 (`{"tool": {…}, "result": {"content": [{"type": "text", "text": …}]}}`); from `read`, as `read`
-gives any file — a byte-order mark dropped, CRLF made LF — but whole (source). A skill the
-system prompt lists is never served in part: any paging the call asks for is dropped, a skill
-too long for the call's budget is refused ("Skill instructions cannot be partially served…"),
-and one read again in the same context is not sent again ("Skill instructions were already
-served whole earlier in the current model context…"). The adapter takes the skill's text from
+gives any file — a byte-order mark dropped, CRLF made LF — but whole (source). A skill OpenClaw
+has loaded, listed in the system prompt or not, is never served in part: any paging the call
+asks for is dropped, a skill too long for the call's budget is refused ("Skill instructions
+cannot be partially served…"), and one read again in the same context is not sent again
+("Skill instructions were already served whole earlier in the current model context…"). Any
+other SKILL.md is read as any file is, a part at a time. The adapter takes the skill's text from
 each result (`skill_spans`), and none from those notices or a call that failed; it names a
 `read` by the skill's folder, as `skill_load` does. A wording A/B finds the skill there:
 verified at a checkpoint (the examples' `SKILL.v2.md`, which names the report's keys:

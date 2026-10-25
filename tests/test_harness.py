@@ -668,7 +668,7 @@ class TestOpenClaw:
         assert span.name == adapter.skill_load(call) == "tally"
 
     @pytest.mark.parametrize("answer", [
-        # A listed skill is never paged: too long, it is refused; read again, OpenClaw says so.
+        # A skill OpenClaw has loaded is never paged: too long, it is refused; read again, OpenClaw says so.
         "Skill instructions cannot be partially served: the whole document exceeds this call's read or model-context "
         "budget. Ask the operator to reduce the document or increase the model context.",
         "Skill instructions were already served whole earlier in the current model context. Reuse that content; the "
@@ -704,9 +704,9 @@ class TestOpenClaw:
         "[Showing part of line 1 (50KB limit). Use read with offset=1, cursor=51200 to continue.]",
     ])
     def test_a_long_unlisted_skills_continuation_note_is_not_its_text(self, note):
-        """A SKILL.md the system prompt does not list is read as any file is: 2,000 lines or
-        50 KB at a time — less for a small window — with a note in one of three wordings saying
-        where the rest begins."""
+        """A SKILL.md that is not a skill OpenClaw has loaded is read as any file is: a part at
+        a time — as much as the context window allows, 32 to 128 KB a call — with a note in one
+        of three wordings saying where the rest begins."""
         from tuningfork.harness import OpenClawAdapter
 
         call = {"id": "c1", "function": {"name": "read", "arguments": '{"path":"/home/user/project/vendor/x/SKILL.md"}'}}

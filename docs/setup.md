@@ -236,7 +236,7 @@ or memory files, and none needs an API key.
 
 | | Hermes Agent | Claude Code | OpenClaw |
 |---|---|---|---|
-| Install (the versions the guides use) | `uv tool install hermes-agent==0.18.2` | `npm install -g @anthropic-ai/claude-code@2.1.281` (Node 18 or later) | `npm install -g openclaw@2026.10.7 --allow-scripts=openclaw` (Node 24.22.1 or later in 24, or 26.12.1 or later) |
+| Install (the versions the guides use) | `uv tool install hermes-agent==0.18.2` | `npm install -g @anthropic-ai/claude-code@2.1.281` (Node 18 or later) | `npm install -g openclaw@2026.10.7 --allow-scripts=openclaw` (Node 24.22.1 or later in 24, or 26.12.1 or later; without `--allow-scripts` on npm 11.15 or older) |
 | `--harness` | `hermes` (the default) | `claude-code` | `openclaw` |
 | Speaks | OpenAI chat completions | Anthropic Messages | OpenAI chat completions |
 | The skill arrives | preloaded into the system prompt, whole file | through the `Skill` tool, body only | through `read` or `skills_read` when the model chooses it, whole file |
