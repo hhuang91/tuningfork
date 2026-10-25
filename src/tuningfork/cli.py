@@ -1467,7 +1467,7 @@ def recheck(
         compared = f" — the run was judged {'pass' if recorded else 'fail'} when it ran"
     console.print(f"{verdict}{compared}")
     if data.get("output_cut"):
-        console.print(f"  [yellow]{data['output_cut']:,} characters it printed before these are not shown[/yellow]: a "
+        console.print(f"  [yellow]{data['output_cut']:,} characters of its output before these are not shown[/yellow]: a "
                       f"verdict keeps the last {CHECK_KEPT:,}, and only they are tallied")
     for line in (data["output"] or "").splitlines()[:40]:
         console.print(f"  {escape(line)}")

@@ -279,7 +279,7 @@ class TestTheRestOfTheStore:
         store.annotate_run(step.run_id, result=store.masking.of(result, masked=("check_output", "told")))
         kept = store.get_run(step.run_id).result
         assert kept["check_output"] == output and kept["told"] == {"message": output}
-        assert KEY not in kept["label"] and set(kept) == set(result)
+        assert KEY not in kept["label"] and list(kept) == list(result)  # in its own order
         launch = store.create_launch(kind="batch", eval={})
         store.end_launch(launch.id, exit=store.masking.of({"told": {"message": output}}, masked=("told",)))
         assert store.get_launch(launch.id).exit == {"told": {"message": output}}

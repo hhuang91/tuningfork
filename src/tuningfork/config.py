@@ -187,12 +187,20 @@ _SECRET_NAME = (
 
 #: A whole name that is a secret's (`secret_name`).
 _SECRET_NAME_ENDS = re.compile(f"(?:{_SECRET_NAME})\\Z")
+#: How else an environment names a secret: ending in a key, in any case, but a public one's
+#: (`openai_key`); in `_PWD` (`MYSQL_PWD`, not the shell's own `PWD`); or with the word `secret`
+#: in it (`SECRET_KEY_BASE`).
+_SECRET_VARIABLE = re.compile(
+    r"(?i)(?:^|[_\-.])key\Z(?<!public[_\-.]key)(?<!publishable[_\-.]key)|[_\-.]pwd\Z"
+    r"|(?:^|[_\-.])secret(?:\Z|[_\-.])"
+)
 
 
 def secret_name(name: str) -> bool:
     """Whether a variable's name is a secret's, as an environment or a `.env` file writes one:
-    `OPENAI_API_KEY`, `DB_PASSWORD`, `GITHUB_TOKEN`; not `HTTPS_PROXY`, nor `NEXT_PAGE_TOKEN`."""
-    return _SECRET_NAME_ENDS.search(name) is not None
+    `OPENAI_API_KEY`, `DB_PASSWORD`, `GITHUB_TOKEN`, `MYSQL_PWD`, `SECRET_KEY_BASE`; not
+    `HTTPS_PROXY`, `API_KEY_FILE`, nor `NEXT_PAGE_TOKEN`."""
+    return _SECRET_NAME_ENDS.search(name) is not None or _SECRET_VARIABLE.search(name) is not None
 
 
 #: Names ending in `key` whose value is no secret, though random: a request's idempotency key, a

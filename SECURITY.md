@@ -29,10 +29,11 @@ does to keep that local:
   (`sk-…`, GitHub's, GitLab's, AWS's, Google's, Slack's, Stripe's, Hugging Face's and more),
   private keys, bearer tokens, passwords in URLs and on command lines, and a value under a
   secret's name (`api_key=…`) where it reads as a key rather than as code. What a task's check
-  prints is redacted as it ends, before it is kept or told to a harness: wherever it stands, the
-  value of a variable the check gets whose name is a secret's, and tuningfork's own keys, are
-  masked too. That is a net, not a promise. Recordings hold what your harness sent and received
-  — prompts, tool output, file contents — so read a recordings folder before you share one.
+  prints is redacted as it ends, before it is kept or told to a harness. Wherever it stands
+  there, the value of a variable the check gets whose name is a secret's is masked too, and so
+  is each of tuningfork's own keys, when it is eight characters or more, without a space or a
+  quote. That is a net, not a promise. Recordings hold what your harness sent and received —
+  prompts, tool output, file contents — so read a recordings folder before you share one.
 
 What it does **not** do:
 

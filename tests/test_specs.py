@@ -325,6 +325,33 @@ class TestWhatACheckPrints:
 
         judged = run_check({"reply_contains": "done"}, tmp_path, reply=f"done with {self.KEY}", masking=Masking())
         assert judged.passed and self.KEY not in judged.output and "done with <redacted>" in judged.output
+        # What it looked for too, which its verdict names.
+        judged = run_check({"reply_contains": self.KEY}, tmp_path, reply="no key here", masking=Masking())
+        assert not judged.passed and self.KEY not in judged.output and '"<redacted>"' in judged.output
+
+    def test_a_reply_is_masked_before_it_is_cut_to_its_quote(self, tmp_path):
+        """Cut first, a key the cut fell inside would keep its start, which no pattern reads alone."""
+        from tuningfork.specs import REPLY_QUOTED, run_check
+        from tuningfork.store.masking import Masking
+
+        reply = "x" * (REPLY_QUOTED - 19) + " " + self.KEY + " done"
+        assert self.KEY[:16] in run_check({"reply_contains": "done"}, tmp_path, reply=reply).output
+        judged = run_check({"reply_contains": "done"}, tmp_path, reply=reply, masking=Masking())
+        assert judged.passed and self.KEY[:16] not in judged.output and judged.output.endswith("<redacted> done")
+
+    def test_it_is_masked_as_a_runs_result_keeps_it(self, tmp_path):
+        """As JSON writes it too, its quotes escaped, as the store masks what a result keeps: read as
+        text alone, a password before a typed declaration's quoted key stood (found in review)."""
+        from tuningfork.specs import run_check
+        from tuningfork.store.masking import Masking
+
+        line = 'login refused: password: Zq8xK3vN5wLp, api_key = "Q7bX2kLm9Zr4Tw8Y"'
+        assert "Zq8xK3vN5wLp" in Masking().value(line)  # read as text alone
+        (tmp_path / "said.txt").write_text(line, encoding="utf-8")
+        said = run_check("cat said.txt", tmp_path, masking=Masking()).output
+        assert "Zq8xK3vN5wLp" not in said and "Q7bX2kLm9Zr4Tw8Y" not in said
+        told = run_check({"reply_contains": "x"}, tmp_path, reply=line, masking=Masking()).output
+        assert "Zq8xK3vN5wLp" not in told
 
     def test_without_the_stores_masking_nothing_is_masked(self, tmp_path):
         from tuningfork.specs import run_check
@@ -334,8 +361,10 @@ class TestWhatACheckPrints:
     @pytest.mark.parametrize(("name", "secret"), [
         ("OPENAI_API_KEY", True), ("DB_PASSWORD", True), ("DB_PASS", True), ("GITHUB_TOKEN", True),
         ("AWS_SECRET_ACCESS_KEY", True), ("client_secret", True), ("STRIPE_KEY", True),
+        ("MYSQL_PWD", True), ("SECRET_KEY_BASE", True), ("openai_key", True),
         ("HTTPS_PROXY", False), ("SSL_CERT_FILE", False), ("NEXT_PAGE_TOKEN", False), ("BYPASS", False),
         ("PATH", False), ("STRIPE_PUBLIC_KEY", False), ("API_KEY_FILE", False), ("TOKEN_URL", False),
+        ("stripe_publishable_key", False), ("PWD", False), ("MONKEY", False), ("SECRETARY", False),
     ])
     def test_a_variables_name_is_a_secrets_as_the_patterns_read_one(self, name, secret):
         from tuningfork.config import secret_name

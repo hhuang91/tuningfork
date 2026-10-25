@@ -187,6 +187,15 @@ class TestWrittenHere:
         assert not trial.passed and trial.returncode is None
         assert trial.output.startswith('the reply does not contain "61.5"')
 
+    def test_the_reply_it_shows_is_masked_before_it_is_cut(self, store):
+        """A reply typed here is shown to its first characters: cut first, a key the cut fell inside
+        would keep its start, which no pattern reads alone."""
+        from tuningfork.ops.checks import REPLY_SHOWN
+
+        key = "sk-" "tfshownreply4Q7xZ2mN8pL4vR6tY0a"
+        trial = try_check(store, {"reply_contains": "done"}, reply="y" * (REPLY_SHOWN - 19) + " " + key + " done")
+        assert trial.passed and key[:16] not in json.dumps(trial.to_json())
+
 
 class TestRefusals:
     @pytest.mark.parametrize(

@@ -91,6 +91,8 @@ class CheckTrial:
     found: list[str]
     #: Characters cut from the output's start, as a verdict cuts them (`specs.CHECK_KEPT`).
     cut: int = 0
+    #: The reply judged, masked as the output is, before it is cut to what is shown.
+    reply_shown: str | None = None
 
     @property
     def agrees(self) -> bool | None:
@@ -99,7 +101,7 @@ class CheckTrial:
         return None if recorded is None else recorded == self.passed
 
     def to_json(self) -> dict[str, Any]:
-        reply = self.plan.reply
+        reply = self.plan.reply if self.reply_shown is None else self.reply_shown
         return {
             **self.plan.to_json(),
             "passed": self.passed,
@@ -240,11 +242,12 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None 
         found = sorted(path.relative_to(workspace).as_posix() for path in workspace.rglob("*") if path.is_file())
         reply_file = root / "reply.txt"
         reply_file.write_text(plan.reply, encoding="utf-8")
+        held = held_secrets(store.home)
         result = run_check(plan.check, workspace, plan.timeout, reply=plan.reply, reply_file=reply_file,
                            spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, check_env=plan.check_env,
-                           sandbox=plan.sandbox, keep=keep, masking=store.masking, also=held_secrets(store.home))
+                           sandbox=plan.sandbox, keep=keep, masking=store.masking, also=held)
     return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found,
-                      cut=result.cut)
+                      cut=result.cut, reply_shown=store.masking.in_json(plan.reply, also=held).value)
 
 
 def try_check(store: Store, check: Any = None, **options: Any) -> CheckTrial:

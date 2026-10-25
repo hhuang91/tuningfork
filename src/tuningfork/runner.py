@@ -184,7 +184,7 @@ class RunOutcome:
 
 #: What a run's result and its launch's exit hold that was masked where it was made: the check's
 #: output, before it was cut (`run_check`), and what the harness was told of it, which the harness
-#: was given masked. The store keeps them as they are.
+#: was given masked (`Launcher._tell`: the message and numbers). The store keeps them as they are.
 MASKED_WHERE_MADE = ("check_output", "told")
 
 
@@ -598,6 +598,8 @@ class Launcher:
             reason = self.cancel.reason or "cancelled"
             self._stopped(launch, workspace, reason, time.monotonic() - started, annotate)
             raise Cancelled(reason)
+        # Kept as it is (`MASKED_WHERE_MADE`): the message, masked where the check ran, and numbers.
+        # Text added here is masked here.
         return {
             "message": message,
             "returncode": exited.returncode,

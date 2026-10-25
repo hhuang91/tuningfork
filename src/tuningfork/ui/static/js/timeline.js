@@ -185,7 +185,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
           : null],
         ["it printed", output
           ? [result.check_output_cut
-              ? h("p", { class: "hint" }, `${result.check_output_cut.toLocaleString()} characters it printed before these are not kept: a verdict keeps the last 2,000, and only they are tallied.`)
+              ? h("p", { class: "hint" }, `${result.check_output_cut.toLocaleString()} characters of its output before these are not kept: a verdict keeps the last 2,000, and only they are tallied.`)
               : null,
             longText(output, { limit: 2000, lines: 30, open: true })]
           : result.passed === false ? h("span", { class: "muted" }, "nothing") : null],

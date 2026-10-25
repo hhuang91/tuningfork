@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from tuningfork.config import DEFAULT_REDACTIONS, _masking, patterns_digest, redact_json_found
+from tuningfork.config import DEFAULT_REDACTIONS, REDACTED, _masking, patterns_digest, redact_json_found
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,9 +50,22 @@ class Masking:
         if isinstance(value, dict) and masked:
             kept = {key: value[key] for key in masked if key in value}
             rest = self.of({key: item for key, item in value.items() if key not in kept}, also=also)
-            return Masked({**rest.value, **kept}, rest.made, rest.found)
+            # In the object's own order; a key masking took apart, or a drop's marker, after it.
+            ordered = {key: kept[key] if key in kept else rest.value[key]
+                       for key in value if key in kept or key in rest.value}
+            return Masked({**ordered, **rest.value, **kept}, rest.made, rest.found)
         written, made, found = redact_json_found(value, self.patterns, tuple(also))
         return Masked(written, made, found)
+
+    def in_json(self, text: str, *, also: Iterable[str] = ()) -> Masked:
+        """`text` masked as a string kept in JSON is: read as it stands and as JSON writes it, its
+        quotes escaped — where `of` reads text as text alone. A check's output, kept in a run's
+        result, is masked so wherever it goes."""
+        kept = self.of([text], also=also)
+        if isinstance(kept.value, list) and len(kept.value) == 1 and isinstance(kept.value[0], str):
+            return Masked(kept.value[0], kept.made, kept.found)
+        # Masking broke the JSON, which it never should: nothing of the text is kept.
+        return Masked(REDACTED, max(kept.made, 1), kept.found)
 
     def value(self, value: Any, *, also: Iterable[str] = ()) -> Any:
         """`value` masked, for a write that keeps no count."""
