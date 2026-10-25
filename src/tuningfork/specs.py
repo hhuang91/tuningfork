@@ -96,7 +96,8 @@ class TuningforkOptions:
         data = data or {}
         return cls(
             check=data.get("check"),
-            check_env=[name for name in data.get("check_env") or [] if isinstance(name, str)],
+            check_env=[name for name in data["check_env"] if isinstance(name, str)]
+            if isinstance(data.get("check_env"), list) else [],
             normalizers=list(data.get("normalizers") or []),
             held_out=bool(data.get("held_out", False)),
             skills=list(data.get("skills") or []),

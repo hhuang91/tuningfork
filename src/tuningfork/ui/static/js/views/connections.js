@@ -96,7 +96,7 @@ export function whatItMeans({ server = {}, harnesses = [], sandbox = null, propo
   const greyed = Object.entries(server.token_work || {}).filter(([, reason]) => reason).map(([work]) => TOKEN_CONTROLS[work] || work);
   if (greyed.length) lines.push(`${listed(greyed)} ${greyed.length === 1 ? "is" : "are"} greyed out on this server.`);
   if (sandbox && !sandbox.available) {
-    lines.push("Runs tuningfork starts are not sandboxed, so their folders' paths differ from run to run, the model reads them, and their checks run on this machine itself.");
+    lines.push("Runs tuningfork starts are not sandboxed, so their folders' paths differ from run to run, and the model reads them.");
   }
   if (proposer.remote) {
     lines.push(!proposer.allow_remote
@@ -478,10 +478,10 @@ export async function connectionsView(root, _, scope) {
         ? kv([
             ["every run tuningfork starts sees", h("span", null, "its folder ", h("span", { class: "mono" }, sandbox.workspace), ", its home ", h("span", { class: "mono" }, sandbox.home))],
             ["hidden from it", "the recordings folder, the runs' folders and the task file's folder; the rest of the machine read-only"],
-            ["a run's check", "runs there too, with the task file's folder read-only and none of your environment variables but those its task names"],
+            ["a run's check", "runs there too, with the task file's folder read-only, a few of your environment variables like PATH, and those its task names"],
           ])
         : h("div", { class: "banner banner-warn" },
-            `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them; and its check runs on this machine itself.`));
+            `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them. Their checks run on this machine itself.`));
   }
 
   function harnessCard(harness) {

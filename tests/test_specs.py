@@ -190,6 +190,33 @@ class TestValidation:
         missing = run_check({"reply_matches": r"(?=.*212\.00)(?=.*archive)"}, tmp_path, reply=reply)
         assert both.passed and not missing.passed
 
+    def test_an_unknown_normalizer_is_named_with_the_known_ones(self):
+        (problem,) = validate_spec(spec(tuningfork={"normalizers": ["tool_name", "vibes"]}))
+        assert problem.where == "evals[0].tuningfork.normalizers"
+        assert "vibes" in problem.message and "tool_call_json" in problem.message
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "..",
+            {"path": "/etc/passwd", "content": "x"},
+            {"path": "../outside.txt", "content": "x"},
+            {"path": "in/../../outside.txt", "content": "x"},
+            {"path": "C:/Windows/x.txt", "content": "x"},
+            {"path": "", "content": "x"},
+            {"path": "a.bin", "content": b"x".hex(), "source": ""},
+            {"path": "a.txt", "content": 3},
+            3,
+        ],
+    )
+    def test_a_file_that_would_land_outside_the_workspace_or_is_malformed(self, entry):
+        assert where(spec(files=[entry])) == ["evals[0].files[0]"]
+
+    def test_a_check_env_that_is_not_a_list_is_read_as_none(self):
+        """Read back leniently, as a launch's stored eval is: a name given as text is not split
+        into its letters."""
+        assert TuningforkOptions.from_dict({"check": "true", "check_env": "OPENAI_API_KEY"}).check_env == []
+
 
 class TestACheckEnvironment:
     """A shell check can run what the model left in the workspace (a `conftest.py` its `pytest`
@@ -233,28 +260,6 @@ class TestACheckEnvironment:
         reply = tmp_path / "reply.txt"
         seen = self.seen(tmp_path, reply_file=reply, spec_dir=tmp_path)
         assert seen["TUNINGFORK_REPLY"] == str(reply) and seen["TUNINGFORK_SPEC_DIR"] == str(tmp_path.resolve())
-
-    def test_an_unknown_normalizer_is_named_with_the_known_ones(self):
-        (problem,) = validate_spec(spec(tuningfork={"normalizers": ["tool_name", "vibes"]}))
-        assert problem.where == "evals[0].tuningfork.normalizers"
-        assert "vibes" in problem.message and "tool_call_json" in problem.message
-
-    @pytest.mark.parametrize(
-        "entry",
-        [
-            "..",
-            {"path": "/etc/passwd", "content": "x"},
-            {"path": "../outside.txt", "content": "x"},
-            {"path": "in/../../outside.txt", "content": "x"},
-            {"path": "C:/Windows/x.txt", "content": "x"},
-            {"path": "", "content": "x"},
-            {"path": "a.bin", "content": b"x".hex(), "source": ""},
-            {"path": "a.txt", "content": 3},
-            3,
-        ],
-    )
-    def test_a_file_that_would_land_outside_the_workspace_or_is_malformed(self, entry):
-        assert where(spec(files=[entry])) == ["evals[0].files[0]"]
 
 
 class TestLoading:

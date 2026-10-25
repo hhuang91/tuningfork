@@ -145,7 +145,8 @@ def prepare_fork(
         # And its clock starts where its source's did, so its live steps read the
         # recording's date; a source made on the real clock forks on the real clock.
         sandbox, unsandboxed = for_launches(
-            [store.home, workdir, spec_dir], clock=(launch.settings.get("sandbox") or {}).get("clock"),
+            [store.home, workdir, spec_dir], own=[store.home, workdir],
+            clock=(launch.settings.get("sandbox") or {}).get("clock"),
         )
         if sandbox is None:
             raise OperationError(

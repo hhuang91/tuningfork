@@ -196,6 +196,9 @@ class Sandbox:
     clock: str | None = None
     clock_library: str | None = None
     clock_problem: str | None = None
+    #: Of `hide`, tuningfork's own folders — the recordings folder, the runs' — which no check
+    #: is shown either, wherever its task's folder is.
+    own: tuple[Path, ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         """As a launch's settings keep it: a fork of the run is sandboxed the same way, and
@@ -254,19 +257,26 @@ class Sandbox:
         """A task's shell check, run as its launch ran, and the environment it runs with: the
         workspace seen as `WORKSPACE`, the reply as `REPLY`, the machine read-only, tuningfork's
         folders and the ones the person hides empty, and a `/tmp` and processes of its own — a
-        check can run code the model wrote, and nothing it starts outlives it. Two kinds of
-        folder show through what is hidden, read-only: the task's own (`spec_dir`), where its
-        check scripts are, which a launch never sees; and a Python environment on the check's
-        `PATH` that a hidden folder holds — a venv kept in the recordings folder, its `python3`
-        — which holds no secret. Its clock is the machine's, as a check's always was."""
+        check can run code the model wrote, and none of its processes outlives it. Two kinds of
+        folder show through what is hidden, read-only: the task's own (`spec_dir`, unless
+        `shows` says not), where its check scripts are, which a launch never sees; and a Python
+        environment on the check's `PATH` that a hidden folder holds — a venv kept in the
+        recordings folder, its `python3` — which holds no secret. What is hidden inside a folder
+        shown stays hidden: the recordings folder kept in the task's folder. Its clock is the
+        machine's, as a check's always was."""
         real_home = Path.home()
-        hidden = hideable(self.hide, real_home=real_home)
+        # Every folder hidden from the launch, one inside another too: a launch needs no word
+        # for it (`hideable` leaves it out), but a check shown the outer folder does.
+        hidden = [
+            folder for folder in dict.fromkeys(Path(each).resolve() for each in self.hide)
+            if folder.is_dir() and folder != Path("/") and not _within(real_home.resolve(), folder)
+        ]
         path = environment.get("PATH", "")
         shown = _environments(path, hidden)
-        # Not the person's home, shown already, nor a folder that would bring back what every
-        # launch is kept from (`holds_kept`).
-        if spec_dir is not None and not holds_kept(spec_dir) and not _within(real_home.resolve(), Path(spec_dir).resolve()):
-            shown.insert(0, Path(spec_dir).resolve())
+        if spec_dir is not None and self.shows(spec_dir):
+            task = Path(spec_dir).resolve()
+            shown.insert(0, task)
+            hidden = [folder for folder in hidden if folder != task]
         mounts = [(Path(workspace), WORKSPACE), *([(Path(reply_file), REPLY)] if reply_file is not None else [])]
         env = {key: translate(value, mounts) for key, value in environment.items()}
         if "PATH" in env:
@@ -292,20 +302,29 @@ class Sandbox:
         arguments += ["--chdir", str(WORKSPACE), "--", "/bin/sh", "-c", command]
         return arguments, env
 
+    def shows(self, task: Path | str) -> bool:
+        """Whether a check is shown its task's folder, which every launch is kept from: not
+        when it is one of tuningfork's own (a task file kept in the recordings folder itself),
+        nor when it would bring back what every launch is kept from (`holds_kept`)."""
+        task = Path(task).resolve()
+        return task not in {Path(folder).resolve() for folder in self.own} and not holds_kept(task)
+
 
 def for_launches(
-    hide: Iterable[Path | str | None] = (), *, clock: str | None = FROM_ENV
+    hide: Iterable[Path | str | None] = (), *, own: Iterable[Path | str | None] = (), clock: str | None = FROM_ENV
 ) -> tuple[Sandbox | None, str | None]:
     """The sandbox launches run in here, or None and why not. `hide` is what the operation
-    keeps from every launch; the folders the person names (`HIDE`) are hidden with them.
-    `clock` is the instant every launch starts at: the person's setting (`CLOCK`) unless
-    given — a fork gives its source's, None where the source had none. Wanted and not
-    possible, the sandbox says why (`clock_problem`) and runs on the real clock."""
+    keeps from every launch; the folders the person names (`HIDE`) are hidden with them, and
+    so are `own`, tuningfork's own folders, which no check is shown either. `clock` is the
+    instant every launch starts at: the person's setting (`CLOCK`) unless given — a fork
+    gives its source's, None where the source had none. Wanted and not possible, the sandbox
+    says why (`clock_problem`) and runs on the real clock."""
     found = status()
     if not found.available or found.executable is None:
         return None, found.reason
+    mine = tuple(dict.fromkeys(Path(folder).resolve() for folder in own if folder))
     folders = tuple(dict.fromkeys(
-        Path(folder).resolve() for folder in (*hide, *hidden_by_the_person()) if folder
+        Path(folder).resolve() for folder in (*mine, *hide, *hidden_by_the_person()) if folder
     ))
     wanted, problem = pinned_clock() if clock == FROM_ENV else (clock, None)
     library = clock_library() if wanted else None
@@ -315,6 +334,7 @@ def for_launches(
         wanted = None
     return Sandbox(
         found.executable, found.version, folders, clock=wanted, clock_library=library, clock_problem=problem,
+        own=mine,
     ), None
 
 
@@ -381,12 +401,13 @@ def holds_kept(folder: Path | str) -> bool:
 
 
 def _environments(path: str, hidden: Sequence[Path]) -> list[Path]:
-    """The Python environments on `path` that a hidden folder holds: a folder of programs
-    whose parent keeps a `pyvenv.cfg`, as a venv's `bin` does."""
+    """The Python environments on `path` that a hidden folder holds, inside it and never the
+    hidden folder itself: a folder of programs whose parent keeps a `pyvenv.cfg`, as a venv's
+    `bin` does."""
     found: list[Path] = []
     for entry in filter(None, path.split(os.pathsep)):
         folder = Path(entry).resolve().parent
-        if (folder / "pyvenv.cfg").is_file() and any(_within(folder, each) for each in hidden):
+        if (folder / "pyvenv.cfg").is_file() and any(folder != each and _within(folder, each) for each in hidden):
             found.append(folder)
     return list(dict.fromkeys(found))
 

@@ -9,6 +9,7 @@ snapshotted workspace and a recorded final reply ("The report is written.").
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -98,7 +99,7 @@ class TestAgainstARun:
                 seen.update(command=command, spec_dir=spec_dir, reply_file=reply_file)
                 return ["/bin/sh", "-c", command], environment
 
-        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide: (Recorded(), None))
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (Recorded(), None))
         stack, run_id = launched
         trial = try_check(stack.store, "test -f report.json", run=run_id)
         assert trial.passed, trial.output
@@ -107,6 +108,29 @@ class TestAgainstARun:
         assert seen["spec_dir"].resolve() == stack.spec.path.parent.resolve()
         # A reply check runs nothing, so it needs no sandbox.
         assert try_check(stack.store, {"reply_contains": "written"}, run=run_id).to_json()["sandboxed"] is False
+
+    def test_a_trial_hides_what_its_runs_launch_hid(self, launched, monkeypatch, tmp_path):
+        """A runs' folder outside the recordings, a folder the person hid when it ran: its own
+        check never saw them, and a trial of it does not either. Of them, all but its task's
+        folder and the person's are tuningfork's own, which no check is shown."""
+        import tuningfork.sandbox
+        from tuningfork.ops.checks import prepare_check_trial
+
+        stack, run_id = launched
+        runs, theirs = tmp_path / "runs-elsewhere", tmp_path / "keys"
+        task = stack.spec.path.parent.resolve()
+        launch_id = stack.store.get_run(run_id).launch_id
+        hid = [str(stack.store.home.resolve()), str(runs.resolve()), str(task), str(theirs.resolve())]
+        stack.store._conn.execute(
+            "UPDATE launches SET settings = json_set(settings, '$.sandbox', json(?)) WHERE id = ?",
+            (json.dumps({"kind": "bubblewrap", "hidden": hid}), launch_id),
+        )
+        monkeypatch.setenv(tuningfork.sandbox.HIDE, str(theirs))
+        asked: dict = {}
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **options: asked.update(hide=hide, **options) or (None, "x"))
+        prepare_check_trial(stack.store, "true", run=run_id)
+        assert {str(folder) for folder in asked["hide"]} >= set(hid)
+        assert {Path(folder).resolve() for folder in asked["own"]} == {stack.store.home.resolve(), runs.resolve()}
 
 
 def test_a_check_reads_the_variables_its_task_names_and_no_others(tmp_path, mock_server, monkeypatch):
@@ -220,7 +244,7 @@ def test_recheck_says_when_the_check_cannot_run_in_the_sandbox(launched, monkeyp
     stack, run_id = launched
     home = str(stack.store.home)
     monkeypatch.delenv(tuningfork.sandbox.SWITCH, raising=False)
-    monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide: (None, "bubblewrap is not installed"))
+    monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (None, "bubblewrap is not installed"))
     shown = CliRunner().invoke(app, ["recheck", run_id, "--home", home])
     assert "not sandboxed: bubblewrap is not installed" in shown.output
     # Turned off by the person, it is said nowhere, as a batch's plan says nothing then.

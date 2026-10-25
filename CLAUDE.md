@@ -166,11 +166,13 @@ A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holdi
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
 agent's sight). It can run what the model wrote — a `conftest.py` its `pytest` finds — so its
 environment is made from scratch, sandbox or not (`specs.check_environment`: a launch's few
-variables and those its task names in `check_env`, never tuningfork's keys), and where its run
-was sandboxed it runs in that sandbox (`Sandbox.check_command`): the workspace as
-`/home/user/project`, an empty home, the task's folder shown read-only, and a Python environment
-on its `PATH` that a hidden folder holds shown too. A check tried (`ops/checks.py`) and one run
-along a run run the same way. A check that prints what it found wrong, one finding a line, gets a tally
+variables and those its task names in `check_env`, never tuningfork's keys), and a run's check
+runs in the sandbox its run ran in (`Sandbox.check_command`): the workspace as
+`/home/user/project`, an empty home, the task's folder shown read-only (`Sandbox.shows`: never
+one of tuningfork's own, `own`, nor one holding `/tmp` or `/home`), a Python environment on its
+`PATH` that a hidden folder holds shown too, and what is hidden inside a shown folder hidden
+still. A check tried (`ops/checks.py`) and one run along a run run in one like it wherever
+bubblewrap runs, hiding what the run's launch hid. A check that prints what it found wrong, one finding a line, gets a tally
 (`ops/tally.py`; `tuningfork tally`, MCP's tally_failures, the divergence and experiment pages):
 each finding counted across a task's failed runs by condition, or a screen's failed forks by
 arm, its numbers and colours masked and a run counted once, the most common first — the failure to fix

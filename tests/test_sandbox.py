@@ -222,13 +222,49 @@ class TestTheCheck:
         assert argv[hidden_at - 1] == "--tmpfs" and argv[shown_at - 1] == "--ro-bind-try" and hidden_at < shown_at
         assert env["TUNINGFORK_SPEC_DIR"] == str(spec_dir)  # shown where it is
 
-    @pytest.mark.parametrize("folder", [Path("/"), Path("/tmp"), Path("/home"), Path.home()])
+    @pytest.mark.parametrize("folder", [Path("/"), Path("/tmp"), Path("/home")])
     def test_a_tasks_folder_that_holds_what_the_sandbox_keeps_is_not_shown_whole(self, tmp_path, folder):
-        """A task file at / or in /tmp itself: shown whole, its folder would bring back the
-        machine's /tmp — other programs' files and sockets — or other people's homes."""
+        """A task file at / or in /tmp or /home itself: shown whole, its folder would bring back
+        the machine's /tmp — other programs' files and sockets — or other people's homes."""
         argv, *_ = self.command(tmp_path, spec_dir=folder)
         shown = [argv[at + 1] for at, part in enumerate(argv) if part == "--ro-bind-try"]
         assert str(folder.resolve()) not in shown
+
+    def test_the_recordings_kept_in_its_tasks_folder_stay_hidden(self, tmp_path, elsewhere):
+        """As a batch hides them: the task's folder, and the recordings and runs' folders inside
+        it (`evals.json` in a project, `--home .tuningfork`). A launch needs a word for the outer
+        folder alone; its check, shown that folder, needs one for each folder inside."""
+        project = tmp_path / "project"
+        recordings, runs = project / ".tuningfork", project / ".tuningfork" / "batches"
+        runs.mkdir(parents=True)
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        sandbox = Sandbox("/usr/bin/bwrap", "0.11.1", hide=(recordings, runs, project), own=(recordings, runs))
+        argv, _ = sandbox.check_command("true", workspace=workspace, environment={}, spec_dir=project)
+        shown_at = argv.index(str(project.resolve()))
+        assert argv[shown_at - 1] == "--ro-bind-try"
+        for folder in (recordings, runs):
+            hidden_at = argv.index(str(folder.resolve()))
+            assert argv[hidden_at - 1] == "--tmpfs" and hidden_at > shown_at
+
+    def test_a_tasks_folder_that_is_tuningforks_own_is_never_shown(self, tmp_path, elsewhere):
+        """A task file kept in the recordings folder itself: shown, its folder would be the
+        recordings, keys and all."""
+        recordings = tmp_path / "recordings"
+        recordings.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        sandbox = Sandbox("/usr/bin/bwrap", "0.11.1", hide=(recordings,), own=(recordings,))
+        argv, _ = sandbox.check_command("true", workspace=workspace, environment={}, spec_dir=recordings)
+        assert "--ro-bind-try" not in argv and argv[argv.index(str(recordings.resolve())) - 1] == "--tmpfs"
+        assert not sandbox.shows(recordings) and sandbox.shows(recordings / "scenarios" / "one")
+
+    def test_a_hidden_folder_that_is_a_python_environment_is_not_shown(self, tmp_path, elsewhere):
+        recordings = tmp_path / "recordings"
+        (recordings / "bin").mkdir(parents=True)
+        (recordings / "pyvenv.cfg").write_text("home = /usr/bin\n")
+        argv, env, *_ = self.command(tmp_path, hide=[recordings], path=f"{recordings / 'bin'}{os.pathsep}/usr/bin")
+        assert "--ro-bind-try" not in argv and env["PATH"] == "/usr/bin"
 
     def test_a_folder_hidden_inside_its_tasks_folder_stays_hidden(self, tmp_path, elsewhere):
         spec_dir = tmp_path / "work"
@@ -271,7 +307,7 @@ class TestTheBatchPlan:
     def test_it_says_what_every_run_sees(self, stack, monkeypatch):
         import tuningfork.sandbox
 
-        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide: (Sandbox("/usr/bin/bwrap", "0.11.1"), None))
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (Sandbox("/usr/bin/bwrap", "0.11.1"), None))
         data = self.prepare(stack).to_json()
         assert data["sandbox"]["workspace"] == "/home/user/project" and data["notes"] == []
 
@@ -281,15 +317,19 @@ class TestTheBatchPlan:
         import tuningfork.sandbox
 
         monkeypatch.setattr(tuningfork.sandbox, "TMP", stack.spec.path.parent.resolve())
-        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide: (Sandbox("/usr/bin/bwrap", "0.11.1"), None))
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (Sandbox("/usr/bin/bwrap", "0.11.1"), None))
         (note,) = self.prepare(stack).to_json()["notes"]
-        assert note["level"] == "warning" and "never sees whole" in note["message"]
+        assert note["level"] == "warning" and "never sees" in note["message"]
+        # A check of the reply reads nothing beside the task file.
+        stack.item.tuningfork.check = {"reply_contains": "61.5"}
+        stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+        assert self.prepare(stack).to_json()["notes"] == []
 
     def test_without_it_a_warning_says_why_and_what_changes(self, stack, monkeypatch):
         import tuningfork.sandbox
 
         monkeypatch.delenv(SWITCH, raising=False)
-        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide: (None, "bubblewrap is not installed"))
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (None, "bubblewrap is not installed"))
         data = self.prepare(stack).to_json()
         assert data["sandbox"] is None
         (note,) = data["notes"]
@@ -363,6 +403,31 @@ class TestInBubblewrap:
         assert seen["task"] == sorted(os.listdir(spec_dir))
         if hideable([FIXTURES], real_home=Path.home()):
             assert seen["hidden"] == ["formats"]  # empty inside, but for its task's folder
+
+    def test_a_check_in_a_project_never_reads_the_recordings_kept_there(self, sandboxed, tmp_path):
+        """The task file in a project folder, recorded into a folder inside it: the check reads
+        what is kept beside the task file, and none of the recordings — not their keys, not
+        another run's workspace."""
+        from tuningfork.specs import run_check
+
+        project = tmp_path / "project"
+        recordings = project / ".tuningfork"
+        other_run = recordings / "batches" / "b0" / "0" / "workspace"
+        other_run.mkdir(parents=True)
+        (recordings / ".access-token").write_text("the proxy's key")
+        (other_run / "notes.txt").write_text("another run's file")
+        (project / "check.sh").write_text("echo beside-the-task\n")
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        sandbox, _ = for_launches(
+            [recordings, recordings / "batches", project], own=[recordings, recordings / "batches"],
+        )
+        result = run_check(
+            f'sh "$TUNINGFORK_SPEC_DIR/check.sh"; cat "{recordings / ".access-token"}" "{other_run / "notes.txt"}"',
+            workspace, 60, spec_dir=project, sandbox=sandbox,
+        )
+        assert "beside-the-task" in result.output
+        assert "the proxy's key" not in result.output and "another run's file" not in result.output
 
     def test_a_check_keeps_a_python_environment_the_recordings_folder_holds(self, sandboxed, tmp_path, monkeypatch, elsewhere):
         """The recordings folder is empty inside, its keys with it — but for the venv on the

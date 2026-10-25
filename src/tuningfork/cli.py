@@ -1856,6 +1856,9 @@ def check_along_command(
         return
     console.print(f"running the check along {len(plan.plans)} run(s), "
                   f"{sum(len(each.states) for each in plan.plans)} state(s) of their workspaces")
+    if plan.unsandboxed:
+        console.print(f"  [yellow]not sandboxed[/yellow]: {escape(plan.unsandboxed)}. The check runs on this "
+                      "machine itself, where it can run what the model wrote")
     done = execute_check_along_runs(store, plan)
     for entry in done.runs:
         verdict = {True: "passed", False: "failed"}.get(entry["passed"], "no verdict")

@@ -170,8 +170,8 @@ TERMS: tuple[Term, ...] = (
     Term("sandbox", "Where every launch runs when bubblewrap can (Linux): its home is /home/user and it works in "
          "/home/user/project, the same in every run, with the harness's files where it installs them. The model reads "
          "those paths, and a few digits of a run's own folder were seen to change what it did. The rest of the machine "
-         "is read-only, and the recordings and the task's spec folder are hidden. Without it, each launch sees its own "
-         "folders, and a batch's plan warns.",
+         "is read-only, and the recordings and the task's spec folder are hidden. A run's check runs there too, its "
+         "task's folder shown to it. Without it, each launch sees its own folders, and a batch's plan warns.",
          "tasks", aka=("bubblewrap", "bwrap", "TUNINGFORK_SANDBOX"), see=("launch", "workspace"),
          where="Connections page; tuningfork connections show"),
     Term("workspace", "The folder a launched harness works in: the task's input files, snapshotted at the start and "

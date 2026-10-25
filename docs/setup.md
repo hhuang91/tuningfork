@@ -324,11 +324,14 @@ A run's check runs in the same sandbox once the run ends, since it can run what 
 in the workspace. It works in `/home/user/project`, sees the task's folder read-only, which no
 launch sees, and has an empty home of its own. Of your environment variables it gets only
 `PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, and those its task names in
-[`check_env`](#a-task); without the sandbox it gets the same ones. A tool's cache starts empty,
-so a check that installs a package each time (`uv run --with …`) downloads it. A check tried
-with `tuningfork recheck`, or run along a run, runs the same way. Keep a task file in a folder
-of its own: one directly in `/tmp` leaves its check without what is kept beside it, since a
-check never sees the machine's `/tmp`, and a batch's plan says so.
+[`check_env`](#a-task); without the sandbox it gets the same ones. That leaves out a proxy's
+settings too (`https_proxy`, `SSL_CERT_FILE`), as for a launch: name them in `check_env` if a
+check needs the network behind one. A tool's cache starts empty, so a check that installs a
+package each time (`uv run --with …`) downloads it. It writes nowhere but the workspace, its
+own home and its own `/tmp`, and it cannot read the run's home. A check tried with `tuningfork
+recheck`, or run along a run, runs the same way. Keep a task file in a folder of its own: one
+directly in `/tmp`, or in the recordings folder itself, leaves its check without what is kept
+beside it, since a check never sees either, and a batch's plan says so.
 
 It keeps runs alike; it is not a security boundary. Inside, the rest of the machine stays
 readable, your home included, and the network is reachable: see [`SECURITY.md`](../SECURITY.md).

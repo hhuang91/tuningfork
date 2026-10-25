@@ -102,6 +102,18 @@ def test_it_is_run_from_the_terminal_once_a_run(stack):
     assert stack.store.get_run(run.id).result[ALONG]
 
 
+def test_it_says_when_the_check_cannot_run_in_the_sandbox(stack, monkeypatch):
+    import tuningfork.sandbox
+
+    one_run(stack)
+    monkeypatch.delenv(tuningfork.sandbox.SWITCH, raising=False)
+    monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (None, "bubblewrap is not installed"))
+    printed = CliRunner().invoke(app, ["check-along", "--task", TASK, "--home", str(stack.store.home)],
+                                 env={"COLUMNS": "200"})
+    assert printed.exit_code == 0, printed.output
+    assert "not sandboxed: bubblewrap is not installed" in printed.output
+
+
 def test_a_check_of_the_reply_alone_has_nothing_to_read_before_the_end(stack):
     stack.item.tuningfork.check = {"reply_contains": "written"}
     stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
