@@ -307,5 +307,18 @@ def test_every_key_planted_reaches_the_store_where_nothing_masks_it(tmp_path, mo
     monkeypatch.setattr("tuningfork.config.secret_name", lambda name: False)
     monkeypatch.setattr("tuningfork.access.held_secrets", lambda home=None: [])
     monkeypatch.setattr("tuningfork.runner.held_secrets", lambda home=None: [])
-    found = swept(tmp_path, mock_server, monkeypatch, canaries(), patterns=())
+    keys = canaries()
+    found = swept(tmp_path, mock_server, monkeypatch, keys, patterns=())
     assert {place.split(" in ")[0] for place in found} == set(PLANTED) - {"upstream password"}
+    # And each reply's cut does fall inside its key: where a trial keeps the cut part, its start
+    # stands and its end does not.
+    connection = sqlite3.connect(f"file:{tmp_path / 'home' / 'tuningfork.db'}?mode=ro", uri=True)
+    try:
+        trials = [json.loads(row[0]) for row in connection.execute(
+            "SELECT result FROM jobs WHERE kind = 'check-trial' AND result IS NOT NULL")]
+    finally:
+        connection.close()
+    for name, field in (("reply cut to its quote", "output"), ("reply cut to what a trial shows", "reply")):
+        start, end = pieces(keys[name])
+        cut = [trial[field] for trial in trials if start in (trial.get(field) or "")]
+        assert cut and not any(end in text for text in cut), name

@@ -353,6 +353,37 @@ class TestWhatACheckPrints:
         told = run_check({"reply_contains": "x"}, tmp_path, reply=line, masking=Masking()).output
         assert "Zq8xK3vN5wLp" not in told
 
+    def test_it_is_masked_every_way_storage_reads_a_text(self, tmp_path, monkeypatch):
+        """Read as a string in JSON alone, as a run's result was masked, a key three escapes deep
+        stood, and a secret variable's value written as a number or partly taken by a pattern (found
+        in review); read as text alone, the password above."""
+        from tuningfork.specs import run_check
+        from tuningfork.store.masking import Masking
+
+        monkeypatch.setenv("DB_PASSWORD", "Zq8xK3vN5wLp;Ab9x")
+        monkeypatch.setenv("REDIS_PASSWORD", "739152648")
+        printed = {
+            "deep.txt": ("keys below" + "\\" * 4 + "n" + self.KEY, self.KEY),
+            "part.txt": ("FATAL: login with password=Zq8xK3vN5wLp;Ab9x failed", "Ab9x"),
+            "number.txt": ('{"host": "db", "password": 739152648}', "739152648"),
+        }
+        for name, (text, secret) in printed.items():
+            (tmp_path / name).write_text(text, encoding="utf-8")
+            assert secret in Masking().value([text], also=["Zq8xK3vN5wLp;Ab9x", "739152648"])[0], name
+            said = run_check(f"cat {name}", tmp_path, check_env=["DB_PASSWORD", "REDIS_PASSWORD"], masking=Masking())
+            assert secret not in said.output, (name, said.output)
+
+    def test_the_values_given_mask_every_text_it_masks(self, tmp_path):
+        """A reply check masks what it looked for and the reply apart: values given once, as an
+        iterator, mask both (found in review)."""
+        from tuningfork.specs import run_check
+        from tuningfork.store.masking import Masking
+
+        held = "Pw42heldKey" "Q7xZ2mN8pL4vR"
+        said = run_check({"reply_contains": held}, tmp_path, reply=f"the key is {held}", masking=Masking(),
+                         also=iter([held])).output
+        assert held not in said
+
     def test_without_the_stores_masking_nothing_is_masked(self, tmp_path):
         from tuningfork.specs import run_check
 
@@ -365,6 +396,8 @@ class TestWhatACheckPrints:
         ("HTTPS_PROXY", False), ("SSL_CERT_FILE", False), ("NEXT_PAGE_TOKEN", False), ("BYPASS", False),
         ("PATH", False), ("STRIPE_PUBLIC_KEY", False), ("API_KEY_FILE", False), ("TOKEN_URL", False),
         ("stripe_publishable_key", False), ("PWD", False), ("MONKEY", False), ("SECRETARY", False),
+        ("SECRET_KEY_FILE", False), ("VAULT_SECRET_PATH", False), ("AWS_SECRET_NAME", False), ("cache_key", False),
+        ("KEY", True), ("SECRET", True),
     ])
     def test_a_variables_name_is_a_secrets_as_the_patterns_read_one(self, name, secret):
         from tuningfork.config import secret_name

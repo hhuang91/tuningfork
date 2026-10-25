@@ -187,26 +187,32 @@ _SECRET_NAME = (
 
 #: A whole name that is a secret's (`secret_name`).
 _SECRET_NAME_ENDS = re.compile(f"(?:{_SECRET_NAME})\\Z")
-#: How else an environment names a secret: ending in a key, in any case, but a public one's
-#: (`openai_key`); in `_PWD` (`MYSQL_PWD`, not the shell's own `PWD`); or with the word `secret`
-#: in it (`SECRET_KEY_BASE`).
-_SECRET_VARIABLE = re.compile(
-    r"(?i)(?:^|[_\-.])key\Z(?<!public[_\-.]key)(?<!publishable[_\-.]key)|[_\-.]pwd\Z"
-    r"|(?:^|[_\-.])secret(?:\Z|[_\-.])"
-)
-
-
-def secret_name(name: str) -> bool:
-    """Whether a variable's name is a secret's, as an environment or a `.env` file writes one:
-    `OPENAI_API_KEY`, `DB_PASSWORD`, `GITHUB_TOKEN`, `MYSQL_PWD`, `SECRET_KEY_BASE`; not
-    `HTTPS_PROXY`, `API_KEY_FILE`, nor `NEXT_PAGE_TOKEN`."""
-    return _SECRET_NAME_ENDS.search(name) is not None or _SECRET_VARIABLE.search(name) is not None
-
+#: How a name says where a secret is kept, or which one it is, rather than holding it: a path, a
+#: name, an id (`API_KEY_FILE`, `VAULT_SECRET_PATH`, `AWS_SECRET_NAME`).
+_A_SECRETS_PLACE = re.compile(r"(?i)[_\-.](?:file|path|dir|name|arn|url|uri|id|ref)\Z")
+#: How else an environment names a secret: ending in a key, in any case (`openai_key`); in `_PWD`
+#: (`MYSQL_PWD`, not the shell's own `PWD`); or with the word `secret` in it (`SECRET_KEY_BASE`).
+_SECRET_VARIABLE = re.compile(r"(?i)(?:^|[_\-.])(?:key|secret)\Z|[_\-.]pwd\Z|(?:^|[_\-.])secret[_\-.]")
 
 #: Names ending in `key` whose value is no secret, though random: a request's idempotency key, a
 #: cache's, a table's.
 _NOT_SECRET_KEYS = ("idempotency", "cache", "sort", "partition", "primary", "foreign", "object", "row",
                     "dedup", "dedupe", "lookup", "storage", "message", "translation", "i18n")
+
+
+def secret_name(name: str) -> bool:
+    """Whether a variable's name is a secret's, as an environment or a `.env` file writes one: as
+    the patterns read a name (`OPENAI_API_KEY`, `DB_PASSWORD`, `GITHUB_TOKEN`), and as only an
+    environment names one (`MYSQL_PWD`, `openai_key`, `SECRET_KEY_BASE`). Not `HTTPS_PROXY`, nor
+    `NEXT_PAGE_TOKEN`, nor a name saying where a secret is kept or which one it is (`API_KEY_FILE`,
+    `VAULT_SECRET_PATH`); nor, but as the patterns read upper-case `.env` names, a public key's or
+    one the patterns call no secret (`cache_key`)."""
+    if _SECRET_NAME_ENDS.search(name):
+        return True
+    if _A_SECRETS_PLACE.search(name) or _SECRET_VARIABLE.search(name) is None:
+        return False
+    words = re.split(r"[_\-.]", name.lower())
+    return not (words[-1] == "key" and len(words) > 1 and words[-2] in ("public", "publishable", *_NOT_SECRET_KEYS))
 
 #: A long flag named for a secret: `--api-key`, `--secret-key`, `--azure-openai-key`, `--db-pass`;
 #: not GnuPG's, which name a public key's id (`--recv-key`).

@@ -247,7 +247,7 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None 
                            spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, check_env=plan.check_env,
                            sandbox=plan.sandbox, keep=keep, masking=store.masking, also=held)
     return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found,
-                      cut=result.cut, reply_shown=store.masking.in_json(plan.reply, also=held).value)
+                      cut=result.cut, reply_shown=store.masking.text(plan.reply, also=held).value)
 
 
 def try_check(store: Store, check: Any = None, **options: Any) -> CheckTrial:

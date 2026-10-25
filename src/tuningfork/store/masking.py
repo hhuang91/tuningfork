@@ -14,7 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from tuningfork.config import DEFAULT_REDACTIONS, REDACTED, _masking, patterns_digest, redact_json_found
+from tuningfork.config import (
+    _FOUND, DEFAULT_REDACTIONS, REDACTED, _masking, patterns_digest, redact_json_found, redact_spans,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,15 +59,20 @@ class Masking:
         written, made, found = redact_json_found(value, self.patterns, tuple(also))
         return Masked(written, made, found)
 
-    def in_json(self, text: str, *, also: Iterable[str] = ()) -> Masked:
-        """`text` masked as a string kept in JSON is: read as it stands and as JSON writes it, its
-        quotes escaped — where `of` reads text as text alone. A check's output, kept in a run's
-        result, is masked so wherever it goes."""
-        kept = self.of([text], also=also)
-        if isinstance(kept.value, list) and len(kept.value) == 1 and isinstance(kept.value[0], str):
-            return Masked(kept.value[0], kept.made, kept.found)
-        # Masking broke the JSON, which it never should: nothing of the text is kept.
-        return Masked(REDACTED, max(kept.made, 1), kept.found)
+    def text(self, text: str, *, also: Iterable[str] = ()) -> Masked:
+        """`text` masked every way storage reads a text (`config.redact_spans`): as it stands and as
+        its escapes read, as JSON writes it, its quotes escaped, and wherever a value `also` names
+        stands. Read as text alone (`of`), a password before a typed declaration's quoted key stands;
+        read as a string in JSON — a run's result — a key three escapes deep does, and a value `also`
+        names written as a number, or a pattern took part of. A check's output is masked so."""
+        spans = redact_spans(text, self.patterns, tuple(also))
+        pieces, taken, at = [], [], 0
+        for start, end in spans:
+            pieces += [text[at:start], REDACTED]
+            if _FOUND.fullmatch(text, start, end):
+                taken.append(text[start:end])
+            at = end
+        return Masked("".join(pieces) + text[at:], len(spans), frozenset(taken))
 
     def value(self, value: Any, *, also: Iterable[str] = ()) -> Any:
         """`value` masked, for a write that keeps no count."""

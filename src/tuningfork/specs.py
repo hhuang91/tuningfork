@@ -778,8 +778,8 @@ def run_check(
     person's), and, given the `sandbox` its launch ran in, runs there
     (`tuningfork.sandbox.Sandbox.check_command`).
 
-    The output is masked with `masking`, the store's (`tuningfork.store.masking.Masking`), as a
-    run's result keeps it (`Masking.in_json`), before it is cut: cut first, a key the cut fell
+    The output is masked with `masking`, the store's (`tuningfork.store.masking.Masking`), every
+    way storage reads a text (`Masking.text`), before it is cut: cut first, a key the cut fell
     inside would keep its end. A reply check's reply is masked before it is cut to its quote.
     Masked too, wherever it stands, is a value `also` names, and the value of each variable the
     check got whose name is a secret's (`config.secret_name`) — a key its task let it read, which
@@ -792,6 +792,7 @@ def run_check(
     """
     from tuningfork.config import secret_name
 
+    also = tuple(also)  # read for each text it masks
     kind = check_kind(command)
     if kind is None:
         return CheckResult(passed=False, output="no check command defined", returncode=None)
@@ -819,7 +820,7 @@ def run_check(
         return CheckResult(passed=False, output=f"check timed out after {timeout}s")
     output = ((completed.stdout or "") + (completed.stderr or "")).strip()
     if masking is not None:
-        output = masking.in_json(output, also=[*also, *secret]).value
+        output = masking.text(output, also=[*also, *secret]).value
     kept = output[-keep:] if keep is not None else output
     return CheckResult(
         passed=completed.returncode == 0,
@@ -843,7 +844,7 @@ def _reply_check(
         passed = re.search(wanted, reply, re.DOTALL) is not None
         verdict = f"the reply {'matches' if passed else 'does not match'} /{wanted}/"
     if masking is not None:
-        verdict, reply = (masking.in_json(text, also=also).value for text in (verdict, reply))
+        verdict, reply = (masking.text(text, also=also).value for text in (verdict, reply))
     if not reply:
         quoted = "(none: the run ended without a reply)"
     elif len(reply) > REPLY_QUOTED:

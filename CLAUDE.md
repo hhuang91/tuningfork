@@ -176,7 +176,7 @@ one of tuningfork's own, `own`, nor one holding `/tmp` or `/home`), a Python env
 `PATH` that a hidden folder holds shown too, and what is hidden inside a shown folder hidden
 still. A check tried (`ops/checks.py`) and one run along a run run in one like it wherever
 bubblewrap runs, hiding what the run's launch hid. What a check prints is masked where it runs,
-as a run's result keeps it (`run_check`'s `masking`, `Masking.in_json`), before it is cut, kept
+every way storage reads a text (`run_check`'s `masking`, `Masking.text`), before it is cut, kept
 or told to a harness — a reply check's reply before it is cut to its quote — and so is every
 place where the value of a variable it got whose name is a secret's stands
 (`config.secret_name`), or one of tuningfork's own keys (`access.held_secrets`), each eight
