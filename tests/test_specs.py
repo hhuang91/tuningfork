@@ -282,6 +282,40 @@ class TestTheMachinesCheckEnv:
         assert configured_check_env() == ["https_proxy", "SSL_CERT_FILE"]
         assert configured_check_env(tmp_path / "elsewhere") == ["https_proxy", "SSL_CERT_FILE"]
 
+    def test_each_file_says_which_it_names(self, tmp_path, monkeypatch):
+        """A plan and Connections name the file a variable is named in: one kept in the
+        recordings folder's config is not looked for in the machine's."""
+        from tuningfork.specs import check_env_sources
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        machine = self.write(tmp_path / "config" / "tuningfork" / "config.json", {"check_env": ["https_proxy"]})
+        home = tmp_path / "home"
+        kept = self.write(home / "config.json", {"check_env": ["HF_HOME"]})
+        assert check_env_sources(home) == [(machine, ["https_proxy"]), (kept, ["HF_HOME"])]
+
+    @pytest.mark.parametrize("text", ['{"check_env": ["https_proxy"],', "[]"])
+    def test_a_machine_config_that_does_not_parse_is_refused_not_read_as_empty(self, tmp_path, monkeypatch, text):
+        from tuningfork.ops.common import OperationError
+        from tuningfork.specs import configured_check_env
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        machine = tmp_path / "config" / "tuningfork" / "config.json"
+        machine.parent.mkdir(parents=True)
+        machine.write_text(text, encoding="utf-8")
+        with pytest.raises(OperationError) as refused:
+            configured_check_env()
+        assert str(machine) in refused.value.message
+
+    def test_a_list_in_the_recordings_folders_config_that_cannot_be_read_names_that_file(self, tmp_path):
+        from tuningfork.ops.common import OperationError
+        from tuningfork.specs import configured_check_env
+
+        home = tmp_path / "home"
+        kept = self.write(home / "config.json", {"proposer": {}, "check_env": ["TUNINGFORK_PROPOSER_KEY"]})
+        with pytest.raises(OperationError) as refused:
+            configured_check_env(home)
+        assert str(kept) in refused.value.message and "keeps for itself" in refused.value.message
+
     @pytest.mark.parametrize("names", ["https_proxy", ["not a name"], ["TUNINGFORK_TOKEN"]])
     def test_a_list_that_cannot_be_read_is_refused_saying_where(self, tmp_path, monkeypatch, names):
         from tuningfork.ops.common import OperationError

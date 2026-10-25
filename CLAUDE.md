@@ -166,9 +166,10 @@ A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holdi
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
 agent's sight). It can run what the model wrote — a `conftest.py` its `pytest` finds — so its
 environment is made from scratch, sandbox or not (`specs.check_environment`: a launch's few
-variables and those its task names in `check_env`, never tuningfork's keys, besides those the
-machine's config names for every check — `"check_env"` in it and in the recordings folder's
-`config.json`, `specs.configured_check_env`, a list that cannot be read refused), and a run's check
+variables, those its task names in `check_env`, and those the configs name for every check —
+`"check_env"` in the machine's config and in the recordings folder's `config.json`, read strictly
+once where a batch, fork or trial is planned, `specs.check_env_sources` — never tuningfork's
+keys), and a run's check
 runs in the sandbox its run ran in (`Sandbox.check_command`): the workspace as
 `/home/user/project`, an empty home, the task's folder shown read-only (`Sandbox.shows`: never
 one of tuningfork's own, `own`, nor one holding `/tmp` or `/home`), a Python environment on its

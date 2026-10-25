@@ -561,16 +561,11 @@ def read_home_config(home: Path) -> dict[str, Any]:
     return _read_object(Path(home) / HOME_CONFIG)
 
 
-def read_machine_config() -> dict[str, Any]:
-    """The machine's `config.json` (`machine_config_path`), or an empty one: for what it sets
-    besides the endpoints it protects, which `endpoints` reads strictly."""
-    return _read_object(machine_config_path())
-
-
 def machine_config_path() -> Path:
     """The machine's own settings, whichever recordings folder is in use:
     `$XDG_CONFIG_HOME/tuningfork/config.json`, by default under `~/.config`. Read, strictly,
-    for the endpoints to protect on this machine (`endpoints`)."""
+    for the endpoints to protect on this machine (`endpoints`), and for the variables every
+    check may read (`specs.check_env_sources`)."""
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     return Path(base) / "tuningfork" / HOME_CONFIG
 

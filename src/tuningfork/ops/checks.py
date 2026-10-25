@@ -411,6 +411,7 @@ def prepare_check_along_runs(
     before unless `again` — or one run, each checked before anything runs. `hidden` are tasks an
     agent may not reach (the held-out ones)."""
     from tuningfork.ops.tally import refuse_hidden_task
+    from tuningfork.specs import configured_check_env
 
     if (task is None) == (run is None):
         raise OperationError("give a task, or one run", code="bad_params", field="task")
@@ -419,6 +420,8 @@ def prepare_check_along_runs(
         refuse_hidden_task(plan.trial.run.task_id, hidden)
         return CheckAlongRunsPlan(task_id=plan.trial.run.task_id, plans=[plan])
     refuse_hidden_task(task, hidden)
+    # A list that cannot be read refuses the whole job, once, rather than every run in turn.
+    configured_check_env(store.home)
     runs = [found for found in store.runs(limit=limit, task_id=task) if not found.is_thread and not found.is_fork]
     if not runs:
         raise OperationError(f"no runs of task {task!r}", code="not_found", field="task")

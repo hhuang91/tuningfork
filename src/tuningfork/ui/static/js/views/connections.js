@@ -482,12 +482,12 @@ export async function connectionsView(root, _, scope) {
           ])
         : h("div", { class: "banner banner-warn" },
             `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them. Their checks run on this machine itself.`),
-      // What this machine's config lets every check read, with the sandbox or without it.
+      // What the configs let every check read, with the sandbox or without it, each by the
+      // file that names it.
       checkEnv?.problem
         ? h("div", { class: "banner banner-warn" }, checkEnv.problem)
-        : checkEnv?.names?.length
-          ? h("p", { class: "muted small" }, `Every check may also read ${checkEnv.names.join(", ")}, as this machine's config says.`)
-          : null);
+        : (checkEnv?.sources || []).map((source) => h("p", { class: "muted small" },
+          `Every check may also read ${source.names.join(", ")}, named in `, h("span", { class: "mono" }, source.path), ".")));
   }
 
   function harnessCard(harness) {
@@ -535,6 +535,8 @@ export async function connectionsView(root, _, scope) {
   function drawProxy() {
     const proxy = state.proxy;
     replace(proxyEl, panel("This proxy", [
+      // A config that cannot be read stops every call the proxy would send, until it is fixed.
+      proxy.config_problem ? h("div", { class: "banner banner-warn" }, `${proxy.config_problem}. Nothing is sent anywhere until it is fixed.`) : null,
       kv([
         ["recordings", h("span", { class: "mono" }, proxy.home)],
         ["listening on", h("span", { class: "mono" }, `${proxy.host}:${proxy.port}`)],

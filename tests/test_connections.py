@@ -71,12 +71,19 @@ async def test_connections_say_what_every_check_may_read(two_servers, tmp_path, 
     machine.write_text(json.dumps({"check_env": ["https_proxy"]}), encoding="utf-8")
     async with client_of(app) as client:
         shown = (await client.get(f"{API}/connections")).json()
-    assert shown["check_env"] == {"names": ["https_proxy"]}
+    assert shown["check_env"] == {"names": ["https_proxy"], "sources": [{"path": str(machine), "names": ["https_proxy"]}]}
     machine.write_text(json.dumps({"check_env": "https_proxy"}), encoding="utf-8")
     async with client_of(app) as client:
         shown = (await client.get(f"{API}/connections")).json()
     assert shown["check_env"]["names"] == [] and str(machine) in shown["check_env"]["problem"]
     assert shown["server"]["url"] == "http://a.test"
+    # A config that does not parse stops every call: the page says so, rather than failing.
+    machine.write_text('{"check_env": ["https_proxy"],', encoding="utf-8")
+    async with client_of(app) as client:
+        response = await client.get(f"{API}/connections")
+    assert response.status_code == 200, response.text
+    assert str(machine) in response.json()["check_env"]["problem"]
+    assert str(machine) in response.json()["proxy"]["config_problem"]
 
 
 class TestSwitchingTheServer:

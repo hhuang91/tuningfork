@@ -324,14 +324,20 @@ fork of a sandboxed run is refused without one. `TUNINGFORK_SANDBOX=off` turns i
 A run's check runs in the same sandbox once the run ends, since it can run what the model left
 in the workspace. It works in `/home/user/project`, sees the task's folder read-only, which no
 launch sees, and has an empty home of its own. Of your environment variables it gets only
-`PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, and those its task names in
-[`check_env`](#a-task); without the sandbox it gets the same ones. That leaves out a proxy's
-settings too (`https_proxy`, `SSL_CERT_FILE`), as for a launch. Name what every check on this
-machine reads in its config, `~/.config/tuningfork/config.json`: `{"check_env": ["https_proxy",
-"SSL_CERT_FILE"]}`. A recordings folder's `config.json` takes the same list, the two adding up,
-and a batch's plan and Connections say what they name. A tool's cache starts empty, so a check that installs a
-package each time (`uv run --with …`) downloads it. It writes nowhere but the workspace, its
-own home and its own `/tmp`, and it cannot read the run's home. A check tried with `tuningfork
+`PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, those its task names in
+[`check_env`](#a-task), and those the machine's config names for every check; without the
+sandbox it gets the same ones.
+
+A proxy's settings (`https_proxy`, `SSL_CERT_FILE`) belong to the machine, not to a task. Name
+them once in its config, `~/.config/tuningfork/config.json`, beside any endpoints it protects:
+`{"protected": ["localhost:1234"], "check_env": ["https_proxy", "SSL_CERT_FILE"]}`. A recordings
+folder's `config.json` takes the same list, the two adding up. A batch's plan and Connections say
+which file names what. A file there that cannot be read stops all of tuningfork's traffic until it
+is fixed, as for a protected endpoint.
+
+A tool's cache starts empty, so a check that installs a package each time (`uv run --with …`)
+downloads it. It writes nowhere but the workspace, its own home and its own `/tmp`, and it cannot
+read the run's home. A check tried with `tuningfork
 recheck`, or run along a run, runs the same way. Keep a task file in a folder of its own: one
 directly in `/tmp`, or in the recordings folder itself, leaves its check without what is kept
 beside it, since a check never sees either, and a batch's plan says so.
@@ -388,11 +394,11 @@ tuningfork's own settings under a `tuningfork` key.
   `{"reply_matches": "(?i)row.count"}`. A check that prints what it found wrong, one finding a
   line, gets its findings counted across the failed runs (`tuningfork tally`).
 - **`check_env`** names environment variables of yours a shell check may read, such as an LLM
-  judge's key: `["OPENAI_API_KEY"]`. A check gets no others but a few like `PATH` and `LANG`
-  ([the sandbox](#the-sandbox)), and never one of tuningfork's own keys. Whatever the check runs
-  reads the variables it gets too, code the model left in the workspace included, and the network
-  is reachable. What every check on a machine reads, a proxy's settings say, goes in the machine's
-  config instead ([the sandbox](#the-sandbox)).
+  judge's key: `["OPENAI_API_KEY"]`. A check gets no others but a few like `PATH` and `LANG`, and
+  those the machine's config names ([the sandbox](#the-sandbox)), and never one of tuningfork's
+  own keys. Whatever the check runs reads the variables it gets too, code the model left in the
+  workspace included, and the network is reachable. What every check on a machine reads, a
+  proxy's settings say, goes in the machine's config instead ([the sandbox](#the-sandbox)).
 - **`held_out`** marks a task that judges an edit rather than shaping one: a batch never picks
   it, no agent may read its runs, and a validation runs it in a private folder that keeps only
   its verdicts.

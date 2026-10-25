@@ -271,9 +271,12 @@ def test_a_check_reads_what_the_machines_config_names_for_every_check(tmp_path, 
             stack.store, stack.spec.path, n=1, model="m", harness="fake",
             base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
         )
-        assert any("CORP_SETTING" in note["message"] for note in plan.to_json()["notes"])
+        assert any("CORP_SETTING" in note["message"] and str(machine) in note["message"] for note in plan.to_json()["notes"])
+        # Read once, by the plan: a config changed while the batch runs changes none of its checks.
+        machine.write_text(json.dumps({"check_env": "CORP_SETTING"}), encoding="utf-8")
         (outcome,) = execute_batch(stack.store, plan).outcomes
         assert outcome.passed, outcome.check.output
+        machine.write_text(json.dumps({"check_env": ["CORP_SETTING"]}), encoding="utf-8")
         assert try_check(stack.store, run=outcome.run_id).passed
         # A list that cannot be read is refused before a run is launched.
         machine.write_text(json.dumps({"check_env": "CORP_SETTING"}), encoding="utf-8")

@@ -39,6 +39,9 @@ class ForkPlan:
     #: The sandbox the fork runs in, as its source did (`tuningfork.sandbox.Sandbox`), or
     #: None: the source ran in its own folders, and so does the fork.
     sandbox: Any = None
+    #: The variables its check may read besides those its task names, read from the configs
+    #: here, once (`specs.configured_check_env`).
+    check_env: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -158,9 +161,9 @@ def prepare_fork(
             )
     if skill is not None and not skill.exists() and not skill_commit:
         raise OperationError(f"the skill folder the run was given, {skill}, no longer exists")
-    if check_kind(item.tuningfork.check) == "shell":
-        # Read now, so a list that cannot be read is refused before a fork is launched.
-        configured_check_env(store.home)
+    # Read once, here, for a check that runs a command: a list that cannot be read is refused
+    # before a fork is launched, and every fork is judged with the same.
+    every_check = configured_check_env(store.home) if check_kind(item.tuningfork.check) == "shell" else []
     if need_check and not item.tuningfork.check:
         raise OperationError(
             "the task defines no check, so a fork has no verdict to count",
@@ -267,6 +270,7 @@ def prepare_fork(
         warnings=warnings,
         adapter=adapter,
         sandbox=sandbox,
+        check_env=every_check,
     )
 
 
@@ -300,6 +304,7 @@ def execute_forks(
         workdir=plan.workdir,
         concurrency=concurrency,
         sandbox=plan.sandbox,
+        check_env=plan.check_env,
     )
     unregister = (
         cancel.on_cancel(lambda: runner.cancel.cancel(cancel.reason or "cancelled"))

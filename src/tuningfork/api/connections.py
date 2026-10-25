@@ -101,16 +101,26 @@ def connection_routes() -> list[Route]:
         ]
         # Why the server cannot be switched now, if it cannot: shown before anyone tries.
         busy = await state.upstream_busy()
-        from tuningfork.ops.common import OperationError
         from tuningfork.sandbox import status as sandbox_status
-        from tuningfork.specs import configured_check_env
+        from tuningfork.specs import check_env_sources
 
         sandbox = (await asyncio.to_thread(sandbox_status)).to_json()
-        # The variables this machine's config lets every check read, or why they cannot be read.
+        # The variables the configs let every check read, each with the file naming it, or why
+        # they cannot be read.
         try:
-            check_env: dict[str, Any] = {"names": configured_check_env(settings.home)}
+            sources = check_env_sources(settings.home)
+            check_env: dict[str, Any] = {
+                "names": list(dict.fromkeys(name for _, names in sources for name in names)),
+                "sources": [{"path": str(path), "names": names} for path, names in sources],
+            }
         except OperationError as error:
-            check_env = {"names": [], "problem": error.message}
+            check_env = {"names": [], "sources": [], "problem": error.message}
+        # A config that cannot be read stops every call the proxy would send: the page says so.
+        try:
+            protected_list: list[str] = [str(endpoint) for endpoint in protected(settings.home)]
+            config_problem = None
+        except OperationError as error:
+            protected_list, config_problem = [], error.message
         return JSONResponse({
             "server": {
                 # Read without the token: a user and password in either are masked.
@@ -139,7 +149,8 @@ def connection_routes() -> list[Route]:
                 "max_inflight": state.gate.max_inflight,
                 "max_output": settings.max_output,
                 "jobs": settings.jobs,
-                "protected": [str(endpoint) for endpoint in protected(settings.home)],
+                "protected": protected_list,
+                **({"config_problem": config_problem} if config_problem else {}),
                 "restart": restart_command(settings, without_credentials(state.upstream.url)),
                 # Its upstream's user and password are shown masked: they are typed back to run it.
                 "restart_masked": without_credentials(state.upstream.url) != state.upstream.url,

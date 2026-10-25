@@ -48,7 +48,6 @@ from tuningfork.specs import (
     CHECK_KEPT,
     CheckResult,
     Eval,
-    configured_check_env,
     load_context,
     TaskSpec,
     hash_tree,
@@ -294,12 +293,17 @@ class Launcher:
         sandbox: Any = None,
         tell: str | None = None,
         launch_seconds: float | None = None,
+        check_env: Sequence[str] = (),
     ) -> None:
         self.store = store
         self.adapter = adapter
         #: Where each launch runs: a `tuningfork.sandbox.Sandbox`, in which every launch sees
         #: the same home and folder, or None for each in its own folders.
         self.sandbox = sandbox
+        #: The variables every check may read besides those its task names, as the plan read
+        #: them from the configs (`specs.configured_check_env`): read once, so every run of the
+        #: batch is judged alike, and a list that cannot be read is refused before a launch.
+        self.check_env = list(check_env)
         #: A template with `{verdict}` and `{output}`: after the check, the harness is given
         #: its result as one more user turn of the same session (`continue_launch`), before
         #: its own review — what a person who looked at the result would say. The verdict
@@ -506,10 +510,10 @@ class Launcher:
         reply_file = workspace.parent / "reply.txt"
         reply_file.write_text(reply, encoding="utf-8")
         # In the sandbox the launch ran in, if it ran in one: the check can run what the model wrote.
-        # It reads what its task names, and what this machine's config names for every check.
+        # It reads what its task names, and what the configs name for every check, as planned.
         check = run_check(
             item.tuningfork.check, workspace, reply=reply, reply_file=reply_file, spec_dir=spec_dir,
-            check_env=[*configured_check_env(self.store.home), *item.tuningfork.check_env], sandbox=self.sandbox,
+            check_env=[*self.check_env, *item.tuningfork.check_env], sandbox=self.sandbox,
         )
         told = None
         if (
@@ -857,10 +861,11 @@ class BatchRunner(Launcher):
         concurrency: int = 1,
         sandbox: Any = None,
         tell: str | None = None,
+        check_env: Sequence[str] = (),
     ) -> None:
         super().__init__(
             store, adapter, base_url=base_url, model=model, workdir=workdir, settle=settle,
-            concurrency=concurrency, sandbox=sandbox, tell=tell,
+            concurrency=concurrency, sandbox=sandbox, tell=tell, check_env=check_env,
         )
         self.keep_workspaces = keep_workspaces
         #: Installed as the skill's SKILL.md in every run, in place of the spec's own — how

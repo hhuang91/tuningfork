@@ -683,30 +683,46 @@ REPLY_QUOTED = 500
 CHECK_KEPT = 2000
 
 
-def configured_check_env(home: Path | None = None) -> list[str]:
-    """The variables every check here may read besides those its task names: `"check_env"` in
-    the machine's config (`config.machine_config_path()`) and in the recordings folder's
-    `config.json`, together — a proxy's settings, say, which belong to the machine and to no
-    task file. A list that cannot be read is refused, saying where it is written."""
-    from tuningfork.config import HOME_CONFIG, machine_config_path, read_home_config, read_machine_config
+def check_env_sources(home: Path | None = None) -> list[tuple[Path, list[str]]]:
+    """Where the variables every check here may read are named, besides those its task names,
+    and which: `"check_env"` in the machine's config (`config.machine_config_path()`) and in the
+    recordings folder's `config.json` — a proxy's settings, say, which belong to the machine and
+    to no task file. Read strictly: a file that does not parse, or a list that is not one of
+    your variables' names, is refused, saying where; a file that is not there names none."""
+    from tuningfork.config import HOME_CONFIG, machine_config_path
     from tuningfork.ops.common import OperationError
 
-    places = [(machine_config_path(), read_machine_config())]
-    if home is not None:
-        places.append((Path(home) / HOME_CONFIG, read_home_config(home)))
-    names: list[str] = []
-    for where, data in places:
+    found: list[tuple[Path, list[str]]] = []
+    for path in (machine_config_path(), *([Path(home) / HOME_CONFIG] if home is not None else [])):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError) as error:
+            raise OperationError(
+                f"{path} cannot be read: {error}", hint="fix the file, or remove it",
+                code="check_env", field="check_env",
+            ) from None
+        if not isinstance(data, dict):
+            raise OperationError(f"{path} holds no settings object", hint="fix the file, or remove it",
+                                 code="check_env", field="check_env")
         if "check_env" not in data:
             continue
         problem = check_env_problem(data["check_env"])
         if problem:
             raise OperationError(
-                f'"check_env" in {where} {problem}',
-                hint='write it as a list of variable names: {"check_env": ["https_proxy", "SSL_CERT_FILE"]}',
+                f'"check_env" in {path} {problem}',
+                hint='name your own variables, as a list: {"check_env": ["https_proxy", "SSL_CERT_FILE"]}',
                 code="check_env", field="check_env",
             )
-        names += data["check_env"]
-    return list(dict.fromkeys(names))
+        found.append((path, list(data["check_env"])))
+    return found
+
+
+def configured_check_env(home: Path | None = None) -> list[str]:
+    """The variables every check here may read besides those its task names, from wherever
+    they are named (`check_env_sources`), each once."""
+    return list(dict.fromkeys(name for _, names in check_env_sources(home) for name in names))
 
 
 def check_environment(
