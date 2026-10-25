@@ -53,8 +53,9 @@ const WAYS = [
   ["upload", "Upload a folder", "kept as a copy in the recordings folder: an approved edit is written to the copy, never back to yours"],
   ["run", "From a run", "the skill a run had — the copy it kept, else the SKILL.md its model read — kept as a copy the same way"],
 ];
-// Never sent: a repository's history, caches, environments (as `ops.addskill.IGNORED`).
-const IGNORED = new Set([".git", "__pycache__", "node_modules", ".venv", ".DS_Store"]);
+// Never sent: a repository's history, caches, environments (as `ops.addskill.IGNORED`). A task
+// file's folder uploaded as a scenario, and its input files, leave out the same.
+export const IGNORED = new Set([".git", "__pycache__", "node_modules", ".venv", ".DS_Store"]);
 
 /** Add a skill — a folder on this machine, a folder uploaded, or the skill a run had — each
  *  planned as its form is filled in (`ops.addskill`), then added and opened on its page.
@@ -98,7 +99,7 @@ function folderForm() {
   const path = input("path", { placeholder: "e.g. C:\\Users\\you\\skills\\my-skill, or ~/.hermes/skills/my-skill" });
   return planForm({
     ...ways,
-    fields: h("div", { class: "form-grid" }, field("Its folder", path, {
+    fields: h("div", { class: "form-grid" }, field("Skill folder", path, {
       wide: true, help: "The folder holding its SKILL.md, on the machine tuningfork runs on. A Windows path is read as tuningfork will open it.",
     })),
     read: () => {
@@ -133,7 +134,7 @@ function uploadForm() {
   return planForm({
     ...ways,
     fields: h("div", { class: "form-grid" },
-      field("Its folder", picker, { help: said }),
+      field("Skill folder", picker, { help: said }),
       field("Kept as", name, { help: "The name the copy is kept under: its folder's, by default." })),
     read: () => {
       if (!files) throw Object.assign(new Error("Choose the skill's folder."), { field: "folder" });
@@ -206,7 +207,7 @@ function cleaned(text) {
   return text.toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "");
 }
 
-async function base64(file) {
+export async function base64(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let text = "";
   for (let at = 0; at < bytes.length; at += 32768) text += String.fromCharCode(...bytes.subarray(at, at + 32768));

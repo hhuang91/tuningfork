@@ -3,7 +3,9 @@
 A scenario is `<home>/scenarios/<name>/evals.json` — the same evals.json convention as any
 spec — with its input files in `inputs/` beside it. Its skill folder is a reference to a
 folder elsewhere, never copied in — but for one made from a run whose skill has no folder of
-its own to be found (`ops.imports.prepare_scenario`), which keeps a copy in `skill/`.
+its own to be found (`ops.imports.prepare_scenario`), and a task file's folder uploaded with
+its skill inside (`prepare_upload`), which keep a copy in `skill/`. A task file kept as a
+scenario brings what its check reads from its folder (`$TUNINGFORK_SPEC_DIR`), beside its spec.
 Everything a scenario can be told to write stays inside
 its own folder: names are checked, input paths may not climb out, and uploads have limits.
 A later phase lets a model drive this same API, which is why it is a jail.
@@ -39,6 +41,8 @@ MAX_TOTAL = 100 * 1024 * 1024
 MAX_FILES = 200
 #: A spec is text; anything near this is a mistake.
 MAX_SPEC = 2 * 1024 * 1024
+#: Said of a task file kept as a scenario that names no skill folder.
+NO_SKILL = "it names no skill folder: choose the skill on the scenario's page, or each run is given none"
 
 
 def root(home: Path | str) -> Path:
@@ -107,6 +111,9 @@ class Checked:
     #: Each path the spec names, as tuningfork will open it (`paths.ResolvedPath.to_json`,
     #: plus what was found there): what a page shows beside the field it came from.
     paths: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: The scenario's own folder, where its evals.json is saved and a relative skill folder is
+    #: taken from: `<name>` in it, before the scenario has one.
+    folder: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -117,6 +124,7 @@ class Checked:
 
         return {
             "ok": self.ok, "problems": self.problems, "warnings": self.warnings, "paths": self.paths,
+            "folder": self.folder,
             # How a typed path is read here: under WSL, a Windows path is translated.
             "wsl": under_wsl(),
         }
@@ -129,15 +137,19 @@ def check_spec(data: Any, *, home: Path | str | None = None, name: str | None = 
     from tuningfork.specs import validate_spec
 
     checked = Checked(problems=[{"where": p.where, "message": p.message} for p in validate_spec(data)])
+    named = home is not None and bool(name) and NAME.fullmatch(name or "") is not None
+    if home is not None:
+        checked.folder = str(folder(home, name)) if named else f"{root(home)}/<name>"
     if not isinstance(data, dict):
         return checked
     top = data.get("tuningfork") if isinstance(data.get("tuningfork"), dict) else {}
     skill_dir = top.get("skill_dir")
     skill: Path | None = None
-    if isinstance(skill_dir, str) and skill_dir.strip():
+    if not isinstance(skill_dir, str) or not skill_dir.strip():
+        checked.warnings.append("no skill folder: each run is given no skill")
+    else:
         # A relative path is resolved against the scenario's own folder, where its evals.json
         # lives, exactly as a run resolves it. A new scenario has no folder until it has a name.
-        named = home is not None and bool(name) and NAME.fullmatch(name or "") is not None
         if not Path(host_path(skill_dir)).is_absolute() and not named:
             where = f"{root(home)}/<name>" if home is not None else "the scenario's folder"
             checked.paths["skill_dir"] = {
@@ -175,6 +187,14 @@ def check_spec(data: Any, *, home: Path | str | None = None, name: str | None = 
                 f"task {item.get('id', index)}: its check runs as a shell command in each run's "
                 "workspace, as you — read it as you would a script"
             )
+            # What it reads from its task's folder, $TUNINGFORK_SPEC_DIR — this scenario's own.
+            missing = [relative for relative in _check_reads(options["check"])
+                       if named and not (folder(home, name) / relative).exists()]
+            if missing:
+                checked.warnings.append(
+                    f"task {item.get('id', index)}: its check reads {', '.join(missing)} from the scenario's "
+                    "folder ($TUNINGFORK_SPEC_DIR), which holds no such file: put it beside the scenario's evals.json"
+                )
         for preloaded in options.get("skills") or []:
             if skill is not None and isinstance(preloaded, str) and preloaded != skill.name:
                 checked.warnings.append(
@@ -383,15 +403,187 @@ def delete_input(home: Path | str, name: str, relative: str) -> None:
     target.unlink()
 
 
-def import_spec(home: Path | str, source: Path | str, name: str) -> Scenario:
-    """A spec from elsewhere, as a scenario: its input files copied into `inputs/`, its
-    skill folder kept as a reference to where it is."""
+def _check_reads(check: str) -> list[str]:
+    """What a shell check reads from its task's folder, `$TUNINGFORK_SPEC_DIR/<path>`: each path
+    inside it, in the order the check names them."""
+    from tuningfork.ops.imports import SPEC_DIR_PATH
+
+    found: list[str] = []
+    for relative in SPEC_DIR_PATH.findall(check):
+        parts = PurePosixPath(relative).parts
+        if not parts or any(part in ("", ".", "..") for part in parts):
+            continue
+        if (cleaned := PurePosixPath(*parts).as_posix()) not in found:
+            found.append(cleaned)
+    return found
+
+
+# --- a task file kept as a scenario -----------------------------------------------------------
+
+
+@dataclass(slots=True)
+class ImportPlan:
+    """A task file to keep as a scenario — one on this machine, or a folder uploaded — shown
+    before anything is written: its spec as it will be saved, and the files that go in with it."""
+
+    name: str
+    #: Where it comes from: the task file's path, or the folder uploaded and the file in it.
+    source: str
+    spec: dict[str, Any]
+    #: Its input files, by their path in the scenario's `inputs/`.
+    inputs: dict[str, bytes] = field(default_factory=dict)
+    #: An uploaded folder's skill, copied into the scenario's own folder: by its path there.
+    skill: dict[str, bytes] = field(default_factory=dict)
+    #: What its check reads from its task's folder (`$TUNINGFORK_SPEC_DIR`), by its path beside
+    #: the scenario's evals.json.
+    beside: dict[str, bytes] = field(default_factory=dict)
+    #: Its skill folder as tuningfork will open it, and whether a SKILL.md is there.
+    skill_dir: str | None = None
+    has_skill: bool = False
+    warnings: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+    def to_json(self) -> dict[str, Any]:
+        everything = [*self.inputs.values(), *self.skill.values(), *self.beside.values()]
+        return {
+            "name": self.name, "source": self.source, "skill_name": self.spec.get("skill_name"),
+            "tasks": [str(item.get("id")) for item in self.spec.get("evals") or [] if isinstance(item, dict)],
+            "skill_dir": self.skill_dir, "has_skill": self.has_skill, "skill_copied": bool(self.skill),
+            "inputs": sorted(self.inputs), "beside": sorted(self.beside),
+            "files": len(everything), "bytes": sum(len(data) for data in everything),
+            "warnings": self.warnings, "notes": self.notes,
+        }
+
+
+class _Beside:
+    """The files beside a task file, wherever they are: in its folder on this machine, or in a
+    folder uploaded — by their paths in it, the task file's own folder at `base` — which keeps
+    the paths taken (`used`)."""
+
+    def __init__(self, *, directory: Path | None = None, files: dict[str, bytes] | None = None,
+                 base: str = "", where: str = "") -> None:
+        self.directory = directory
+        self.files = files or {}
+        self.base = base
+        #: How a sentence names where they are looked for.
+        self.where = where
+        self.used: set[str] = set()
+
+    def tree(self, relative: str, *, take: bool = True) -> dict[str, bytes]:
+        """The file at `relative` — {"": its bytes} — or the files of the folder there, by their
+        paths in it: nothing where there is neither. `take`: what is found counts as used."""
+        from tuningfork.ops.addskill import _read_folder
+
+        if self.directory is not None:
+            path = self.directory / relative
+            if path.is_file():
+                return {"": path.read_bytes()}
+            return _read_folder(path)[0] if path.is_dir() else {}
+        parts = PurePosixPath(self.base, relative.replace("\\", "/")).parts
+        if ".." in parts:
+            return {}
+        at = PurePosixPath(*parts).as_posix() if parts else ""
+        if at in self.files:
+            found, prefix = {"": self.files[at]}, at
+        else:
+            prefix = f"{at}/" if at else ""
+            found = {path[len(prefix):]: data for path, data in self.files.items() if path.startswith(prefix)}
+        if take:
+            self.used.update(f"{prefix}{sub}" for sub in found)
+        return found
+
+
+def _placed(name: str, sub: str) -> str:
+    return f"{name}/{sub}" if sub else name
+
+
+def _new_name(home: Path | str, name: str) -> None:
+    """A name a new scenario can take: its own, and no folder there yet."""
+    place = folder(home, name)
+    if (place / SPEC).exists():
+        raise OperationError(f"a scenario called {name!r} exists already", code="conflict", field="name")
+    if place.exists():
+        raise OperationError(f"{place} is there already, holding no scenario: move it away to use the name",
+                             code="conflict", field="name")
+
+
+def _take_files(plan: ImportPlan, beside: _Beside) -> None:
+    """Each input file the spec names beside it, as the scenario keeps one — in its `inputs/`,
+    named by the spec as `{"path", "source"}` — and what its check reads from its task's folder,
+    beside the scenario's evals.json, or in its `inputs/` where the check reads one there."""
+    from tuningfork.ops.imports import SKILL_FOLDER
+
+    for item in plan.spec["evals"]:
+        entries = []
+        for entry in item.get("files") or []:
+            if isinstance(entry, str):
+                # A file or a folder beside the spec, put in the workspace under its own name.
+                found = beside.tree(entry)
+                if not found:
+                    raise OperationError(f"{entry} is not {beside.where}: the task file names it as an input file",
+                                         field="path")
+                own = PurePosixPath(entry).name
+                for sub, data in sorted(found.items()):
+                    plan.inputs[_placed(own, sub)] = data
+                    entries.append({"path": _placed(own, sub), "source": f"{INPUTS}/{_placed(own, sub)}"})
+            elif isinstance(entry, dict) and "source" in entry:
+                data = beside.tree(entry["source"]).get("")
+                if data is None:
+                    raise OperationError(f"{entry['source']} is not {beside.where}: the task file names it as an "
+                                         "input file", field="path")
+                relative = PurePosixPath(entry["path"]).as_posix()
+                plan.inputs[relative] = data
+                entries.append({**entry, "source": f"{INPUTS}/{relative}"})
+            else:
+                entries.append(entry)
+        item["files"] = entries
+    unread: list[str] = []
+    for item in plan.spec["evals"]:
+        check = (item.get("tuningfork") or {}).get("check")
+        for relative in _check_reads(check) if isinstance(check, str) else []:
+            top = PurePosixPath(relative).parts[0]
+            if top == INPUTS:
+                within = relative[len(INPUTS) + 1:]
+                for sub, data in beside.tree(relative).items():
+                    plan.inputs.setdefault(_placed(within, sub) if within else sub, data)
+                continue
+            found = beside.tree(top) if top not in (SPEC, CONTEXT, SKILL_FOLDER, TRASH) else {}
+            if not found:
+                unread.append(relative)
+            for sub, data in found.items():
+                plan.beside[_placed(top, sub)] = data
+    if plan.beside:
+        tops = sorted({PurePosixPath(path).parts[0] for path in plan.beside})
+        plan.notes.append(f"its check reads {', '.join(tops)} from its task's folder: copied beside the scenario's "
+                          "evals.json, where no run sees it")
+    if unread:
+        plan.warnings.append(f"its check reads {', '.join(dict.fromkeys(unread))} from its task's folder, which is not "
+                             f"{beside.where}: put it beside the scenario's evals.json")
+    if plan.inputs:
+        plan.notes.append(f"{len(plan.inputs)} input file(s) copied into the scenario's inputs/")
+
+
+def _limited(plan: ImportPlan) -> None:
+    """A plan no larger than a scenario holds: each file, and the files it copies in all."""
+    for part in (plan.inputs, plan.skill, plan.beside):
+        for relative, data in part.items():
+            if len(data) > MAX_FILE:
+                raise OperationError(f"{relative} is larger than {MAX_FILE // (1024 * 1024)} MiB", code="too_large")
+        if len(part) > MAX_FILES:
+            raise OperationError(f"a scenario holds at most {MAX_FILES} input files, and as many of a skill's or its "
+                                 "check's", code="too_large")
+    if sum(len(data) for part in (plan.inputs, plan.skill, plan.beside) for data in part.values()) > MAX_TOTAL:
+        raise OperationError(f"what a scenario copies in totals at most {MAX_TOTAL // (1024 * 1024)} MiB", code="too_large")
+
+
+def prepare_import(home: Path | str, source: Path | str, name: str) -> ImportPlan:
+    """A task file on this machine, as a scenario: its input files, and what its check reads from
+    its folder, copied in; its skill folder kept as a reference to where it is."""
     from tuningfork.paths import resolve_path
     from tuningfork.specs import SpecError, load_spec
 
     check_name(name)
-    if (folder(home, name) / SPEC).exists():
-        raise OperationError(f"a scenario called {name!r} exists already", code="conflict", field="name")
+    _new_name(home, name)
     found = resolve_path(str(source))
     try:
         spec = load_spec(found.path)
@@ -399,35 +591,124 @@ def import_spec(home: Path | str, source: Path | str, name: str) -> Scenario:
         read_as = f" (read as {found.path})" if found.translated_from or found.base else ""
         raise OperationError(f"cannot import {source}{read_as}: {exc}", field="path") from None
     data = spec.to_dict()
-    top = data.get("tuningfork") or {}
+    plan = ImportPlan(name=name, source=str(found.path), spec=data)
     skill = spec.resolved_skill_dir()
     if skill is not None:
-        top["skill_dir"] = str(skill)
-        data["tuningfork"] = top
-    copies: list[tuple[str, Path]] = []
-    for item in data["evals"]:
-        files = []
-        for entry in item.get("files") or []:
-            if isinstance(entry, str):
-                copies.append((PurePosixPath(entry).name, spec.directory / entry))
-                files.append({"path": PurePosixPath(entry).name, "source": f"{INPUTS}/{PurePosixPath(entry).name}"})
-            elif isinstance(entry, dict) and "source" in entry:
-                relative = PurePosixPath(entry["path"]).as_posix()
-                copies.append((relative, spec.directory / entry["source"]))
-                files.append({"path": entry["path"], "source": f"{INPUTS}/{relative}"})
+        data["tuningfork"] = {**(data.get("tuningfork") or {}), "skill_dir": str(skill)}
+        plan.skill_dir, plan.has_skill = str(skill), (skill / "SKILL.md").is_file()
+        if plan.has_skill:
+            plan.notes.append(f"its skill folder stays where it is, {skill}: each run gets a copy, and an approved "
+                              "edit is written to it")
+        else:
+            plan.warnings.append(f"its skill folder, {skill}, holds no SKILL.md: choose the skill on the scenario's page")
+    else:
+        plan.warnings.append(NO_SKILL)
+    _take_files(plan, _Beside(directory=spec.directory, where=f"beside it, in {spec.directory}"))
+    _limited(plan)
+    return plan
+
+
+def prepare_upload(home: Path | str, name: str, files: dict[str, bytes], *, spec: str | None = None,
+                   folder_name: str | None = None) -> ImportPlan:
+    """A task file in a folder uploaded from elsewhere, as a scenario: the input files it names,
+    and what its check reads from its folder, copied in, and the skill folder it names, where the
+    folder uploaded holds it, copied into the scenario's own (`skill/<its name>/`) — the copy an
+    approved edit is written to. `spec`: the task file's path in the folder, where its top holds
+    no evals.json or several task files."""
+    from tuningfork.ops.addskill import IGNORED
+    from tuningfork.ops.imports import SKILL_FOLDER, _folder_name
+    from tuningfork.paths import resolve_path
+    from tuningfork.specs import TaskSpec, validate_spec
+
+    check_name(name)
+    _new_name(home, name)
+    cleaned = {}
+    for path, data in files.items():
+        parts = PurePosixPath(path.replace("\\", "/")).parts if isinstance(path, str) else ()
+        if not parts or any(part in ("", ".", "..") for part in parts) or path.startswith(("/", "\\")) or ":" in parts[0]:
+            raise OperationError(f"{path!r} is not a path inside the folder uploaded", field="files")
+        if not IGNORED.intersection(parts):
+            cleaned[PurePosixPath(*parts).as_posix()] = data
+    tops = sorted(path for path in cleaned if "/" not in path and path.endswith(".json"))
+    if spec is None:
+        spec = SPEC if SPEC in cleaned else tops[0] if len(tops) == 1 else None
+    if spec is None or spec not in cleaned:
+        raise OperationError(
+            f"{spec} is not in the folder uploaded" if spec else "no evals.json at the top of the folder uploaded",
+            hint=f"the task files at its top: {', '.join(tops)}" if tops else "upload the folder that holds the task file",
+            field="spec")
+    uploaded = folder_name or "the folder uploaded"
+    try:
+        raw = json.loads(cleaned[spec].decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise OperationError(f"{spec} is not valid JSON: {exc}", field="spec") from None
+    problems = validate_spec(raw)
+    if problems:
+        listed = "; ".join(str(problem) for problem in problems[:6])
+        raise OperationError(f"{spec} has problems: {listed}", field="spec")
+    data = TaskSpec.from_dict(raw, Path(spec)).to_dict()
+    plan = ImportPlan(name=name, source=f"{uploaded}/{spec}", spec=data)
+    base = PurePosixPath(spec).parent.as_posix()
+    beside = _Beside(files=cleaned, base="" if base == "." else base, where=f"in {uploaded}")
+    given = (data.get("tuningfork") or {}).get("skill_dir")
+    if isinstance(given, str) and given.strip():
+        given = given.strip()
+        if "SKILL.md" in beside.tree(given, take=False):
+            own = _folder_name(PurePosixPath(given.replace("\\", "/")).name or folder_name or "skill")
+            plan.skill = {f"{SKILL_FOLDER}/{own}/{sub}": each for sub, each in beside.tree(given).items()}
+            data["tuningfork"]["skill_dir"] = f"{SKILL_FOLDER}/{own}"
+            plan.skill_dir, plan.has_skill = f"{SKILL_FOLDER}/{own}", True
+            plan.notes.append(f"its skill folder, {given}, is copied into the scenario's own folder ({SKILL_FOLDER}/{own}/): "
+                              "an approved edit is written to that copy, never back to yours")
+        else:
+            # Not in what was uploaded: a folder on this machine, where its path names one.
+            where = resolve_path(given, folder(home, name)).path
+            plan.skill_dir, plan.has_skill = str(where), (where / "SKILL.md").is_file()
+            if plan.has_skill:
+                plan.notes.append(f"its skill folder stays where it is, {where}: each run gets a copy, and an approved "
+                                  "edit is written to it")
             else:
-                files.append(entry)
-        item["files"] = files
-    for relative, origin in copies:
-        if not origin.is_file():
-            raise OperationError(f"{origin} does not exist: the spec names it as an input file", field="path")
-    target = folder(home, name)
-    (target / INPUTS).mkdir(parents=True, exist_ok=True)
-    # The spec goes in first, so each input lands in an existing scenario.
-    (target / SPEC).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    for relative, origin in copies:
-        put_input(home, name, relative, origin.read_bytes())
-    return read_scenario(home, name)
+                plan.warnings.append(f"its skill folder, {given}, is not {beside.where}, and the scenario would read it at "
+                                     f"{where}, which holds no SKILL.md: choose the skill on the scenario's page")
+    else:
+        plan.warnings.append(NO_SKILL)
+    _take_files(plan, beside)
+    left = len(set(cleaned) - beside.used - {spec})
+    if left:
+        plan.notes.append(f"{left} other file(s) in {uploaded} are left out: the task file does not name them")
+    _limited(plan)
+    return plan
+
+
+def execute_import(home: Path | str, plan: ImportPlan) -> Scenario:
+    """Write what the plan says: the scenario's folder made new — a skill's copy and what its
+    check reads, then its evals.json, then its input files — and taken away whole when anything
+    fails."""
+    target = folder(home, plan.name)
+    try:
+        target.mkdir(parents=True)
+    except FileExistsError:
+        raise OperationError(f"a scenario called {plan.name!r} exists already", code="conflict", field="name") from None
+    try:
+        for relative, data in sorted({**plan.skill, **plan.beside}.items()):
+            path = target.joinpath(*PurePosixPath(relative).parts)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        (target / INPUTS).mkdir(exist_ok=True)
+        # The spec goes in first, so each input lands in an existing scenario.
+        (target / SPEC).write_text(json.dumps(plan.spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        for relative, data in sorted(plan.inputs.items()):
+            put_input(home, plan.name, relative, data)
+    except BaseException:
+        shutil.rmtree(target, ignore_errors=True)
+        raise
+    return read_scenario(home, plan.name)
+
+
+def import_spec(home: Path | str, source: Path | str, name: str) -> Scenario:
+    """A spec from elsewhere, as a scenario: its input files, and what its check reads from its
+    folder, copied in; its skill folder kept as a reference to where it is."""
+    return execute_import(home, prepare_import(home, source, name))
 
 
 # --- the list ---------------------------------------------------------------------------------

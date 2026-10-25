@@ -178,18 +178,28 @@ def _spec_folder(spec_path: str | Path) -> Path | None:
     return spec.resolved_skill_dir()
 
 
+def _launched_from(store: Store, runs: Iterable[Run]) -> list[str]:
+    """The specs a skill's runs were launched from: the latest launched run of each version's —
+    one run a version is enough — newest first. A run imported or recorded live was launched
+    from none, and hides none (found in use: a chat imported last left the skill with no folder)."""
+    latest: dict[str, Run] = {}
+    for run in runs:
+        if run.launch_id and (run.skill_version not in latest or run.started_at > latest[run.skill_version].started_at):
+            latest[run.skill_version] = run
+    specs: dict[str, None] = {}
+    for run in sorted(latest.values(), key=lambda each: each.started_at, reverse=True):
+        launch = store.get_launch(run.launch_id)
+        if launch is not None and launch.spec_path:
+            specs[launch.spec_path] = None
+    return list(specs)
+
+
 def _folders(store: Store, name: str, runs: Iterable[Run]) -> list[Folder]:
     """The skill's own folders: those its scenarios name, and those the specs its latest runs
     ran from name — one per folder, however many specs share it."""
     specs: dict[str, None] = {str(spec): None for _, spec in _scenarios(store).get(name, [])}
-    latest: dict[str, Run] = {}
-    for run in runs:  # one run per version is enough to find the specs it came from
-        if run.skill_version not in latest or run.started_at > latest[run.skill_version].started_at:
-            latest[run.skill_version] = run
-    for run in latest.values():
-        launch = store.get_launch(run.launch_id) if run.launch_id else None
-        if launch is not None and launch.spec_path:
-            specs[launch.spec_path] = None
+    for spec in _launched_from(store, runs):
+        specs[spec] = None
     folders: dict[Path, list[str]] = {}
     for spec in specs:
         found = _spec_folder(spec)
@@ -427,11 +437,10 @@ def skills(store: Store) -> list[SkillSummary]:
             if found is not None:
                 folders.setdefault(name, {})[str(found)] = None
     for name, members in runs.items():
-        newest = max(members, key=lambda run: run.started_at)
-        launch = store.get_launch(newest.launch_id) if newest.launch_id else None
-        found = _spec_folder(launch.spec_path) if launch is not None and launch.spec_path else None
-        if found is not None:
-            folders.setdefault(name, {})[str(found)] = None
+        for spec in _launched_from(store, members):
+            found = _spec_folder(spec)
+            if found is not None:
+                folders.setdefault(name, {})[str(found)] = None
     variants: dict[str, int] = {}
     for variant in _variants(store):
         variants[variant.skill] = variants.get(variant.skill, 0) + 1

@@ -119,6 +119,20 @@ class TestVersions:
         trash.restore(store, "refinement", made.id)
         assert len(skills.skill(store, "tally-report").variants) == 1
 
+    def test_a_chat_imported_last_leaves_the_folder_its_runs_were_launched_from(self, stack):
+        """Found in use: a skill's newest run, a chat imported, named no spec, and the Skills
+        page — and a new scenario's list of skills — lost the folder its batches ran from."""
+        from tuningfork.ops import imports
+        from tests.test_chat_import import SKILL, conversation, export
+
+        batch(stack, n=1)
+        imports.execute_import(stack.store, imports.prepare_import(stack.store, export(conversation(("tally-report", SKILL)))))
+        newest = max(stack.store.runs(limit=10), key=lambda run: run.started_at)
+        assert newest.parity.get("imported") and newest.skill_version
+        (summary,) = skills.skills(stack.store)
+        assert summary.runs == 2 and summary.folders == [str(stack.skill.parent.resolve())]
+        assert [folder.path for folder in skills.skill(stack.store, "tally-report").folders] == [stack.skill.parent.resolve()]
+
     def test_a_skill_known_only_from_a_scenario(self, stack):
         folder = stack.tmp / "scenario-skill" / "other"
         folder.mkdir(parents=True)

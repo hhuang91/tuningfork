@@ -1432,10 +1432,12 @@ The proxy serves the web UI at the address it printed, with its token:
 Everything this part did from the terminal can be started from the web UI, as jobs the
 proxy runs. Open the address `tuningfork serve` printed — the one with `?token=`:
 
-1. **Scenarios** → *Add a task file you have*: the absolute path of `examples/tally-report.evals.json`,
-   named `tally-report`. The editor shows the spec exactly as it will be saved, keeps the
-   skill folder where it is, and flags the check for what it is: a shell command that runs,
-   as you, in every run's workspace.
+1. **Scenarios** → *Add a task file you have*, *By its path*: the absolute path of
+   `examples/tally-report.evals.json`, named `tally-report` (*Upload its folder* takes a task
+   file's folder from another machine). The form says what will be added before *Add it*. The
+   editor then shows the spec exactly as it will be saved, keeps the skill folder where it is,
+   and flags the check for what it is: a shell command that runs, as you, in every run's
+   workspace.
 2. *Save and run…* opens **Run a task** with the scenario chosen. Choose the harness and the
    number of runs, and read what will run — the check shown whole, the model the server
    lists — before *Start the runs*. The job's page follows each run and links it. (A

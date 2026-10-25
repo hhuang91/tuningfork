@@ -664,10 +664,23 @@ try {
   await page.eval(`location.hash = "#/scenarios/new"`);
   await until(() => page.eval(`!!document.querySelector('[name="scenario_name"]')`), "the new scenario form");
   await page.type(`document.querySelector('[name="scenario_name"]')`, scenarioName);
+  // Nothing is written until Save: the page says so, and files have nowhere to go yet (found in
+  // use: files dropped before the first save went nowhere, and saving said nothing).
+  check(await page.eval(`document.querySelector(".save-state")?.textContent === "not saved yet"
+    && document.querySelector(".drop-zone").classList.contains("disabled") && document.querySelector('.drop-zone + input[type="file"]').disabled`),
+    "before its first save a scenario says it is not saved, and takes no files");
   await page.type(`document.querySelector('[name="skill_name"]')`, "tally-scenario");
-  await page.type(`document.querySelector('[name="skill_dir"]')`, `${health.home}/lab-task/tally-report`);
+  // The skill folder: one the Skills page lists, or a path — a relative one shown after the
+  // scenario's own folder, where it is taken from.
+  await page.eval(`document.querySelector('input[name="skill-from-editor"][value="path"]').click()`);
+  await page.type(`document.querySelector('[name="skill_dir-editor"]')`, "skill");
+  await until(() => page.eval(`(() => { const base = document.querySelector(".path-base");
+    return !!base && !base.hidden && base.textContent === ${JSON.stringify(`${health.home}/scenarios/${scenarioName}/`)}; })()`), "the scenario's folder before a relative path");
+  check(true, "a relative skill folder is shown after the scenario's own folder, where it is taken from");
+  await page.type(`document.querySelector('[name="skill_dir-editor"]')`, `${health.home}/lab-task/tally-report`);
   await until(() => page.eval(`(document.querySelector(".path-line.path-ok")?.textContent || "").includes("holds a SKILL.md")`), "the skill folder, resolved");
-  check(true, "the skill folder field says where it resolves, and that it holds a SKILL.md");
+  check(await page.eval(`document.querySelector(".path-base").hidden && document.querySelector('[name="skill_name"]').value === "tally-scenario"`),
+    "the skill folder field says where it resolves, and that it holds a SKILL.md; a full path has no folder before it, and a name typed stays");
   await page.type(`document.querySelector('[name="prompt-0"]')`, "Summarize data.csv into report.json.");
   await page.type(`document.querySelector('[name="skills-0"]')`, "tally-report");
   await page.type(`document.querySelector('[name="turns-0"]')`, "6");
@@ -688,6 +701,9 @@ try {
   await page.click("Save");
   await until(() => page.eval(`location.hash === "#/scenarios/${scenarioName}"`), "the saved scenario's page");
   await until(() => page.eval(`!!document.querySelector(".drop-zone")?.textContent.startsWith("Drop files")`), "the drop zone");
+  check(await page.eval(`document.querySelector(".save-state")?.textContent === "saved"
+    && [...document.querySelectorAll(".toast")].some((toast) => toast.textContent.includes("Saved scenarios/${scenarioName}/evals.json"))`),
+    "saved, it says so: a note that outlives the page's change, and its state beside Save");
   // A file chosen the way a person would, through the page's own file picker.
   const csv = process.env.TUNINGFORK_UPLOAD;
   if (csv) {
@@ -736,6 +752,19 @@ try {
   await until(() => page.eval(`[...document.querySelectorAll(".scenario-result")].some((row) => row.textContent.includes("tally-scenario/1"))`), "the scenario's result in the list");
   check(await page.eval(`(() => { const bars = [...document.querySelectorAll(".scenario-result .ci-track")];
     return bars.length > 0 && bars.every((bar) => bar.classList.contains("tone-accent")); })()`), "the list shows the scenario's pass rate, in the accent");
+  // A task file you have, by its path — or its folder uploaded — planned as the form is filled
+  // in, as Add a skill plans, then kept as a scenario and opened.
+  check(await page.eval(`[...document.querySelectorAll('input[name="import-way"]')].map((radio) => radio.value).join(",") === "path,upload"`),
+    "a task file you have is added by its path, or its folder uploaded");
+  // The one just made, kept again: a task file on the proxy's machine, with no held-out task in it.
+  await page.type(`document.querySelector('.plan-form [name="path"]')`, `${health.home}/scenarios/${scenarioName}/evals.json`);
+  await page.type(`document.querySelector('.plan-form [name="name"]')`, `kept-${scenarioName}`);
+  await planShows(page, `kept-${scenarioName}`);
+  await startButtonReady(page, "Add it");
+  await page.click("Add it");
+  await until(() => page.eval(`location.hash === "#/scenarios/kept-${scenarioName}" && document.querySelector(".save-state")?.textContent === "saved"`),
+    "the task file kept, its page");
+  check(true, "a task file named by its path is planned, then kept as a scenario and opened");
 
   // The check, tried before trusting it: on the run the batch just made, then on files written here.
   await page.eval(`location.hash = "#/scenarios/${scenarioName}"`);
@@ -1745,7 +1774,12 @@ try {
     `the skill's page runs it again and makes a scenario for it (${ways})`);
   await page.eval(`[...document.querySelectorAll(".page-head .actions a")].find((a) => a.textContent === "Make a scenario for it…").click()`);
   await until(() => page.eval(`document.querySelector('input[name="skill_name"]')?.value === "tally-report"`), "a new scenario, its task named for the skill");
-  check(await page.eval(`document.querySelector('input[name="skill_dir"]').value === ${JSON.stringify(skill.folders[0].path)}`), "its skill folder filled in");
+  // Its folder, one the Skills page lists, chosen from the list (the user's ask: an existing skill
+  // or a path to one).
+  check(await page.eval(`(() => { const list = document.querySelector('[name="skill_known-editor"]');
+    return document.querySelector('input[name="skill-from-editor"][value="known"]').checked
+      && list.options[list.selectedIndex].textContent === ${JSON.stringify(`tally-report — ${skill.folders[0].path}`)}; })()`),
+    "its skill folder filled in, the skill chosen from the list");
   await page.eval(`location.hash = "#/skills/tally-report"`);
   await until(() => page.eval(`!!document.querySelector(".markdown .md-front")`), "back on the skill's page");
   check(skill.versions.length >= 2 && await page.eval(`document.querySelectorAll(".condition-rate .ci").length >= 2
@@ -1940,6 +1974,11 @@ try {
   check(await page.eval(`document.querySelector('[name="check-kind-run"][value="none"]')?.checked
     && !document.querySelector('[name="check-kind-run"][value="own"]') && !document.querySelector('[name="check-run"], [name="check-text-run"]')`),
     "its check is chosen as a new scenario's is: with no task to take one from, none yet, and no text to give it");
+  // No folder of the skill's own: a copy of what the run had, unless one the Skills page lists, or
+  // a path, is chosen instead.
+  check(await page.eval(`["copy", "known", "path"].every((kind) => !!document.querySelector('input[name="skill-from-run"][value="' + kind + '"]'))
+    && document.querySelector('input[name="skill-from-run"][value="copy"]').checked`),
+    "with no folder of the skill's own, a copy of what the run had, or an existing skill, or a path");
   await until(() => page.eval(`(document.querySelector(".plan-status .form-note-box")?.textContent || "").includes("Name the scenario")`),
     "what it still needs, as a note");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-the-chat");
@@ -2078,6 +2117,19 @@ try {
     "its check is the task's own unless told otherwise, chosen as a new scenario's is");
   check(await page.eval(`document.querySelector("main").textContent.includes("Its inputs are the run's workspace where the scenario starts")`),
     "it says its inputs come from the run's workspace");
+  // A new scenario's first fields, in its order, each shown whether or not there is a choice: greyed
+  // where the run says it (found in use: a task run's form left out the harness and the skill, and
+  // said them in a line above the form).
+  check(await page.eval(`(() => {
+    const form = document.querySelector(".plan-form");
+    const harness = form.querySelector('select[name="harness"]'), skill = form.querySelector('select[name="skill"]');
+    const folder = form.querySelector('[name="skill_dir-run"]');
+    const labels = [...form.querySelectorAll(".form-grid > .form-field > .form-label")].slice(0, 4).map((label) => label.textContent);
+    return labels.join(",") === "Scenario name,Harness,Skill name,Skill folder"
+      && harness.disabled && harness.value === "fake" && skill.disabled && skill.value === "tally-report"
+      && folder.readOnly && folder.classList.contains("field-fixed") && folder.value === ${JSON.stringify(`${health.home}/lab-task/tally-report`)}
+      && !form.querySelector('input[name="skill-from-run"]');
+  })()`), "a launched run's harness, skill and skill folder are shown greyed, in a new scenario's order");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
   await planShows(page, "data.csv");
   await startButtonReady(page, "Make the scenario");

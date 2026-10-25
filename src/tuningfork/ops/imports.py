@@ -1021,7 +1021,7 @@ def _studied(run: Any, chat: Chat, harness: str, skill: str | None = None, folde
         return Studied(_bare(shown[0].name), shown[0])
     if not shown:
         raise OperationError(f"no skill shows in run {run.id[:8]}'s conversation, and it kept none: a scenario studies "
-                             "one — name its folder (--skill-dir, or “Its folder” on the scenario's form)", field="skill_dir")
+                             "one — name its folder (--skill-dir, or “Skill folder” on the scenario's form)", field="skill_dir")
     raise OperationError(f"run {run.id[:8]}'s conversation shows {len(shown)} skills: name the one the scenario studies",
                          hint=f"the skills in it: {', '.join(found.name for found in shown)}", code="choose_skill",
                          field="skill")
@@ -1068,10 +1068,17 @@ def scenario_choices(store: Store, reference: str, *, skill: str | None = None, 
     launch = store.get_launch(run.launch_id) if run.launch_id else None
     task = launch.eval if launch is not None and isinstance(launch.eval, dict) else {}
     offered = set(start.starts) if start else set()
+    folder, given_by = _default_folder(run, launch, studied) if studied is not None else (None, None)
     return {
         "run": run.id, "harness": harness, "recorded_harness": run.harness,
         "imported": bool((run.parity or {}).get("imported")), "launched": launch is not None,
         "skill": studied.name if studied is not None else None, "skills": skill_names(run, chat, harness),
+        # The skill's folder where none is named: the one named when the chat was imported, or the
+        # run's task's own ("import", "task"); else none, and the scenario keeps a copy of what the
+        # run had — the copy it kept, or the SKILL.md its model read — where there is one.
+        "skill_dir": str(folder) if folder is not None else None, "skill_dir_from": given_by,
+        "can_copy": studied is not None and (studied.kept is not None or studied.found is not None),
+        "copy_dir": f"{SKILL_FOLDER}/{_folder_name(studied.name)}" if studied is not None else None,
         "turns": [{**turn, "offered": turn["message"] in offered} for turn in turns(chat)],
         "cut": start.cut if start else None, "prompt": start.prompt if start else None,
         "steps": start.steps if start else [],
@@ -1164,20 +1171,18 @@ def prepare_scenario(
     own = place / SKILL_FOLDER / _folder_name(studied.name)
     copy_from: Path | None = None
     extract: str | None = None
-    source = imported_source(run, studied.kept_name) if studied.kept_name is not None else None
-    task_folder = _task_skill_dir(run, launch, studied.kept)
+    found_folder, given_by = _default_folder(run, launch, studied)
     if folder is not None:
         skill_folder = folder
         text = (folder / "SKILL.md").read_text(encoding="utf-8", errors="replace")
         if studied.found is not None and not _locatable(chat, studied.found, text):
             warnings.append(f"{folder}/SKILL.md is not the text the model read in the conversation: the scenario's "
                             "runs read it as the folder has it")
-    elif source is not None:
-        skill_folder = source
-    elif task_folder is not None:
-        skill_folder = task_folder
-        if studied.kept is not None and (task_folder / "SKILL.md").read_bytes() != studied.kept.read_bytes():
-            warnings.append(f"{task_folder}/SKILL.md has changed since run {run.id[:8]} was given it: the scenario's "
+    elif found_folder is not None:
+        skill_folder = found_folder
+        if (given_by == "task" and studied.kept is not None
+                and (found_folder / "SKILL.md").read_bytes() != studied.kept.read_bytes()):
+            warnings.append(f"{found_folder}/SKILL.md has changed since run {run.id[:8]} was given it: the scenario's "
                             "runs read it as it is now")
     elif studied.kept is not None or studied.found is not None:
         skill_folder = own
@@ -1192,14 +1197,14 @@ def prepare_scenario(
         what = (f"the copy run {run.id[:8]} kept" if copy_from is not None
                 else "the SKILL.md the model read — the rest of its folder, scripts and references, the chat never showed")
         warnings.append(f"no folder of {studied.name}'s own was found: the scenario keeps {what}, in its own folder "
-                        f"({own}), where an approved edit is written; name the skill's folder (--skill-dir, or “Its folder” "
+                        f"({own}), where an approved edit is written; name the skill's folder (--skill-dir, or “Skill folder” "
                         "on the scenario's form) to tune that one")
         if made_up:
             notes.append(f"the model read {studied.name} without its frontmatter: the scenario's SKILL.md is given "
                          "one, its name and a description, so that the harness lists it")
     else:
         raise OperationError(f"no copy of {studied.name} to give the scenario's runs: name its folder (--skill-dir, "
-                             "or “Its folder” on the scenario's form)",
+                             "or “Skill folder” on the scenario's form)",
                              field="skill_dir")
 
     check_files: dict[str, Path] = {}
@@ -1288,6 +1293,17 @@ def imported_source(run: Any, skill: str) -> Path | None:
     if named is None and imported.get("skill") == skill:
         named = imported.get("skill_dir")  # an import from before it kept several
     return Path(named) if named and (Path(named) / "SKILL.md").is_file() else None
+
+
+def _default_folder(run: Any, launch: Any, studied: Studied) -> tuple[Path | None, str | None]:
+    """The skill folder a scenario of `run` takes where none is named, and where it comes from:
+    the one named when the chat was imported ("import"), else the folder of the task a launched
+    run was of ("task") — each while it is there. (None, None): the scenario keeps a copy."""
+    source = imported_source(run, studied.kept_name) if studied.kept_name is not None else None
+    if source is not None:
+        return source, "import"
+    task_folder = _task_skill_dir(run, launch, studied.kept)
+    return (task_folder, "task") if task_folder is not None else (None, None)
 
 
 def _task_skill_dir(run: Any, launch: Any, kept: Path | None) -> Path | None:

@@ -447,6 +447,7 @@ class TestAScenarioOfAnImport:
         result = imports.execute_import(store, imports.prepare_import(store, export(rows)))
         choices = imports.scenario_choices(store, result.run_id)
         assert choices["skill"] is None and choices["cut"] == 1 and choices["prompt"] == "Look at data.csv."
+        assert not choices["can_copy"] and choices["skill_dir"] is None  # nothing to copy: a folder is named
         assert [turn["offered"] for turn in choices["turns"]] == [True, True]
         later = imports.scenario_choices(store, result.run_id, cut=3)
         assert later["prompt"] == "Now summarize it into report.json." and later["context"] == 2
@@ -513,6 +514,8 @@ class TestAScenarioOfAnImport:
         result = imports.execute_import(store, imports.prepare_import(store, chat_with_earlier_turns(), skill_dir=str(folder)))
         plan = imports.prepare_scenario(store, result.run_id, "own-folder")
         assert plan.skill_dir == folder.resolve() and not any("extracted" in warning for warning in plan.warnings)
+        choices = imports.scenario_choices(store, result.run_id)
+        assert (choices["skill_dir"], choices["skill_dir_from"]) == (str(folder.resolve()), "import")
 
     def test_a_run_recorded_as_it_happened_keeps_the_skill_its_model_read(self, store):
         """A run that came through the proxy outside any launch: its conversation is its last
@@ -528,6 +531,8 @@ class TestAScenarioOfAnImport:
         assert not run.parity.get("imported") and not run.launch_id
         choices = imports.scenario_choices(store, run.id)
         assert (choices["skill"], choices["cut"], choices["launched"]) == ("tally-report", 3, False)
+        # No folder of its own: unless one is named, the scenario keeps a copy of what its model read.
+        assert (choices["skill_dir"], choices["can_copy"], choices["copy_dir"]) == (None, True, "skill/tally-report")
         # Only the turn the skill came in after: a run sent the earlier one would never vary it.
         assert [(turn["message"], turn["offered"]) for turn in choices["turns"]] == [(1, False), (3, True)]
         assert choices["prompt"] == "Summarize data.csv into report.json."
@@ -706,6 +711,9 @@ def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_chec
     choices = imports.scenario_choices(stack.store, source.run_id)
     assert choices["launched"] and choices["check"] == stack.item.tuningfork.check and choices["cut"] == 1
     assert choices["prompt"] == stack.item.prompt
+    # Its skill folder is its task's own: the form shows it, fixed.
+    assert choices["skill_dir_from"] == "task"
+    assert choices["skill_dir"] == str((stack.tmp / "skills-src" / "tally-report").resolve())
     plan = imports.prepare_scenario(stack.store, source.run_id, "tally-again")
     assert (plan.cut, plan.prompt, plan.context.messages) == (1, stack.item.prompt, 0)
     assert plan.skill == "tally-report" and not plan.own_skill

@@ -347,6 +347,8 @@ textarea.field {
   tab-size: 2;
 }
 .field:disabled { opacity: 0.45; }
+/* What a run says, shown as a field greyed like a disabled one, its text still to be copied. */
+.field.field-fixed { opacity: 0.45; cursor: default; }
 .field-changed { border-color: var(--change); box-shadow: 0 0 0 1px var(--change); }
 .field-invalid { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
 .search { width: 300px; max-width: 100%; }
@@ -1200,6 +1202,37 @@ pre.code { color: var(--muted); }
 .path-line { display: block; margin-top: 3px; overflow-wrap: anywhere; }
 .path-line.path-ok { color: var(--muted); }
 .path-line.path-bad { color: var(--bad); }
+/* A relative path's folder, before the field it is typed in: one control to the eye, the folder
+   cut at its start where it is long, so its end — the scenario's own name — stays in sight. */
+.path-input { display: flex; align-items: stretch; min-width: 0; }
+.path-input > .field { flex: 1 1 12em; min-width: 8em; font-family: var(--mono); font-size: 12.5px; }
+.path-base {
+  flex: 0 1 auto;
+  max-width: 60%;
+  min-width: 4em;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--border-strong);
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 29px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.path-base[hidden] { display: none; }
+.path-base-text { unicode-bidi: isolate; direction: ltr; }
+.path-base:not([hidden]) + .field { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.skill-pick { gap: 6px; }
+/* A label that says more on hover: why the field matters, beside what to type under it. */
+.has-tip { border-bottom: 1px dotted var(--faint); cursor: help; }
+/* Beside Save: whether the page holds what the file says. */
+.save-state { display: inline-flex; align-items: center; }
 .plan-form { display: flex; flex-direction: column; gap: 14px; }
 .plan-box {
   padding: 10px 12px;
@@ -1363,7 +1396,7 @@ pre.code { color: var(--muted); }
 .file-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .file-row.file-text { flex-direction: column; align-items: stretch; gap: 4px; }
 .file-row-head { display: flex; align-items: center; gap: 8px; }
-.file-row-head .field { max-width: 320px; font-family: var(--mono); }
+.file-row-head .field, .file-row > .field { max-width: 320px; font-family: var(--mono); }
 .drop-zone {
   padding: 14px;
   border: 2px dashed var(--border-strong);
@@ -1374,6 +1407,10 @@ pre.code { color: var(--muted); }
   cursor: pointer;
 }
 .drop-zone:hover, .drop-zone:focus-visible, .drop-zone.over { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+/* Not yet usable: greyed, never hidden, saying what comes first. */
+.drop-zone.disabled { cursor: default; color: var(--faint); background: transparent; border-color: var(--border); }
+.drop-zone.disabled:hover { border-color: var(--border); color: var(--faint); background: transparent; }
+.upload-more .controls { min-height: 30px; }
 
 /* --- tools at a held call ----------------------------------------------------------------- */
 

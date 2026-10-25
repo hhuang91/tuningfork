@@ -162,6 +162,18 @@ loads a skill other than the spec's (`LaunchState.next_skill`, the adapter's `sk
 notes the launch (`Store.note_launch`), the runner ends the harness and runs the check on the
 workspace as it is, and the run counts, its result saying where it stopped (`stopped_at_skill`).
 
+A task file a person has becomes a scenario too (`scenarios.prepare_import`, `prepare_upload`,
+`execute_import`; the Scenarios page's Add a task file you have, `POST /scenarios/import`), planned
+before anything is written: by its path, its skill folder kept where it is, or its folder uploaded,
+the skill folder it holds copied into the scenario's own (`skill/<name>/`). Either way its input
+files, and what its check reads from its folder (`$TUNINGFORK_SPEC_DIR/…`), come with it; a
+scenario whose check reads what its folder lacks says so before it runs. A new scenario's page and
+Make a scenario name the skill alike (`ui/static/js/skillpick.js`): the scenario's name, the
+harness (of a run), the skill's name, then its folder — an existing skill the Skills page lists, or
+a path, a relative one shown after the scenario's own folder it is taken from, and of a run a copy
+of what it had — each greyed where the run says it. A scenario's input files go into it only once
+it is saved, each at a path in the workspace the person can change.
+
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
 agent's sight). It can run what the model wrote — a `conftest.py` its `pytest` finds — so its

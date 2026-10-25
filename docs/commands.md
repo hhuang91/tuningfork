@@ -223,7 +223,11 @@ prompt and everything before it each run's context.
 
 The web UI has the same, from a run's page (**Make a scenario…**) or from the Scenarios page
 (**From a run…**, which lists the runs to choose from, and imports a chat first where it is not
-a run yet). Its form sets each run beside the chat, for the skill chosen: first what each run is
+a run yet). Its first fields are a new scenario's — its name, the harness, the skill's name and
+its folder — each greyed where the run says it: a launched run's harness, skill and its task's
+folder. Where the run has no folder of the skill's own, the folder is a copy of what the run had,
+an existing skill the Skills page lists, or a path. Then the form sets each run beside the chat,
+for the skill chosen: first what each run is
 given — its harness's own system prompt and tools (the chat's shown, never sent), the
 conversation before the starting prompt, and the prompt, which can be rewritten there — then the
 conversation's steps from there on: already done, where each run starts, where it stops. Claude Code's calls cannot yet carry a conversation before the prompt, so a
@@ -516,7 +520,8 @@ folder instead (`skills/<name>/`, `--name` naming it), as the Skills page's uplo
 edit is then written to the copy, never back to where it came from. `--run <run>` keeps the skill a
 run had as such a copy — the copy the run kept of it, else the SKILL.md its model read — `--skill
 <name>` choosing where the run had several. `--dry-run` says what would be added. The Skills page
-then lists it, and a scenario names its folder to run it. `forget-skill <name>` forgets one: a
+then lists it, and a scenario names its folder to run it: on a scenario's page, its skill folder is
+an existing skill, chosen from those the Skills page lists, or a path. `forget-skill <name>` forgets one: a
 folder named stays where it is; a copy is moved aside whole, to `skills/.forgotten/`, never deleted,
 and not while a scenario runs from it.
 

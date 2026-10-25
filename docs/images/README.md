@@ -72,7 +72,7 @@ picture whose source is not named is skipped. What it does for you:
 
 - **The page alone, one pixel to one.** Headless, there is no address bar — and so no access
   token — on a picture, and nothing to crop. A page is 1440 pixels wide and 896 high (the chat
-  made a scenario 1000, the GIF 1200 by 800), at a device scale of one, in the light theme, its
+  made a scenario 1160, the GIF 1200 by 800), at a device scale of one, in the light theme, its
   scrollbars hidden.
 - **Nothing of one machine.** A screenshot is a tracked file like any other. The script reads what
   each page shows — its text and what its fields hold, and on the GIF's every page, any text it
