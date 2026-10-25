@@ -4770,6 +4770,12 @@ def connections_show(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)
             f"\n[bold]sandbox[/bold]   [yellow]none: {escape(str(sandbox.get('reason')))}[/yellow] — each launch "
             "sees its own folders"
         )
+    check_env = found.get("check_env") or {}
+    if check_env.get("problem"):
+        console.print(f"  [red]{escape(check_env['problem'])}[/red]")
+    elif check_env.get("names"):
+        console.print(f"  every check may also read {escape(', '.join(check_env['names']))}, as this machine's "
+                      "config says")
     console.print(f"\n[bold]proxy[/bold]     {escape(found['proxy']['home'])}")
     if found.get("busy"):
         console.print(f"  in use: {escape('; '.join(found['busy']))}")

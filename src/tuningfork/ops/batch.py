@@ -156,7 +156,7 @@ def prepare_batch(
     from tuningfork.paths import host_path
     from tuningfork.runner import lookalike_skill_files
     from tuningfork.sandbox import for_launches, turned_off as sandbox_turned_off
-    from tuningfork.specs import SpecError, check_kind, load_spec, missing_files
+    from tuningfork.specs import SpecError, check_kind, configured_check_env, load_spec, missing_files
 
     if harness not in ADAPTERS:
         raise OperationError(
@@ -281,6 +281,14 @@ def prepare_batch(
     if sandbox is not None and sandbox.clock_problem:
         notes.append(Note(
             "warning", f"{sandbox.clock_problem}: each run's date is the day it is made, which the model reads",
+        ))
+    # Read now, so a list that cannot be read is refused before a run is launched.
+    machine_env = configured_check_env(store.home)
+    if machine_env and check_kind(item.tuningfork.check) == "shell":
+        notes.append(Note(
+            "note",
+            f"each run's check may read {', '.join(machine_env)}, which this machine's config names for every check, "
+            "besides what its task names",
         ))
     if sandbox is not None and check_kind(item.tuningfork.check) == "shell" and not sandbox.shows(spec.directory):
         notes.append(Note(

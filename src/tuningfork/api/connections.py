@@ -101,9 +101,16 @@ def connection_routes() -> list[Route]:
         ]
         # Why the server cannot be switched now, if it cannot: shown before anyone tries.
         busy = await state.upstream_busy()
+        from tuningfork.ops.common import OperationError
         from tuningfork.sandbox import status as sandbox_status
+        from tuningfork.specs import configured_check_env
 
         sandbox = (await asyncio.to_thread(sandbox_status)).to_json()
+        # The variables this machine's config lets every check read, or why they cannot be read.
+        try:
+            check_env: dict[str, Any] = {"names": configured_check_env(settings.home)}
+        except OperationError as error:
+            check_env = {"names": [], "problem": error.message}
         return JSONResponse({
             "server": {
                 # Read without the token: a user and password in either are masked.
@@ -124,6 +131,7 @@ def connection_routes() -> list[Route]:
             "harnesses": harnesses,
             # Whether launches run in a private view of the machine, and if not, why not.
             "sandbox": sandbox,
+            "check_env": check_env,
             "proxy": {
                 "home": str(settings.home),
                 "host": settings.host,

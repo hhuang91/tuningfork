@@ -48,6 +48,7 @@ from tuningfork.specs import (
     CHECK_KEPT,
     CheckResult,
     Eval,
+    configured_check_env,
     load_context,
     TaskSpec,
     hash_tree,
@@ -505,9 +506,10 @@ class Launcher:
         reply_file = workspace.parent / "reply.txt"
         reply_file.write_text(reply, encoding="utf-8")
         # In the sandbox the launch ran in, if it ran in one: the check can run what the model wrote.
+        # It reads what its task names, and what this machine's config names for every check.
         check = run_check(
             item.tuningfork.check, workspace, reply=reply, reply_file=reply_file, spec_dir=spec_dir,
-            check_env=item.tuningfork.check_env, sandbox=self.sandbox,
+            check_env=[*configured_check_env(self.store.home), *item.tuningfork.check_env], sandbox=self.sandbox,
         )
         told = None
         if (

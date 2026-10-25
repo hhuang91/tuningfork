@@ -83,7 +83,7 @@ def prepare_fork(
     from tuningfork.paths import host_path
     from tuningfork.replay import Variant, replay_problems, replayed_steps
     from tuningfork.runner import ForkSource
-    from tuningfork.specs import Eval, load_spec
+    from tuningfork.specs import Eval, check_kind, configured_check_env, load_spec
 
     checkpoint = load(store, run, step)
     refuse_trashed(checkpoint.run)
@@ -158,6 +158,9 @@ def prepare_fork(
             )
     if skill is not None and not skill.exists() and not skill_commit:
         raise OperationError(f"the skill folder the run was given, {skill}, no longer exists")
+    if check_kind(item.tuningfork.check) == "shell":
+        # Read now, so a list that cannot be read is refused before a fork is launched.
+        configured_check_env(store.home)
     if need_check and not item.tuningfork.check:
         raise OperationError(
             "the task defines no check, so a fork has no verdict to count",

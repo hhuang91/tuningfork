@@ -326,8 +326,10 @@ in the workspace. It works in `/home/user/project`, sees the task's folder read-
 launch sees, and has an empty home of its own. Of your environment variables it gets only
 `PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, and those its task names in
 [`check_env`](#a-task); without the sandbox it gets the same ones. That leaves out a proxy's
-settings too (`https_proxy`, `SSL_CERT_FILE`), as for a launch: name them in `check_env` if a
-check needs the network behind one. A tool's cache starts empty, so a check that installs a
+settings too (`https_proxy`, `SSL_CERT_FILE`), as for a launch. Name what every check on this
+machine reads in its config, `~/.config/tuningfork/config.json`: `{"check_env": ["https_proxy",
+"SSL_CERT_FILE"]}`. A recordings folder's `config.json` takes the same list, the two adding up,
+and a batch's plan and Connections say what they name. A tool's cache starts empty, so a check that installs a
 package each time (`uv run --with …`) downloads it. It writes nowhere but the workspace, its
 own home and its own `/tmp`, and it cannot read the run's home. A check tried with `tuningfork
 recheck`, or run along a run, runs the same way. Keep a task file in a folder of its own: one
@@ -389,7 +391,8 @@ tuningfork's own settings under a `tuningfork` key.
   judge's key: `["OPENAI_API_KEY"]`. A check gets no others but a few like `PATH` and `LANG`
   ([the sandbox](#the-sandbox)), and never one of tuningfork's own keys. Whatever the check runs
   reads the variables it gets too, code the model left in the workspace included, and the network
-  is reachable.
+  is reachable. What every check on a machine reads, a proxy's settings say, goes in the machine's
+  config instead ([the sandbox](#the-sandbox)).
 - **`held_out`** marks a task that judges an edit rather than shaping one: a batch never picks
   it, no agent may read its runs, and a validation runs it in a private folder that keeps only
   its verdicts.
@@ -445,4 +448,5 @@ entry. A list that cannot be read stops all of tuningfork's traffic until it is 
 | `TUNINGFORK_HOST`, `TUNINGFORK_PORT`, `TUNINGFORK_MAX_INFLIGHT`, `TUNINGFORK_JOBS`, `TUNINGFORK_MAX_OUTPUT`, `TUNINGFORK_MCP_TOOLS`, `TUNINGFORK_MCP_RESULTS`, `TUNINGFORK_MCP_MAX_WAIT` | `serve`'s options of the same names |
 
 A check is given `TUNINGFORK_REPLY` and `TUNINGFORK_SPEC_DIR`, and of your own variables only a
-few like `PATH` and those its task names in `check_env`: see [a task](#a-task).
+few like `PATH` and those its task or the machine's config names in `check_env`: see
+[a task](#a-task).

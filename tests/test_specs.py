@@ -262,6 +262,38 @@ class TestACheckEnvironment:
         assert seen["TUNINGFORK_REPLY"] == str(reply) and seen["TUNINGFORK_SPEC_DIR"] == str(tmp_path.resolve())
 
 
+class TestTheMachinesCheckEnv:
+    """What every check on a machine reads goes in its config, beside the endpoints it protects:
+    a proxy's settings, which belong to no task file."""
+
+    def write(self, path: Path, data) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def test_the_machines_and_the_recordings_folders_lists_add_up(self, tmp_path, monkeypatch):
+        from tuningfork.specs import configured_check_env
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        self.write(tmp_path / "config" / "tuningfork" / "config.json", {"check_env": ["https_proxy", "SSL_CERT_FILE"]})
+        home = tmp_path / "home"
+        self.write(home / "config.json", {"check_env": ["SSL_CERT_FILE", "HF_HOME"]})
+        assert configured_check_env(home) == ["https_proxy", "SSL_CERT_FILE", "HF_HOME"]
+        assert configured_check_env() == ["https_proxy", "SSL_CERT_FILE"]
+        assert configured_check_env(tmp_path / "elsewhere") == ["https_proxy", "SSL_CERT_FILE"]
+
+    @pytest.mark.parametrize("names", ["https_proxy", ["not a name"], ["TUNINGFORK_TOKEN"]])
+    def test_a_list_that_cannot_be_read_is_refused_saying_where(self, tmp_path, monkeypatch, names):
+        from tuningfork.ops.common import OperationError
+        from tuningfork.specs import configured_check_env
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        machine = self.write(tmp_path / "config" / "tuningfork" / "config.json", {"check_env": names})
+        with pytest.raises(OperationError) as refused:
+            configured_check_env()
+        assert str(machine) in refused.value.message and refused.value.code == "check_env"
+
+
 class TestLoading:
     def test_a_spec_with_problems_is_refused_with_each_named(self, tmp_path):
         path = tmp_path / "evals.json"

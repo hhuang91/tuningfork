@@ -35,8 +35,9 @@ REPLY_ENV = "TUNINGFORK_REPLY"
 SPEC_DIR_ENV = "TUNINGFORK_SPEC_DIR"
 #: What a shell check keeps of the machine's environment, as a launch does: where programs
 #: are, the language, the terminal, the temporary folder, who runs it. Nothing else of the
-#: person's but what its task names (`check_env`): a check can run code the model wrote, and a
-#: variable can hold a key.
+#: person's but what its task names (`check_env`) and what the machine's config names for every
+#: check (`configured_check_env`): a check can run code the model wrote, and a variable can hold
+#: a key.
 CHECK_INHERITED = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "USER")
 #: A variable's name, as a shell writes one.
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -680,6 +681,32 @@ REPLY_QUOTED = 500
 
 #: The end of a check's output a verdict keeps, in characters.
 CHECK_KEPT = 2000
+
+
+def configured_check_env(home: Path | None = None) -> list[str]:
+    """The variables every check here may read besides those its task names: `"check_env"` in
+    the machine's config (`config.machine_config_path()`) and in the recordings folder's
+    `config.json`, together — a proxy's settings, say, which belong to the machine and to no
+    task file. A list that cannot be read is refused, saying where it is written."""
+    from tuningfork.config import HOME_CONFIG, machine_config_path, read_home_config, read_machine_config
+    from tuningfork.ops.common import OperationError
+
+    places = [(machine_config_path(), read_machine_config())]
+    if home is not None:
+        places.append((Path(home) / HOME_CONFIG, read_home_config(home)))
+    names: list[str] = []
+    for where, data in places:
+        if "check_env" not in data:
+            continue
+        problem = check_env_problem(data["check_env"])
+        if problem:
+            raise OperationError(
+                f'"check_env" in {where} {problem}',
+                hint='write it as a list of variable names: {"check_env": ["https_proxy", "SSL_CERT_FILE"]}',
+                code="check_env", field="check_env",
+            )
+        names += data["check_env"]
+    return list(dict.fromkeys(names))
 
 
 def check_environment(

@@ -59,6 +59,26 @@ def chat(content: str = "hi") -> dict:
     return {"model": "m", "messages": [{"role": "user", "content": content}]}
 
 
+async def test_connections_say_what_every_check_may_read(two_servers, tmp_path, monkeypatch):
+    """What this machine's config names for every check, or why it cannot be read: the page
+    shows it beside the sandbox, and nothing else stops."""
+    import json
+
+    app, _, _ = two_servers
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    machine = tmp_path / "config" / "tuningfork" / "config.json"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(json.dumps({"check_env": ["https_proxy"]}), encoding="utf-8")
+    async with client_of(app) as client:
+        shown = (await client.get(f"{API}/connections")).json()
+    assert shown["check_env"] == {"names": ["https_proxy"]}
+    machine.write_text(json.dumps({"check_env": "https_proxy"}), encoding="utf-8")
+    async with client_of(app) as client:
+        shown = (await client.get(f"{API}/connections")).json()
+    assert shown["check_env"]["names"] == [] and str(machine) in shown["check_env"]["problem"]
+    assert shown["server"]["url"] == "http://a.test"
+
+
 class TestSwitchingTheServer:
     async def test_a_dry_run_says_what_would_change_and_changes_nothing(self, two_servers):
         app, first, second = two_servers

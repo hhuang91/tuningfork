@@ -456,7 +456,7 @@ export async function connectionsView(root, _, scope) {
   // --- harnesses ------------------------------------------------------------------------
 
   function drawHarnesses() {
-    replace(harnessesEl, [sandboxCard(state.sandbox), ...state.harnesses.map(harnessCard)]);
+    replace(harnessesEl, [sandboxCard(state.sandbox, state.check_env), ...state.harnesses.map(harnessCard)]);
   }
 
   // A harness's need in the page's words, as the server test's measurement of it is named; the
@@ -468,7 +468,7 @@ export async function connectionsView(root, _, scope) {
   }
 
   // Where every launch runs: what its harness sees is what the model reads.
-  function sandboxCard(sandbox) {
+  function sandboxCard(sandbox, checkEnv = {}) {
     if (!sandbox) return null;
     return h("div", { class: "harness-card" },
       h("div", { class: "harness-head" },
@@ -481,7 +481,13 @@ export async function connectionsView(root, _, scope) {
             ["a run's check", "runs there too, with the task file's folder read-only, a few of your environment variables like PATH, and those its task names"],
           ])
         : h("div", { class: "banner banner-warn" },
-            `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them. Their checks run on this machine itself.`));
+            `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them. Their checks run on this machine itself.`),
+      // What this machine's config lets every check read, with the sandbox or without it.
+      checkEnv?.problem
+        ? h("div", { class: "banner banner-warn" }, checkEnv.problem)
+        : checkEnv?.names?.length
+          ? h("p", { class: "muted small" }, `Every check may also read ${checkEnv.names.join(", ")}, as this machine's config says.`)
+          : null);
   }
 
   function harnessCard(harness) {
