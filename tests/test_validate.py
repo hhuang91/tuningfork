@@ -218,7 +218,7 @@ def test_every_run_is_set_up_as_the_checkpoints_run_was(stack, monkeypatch):
     tool that patches a skill), and a launch records its options. The forks take them from the
     checkpoint's launch, and so do the training and held-out runs: found in review, they were
     launched with the harness's defaults. An MCP server, which a launch records by name only,
-    reaches none of them, and the plan says so."""
+    reaches none of them, and the plan says so once."""
     from tuningfork.harness import ADAPTERS
     from tuningfork.store.db import Store
 
@@ -229,11 +229,12 @@ def test_every_run_is_set_up_as_the_checkpoints_run_was(stack, monkeypatch):
     plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url, keep_private=keep)
     quiet = {"self_improvement": False}
     assert plan.harness_options == plan.to_json()["harness_options"] == quiet
-    assert any("the training and held-out runs are launched without" in warning and "MCP server(s), tf," in warning
-               for warning in plan.warnings), plan.warnings
+    said = [warning for warning in plan.warnings if "MCP server" in warning]
+    assert said == [f"run {made.run_id[:8]} had MCP server(s) tf, which a launch records by name only: its forks, the "
+                    "training runs and the held-out runs go without them, and the forks may depart from the recording"]
 
     record = validate.execute_validate(stack.store, plan).record
-    assert record["harness_options"] == quiet
+    assert record["harness_options"] == quiet and record["dropped_servers"] == ["tf"]
     launches = [stack.store.get_launch(stack.store.get_run(verdict["run_id"]).launch_id)
                 for part in ("forward", "training") for arm in ("original", "edit") for verdict in record[part][arm]]
     for arm in ("original", "edit"):
@@ -243,6 +244,14 @@ def test_every_run_is_set_up_as_the_checkpoints_run_was(stack, monkeypatch):
         finally:
             private.close()
     assert [launch.settings.get("harness") for launch in launches] == [quiet] * 6
+
+    # A spec with no held-out task: the warning names no held-out runs.
+    spec = json.loads(stack.spec.path.read_text(encoding="utf-8"))
+    spec["evals"] = spec["evals"][:1]
+    stack.spec.path.write_text(json.dumps(spec), encoding="utf-8")
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    assert [warning for warning in plan.warnings if "MCP server" in warning] == [
+        said[0].replace("its forks, the training runs and the held-out runs", "its forks and the training runs")]
 
 
 def test_cancelled_it_keeps_what_finished_and_gives_no_verdict(stack, monkeypatch):

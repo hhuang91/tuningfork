@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from tuningfork.analysis.conditions import TIMED_OUT, fork_counted
 from tuningfork.ops.common import Cancel, Cancelled, OperationError, Progress, emit
@@ -66,6 +66,17 @@ class ForkPlan:
             "sandbox": self.sandbox.to_json() if self.sandbox is not None else None,
             "warnings": self.warnings,
         }
+
+
+#: What a fork plan says follows from leaving a run's MCP servers out.
+FORKS_WITHOUT_SERVERS = "its forks run without them, and may depart from the recording"
+
+
+def servers_warning(run_id: str, servers: Iterable[str], consequence: str = FORKS_WITHOUT_SERVERS) -> str:
+    """The warning that runs planned from run `run_id` go without its MCP servers, which a
+    launch records by name only: `consequence` says which runs, and what follows."""
+    return (f"run {run_id[:8]} had MCP server(s) {', '.join(sorted(servers))}, which a launch records by "
+            f"name only: {consequence}")
 
 
 def prepare_fork(
@@ -192,10 +203,7 @@ def prepare_fork(
             f"{(launch.settings.get('sandbox') or {}).get('clock') if launch else None}"
         )
     if servers:
-        warnings.append(
-            f"run {source_run.id[:8]} had MCP server(s) {', '.join(sorted(servers))}, which a launch "
-            "records by name only: its forks run without them, and may depart from the recording"
-        )
+        warnings.append(servers_warning(source_run.id, servers))
     if variant is not None:
         variant = Path(host_path(str(variant)))
         original = Path(host_path(str(original))) if original else (skill / "SKILL.md" if skill else None)

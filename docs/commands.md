@@ -473,9 +473,9 @@ Validates a screened proposal with full runs, each arm against a fresh arm of th
 forks from the step to the end (does hitting the target carry the task?), full runs of the task
 with the edit from the first step (does it disturb an earlier step?), and full runs of each
 held-out task, kept only as verdicts (does it break what it was not made for?). Every run is
-launched as the run refined was: its harness, its model, and the harness options (`-o`) it had,
-but for an MCP server, which a launch records by name only. Its record is what the gate reads:
-nine checks, G0–G8, each with its counts.
+given the harness, the model and the harness options of the run being refined, as its launch
+recorded them, except an MCP server, which a launch records by name only. Its record is what
+the gate reads: nine checks, G0–G8, each with its counts.
 
 - `-n N` forks an arm and `--runs N` full runs an arm (each default 5, at least 5).
 - `--keep-private <folder>` — keep the held-out runs' private recordings there, to debug them;

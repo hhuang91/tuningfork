@@ -11,8 +11,8 @@ three ways, each arm against the original and drawn fresh:
 - **held out:** full runs of each held-out eval of the spec, verdicts only (`ops.private`):
   does it break a task it was not made for?
 
-Every run is set up as the checkpoint's run was: its harness, its model, and the harness
-options it was launched with, as its forks have them.
+Every run is given the harness and the model the checkpoint's run had, and the harness options
+its launch recorded, as its forks are: all but an MCP server, which a launch records by name only.
 
 n is fixed in the plan, and a validation stands alone: it is never topped up or pooled with
 another. Its record is kept in the refinement's folder, `validations/<id>.json`: every
@@ -176,7 +176,7 @@ def prepare_validate(
     from tuningfork.ops import refine
     from tuningfork.ops.batch import prepare_batch
     from tuningfork.ops.experiments import load
-    from tuningfork.ops.forks import prepare_to_end
+    from tuningfork.ops.forks import prepare_to_end, servers_warning
     from tuningfork.runner import eval_record
     from tuningfork.specs import SpecError, hash_tree, load_spec, missing_files
 
@@ -257,10 +257,10 @@ def prepare_validate(
         store, run.id, str(refinement.step_idx), n=n, concurrency=concurrency, variant=variant,
         alpha=alpha, base_url=base_url, proxy=proxy,
     )
-    # Every part runs the harness and model the checkpoint's run had, set up as it was: the
-    # forks' own. A harness option changes what the model is told (Hermes's self_improvement
-    # takes away the tool that patches a skill), and a fresh run set up otherwise would measure
-    # the edit under another setup than the forks and the screen did.
+    # Every part runs the harness and model the checkpoint's run had, with the harness options
+    # its launch recorded: the forks' own. A harness option changes what the model is told
+    # (Hermes's self_improvement takes away the tool that patches a skill), and a fresh run
+    # without it would measure the edit under another setup than the forks and the screen did.
     harness, model = forward.original.harness, forward.original.model
     options = dict(forward.original.harness_options)
     training_plans = {
@@ -271,15 +271,18 @@ def prepare_validate(
         )
         for arm, path in (("original", baseline), ("edit", variant))
     }
+    # The forks' warning that the run's MCP servers are left out, said once for every part.
+    dropped = forward.original.dropped_servers
+    left_out = servers_warning(run.id, dropped) if dropped else None
+    parts = "its forks, the training runs and the held-out runs" if held else "its forks and the training runs"
     for found in [*forward.original.warnings, *(note.message for note in training_plans["edit"].notes
                                                 if note.level == "warning")]:
+        if found == left_out:
+            found = servers_warning(
+                run.id, dropped, f"{parts} go without them, and the forks may depart from the recording"
+            )
         if found not in warnings:
             warnings.append(found)
-    if forward.original.dropped_servers:
-        warnings.append(
-            f"the training and held-out runs are launched without run {run.id[:8]}'s MCP server(s), "
-            f"{', '.join(forward.original.dropped_servers)}, as its forks are: a launch records a server by name only"
-        )
     return ValidatePlan(
         refinement=refinement, proposal=proposal, spec=spec, training=training, held_out=held,
         n=n, runs=runs, alpha=alpha, concurrency=concurrency, harness=harness, model=model,
@@ -362,6 +365,8 @@ def execute_validate(
         "id": vid, "refinement": plan.refinement.id, "proposal": plan.proposal.id,
         "created_at": time.time(), "task": plan.task_id, "harness": plan.harness, "model": plan.model,
         "harness_options": plan.harness_options,
+        # Which of the run's MCP servers every part went without: a launch records one by name only.
+        "dropped_servers": list(plan.forward.original.dropped_servers),
         # The process running it: a record still "running" after that process died was cut off.
         "pid": os.getpid(),
         "alpha": plan.alpha, "minimum": MINIMUM,
