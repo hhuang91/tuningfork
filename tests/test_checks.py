@@ -201,7 +201,7 @@ class TestWrittenHere:
         over, in the process running the trial."""
         monkeypatch.setattr("tuningfork.ops.checks.MASKED_MOST", 1000)
         trial = try_check(store, {"reply_contains": "done"}, reply="a" * 2000 + " done")
-        assert trial.passed and trial.to_json()["reply"] == "a" * 1000
+        assert trial.passed and trial.to_json()["reply"] == "a" * 1000 + "… (+1005 chars)"
 
 
 class TestRefusals:

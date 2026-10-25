@@ -352,6 +352,9 @@ class TestWhatACheckPrints:
         assert "Zq8xK3vN5wLp" not in said and "Q7bX2kLm9Zr4Tw8Y" not in said
         told = run_check({"reply_contains": "x"}, tmp_path, reply=line, masking=Masking()).output
         assert "Zq8xK3vN5wLp" not in told
+        # What a check looked for, which its verdict names as the task wrote it.
+        named = run_check({"reply_matches": line}, tmp_path, reply="x", masking=Masking()).output
+        assert "Zq8xK3vN5wLp" not in named
 
     def test_it_is_masked_every_way_storage_reads_a_text(self, tmp_path, monkeypatch):
         """Read as a string in JSON alone, as a run's result was masked, a key three escapes deep
@@ -408,6 +411,20 @@ class TestWhatACheckPrints:
         whole = run_check("cat out.txt", tmp_path, masking=Masking(), keep=None)
         assert len(whole.output) == 3000 - shorter and whole.cut == len(printed) - 3000
 
+    def test_where_a_long_output_is_given_from_no_key_is_cut(self, tmp_path, monkeypatch):
+        """The place it is given from can fall inside a key (found in review): read on before it, the
+        key is found whole, and the output is given from past it."""
+        from tuningfork.specs import run_check
+        from tuningfork.store.masking import Masking
+
+        monkeypatch.setattr("tuningfork.specs.MASKED_MOST", 3000)
+        monkeypatch.setattr("tuningfork.specs.MASKED_MARGIN", 200)
+        printed = "y" * 5000 + "\n" + self.KEY + "\n" + "x" * 2972  # given from 6 characters into the key
+        (tmp_path / "out.txt").write_text(printed, encoding="utf-8")
+        whole = run_check("cat out.txt", tmp_path, masking=Masking(), keep=None)
+        assert whole.output == "\n" + "x" * 2972 and whole.cut == len(printed) - len(whole.output)
+        assert run_check("cat out.txt", tmp_path, masking=Masking()).output == "x" * 2000
+
     def test_a_long_reply_is_masked_from_its_start(self, tmp_path, monkeypatch):
         from tuningfork.specs import REPLY_QUOTED, run_check
         from tuningfork.store.masking import Masking
@@ -415,6 +432,18 @@ class TestWhatACheckPrints:
         monkeypatch.setattr("tuningfork.specs.MASKED_MOST", 1000)
         judged = run_check({"reply_contains": "a"}, tmp_path, reply="a" * 3000, masking=Masking())
         assert judged.output.endswith("a" * REPLY_QUOTED + f"… (+{3000 - REPLY_QUOTED} chars)")
+        # Where its start ends inside a key, it ends before it, and what is left out counts it.
+        reply = "a" * 995 + " " + self.KEY + " done"
+        judged = run_check({"reply_contains": "a"}, tmp_path, reply=reply, masking=Masking())
+        assert judged.output.endswith("a" * REPLY_QUOTED + f"… (+{len(reply) - REPLY_QUOTED} chars)")
+        # Shorter than a quote, and still not all of it.
+        monkeypatch.setattr("tuningfork.specs.MASKED_MOST", 300)
+        judged = run_check({"reply_contains": "a"}, tmp_path, reply="a" * 1000, masking=Masking())
+        assert judged.output.endswith("a" * 300 + "… (+700 chars)")
+        # Ending inside a key there, read on past it: the quote stops before the key.
+        reply = "a" * 280 + " " + self.KEY + " done"
+        judged = run_check({"reply_contains": "a"}, tmp_path, reply=reply, masking=Masking())
+        assert self.KEY[:16] not in judged.output and judged.output.endswith(f"{'a' * 280} … (+{len(reply) - 281} chars)")
 
     def test_the_values_given_mask_every_text_it_masks(self, tmp_path):
         """A reply check masks what it looked for and the reply apart: values given once, as an

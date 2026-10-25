@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from tuningfork.ops.common import OperationError
-from tuningfork.specs import CHECK_KEPT, MASKED_MOST
+from tuningfork.specs import CHECK_KEPT, MASKED_MARGIN, MASKED_MOST
 from tuningfork.store.db import Run, Store
 from tuningfork.store.masking import Masked
 
@@ -91,8 +91,10 @@ class CheckTrial:
     found: list[str]
     #: Characters cut from the output's start, as a verdict cuts them (`specs.CHECK_KEPT`).
     cut: int = 0
-    #: The reply judged, masked as the output is, before it is cut to what is shown.
+    #: The reply judged, masked as the output is, before it is cut to what is shown; and how much of
+    #: it past what was masked (`specs.MASKED_MOST`) is left out.
     reply_shown: str | None = None
+    reply_more: int = 0
 
     @property
     def agrees(self) -> bool | None:
@@ -101,7 +103,7 @@ class CheckTrial:
         return None if recorded is None else recorded == self.passed
 
     def to_json(self) -> dict[str, Any]:
-        reply = self.plan.reply if self.reply_shown is None else self.reply_shown
+        reply, more = (self.plan.reply, 0) if self.reply_shown is None else (self.reply_shown, self.reply_more)
         return {
             **self.plan.to_json(),
             "passed": self.passed,
@@ -110,7 +112,8 @@ class CheckTrial:
             "output_cut": self.cut,
             "found": self.found[:FILES_SHOWN],
             "found_more": max(0, len(self.found) - FILES_SHOWN),
-            "reply": reply if len(reply) <= REPLY_SHOWN else f"{reply[:REPLY_SHOWN]}… (+{len(reply) - REPLY_SHOWN} chars)",
+            "reply": reply if len(reply) <= REPLY_SHOWN and not more
+            else f"{reply[:REPLY_SHOWN]}… (+{max(0, len(reply) - REPLY_SHOWN) + more} chars)",
             "agrees": self.agrees,
         }
 
@@ -246,8 +249,11 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None 
         result = run_check(plan.check, workspace, plan.timeout, reply=plan.reply, reply_file=reply_file,
                            spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, check_env=plan.check_env,
                            sandbox=plan.sandbox, keep=keep, masking=store.masking, also=held)
+    # The reply shown, from its start as far as is masked, read on past that place (`Masking.part`).
+    shown, _, until = store.masking.part(plan.reply[: MASKED_MOST + MASKED_MARGIN], 0,
+                                         min(len(plan.reply), MASKED_MOST), also=held)
     return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found,
-                      cut=result.cut, reply_shown=store.masking.text(plan.reply[:MASKED_MOST], also=held).value)
+                      cut=result.cut, reply_shown=shown, reply_more=len(plan.reply) - until)
 
 
 def try_check(store: Store, check: Any = None, **options: Any) -> CheckTrial:

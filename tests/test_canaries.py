@@ -42,7 +42,7 @@ PLANTED = (
     "server error event", "edit at a breakpoint", "upstream password", "label queued", "wording tried",
     "question at a held call", "scenario's context", "password a server's error quotes",
     "check output its cut falls inside", "variable named as a secret", "key of tuningfork's own",
-    "reply cut to its quote", "reply cut to what a trial shows",
+    "reply cut to its quote", "reply cut to what a trial shows", "check output given from inside it",
 )
 #: Keys no pattern reads alone: masked by a password's name in a call, then quoted bare by the
 #: server's error — masked there only as a value the call's own mask took.
@@ -185,12 +185,22 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
     # A key tuningfork holds, which no check is given, but one finds in its file.
     home = tmp_path / "home"
     held = write_secret(home / PROPOSER_KEY_FILE, keys["key of tuningfork's own"])
-    # The check ends on a key, then just enough more that the cut a verdict makes falls inside it.
-    cut = keys["check output its cut falls inside"]
+    # The check starts on a key and ends on one, each with just enough around it that a place its
+    # output is cut falls inside it: where the part of its output masked to keep its end starts
+    # (`specs.MASKED_MOST`, set here to what that part holds of the run's last check: the check along
+    # the run is given it whole), and the cut a verdict makes.
+    window, cut = keys["check output given from inside it"], keys["check output its cut falls inside"]
+    after_window, after_cut = 100, CHECK_KEPT - (len(cut) - 6)
+    printed = "".join(f"{line}\n" for line in (
+        json.dumps({"api_key": keys["written by the model"], "row_count": 4}), f"env={keys['environment']}",
+        f"said={keys['variable named as a secret']}", keys["key of tuningfork's own"], f"literal={keys['check command']}"))
+    monkeypatch.setattr("tuningfork.specs.MASKED_MOST",
+                        len(window) - 6 + after_window + 1 + len(printed) + len(cut) + after_cut)
     check = (
+        f"printf '%s' {window}; python3 -c \"import sys; sys.stdout.write('w' * {after_window})\"; echo; "
         f"cat config.json; echo; echo env=$TF_CANARY_ENVIRONMENT; echo said=$TF_CANARY_TOKEN; cat {held}; "
         f"echo literal={keys['check command']}; printf '%s' {cut}; "
-        f"python3 -c \"import sys; sys.stdout.write('x' * {CHECK_KEPT - (len(cut) - 6)})\"; "
+        f"python3 -c \"import sys; sys.stdout.write('x' * {after_cut})\"; "
         "python3 -c \"import json,sys; d=json.load(open('config.json')); sys.exit(0 if d.get('row_count')==4 else 1)\""
     )
     # The check reads the planted variables as its task lets it (`check_env`): it gets no other

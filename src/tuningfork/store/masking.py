@@ -66,14 +66,24 @@ class Masking:
         a typed declaration's quoted key stands; read as a string in JSON — a run's result — a key
         three escapes deep does, and a value `also` names written as a number, or a pattern took part
         of. A check's output is masked so."""
+        return _applied(text, text_spans(text, self.patterns, tuple(also)), 0, len(text))[0]
+
+    def part(
+        self, text: str, start: int = 0, end: int | None = None, *, also: Iterable[str] = (),
+    ) -> tuple[str, int, int]:
+        """`text` masked every way (`text`), and its part from `start` to `end` given: what is given,
+        and where in `text` it runs from and to — each edge moved past a mask that covers it. Read on
+        to either side, a key the edge falls inside is found whole: what is given holds neither its
+        end nor half of its mask. Where a check's output is long, its end is given so."""
         spans = text_spans(text, self.patterns, tuple(also))
-        pieces, taken, at = [], [], 0
-        for start, end in spans:
-            pieces += [text[at:start], REDACTED]
-            if _FOUND.fullmatch(text, start, end):
-                taken.append(text[start:end])
-            at = end
-        return Masked("".join(pieces) + text[at:], len(spans), frozenset(taken))
+        end = len(text) if end is None else end
+        for span_start, span_end in spans:
+            if span_start < start < span_end:
+                start = span_end
+            if span_start < end < span_end:
+                end = span_start
+        given, start, end = _applied(text, spans, start, max(start, end))
+        return given.value, start, end
 
     def value(self, value: Any, *, also: Iterable[str] = ()) -> Any:
         """`value` masked, for a write that keeps no count."""
@@ -112,6 +122,19 @@ class Masking:
         return bytes_without_secrets(
             kept, answer, wire, request, self.patterns, masked=masked, streamed=streamed, also=also
         )
+
+
+def _applied(text: str, spans: list[tuple[int, int]], start: int, end: int) -> tuple[Masked, int, int]:
+    """`text` from `start` to `end`, each of `spans` in it a mask — none of which an edge falls inside."""
+    pieces, taken, at, made = [], [], start, 0
+    for span_start, span_end in spans:
+        if span_end <= start or span_start >= end:
+            continue
+        pieces += [text[at:span_start], REDACTED]
+        if _FOUND.fullmatch(text, span_start, span_end):
+            taken.append(text[span_start:span_end])
+        at, made = span_end, made + 1
+    return Masked("".join(pieces) + text[at:end], made, frozenset(taken)), start, end
 
 
 def bytes_without_secrets(

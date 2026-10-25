@@ -432,6 +432,19 @@ class TestOnePatternSet:
         assert Masking().of(once) is once and Masking().value(Masked(None)) is None
 
 
+class TestAPartOfAText:
+    def test_an_edge_a_key_falls_inside_moves_past_its_mask(self, store):
+        """Read on to either side, the key an edge falls inside is found whole: what is given holds
+        neither its end nor half of its mask (found in review, where a long output was given from a
+        place inside a key)."""
+        text = f"start {KEY} middle {KEY} end"
+        first, second = text.index(KEY), text.rindex(KEY)
+        given, start, end = store.masking.part(text, first + 5, second + 5)
+        assert given == " middle " and (start, end) == (first + len(KEY), second)
+        assert store.masking.part(text, 0, 5) == ("start", 0, 5)
+        assert store.masking.part(text) == (store.masking.text(text).value, 0, len(text))
+
+
 class TestTheEscapedReading:
     """A text as a JSON string writes it, read for keys a pattern finds there alone (`redact_spans`):
     each character of it mapped back to the one it came from."""

@@ -682,11 +682,13 @@ REPLY_QUOTED = 500
 #: The end of a check's output a verdict keeps, in characters.
 CHECK_KEPT = 2000
 
-#: How much of a check's output is masked to keep its end, and of a reply to quote its start, in
-#: characters: far more than a key's length, so what is kept lies wholly inside what was masked,
-#: and far less than a check can print. Masking reads a text many times over — seven to eighteen
-#: bytes for each where escapes are dense — in the process running the check, `serve` for a job.
+#: How much of a check's output is given to keep its end, and of a reply to quote its start, in
+#: characters: far less than a check can print. Masking reads a text many times over — seven to
+#: eighteen bytes for each where escapes are dense — in the process running the check, `serve` for
+#: a job. It reads `MASKED_MARGIN` more, on the side where the part given starts or ends, so that
+#: a key that place falls inside is found whole and left out (`Masking.part`).
 MASKED_MOST = 1_000_000
+MASKED_MARGIN = 65_536
 
 
 def check_env_sources(home: Path | None = None) -> list[tuple[Path, list[str]]]:
@@ -830,8 +832,10 @@ def run_check(
     skipped = 0
     if masking is not None:
         # Its end, if it is long: even a caller keeping it whole is given that, the rest said cut.
-        skipped = max(0, len(output) - MASKED_MOST)
-        output = masking.text(output[skipped:], also=[*also, *secret]).value
+        read = max(0, len(output) - MASKED_MOST - MASKED_MARGIN)
+        start = max(0, len(output) - MASKED_MOST) - read
+        output, given, _ = masking.part(output[read:], start, also=[*also, *secret])
+        skipped = read + given
     kept = output[-keep:] if keep is not None else output
     return CheckResult(
         passed=completed.returncode == 0,
@@ -857,12 +861,14 @@ def _reply_check(
     more = 0
     if masking is not None:
         # Its start, if it is long (`MASKED_MOST`): the quote is.
-        more = max(0, len(reply) - MASKED_MOST)
-        verdict, reply = (masking.text(text, also=also).value for text in (verdict, reply[:MASKED_MOST]))
-    if not reply:
+        verdict = masking.text(verdict, also=also).value
+        given, _, until = masking.part(reply[: MASKED_MOST + MASKED_MARGIN], 0, min(len(reply), MASKED_MOST),
+                                       also=also)
+        reply, more = given, len(reply) - until
+    if not reply and not more:
         quoted = "(none: the run ended without a reply)"
-    elif len(reply) + more > REPLY_QUOTED:
-        quoted = f"{reply[:REPLY_QUOTED]}… (+{len(reply) + more - REPLY_QUOTED} chars)"
+    elif len(reply) > REPLY_QUOTED or more:
+        quoted = f"{reply[:REPLY_QUOTED]}… (+{max(0, len(reply) - REPLY_QUOTED) + more} chars)"
     else:
         quoted = reply
     return CheckResult(passed=passed, output=f"{verdict}\n\nthe reply:\n{quoted}", returncode=None)
