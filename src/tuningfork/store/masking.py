@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 from tuningfork.config import (
-    _FOUND, DEFAULT_REDACTIONS, REDACTED, _masking, patterns_digest, redact_json_found, redact_spans,
+    _FOUND, DEFAULT_REDACTIONS, REDACTED, _masking, patterns_digest, redact_json_found, text_spans,
 )
 
 
@@ -60,12 +60,13 @@ class Masking:
         return Masked(written, made, found)
 
     def text(self, text: str, *, also: Iterable[str] = ()) -> Masked:
-        """`text` masked every way storage reads a text (`config.redact_spans`): as it stands and as
+        """`text` masked every way storage reads a text (`config.text_spans`): as it stands and as
         its escapes read, as JSON writes it, its quotes escaped, and wherever a value `also` names
-        stands. Read as text alone (`of`), a password before a typed declaration's quoted key stands;
-        read as a string in JSON — a run's result — a key three escapes deep does, and a value `also`
-        names written as a number, or a pattern took part of. A check's output is masked so."""
-        spans = redact_spans(text, self.patterns, tuple(also))
+        stands, as it is written or as its escapes read. Read as text alone (`of`), a password before
+        a typed declaration's quoted key stands; read as a string in JSON — a run's result — a key
+        three escapes deep does, and a value `also` names written as a number, or a pattern took part
+        of. A check's output is masked so."""
+        spans = text_spans(text, self.patterns, tuple(also))
         pieces, taken, at = [], [], 0
         for start, end in spans:
             pieces += [text[at:start], REDACTED]

@@ -432,6 +432,51 @@ class TestOnePatternSet:
         assert Masking().of(once) is once and Masking().value(Masked(None)) is None
 
 
+class TestTheEscapedReading:
+    """A text as a JSON string writes it, read for keys a pattern finds there alone (`redact_spans`):
+    each character of it mapped back to the one it came from."""
+
+    @staticmethod
+    def one_by_one(text: str) -> tuple[str, list[int]]:
+        """How it was read before: a place kept for each character."""
+        short = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+        out, origin = [], []
+        for index, char in enumerate(text):
+            piece = short.get(char) or (f"\\u{ord(char):04x}" if ord(char) < 0x20 else char)
+            out.append(piece)
+            origin.extend([index] * len(piece))
+        return "".join(out), origin
+
+    def test_each_character_maps_back_to_the_one_it_came_from(self):
+        import random
+
+        from tuningfork.config import _json_escaped
+
+        draw = random.Random(7)
+        alphabet = 'ab"\\\n\t\r\x01\x1f\x7f/é  '
+        for _ in range(3000):
+            text = "".join(draw.choices(alphabet, k=draw.randint(0, 24)))
+            escaped, origin = _json_escaped(text)
+            expected, places = self.one_by_one(text)
+            assert escaped == expected and [origin(index) for index in range(len(escaped))] == places, repr(text)
+
+    def test_a_long_text_costs_about_its_own_size(self):
+        """A place for each character took some forty bytes for each byte of a long text (found in
+        review): a check's output of a few hundred MB would have taken GB in the proxy."""
+        import tracemalloc
+
+        from tuningfork.config import _json_escaped
+
+        text = ("collected 12 items\n" + "x" * 60 + "\n") * 15000
+        tracemalloc.start()
+        try:
+            _json_escaped(text)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert peak < 10 * len(text), peak
+
+
 class TestOneBoundary:
     #: Who masks with the patterns themselves, or writes a blob, and why: everything else hands the
     #: store what it has (or asks the store's own `masking` for a value it must read as stored).
@@ -448,7 +493,7 @@ class TestOneBoundary:
         "breakpoints/engine.py": "a call's place predicted as the store masks, where no store is given",
     }
     MASKERS = {"redact", "redact_json", "redact_json_counted", "redact_json_found", "redact_stream",
-               "redact_spans", "_masking", "Masking", "bytes_without_secrets"}
+               "redact_spans", "text_spans", "_masking", "Masking", "bytes_without_secrets"}
 
     def test_nothing_else_masks_or_writes_a_blob_itself(self):
         """Masking is not idempotent, and a fork matches a call masked once against a step stored

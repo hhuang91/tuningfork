@@ -373,6 +373,24 @@ class TestWhatACheckPrints:
             said = run_check(f"cat {name}", tmp_path, check_env=["DB_PASSWORD", "REDIS_PASSWORD"], masking=Masking())
             assert secret not in said.output, (name, said.output)
 
+    def test_a_secret_variables_value_is_masked_as_an_encoder_escaped_it(self, tmp_path, monkeypatch):
+        """Written by an encoder that escapes one of its characters — PHP's `\\/`, Python's `\\u00fc`,
+        Go's `\\u0026` — a document of its own or in a line of a log (found in review)."""
+        from tuningfork.specs import run_check
+        from tuningfork.store.masking import Masking
+
+        values = {"DB_PASSWORD": "Zq8x/K3vN5wLp+Ab", "API_PASSWORD": "Zürich2024!xQ", "DSN_PASSWORD": "Zq8x&K3vN5wLp"}
+        for name, value in values.items():
+            monkeypatch.setenv(name, value)
+        printed = ['{"note":"Zq8x\\/K3vN5wLp+Ab"}', json.dumps({"pw": "Zürich2024!xQ"}),
+                   '{"dsn": "Zq8x\\u0026K3vN5wLp"}', f"ERROR config {json.dumps({'pw': 'Zürich2024!xQ'})} rejected",
+                   # A tool's JSON result kept in a session's JSON: two escapes deep.
+                   json.dumps({"result": json.dumps({"pw": "Zürich2024!xQ"})})]
+        (tmp_path / "said.txt").write_text("\n".join(printed), encoding="utf-8")
+        assert run_check("cat said.txt", tmp_path, check_env=list(values)).output.count("K3vN5wLp") == 2
+        said = run_check("cat said.txt", tmp_path, check_env=list(values), masking=Masking()).output
+        assert "K3vN5wLp" not in said and "rich2024" not in said, said
+
     def test_the_values_given_mask_every_text_it_masks(self, tmp_path):
         """A reply check masks what it looked for and the reply apart: values given once, as an
         iterator, mask both (found in review)."""
@@ -397,7 +415,7 @@ class TestWhatACheckPrints:
         ("PATH", False), ("STRIPE_PUBLIC_KEY", False), ("API_KEY_FILE", False), ("TOKEN_URL", False),
         ("stripe_publishable_key", False), ("PWD", False), ("MONKEY", False), ("SECRETARY", False),
         ("SECRET_KEY_FILE", False), ("VAULT_SECRET_PATH", False), ("AWS_SECRET_NAME", False), ("cache_key", False),
-        ("KEY", True), ("SECRET", True),
+        ("KEY", True), ("SECRET", True), ("VAULT_SECRET_ID", True), ("AWS_ACCESS_KEY_ID", False),
     ])
     def test_a_variables_name_is_a_secrets_as_the_patterns_read_one(self, name, secret):
         from tuningfork.config import secret_name
