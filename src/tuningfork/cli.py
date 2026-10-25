@@ -1452,6 +1452,9 @@ def recheck(
     where = "as the run left it" if data["workspace"] == "run" else "files you gave" if data["workspace"] == "files" else "empty"
     listed = ", ".join(data["found"]) + (f", and {data['found_more']} more" if data["found_more"] else "")
     console.print(f"  workspace  {where}{': ' + escape(listed) if listed else ''}")
+    if data.get("unsandboxed"):
+        console.print(f"  [yellow]not sandboxed[/yellow]: {escape(data['unsandboxed'])}. The check runs on this "
+                      "machine itself, where it can run what the model wrote")
     console.print(f"  reply      {_clip(data['reply'], False, limit=200) if data['reply'] else '[dim](none)[/dim]'}")
     console.print()
     verdict = "[green]pass[/green]" if trial.passed else "[red]fail[/red]"
@@ -1853,6 +1856,9 @@ def check_along_command(
         return
     console.print(f"running the check along {len(plan.plans)} run(s), "
                   f"{sum(len(each.states) for each in plan.plans)} state(s) of their workspaces")
+    if plan.unsandboxed:
+        console.print(f"  [yellow]not sandboxed[/yellow]: {escape(plan.unsandboxed)}. The check runs on this "
+                      "machine itself, where it can run what the model wrote")
     done = execute_check_along_runs(store, plan)
     for entry in done.runs:
         verdict = {True: "passed", False: "failed"}.get(entry["passed"], "no verdict")

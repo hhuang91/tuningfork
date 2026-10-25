@@ -9,6 +9,7 @@ snapshotted workspace and a recorded final reply ("The report is written.").
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -85,6 +86,92 @@ class TestAgainstARun:
         try_check(stack.store, "true", run=run_id)
         assert counts(stack.store) == before
         assert stack.store.get_run(run_id).result == result
+
+    def test_a_command_runs_where_a_runs_check_does(self, launched, monkeypatch):
+        """In the sandbox a launch's check runs in, its task's folder shown to it: a tried
+        command can run what the model left in the workspace as much as the task's own can."""
+        import tuningfork.sandbox
+
+        seen: dict = {}
+
+        class Recorded:
+            def check_command(self, command, *, workspace, environment, reply_file=None, spec_dir=None):
+                seen.update(command=command, spec_dir=spec_dir, reply_file=reply_file)
+                return ["/bin/sh", "-c", command], environment
+
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (Recorded(), None))
+        stack, run_id = launched
+        trial = try_check(stack.store, "test -f report.json", run=run_id)
+        assert trial.passed, trial.output
+        assert trial.to_json()["sandboxed"] is True and "unsandboxed" not in trial.to_json()
+        assert seen["command"] == "test -f report.json" and seen["reply_file"].name == "reply.txt"
+        assert seen["spec_dir"].resolve() == stack.spec.path.parent.resolve()
+        # A reply check runs nothing, so it needs no sandbox.
+        assert try_check(stack.store, {"reply_contains": "written"}, run=run_id).to_json()["sandboxed"] is False
+
+    def test_a_trial_hides_what_its_runs_launch_hid(self, launched, monkeypatch, tmp_path):
+        """A runs' folder outside the recordings, a folder the person hid when it ran: its own
+        check never saw them, and a trial of it does not either. Of them, all but its task's
+        folder and the person's are tuningfork's own, which no check is shown."""
+        import tuningfork.sandbox
+        from tuningfork.ops.checks import prepare_check_trial
+
+        stack, run_id = launched
+        runs, theirs = tmp_path / "runs-elsewhere", tmp_path / "keys"
+        task = stack.spec.path.parent.resolve()
+        launch_id = stack.store.get_run(run_id).launch_id
+        hid = [str(stack.store.home.resolve()), str(runs.resolve()), str(task), str(theirs.resolve())]
+        stack.store._conn.execute(
+            "UPDATE launches SET settings = json_set(settings, '$.sandbox', json(?)) WHERE id = ?",
+            (json.dumps({"kind": "bubblewrap", "hidden": hid}), launch_id),
+        )
+        monkeypatch.setenv(tuningfork.sandbox.HIDE, str(theirs))
+        asked: dict = {}
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **options: asked.update(hide=hide, **options) or (None, "x"))
+        prepare_check_trial(stack.store, "true", run=run_id)
+        assert {str(folder) for folder in asked["hide"]} >= set(hid)
+        assert {Path(folder).resolve() for folder in asked["own"]} == {stack.store.home.resolve(), runs.resolve()}
+
+    def test_a_trial_takes_tuningforks_own_folders_from_its_launch(self, launched, monkeypatch):
+        """A batch whose runs' folder was its task's folder (`--workdir` there): the folder was
+        tuningfork's own, which the batch's check never saw, and a trial is not shown it either."""
+        import tuningfork.sandbox
+        from tuningfork.ops.checks import prepare_check_trial
+
+        stack, run_id = launched
+        task = str(stack.spec.path.parent.resolve())
+        home = str(stack.store.home.resolve())
+        launch_id = stack.store.get_run(run_id).launch_id
+        stack.store._conn.execute(
+            "UPDATE launches SET settings = json_set(settings, '$.sandbox', json(?)) WHERE id = ?",
+            (json.dumps({"kind": "bubblewrap", "hidden": [home, task], "own": [home, task]}), launch_id),
+        )
+        asked: dict = {}
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **options: asked.update(**options) or (None, "x"))
+        prepare_check_trial(stack.store, "true", run=run_id)
+        assert task in {str(Path(folder).resolve()) for folder in asked["own"]}
+
+
+def test_a_check_reads_the_variables_its_task_names_and_no_others(tmp_path, mock_server, monkeypatch):
+    """An LLM judge's key, say: named in the task (`check_env`), it reaches the batch's check
+    and a check tried on the run; a variable the task does not name reaches neither."""
+    monkeypatch.setenv("JUDGE_KEY", "for-the-judge")
+    monkeypatch.setenv("CLOUD_API_KEY", "sk-not-for-a-check")
+    with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+        stack.item.tuningfork.check = 'test "$JUDGE_KEY" = for-the-judge && test -z "${CLOUD_API_KEY:-}"'
+        stack.item.tuningfork.check_env = ["JUDGE_KEY"]
+        stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+        plan = prepare_batch(
+            stack.store, stack.spec.path, n=1, model="m", harness="fake",
+            base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+        )
+        (outcome,) = execute_batch(stack.store, plan).outcomes
+        assert outcome.passed, outcome.check.output
+        trial = try_check(stack.store, run=outcome.run_id)
+        assert trial.plan.check_env == ["JUDGE_KEY"] and trial.passed, trial.output
+        # A check written here, not the task's, gets what the task lets its check read.
+        assert try_check(stack.store, 'test "$JUDGE_KEY" = for-the-judge', run=outcome.run_id).passed
+        assert not try_check(stack.store, 'test -n "${CLOUD_API_KEY:-}"', run=outcome.run_id).passed
 
 
 class TestWrittenHere:
@@ -167,3 +254,19 @@ def test_recheck_prints_the_verdict_beside_the_runs(launched):
     assert "pass — the run was judged fail when it ran" in other.output
     sample = CliRunner().invoke(app, ["recheck", "--reply", "no", "--reply-contains", "yes", "--home", home])
     assert sample.exit_code == 1 and "a reply and files you gave" in sample.output
+
+
+def test_recheck_says_when_the_check_cannot_run_in_the_sandbox(launched, monkeypatch):
+    import tuningfork.sandbox
+    from tuningfork.cli import app
+
+    stack, run_id = launched
+    home = str(stack.store.home)
+    monkeypatch.delenv(tuningfork.sandbox.SWITCH, raising=False)
+    monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (None, "bubblewrap is not installed"))
+    shown = CliRunner().invoke(app, ["recheck", run_id, "--home", home])
+    assert "not sandboxed: bubblewrap is not installed" in shown.output
+    # Turned off by the person, it is said nowhere, as a batch's plan says nothing then.
+    monkeypatch.setenv(tuningfork.sandbox.SWITCH, "off")
+    quiet = CliRunner().invoke(app, ["recheck", run_id, "--home", home])
+    assert "not sandboxed" not in quiet.output

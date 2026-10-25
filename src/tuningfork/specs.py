@@ -19,7 +19,9 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable, Sequence
 
 
-_OPTION_KEYS = ("check", "normalizers", "held_out", "skills", "timeout", "max_turns", "context", "stop_at_next_skill")
+_OPTION_KEYS = (
+    "check", "check_env", "normalizers", "held_out", "skills", "timeout", "max_turns", "context", "stop_at_next_skill",
+)
 _EVAL_KEYS = ("id", "prompt", "expected_output", "files", "expectations", "tuningfork")
 
 #: The checks tuningfork judges itself, on the agent's final reply, besides a shell command:
@@ -31,6 +33,13 @@ REPLY_ENV = "TUNINGFORK_REPLY"
 #: The folder of the spec a check belongs to: where a check script can live, beside the
 #: spec and out of the workspace the agent reads.
 SPEC_DIR_ENV = "TUNINGFORK_SPEC_DIR"
+#: What a shell check keeps of the machine's environment, as a launch does: where programs
+#: are, the language, the terminal, the temporary folder, who runs it. Nothing else of the
+#: person's but what its task names (`check_env`): a check can run code the model wrote, and a
+#: variable can hold a key.
+CHECK_INHERITED = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "USER")
+#: A variable's name, as a shell writes one.
+ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def check_kind(check: Any) -> str | None:
@@ -61,6 +70,9 @@ class TuningforkOptions:
     #: What decides pass/fail once the agent has finished: a shell command run in the
     #: workspace, or a check of the final reply (`REPLY_CHECKS`).
     check: str | dict[str, str] | None = None
+    #: The person's environment variables a shell check may read, by name — an LLM judge's key,
+    #: say. It gets no other of theirs (`check_environment`).
+    check_env: list[str] = field(default_factory=list)
     normalizers: list[str] = field(default_factory=list)
     held_out: bool = False
     #: Skills to preload for the run (`hermes chat -s ...`).
@@ -84,6 +96,8 @@ class TuningforkOptions:
         data = data or {}
         return cls(
             check=data.get("check"),
+            check_env=[name for name in data["check_env"] if isinstance(name, str)]
+            if isinstance(data.get("check_env"), list) else [],
             normalizers=list(data.get("normalizers") or []),
             held_out=bool(data.get("held_out", False)),
             skills=list(data.get("skills") or []),
@@ -98,6 +112,8 @@ class TuningforkOptions:
         data: dict[str, Any] = {}
         if self.check is not None:
             data["check"] = self.check
+        if self.check_env:
+            data["check_env"] = list(self.check_env)
         data.update(
             normalizers=list(self.normalizers),
             held_out=self.held_out,
@@ -287,6 +303,10 @@ def validate_spec(data: Any) -> list[Problem]:
             continue
         where = f"{at}.tuningfork"
         problems.extend(check_problems(options.get("check"), f"{where}.check"))
+        if "check_env" in options:
+            problem = check_env_problem(options["check_env"])
+            if problem:
+                add(f"{where}.check_env", problem)
         normalizers = options.get("normalizers", [])
         if not isinstance(normalizers, list) or not all(isinstance(n, str) for n in normalizers):
             add(f"{where}.normalizers", "must be a list of names")
@@ -439,6 +459,19 @@ def check_problems(check: Any, where: str = "check") -> list[Problem]:
         except re.error as exc:
             return [Problem(f"{where}.reply_matches", f"is not a regular expression: {exc}")]
     return []
+
+
+def check_env_problem(names: Any) -> str | None:
+    """What is wrong with a check's `check_env`, if anything: a list of variable names, none
+    of them tuningfork's own — its keys, which no check gets, or one it sets for the check."""
+    from tuningfork.access import SECRET_ENVS
+
+    if not isinstance(names, list) or not all(isinstance(name, str) and ENV_NAME.match(name) for name in names):
+        return "must be a list of environment variable names"
+    own = [name for name in names if name in (*SECRET_ENVS, REPLY_ENV, SPEC_DIR_ENV)]
+    if own:
+        return f"names a variable tuningfork keeps for itself: {', '.join(own)}"
+    return None
 
 
 def _file_problem(entry: Any) -> str | None:
@@ -649,6 +682,24 @@ REPLY_QUOTED = 500
 CHECK_KEPT = 2000
 
 
+def check_environment(
+    names: Sequence[str] = (), *, reply_file: Path | None = None, spec_dir: Path | None = None,
+) -> dict[str, str]:
+    """A shell check's whole environment, made from scratch, with the sandbox or without it:
+    the few variables a launch keeps (`CHECK_INHERITED`), the ones its task names (`names`,
+    its `check_env`) that are set — never one of tuningfork's own keys, however a spec names
+    it — and where the reply and the spec's folder are."""
+    from tuningfork.access import SECRET_ENVS
+
+    wanted = (*CHECK_INHERITED, *(name for name in names if name not in SECRET_ENVS))
+    environment = {name: os.environ[name] for name in wanted if name in os.environ}
+    if reply_file is not None:
+        environment[REPLY_ENV] = str(reply_file)
+    if spec_dir is not None:
+        environment[SPEC_DIR_ENV] = str(Path(spec_dir).resolve())
+    return environment
+
+
 def run_check(
     command: str | dict[str, str] | None,
     workspace: Path,
@@ -657,6 +708,8 @@ def run_check(
     reply: str | None = None,
     reply_file: Path | None = None,
     spec_dir: Path | None = None,
+    check_env: Sequence[str] = (),
+    sandbox: Any = None,
     keep: int | None = CHECK_KEPT,
 ) -> CheckResult:
     """Judge a finished run: a shell command run in its workspace, or a reply check.
@@ -667,6 +720,12 @@ def run_check(
     sight: `python3 "$TUNINGFORK_SPEC_DIR/checks/report.py"`. Its output is kept to its last
     `keep` characters; None keeps it whole, for a caller that reads every line of it.
 
+    A shell check can run what the model left in the workspace — a `conftest.py` its `pytest`
+    finds, a module its `python -m` imports — so it gets an environment made from scratch
+    (`check_environment`: the variables its task names in `check_env`, and nothing else of the
+    person's), and, given the `sandbox` its launch ran in, runs there
+    (`tuningfork.sandbox.Sandbox.check_command`).
+
     No check means no verdict — recorded as `None`-ish rather than silently passing, since
     a check that does not run must never look like a success.
     """
@@ -675,18 +734,17 @@ def run_check(
         return CheckResult(passed=False, output="no check command defined", returncode=None)
     if kind in REPLY_CHECKS:
         return _reply_check(kind, command[kind], reply or "")
-    from tuningfork.access import SECRET_ENVS
-
-    # A check is a spec's own shell command: it gets no key to tuningfork's controls.
-    environment = {key: value for key, value in os.environ.items() if key not in SECRET_ENVS}
-    if reply_file is not None:
-        environment[REPLY_ENV] = str(reply_file)
-    if spec_dir is not None:
-        environment[SPEC_DIR_ENV] = str(Path(spec_dir).resolve())
+    environment = check_environment(check_env, reply_file=reply_file, spec_dir=spec_dir)
+    if sandbox is not None:
+        argv, environment = sandbox.check_command(
+            command, workspace=Path(workspace), environment=environment, reply_file=reply_file, spec_dir=spec_dir,
+        )
+        how: dict[str, Any] = {"args": argv, "shell": False}
+    else:
+        how = {"args": command, "shell": True}
     try:
         completed = subprocess.run(
-            command,
-            shell=True,
+            **how,
             cwd=str(workspace),
             capture_output=True,
             text=True,

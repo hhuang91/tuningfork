@@ -478,9 +478,10 @@ export async function connectionsView(root, _, scope) {
         ? kv([
             ["every run tuningfork starts sees", h("span", null, "its folder ", h("span", { class: "mono" }, sandbox.workspace), ", its home ", h("span", { class: "mono" }, sandbox.home))],
             ["hidden from it", "the recordings folder, the runs' folders and the task file's folder; the rest of the machine read-only"],
+            ["a run's check", "runs there too, with the task file's folder read-only, a few of your environment variables like PATH, and those its task names"],
           ])
         : h("div", { class: "banner banner-warn" },
-            `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them.`));
+            `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them. Their checks run on this machine itself.`));
   }
 
   function harnessCard(harness) {

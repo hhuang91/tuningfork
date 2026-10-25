@@ -154,11 +154,15 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
         f"cat config.json; echo; echo env=$TF_CANARY_ENVIRONMENT; echo literal={keys['check command']}; "
         "python3 -c \"import json,sys; d=json.load(open('config.json')); sys.exit(0 if d.get('row_count')==4 else 1)\""
     )
+    # The check reads the planted variable as its task lets it (`check_env`): it gets no other
+    # of the person's.
     item = Eval(
         id="1",
         prompt=f"Read .env and write config.json with row_count 4. My key is {keys['prompt']}.",
         files=[{"path": ".env", "content": f"OPENAI_API_KEY={keys['input file']}\n"}],
-        tuningfork=TuningforkOptions(check=check, skills=["tally-report"], max_turns=6, timeout=60),
+        tuningfork=TuningforkOptions(
+            check=check, check_env=["TF_CANARY_ENVIRONMENT"], skills=["tally-report"], max_turns=6, timeout=60,
+        ),
     )
     spec = TaskSpec(skill_name="tally-report", evals=[item], path=tmp_path / "spec" / "spec.json",
                     skill_dir="skills-src/tally-report")
@@ -172,7 +176,8 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
     scenario = TaskSpec(
         skill_name="tally-report", path=tmp_path / "spec" / "scenario.json", skill_dir="skills-src/tally-report",
         evals=[Eval(id="2", prompt=item.prompt, files=item.files, tuningfork=TuningforkOptions(
-            check=check, skills=["tally-report"], max_turns=6, timeout=60, context="context.json"))],
+            check=check, check_env=["TF_CANARY_ENVIRONMENT"], skills=["tally-report"], max_turns=6, timeout=60,
+            context="context.json"))],
     )
     scenario.path.write_text(json.dumps(scenario.to_dict()), encoding="utf-8")
     home = tmp_path / "home"

@@ -316,9 +316,23 @@ differed only in that number wrote it 5 times in 20 and 20 times in 20.
 Inside, the rest of the machine is read-only, `/tmp` and the process list are the launch's own,
 and the recordings folder and the task's spec folder are empty: the harness can read neither
 earlier runs nor the check. `TUNINGFORK_SANDBOX_HIDE` names more folders every launch sees
-empty, as `PATH` is written: where a benchmark keeps its checks, say. `tuningfork connections
+empty, as `PATH` is written: a benchmark's folder of tasks, say. A check sees them empty too,
+but for its own task's folder, so keep a check's scripts and keys there. `tuningfork connections
 show` says whether launches run in the sandbox, a batch's plan warns when they cannot, and a
 fork of a sandboxed run is refused without one. `TUNINGFORK_SANDBOX=off` turns it off.
+
+A run's check runs in the same sandbox once the run ends, since it can run what the model left
+in the workspace. It works in `/home/user/project`, sees the task's folder read-only, which no
+launch sees, and has an empty home of its own. Of your environment variables it gets only
+`PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, and those its task names in
+[`check_env`](#a-task); without the sandbox it gets the same ones. That leaves out a proxy's
+settings too (`https_proxy`, `SSL_CERT_FILE`), as for a launch: name them in `check_env` if a
+check needs the network behind one. A tool's cache starts empty, so a check that installs a
+package each time (`uv run --with …`) downloads it. It writes nowhere but the workspace, its
+own home and its own `/tmp`, and it cannot read the run's home. A check tried with `tuningfork
+recheck`, or run along a run, runs the same way. Keep a task file in a folder of its own: one
+directly in `/tmp`, or in the recordings folder itself, leaves its check without what is kept
+beside it, since a check never sees either, and a batch's plan says so.
 
 It keeps runs alike; it is not a security boundary. Inside, the rest of the machine stays
 readable, your home included, and the network is reachable: see [`SECURITY.md`](../SECURITY.md).
@@ -371,6 +385,9 @@ tuningfork's own settings under a `tuningfork` key.
   sight. Or judge the reply alone: `{"reply_contains": "61.5"}` or
   `{"reply_matches": "(?i)row.count"}`. A check that prints what it found wrong, one finding a
   line, gets its findings counted across the failed runs (`tuningfork tally`).
+- **`check_env`** names environment variables of yours a shell check may read, such as an LLM
+  judge's key: `["OPENAI_API_KEY"]`. A check gets no others but a few like `PATH` and `LANG`
+  ([the sandbox](#the-sandbox)), and never one of tuningfork's own keys.
 - **`held_out`** marks a task that judges an edit rather than shaping one: a batch never picks
   it, no agent may read its runs, and a validation runs it in a private folder that keeps only
   its verdicts.
@@ -425,4 +442,5 @@ entry. A list that cannot be read stops all of tuningfork's traffic until it is 
 | `TUNINGFORK_PROPOSER_KEY` | The built-in proposer's API key, for an endpoint that needs one |
 | `TUNINGFORK_HOST`, `TUNINGFORK_PORT`, `TUNINGFORK_MAX_INFLIGHT`, `TUNINGFORK_JOBS`, `TUNINGFORK_MAX_OUTPUT`, `TUNINGFORK_MCP_TOOLS`, `TUNINGFORK_MCP_RESULTS`, `TUNINGFORK_MCP_MAX_WAIT` | `serve`'s options of the same names |
 
-A check is given `TUNINGFORK_REPLY` and `TUNINGFORK_SPEC_DIR`: see [a task](#a-task).
+A check is given `TUNINGFORK_REPLY` and `TUNINGFORK_SPEC_DIR`, and of your own variables only a
+few like `PATH` and those its task names in `check_env`: see [a task](#a-task).

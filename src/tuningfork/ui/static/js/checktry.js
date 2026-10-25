@@ -174,6 +174,10 @@ export function checkTester({ check, task, files, scope, runs = null,
     },
     render: (plan) => h("div", { class: "stack", style: { gap: "6px" } },
       h("p", { class: "hint" }, describe(plan)),
+      plan.unsandboxed
+        ? h("div", { class: "banner banner-warn" },
+          `The command is not sandboxed: ${plan.unsandboxed}. It runs on this machine itself.`)
+        : null,
       plan.recorded
         ? h("p", { class: "muted small" }, `When it ran, it was judged ${plan.recorded.passed === null || plan.recorded.passed === undefined ? "with no check" : plan.recorded.passed ? "pass" : "fail"}.`)
         : null,
@@ -221,13 +225,15 @@ function written(check) {
 
 function describe(plan) {
   const shell = plan.check_kind === "shell";
+  // Where a command runs: in a run's sandbox, as a run's check does, or as you without one.
+  const runs = plan.sandboxed ? "Runs the command in a run's sandbox," : "Runs the command, as you,";
   if (plan.run) {
     return shell
-      ? ["Runs the command, as you, in a copy of the workspace ", h("span", { class: "mono" }, `run ${short(plan.run.id)}`), " left, its final reply in $TUNINGFORK_REPLY."]
+      ? [`${runs} in a copy of the workspace `, h("span", { class: "mono" }, `run ${short(plan.run.id)}`), " left, its final reply in $TUNINGFORK_REPLY."]
       : ["Judges the final reply of ", h("span", { class: "mono" }, `run ${short(plan.run.id)}`), ` (${plan.reply_chars} characters).`];
   }
   return shell
-    ? `Runs the command, as you, in a new folder holding ${plan.files.length} file(s) you wrote, the reply in $TUNINGFORK_REPLY.`
+    ? `${runs} in a new folder holding ${plan.files.length} file(s) you wrote, the reply in $TUNINGFORK_REPLY.`
     : `Judges the reply you wrote (${plan.reply_chars} characters).`;
 }
 

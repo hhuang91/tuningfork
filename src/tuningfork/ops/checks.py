@@ -48,6 +48,12 @@ class CheckTrialPlan:
     own: bool = False
     #: The folder of the spec the run was launched from: `$TUNINGFORK_SPEC_DIR` for the check.
     spec_dir: str | None = None
+    #: The variables the run's task lets its check read (`check_env`).
+    check_env: list[str] = field(default_factory=list)
+    #: Where a shell check runs: a `tuningfork.sandbox.Sandbox`, as a launch does, or None —
+    #: and then why not (`unsandboxed`), unless the person turned it off.
+    sandbox: Any = None
+    unsandboxed: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         from tuningfork.specs import check_kind, describe_check
@@ -57,6 +63,8 @@ class CheckTrialPlan:
             "check_kind": check_kind(self.check),
             "check_text": describe_check(self.check),
             "own": self.own,
+            "sandboxed": self.sandbox is not None,
+            **({"unsandboxed": self.unsandboxed} if self.unsandboxed else {}),
             "run": {
                 "id": self.run.id, "label": self.run.label, "task_id": self.run.task_id,
                 "harness": self.run.harness,
@@ -125,6 +133,10 @@ def prepare_check_trial(
     recorded = None
     own = False
     spec_dir = None
+    check_env: list[str] = []
+    # What the run's launch was kept from, as recorded: its check was too, and a trial of it
+    # hides the same.
+    recorded_sandbox: dict[str, Any] | None = None
     if run:
         found = resolve_run(store, run)
         if found.is_thread:
@@ -155,6 +167,11 @@ def prepare_check_trial(
             spec_dir = str(Path(launch.spec_path).parent)
         elif launch is not None and isinstance(launch.eval, dict) and launch.eval.get("spec_dir"):
             spec_dir = str(launch.eval["spec_dir"])
+        if launch is not None and launch.eval:
+            # What its task lets a check read, whichever check is tried on its workspace.
+            check_env = Eval.from_dict(launch.eval).tuningfork.check_env
+        if launch is not None:
+            recorded_sandbox = (launch.settings or {}).get("sandbox")
         reply = final_reply(store, found.id)
         if found.result:
             recorded = {
@@ -185,9 +202,17 @@ def prepare_check_trial(
         except SpecError as exc:
             raise OperationError(str(exc), field="files") from None
         written.append({"path": entry["path"], "content": entry.get("content", "")})
+    from tuningfork.sandbox import for_launches, recorded_hiding, turned_off
+
+    # As a launch's check runs: a shell check can run what the model left in the workspace.
+    hid, mine = recorded_hiding(recorded_sandbox, task=Path(spec_dir).resolve() if spec_dir else None)
+    sandbox, unsandboxed = (
+        for_launches([store.home, *hid], own=[store.home, *mine]) if kind == "shell" else (None, None)
+    )
     return CheckTrialPlan(
         check=check, run=found, commit=commit, reply=reply or "", files=written,
-        timeout=timeout, recorded=recorded, own=own, spec_dir=spec_dir,
+        timeout=timeout, recorded=recorded, own=own, spec_dir=spec_dir, check_env=check_env,
+        sandbox=sandbox, unsandboxed=None if turned_off() else unsandboxed,
     )
 
 
@@ -213,7 +238,8 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None 
         reply_file = root / "reply.txt"
         reply_file.write_text(plan.reply, encoding="utf-8")
         result = run_check(plan.check, workspace, plan.timeout, reply=plan.reply, reply_file=reply_file,
-                           spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, keep=keep)
+                           spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, check_env=plan.check_env,
+                           sandbox=plan.sandbox, keep=keep)
     return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found,
                       cut=result.cut)
 
@@ -340,6 +366,11 @@ class CheckAlongRunsPlan:
     plans: list[CheckAlongPlan]
     skipped: list[str] = field(default_factory=list)
 
+    @property
+    def unsandboxed(self) -> str | None:
+        """Why the check runs on this machine itself, if it does (`CheckTrialPlan.unsandboxed`)."""
+        return next((plan.trial.unsandboxed for plan in self.plans if plan.trial.unsandboxed), None)
+
     def to_json(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
@@ -347,6 +378,7 @@ class CheckAlongRunsPlan:
             "states": sum(len(plan.states) for plan in self.plans),
             "skipped": self.skipped[:20],
             "skipped_more": max(0, len(self.skipped) - 20),
+            **({"unsandboxed": self.unsandboxed} if self.unsandboxed else {}),
         }
 
 

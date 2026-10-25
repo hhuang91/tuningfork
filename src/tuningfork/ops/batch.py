@@ -156,7 +156,7 @@ def prepare_batch(
     from tuningfork.paths import host_path
     from tuningfork.runner import lookalike_skill_files
     from tuningfork.sandbox import for_launches, turned_off as sandbox_turned_off
-    from tuningfork.specs import SpecError, load_spec, missing_files
+    from tuningfork.specs import SpecError, check_kind, load_spec, missing_files
 
     if harness not in ADAPTERS:
         raise OperationError(
@@ -269,16 +269,24 @@ def prepare_batch(
     cached = cached_prompts_warning(store.server_checks((proxy.raw.get("server") or {}).get("id")))
     if cached:
         notes.append(Note("warning", cached))
-    sandbox, unsandboxed = for_launches([store.home, workdir, spec.directory, *hide])
+    # The recordings, the runs' folder and `hide` are tuningfork's own: no check sees them either.
+    sandbox, unsandboxed = for_launches([store.home, workdir, spec.directory, *hide], own=[store.home, workdir, *hide])
     if sandbox is None and not sandbox_turned_off():
         notes.append(Note(
             "warning",
             f"runs are not sandboxed: {unsandboxed}. Each sees its own folders, whose paths "
-            "differ from run to run, and the model reads them",
+            "differ from run to run, and the model reads them; and the task's check runs on this "
+            "machine itself, where it can run what the model wrote",
         ))
     if sandbox is not None and sandbox.clock_problem:
         notes.append(Note(
             "warning", f"{sandbox.clock_problem}: each run's date is the day it is made, which the model reads",
+        ))
+    if sandbox is not None and check_kind(item.tuningfork.check) == "shell" and not sandbox.shows(spec.directory):
+        notes.append(Note(
+            "warning",
+            f"the task file is in {spec.directory}, which a sandboxed check never sees: the check will not "
+            "find what is kept beside the task file. Move the task file into a folder of its own",
         ))
     if item.tuningfork.held_out:
         notes.append(Note(
