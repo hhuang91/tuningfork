@@ -316,7 +316,8 @@ differed only in that number wrote it 5 times in 20 and 20 times in 20.
 Inside, the rest of the machine is read-only, `/tmp` and the process list are the launch's own,
 and the recordings folder and the task's spec folder are empty: the harness can read neither
 earlier runs nor the check. `TUNINGFORK_SANDBOX_HIDE` names more folders every launch sees
-empty, as `PATH` is written: where a benchmark keeps its checks, say. `tuningfork connections
+empty, as `PATH` is written: a benchmark's folder of tasks, say. A check sees them empty too,
+but for its own task's folder, so keep a check's scripts and keys there. `tuningfork connections
 show` says whether launches run in the sandbox, a batch's plan warns when they cannot, and a
 fork of a sandboxed run is refused without one. `TUNINGFORK_SANDBOX=off` turns it off.
 

@@ -140,12 +140,14 @@ def prepare_fork(
     if launch is not None and launch.settings.get("sandbox"):
         # What it replays names the sandbox's paths, and what the model saw was the same
         # home and folder: a fork of it runs there too, or not at all.
-        from tuningfork.sandbox import for_launches
+        from tuningfork.sandbox import for_launches, recorded_hiding
 
         # And its clock starts where its source's did, so its live steps read the
-        # recording's date; a source made on the real clock forks on the real clock.
+        # recording's date; a source made on the real clock forks on the real clock. It is
+        # kept from what its source was kept from, too: the source batch's runs among them.
+        hid, mine = recorded_hiding(launch.settings.get("sandbox"), task=spec_dir.resolve())
         sandbox, unsandboxed = for_launches(
-            [store.home, workdir, spec_dir], own=[store.home, workdir],
+            [store.home, workdir, spec_dir, *hid], own=[store.home, workdir, *mine],
             clock=(launch.settings.get("sandbox") or {}).get("clock"),
         )
         if sandbox is None:

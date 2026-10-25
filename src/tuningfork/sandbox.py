@@ -49,7 +49,8 @@ TMP = Path("/tmp")
 #: The environment variable that turns the sandbox off.
 SWITCH = "TUNINGFORK_SANDBOX"
 #: Folders every launch sees empty besides tuningfork's own, named by the person as PATH
-#: is (`os.pathsep` between them): where a benchmark keeps its checks' keys, say.
+#: is (`os.pathsep` between them): a benchmark's folder of tasks, say. A check sees them
+#: empty too, but for its own task's folder, where its scripts and keys belong.
 HIDE = "TUNINGFORK_SANDBOX_HIDE"
 
 #: The instant every launch's clock starts at, "YYYY-MM-DD HH:MM:SS" in the machine's zone,
@@ -203,10 +204,12 @@ class Sandbox:
     def to_json(self) -> dict[str, Any]:
         """As a launch's settings keep it: a fork of the run is sandboxed the same way, and
         its clock starts where its source's did. The folders hidden are kept too, so a record
-        says what its launch could not see."""
+        says what its launch could not see, and which of them were tuningfork's own — what a
+        trial of its check, or a fork, hides as it did (`recorded_hiding`)."""
         return {
             "kind": "bubblewrap", "version": self.version, "home": str(HOME), "workspace": str(WORKSPACE),
             **({"hidden": [str(folder) for folder in self.hide]} if self.hide else {}),
+            **({"own": [str(folder) for folder in self.own]} if self.own else {}),
             **({"clock": self.clock} if self.clock else {}),
         }
 
@@ -390,6 +393,19 @@ def hideable(
             continue
         found.append(folder)
     return found
+
+
+def recorded_hiding(recorded: dict[str, Any] | None, *, task: Path | None) -> tuple[list[Path], list[Path]]:
+    """What a launch's recorded sandbox (`Sandbox.to_json`) hid, and which of it was
+    tuningfork's own: a trial of its check, or a fork, hides it as the launch did. A launch
+    recorded before its own folders were has them guessed: all it hid but its task's folder
+    and the folders the person hides now."""
+    recorded = recorded or {}
+    hidden = [Path(folder) for folder in recorded.get("hidden") or []]
+    if "own" in recorded:
+        return hidden, [Path(folder) for folder in recorded.get("own") or []]
+    theirs = {folder.resolve() for folder in hidden_by_the_person()}
+    return hidden, [folder for folder in hidden if folder != task and folder.resolve() not in theirs]
 
 
 def holds_kept(folder: Path | str) -> bool:

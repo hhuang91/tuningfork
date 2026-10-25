@@ -43,6 +43,30 @@ def settled(store: Store, run_id: str, count: int, timeout: float = 5.0) -> list
     return store.steps(run_id)
 
 
+def test_a_fork_is_kept_from_what_its_source_was_kept_from(stack, monkeypatch):
+    """Its source batch's runs' folder outside the recordings, say: the source's launch and check
+    never saw it, and the fork's are kept from it too, as tuningfork's own."""
+    import tuningfork.sandbox
+    from tuningfork.sandbox import Sandbox
+
+    source = stack.record()
+    runs = stack.tmp / "runs-elsewhere"
+    launch_id = stack.store.get_run(source.run_id).launch_id
+    stack.store._conn.execute(
+        "UPDATE launches SET settings = json_set(settings, '$.sandbox', json(?)) WHERE id = ?",
+        (json.dumps({"kind": "bubblewrap", "hidden": [str(runs)], "own": [str(runs)]}), launch_id),
+    )
+    asked: dict = {}
+
+    def recorded(hide, **options):
+        asked.update(hide=[Path(folder) for folder in hide], own=[Path(folder) for folder in options["own"]])
+        return Sandbox("/usr/bin/bwrap", "0.11.1"), None
+
+    monkeypatch.setattr(tuningfork.sandbox, "for_launches", recorded)
+    prepare_fork(stack.store, source.run_id, "write_file", base_url=f"{stack.url}/v1", workdir=stack.tmp / "forks")
+    assert runs in asked["hide"] and runs in asked["own"]
+
+
 class TestReplay:
     def test_a_fork_is_answered_from_the_recording_then_goes_live(self, stack):
         source = stack.record()

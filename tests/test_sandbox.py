@@ -29,6 +29,7 @@ from tuningfork.sandbox import (
     for_launches,
     hideable,
     home_conflict,
+    recorded_hiding,
     status,
     translate,
 )
@@ -183,6 +184,18 @@ class TestTheCommand:
         kept = layout_setting(FakeAgent(), Sandbox("/usr/bin/bwrap", "0.11.1"))
         assert kept["sandbox"] == {"kind": "bubblewrap", "version": "0.11.1", "home": "/home/user", "workspace": "/home/user/project"}
         assert "sandbox" not in layout_setting(FakeAgent())
+
+    def test_a_launch_keeps_what_it_hid_and_which_of_it_was_tuningforks_own(self, tmp_path, monkeypatch):
+        """Read back, a trial of its check and a fork hide it as it did; a launch kept before its
+        own folders were has them guessed: all it hid but its task's folder and the person's."""
+        monkeypatch.delenv("TUNINGFORK_SANDBOX_HIDE", raising=False)
+        recordings, task = tmp_path / "recordings", tmp_path / "task"
+        kept = Sandbox("/usr/bin/bwrap", "0.11.1", hide=(recordings, task), own=(recordings,)).to_json()
+        assert kept["hidden"] == [str(recordings), str(task)] and kept["own"] == [str(recordings)]
+        assert recorded_hiding(kept, task=task) == ([recordings, task], [recordings])
+        del kept["own"]
+        assert recorded_hiding(kept, task=task) == ([recordings, task], [recordings])
+        assert recorded_hiding(None, task=None) == ([], [])
 
 
 class TestTheCheck:

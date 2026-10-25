@@ -384,8 +384,9 @@ the runs' folder and the spec's folder empty inside; its check runs there too, t
 folder shown to it. A launch records its sandbox, a fork of
 a sandboxed run is refused without one, and a batch's plan warns when there is none.
 `TUNINGFORK_SANDBOX_HIDE` names folders every launch sees empty besides tuningfork's own, as
-PATH is written — where a benchmark keeps its checks' keys, which an agent given the file
-system would otherwise read. `TUNINGFORK_SANDBOX=off` turns it off — the suite's `conftest.py` does, and
+PATH is written — a benchmark's folder of tasks, whose checks and keys an agent given the file
+system would otherwise read; a check sees them empty too, but for its own task's folder, where
+its scripts and keys belong. `TUNINGFORK_SANDBOX=off` turns it off — the suite's `conftest.py` does, and
 `tests/test_sandbox.py` turns it back on where bubblewrap can run. `TUNINGFORK_CLOCK=YYYY-MM-DD
 HH:MM:SS` starts every launch's clock at that instant (libfaketime under `LD_PRELOAD`, monotonic
 clocks left real): the harness reads the same date whichever day a run is made — the model

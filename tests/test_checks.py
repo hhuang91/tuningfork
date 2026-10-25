@@ -132,6 +132,25 @@ class TestAgainstARun:
         assert {str(folder) for folder in asked["hide"]} >= set(hid)
         assert {Path(folder).resolve() for folder in asked["own"]} == {stack.store.home.resolve(), runs.resolve()}
 
+    def test_a_trial_takes_tuningforks_own_folders_from_its_launch(self, launched, monkeypatch):
+        """A batch whose runs' folder was its task's folder (`--workdir` there): the folder was
+        tuningfork's own, which the batch's check never saw, and a trial is not shown it either."""
+        import tuningfork.sandbox
+        from tuningfork.ops.checks import prepare_check_trial
+
+        stack, run_id = launched
+        task = str(stack.spec.path.parent.resolve())
+        home = str(stack.store.home.resolve())
+        launch_id = stack.store.get_run(run_id).launch_id
+        stack.store._conn.execute(
+            "UPDATE launches SET settings = json_set(settings, '$.sandbox', json(?)) WHERE id = ?",
+            (json.dumps({"kind": "bubblewrap", "hidden": [home, task], "own": [home, task]}), launch_id),
+        )
+        asked: dict = {}
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **options: asked.update(**options) or (None, "x"))
+        prepare_check_trial(stack.store, "true", run=run_id)
+        assert task in {str(Path(folder).resolve()) for folder in asked["own"]}
+
 
 def test_a_check_reads_the_variables_its_task_names_and_no_others(tmp_path, mock_server, monkeypatch):
     """An LLM judge's key, say: named in the task (`check_env`), it reaches the batch's check
