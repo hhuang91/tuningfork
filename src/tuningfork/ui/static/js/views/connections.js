@@ -456,7 +456,7 @@ export async function connectionsView(root, _, scope) {
   // --- harnesses ------------------------------------------------------------------------
 
   function drawHarnesses() {
-    replace(harnessesEl, [sandboxCard(state.sandbox, state.check_env, Boolean(state.proxy?.config_problem)), ...state.harnesses.map(harnessCard)]);
+    replace(harnessesEl, [sandboxCard(state.sandbox, state.check_env, state.proxy?.config_problem), ...state.harnesses.map(harnessCard)]);
   }
 
   // A harness's need in the page's words, as the server test's measurement of it is named; the
@@ -468,7 +468,7 @@ export async function connectionsView(root, _, scope) {
   }
 
   // Where every launch runs: what its harness sees is what the model reads.
-  function sandboxCard(sandbox, checkEnv = {}, configProblem = false) {
+  function sandboxCard(sandbox, checkEnv = {}, configProblem = null) {
     if (!sandbox) return null;
     return h("div", { class: "harness-card" },
       h("div", { class: "harness-head" },
@@ -483,9 +483,9 @@ export async function connectionsView(root, _, scope) {
         : h("div", { class: "banner banner-warn" },
             `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them. Their checks run on this machine itself.`),
       // What the configs let every check read, with the sandbox or without it, each by the
-      // file that names it. A config that cannot be read at all is the proxy panel's to say:
-      // its problem is not said twice.
-      checkEnv?.problem && !configProblem
+      // file that names it. The same problem the proxy panel says — the machine's config that
+      // cannot be read at all — is not said twice; any other is.
+      checkEnv?.problem && checkEnv.problem !== configProblem
         ? h("div", { class: "banner banner-warn" }, `${capital(checkEnv.problem)}. Checks that run a command are refused until it is fixed.`)
         : null,
       (checkEnv?.sources || []).map((source) => h("p", { class: "muted small" },

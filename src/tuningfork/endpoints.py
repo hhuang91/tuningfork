@@ -110,7 +110,8 @@ def _machine_specs() -> list[str]:
         problem = 'it holds no "protected" list of host:port strings'
     raise OperationError(
         f"the machine's config, {path}, cannot be read: {problem}",
-        hint="tuningfork sends nothing anywhere until it can: fix the file, or remove it",
+        hint="tuningfork sends nothing anywhere until it can: fix the file, since removing it would drop "
+             "the endpoints it protects too",
         code="machine_config",
     )
 
