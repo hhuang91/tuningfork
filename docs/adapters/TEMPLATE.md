@@ -11,7 +11,7 @@ proxy and recorded today. An adapter is what lets tuningfork
 
 ## What an adapter must provide
 
-Four methods, defined in `tuningfork/harness/base.py`, and six optional:
+Four methods, defined in `tuningfork/harness/base.py`, and seven optional:
 
 | Method | Purpose |
 |---|---|
@@ -22,6 +22,7 @@ Four methods, defined in `tuningfork/harness/base.py`, and six optional:
 | `isolation_warnings(workdir)` *(optional)* | What could still reach every run from outside it, printed before a batch starts |
 | `as_sent(messages)` *(optional)* | A kept history as the harness sends it — what it changes in its own copy before every call — for a request rebuilt from an imported chat |
 | `harness_note(message)` *(optional)* | A user message the harness wrote itself (a reminder, a nudge to go on), named in a few words, or `None` for a person's turn |
+| `side_call(request)` *(optional)* | A name for a call the harness makes for itself beside the task's next step — Hermes's background review, OpenClaw's compaction summary — or `None`: such a call starts a side thread of its launch, and a run's final reply is never one |
 | `skill_load(call)` *(optional)* | The skill a tool call loads, by name: where a scenario's run that stops at the next skill ends |
 | `for_server(server)` *(optional)* | The adapter set up for the server it will talk to, from the server's identity, for a harness that does not ask the server itself (OpenClaw's context window); a batch calls it, and what it sets goes in the adapter's `settings`, so a fork gets its source's |
 | `version_problem(output)` *(optional)* | Why a harness that answers `--version` still cannot launch, read from what that printed, or `None`: the Connections page says the harness cannot run here, and why, and a batch or a fork is refused in those words before anything launches |
