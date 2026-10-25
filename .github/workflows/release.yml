@@ -1,0 +1,78 @@
+# A release: a tag v* on main is built from its own checkout and, once a person approves the
+# `pypi` environment, uploaded to PyPI by trusted publishing. No token is kept anywhere: PyPI
+# trusts this workflow, in this repository, through that environment. Run by hand, it builds and
+# checks the packages and uploads nothing.
+#
+# To release, once the PR that sets the version and the CHANGELOG's entry is merged, tag its merge
+# commit with `v` and the version as the packages spell it (0.7.0rc1, never 0.7.0-rc.1):
+#   git fetch origin
+#   git tag -a v0.6.1 <merge commit> -m "tuningfork 0.6.1" && git push origin v0.6.1
+# then approve the `pypi` deployment in the run the tag started, and publish the GitHub Release
+# once PyPI has the files. If the upload fails, re-run the failed job: PyPI takes a file it
+# already holds, byte for byte, again, so an upload cut halfway finishes. To upload by hand
+# instead, take this run's own packages into an empty folder and upload that folder's files:
+#   gh run download <run> -n dist -D <empty folder>
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # Pinned to commits: a tag can move, and setup-uv publishes no major-version tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+      - name: The tag is on main
+        if: github.event_name == 'push'
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Build
+        run: uv build --no-sources
+      - name: The packages are the tag's version
+        if: github.event_name == 'push'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # ls, not find: it leaves out the dist/.gitignore uv writes, so two files are the packages.
+          ls dist
+          test -f "dist/tuningfork_lab-$version-py3-none-any.whl"
+          test -f "dist/tuningfork_lab-$version.tar.gz"
+          test "$(ls dist | wc -l)" -eq 2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+      # After the packages are kept, so nothing twine brings with it runs while they can still
+      # change. A failure here still stops the upload: it needs this job.
+      - name: PyPI can read them
+        run: uvx --from twine==7.0.0 twine check --strict dist/*
+
+  publish:
+    name: Upload to PyPI
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tuningfork-lab/
+    permissions:
+      id-token: write  # OIDC, for PyPI's upload token and the attestations' signature
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
