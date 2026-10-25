@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.6.1 — a task's check runs in its run's sandbox
+
+A task's shell check can run what the model left in the workspace: a `conftest.py` its `pytest`
+finds, a module its `python -m` imports. It ran on the machine itself, as you, with your
+environment. It now runs the way its run did.
+
+- **A check runs in its run's sandbox** where bubblewrap runs. It works in `/home/user/project`,
+  finds the final reply at `/home/user/reply.txt`, and has an empty home of its own. The rest of
+  the machine is read-only, its `/tmp` and processes are its own, and the recordings folder, the
+  runs' folders and the folders `TUNINGFORK_SANDBOX_HIDE` names are empty. Its task's folder shows
+  through, read-only, and so does a Python environment on its `PATH` that a hidden folder holds.
+- **A check's environment is made from scratch**, with the sandbox or without it: `PATH`, `HOME`,
+  `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, as a launch gets, and the variables its task names
+  in a new field, `check_env`, such as an LLM judge's key: `"check_env": ["OPENAI_API_KEY"]`. It
+  never gets one of tuningfork's own keys.
+- **A check tried, and one run along a run, run the same way**: `tuningfork recheck`, the web
+  UI's check tester, and `check-along`. Each hides what its run's launch hid, which a launch now
+  records, and a fork is kept from what its source was kept from.
+- **Where there is no sandbox, it is said**: a batch's plan, `recheck`, `check-along`, the check
+  tester and Connections say the check runs on the machine itself.
+- **The packages on PyPI are built by GitHub Actions** from the release's tag and uploaded by
+  trusted publishing, with attestations of where each was built.
+
+Changed:
+
+- **A check that read your environment** gets a variable only by name now: list what it reads
+  in `check_env`, a proxy's settings included (`https_proxy`, `SSL_CERT_FILE`).
+- **A check starts with an empty home**, so a tool's cache starts empty: `uv run --with …`
+  downloads what it installs.
+- **A check writes nowhere but its workspace, its home and its `/tmp`.** Keep a task's check
+  scripts and keys in its task's folder: a folder `TUNINGFORK_SANDBOX_HIDE` names is hidden from a
+  check too, but for its own task's folder. A batch's plan warns of a task file whose check could
+  not see what is kept beside it, such as one directly in `/tmp`.
+
 ## 0.6.0 — on PyPI, a demo without a GPU, and redaction reworked
 
 tuningfork is on PyPI as `tuningfork-lab`, and `tuningfork demo` shows the whole loop in the web
