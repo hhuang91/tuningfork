@@ -98,6 +98,11 @@ class HarnessAdapter(Protocol):
       the task's conversation without being its next step — Hermes's background review —
       or None. Such a call starts a side thread of its launch instead of extending the task's
       run, and a run's final reply is never one (see `tuningfork.launches`).
+    - `fed_back_side_calls`: the side calls, by that name, whose answer the task's
+      conversation goes on from — OpenClaw's compaction summary. A failed or edited one
+      leaves the run out, as a task call does (`runner.named_side_call`). Any other side call
+      is the harness's review of its answer, beside the conversation: its failure says
+      nothing of the run, and a chain reports it as the review (`ops.chain.skill_edits`).
     - `wire`: the wire format its calls take (`tuningfork.wire`), where tuningfork must know
       it before a call arrives: whether a scenario's context can be carried (`with_context`).
     - `continue_launch(prompt, *, home, workspace, max_turns)`: the command that gives the

@@ -26,7 +26,7 @@ Four methods, defined in `tuningfork/harness/base.py`, and six optional:
 | `for_server(server)` *(optional)* | The adapter set up for the server it will talk to, from the server's identity, for a harness that does not ask the server itself (OpenClaw's context window); a batch calls it, and what it sets goes in the adapter's `settings`, so a fork gets its source's |
 | `version_problem(output)` *(optional)* | Why a harness that answers `--version` still cannot launch, read from what that printed, or `None`: the Connections page says the harness cannot run here, and why, and a batch or a fork is refused in those words before anything launches |
 
-And four optional attributes:
+And five optional attributes:
 
 | Attribute | Purpose |
 |---|---|
@@ -34,6 +34,7 @@ And four optional attributes:
 | `requirements` | What it needs of the inference server, as `Requirement`s: an identity field with a `minimum` (`n_ctx`), or a capability a server check measures (`streaming_tool_calls`, `anthropic_messages`). A batch or fork refuses to launch it against a server that lacks one |
 | `subagent_tools` | Tools whose calls start a subagent, so a launch's threads can be told apart |
 | `volatile` | `(pattern, replacement)` pairs over a request's JSON text for what differs between two launches of one task besides per-run paths — a session id, the date, a tool's timing — so a fork can recognise the calls it replays |
+| `fed_back_side_calls` | The side calls, by the name `side_call` gives them, whose answer the task's conversation goes on from (OpenClaw's compaction summary): a failed or edited one leaves the run out, as a task call does. Any other side call is the harness's review of its answer, whose failure says nothing of the run |
 
 `prepare_home` may also take `max_turns`, for a harness whose config holds a turn limit of
 its own. Register the adapter in `tuningfork/harness/__init__.py::ADAPTERS`.

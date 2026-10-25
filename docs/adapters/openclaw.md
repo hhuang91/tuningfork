@@ -253,7 +253,9 @@ are a context summarization assistant.`), the conversation as one user message, 
 `max_completion_tokens` 6,553 and then 4,096. Then it went on from a new conversation: the
 system prompt, the summary as a user message, the last call and its result, and its own turn to
 go on (above). The adapter names the summary calls a side call (`side_call`), so neither is
-ever a run's final reply.
+ever a run's final reply. Unlike Hermes's review, a summary is fed back: it stands for the
+conversation after it (`fed_back_side_calls`). So a summary call that failed, or was edited at a
+breakpoint, leaves the run out, as a task call does, and a chain never reports one as a review.
 
 The conversation after a compaction does not extend the run's main thread, so tuningfork files
 it as a thread of its own: a run that compacts has its later steps there, and its final reply is

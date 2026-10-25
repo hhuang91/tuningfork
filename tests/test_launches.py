@@ -167,6 +167,30 @@ class TestStore:
         assert named_side_call(store, HermesAdapter(), review)
         assert not named_side_call(store, HermesAdapter(), main)
 
+    def test_openclaws_compaction_summary_is_a_side_thread_whose_failure_counts(self, store):
+        """Found in review: OpenClaw's summary is fed back — it stands for the conversation once
+        OpenClaw compacts — so one that failed, or was edited, changed what the model saw after
+        it. Its thread leaves the run out as a task call's would, where Hermes's review never
+        does."""
+        from tuningfork.harness.openclaw import SUMMARIZER, OpenClawAdapter
+        from tuningfork.proxy.launches import LaunchState
+        from tuningfork.runner import final_reply, named_side_call
+
+        launch = store.create_launch(kind="batch", label="t/1#b.0", task_id="t/1", harness="openclaw")
+        state = LaunchState(launch)
+        task = chat(user("go"))
+        summary = chat({"role": "system", "content": f"{SUMMARIZER} Summarize."}, user("go / Reading the log."))
+        store.record_step(request=task, response=as_response({"role": "assistant", "content": "Reading the log."}),
+                          harness="openclaw", assignment=state.assign(task, None))
+        store.record_step(request=summary, error="the server refused it", harness="openclaw",
+                          assignment=state.assign(summary, None))
+        store.finalize_threads(launch.id, OpenClawAdapter.subagent_tools)
+
+        main, side = store.launch_runs(launch.id)
+        assert (main.role, main.step_count, side.role) == ("main", 1, "side")
+        assert final_reply(store, main.id) == "Reading the log."
+        assert not named_side_call(store, OpenClawAdapter(), side)
+
     def test_a_run_recorded_before_ends_on_its_review_and_its_final_reply_skips_it(self, store):
         from tests.test_harness import REVIEW
         from tuningfork.runner import final_reply

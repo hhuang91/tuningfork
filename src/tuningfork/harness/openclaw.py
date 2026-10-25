@@ -86,6 +86,8 @@ INHERITED_ENV = ("PATH", "LANG", "LC_ALL", "TERM", "TMPDIR", "USER")
 #: far as one user message — summarizes it, and the conversation goes on from the summary. Seen
 #: in a recording, two such calls to each compaction.
 SUMMARIZER = "You are a context summarization assistant."
+#: What `side_call` names such a call.
+COMPACTION = "compaction summary"
 
 #: The user messages OpenClaw 2026.10.7 writes itself, by how each opens once the time it puts
 #: before some is left out, and what each is: after a compaction, the summary that stands for
@@ -215,6 +217,11 @@ class OpenClawAdapter:
     #: spawn without a Gateway ("published reply runtime missing for main"). Under Tool Search
     #: a spawn would come as a `tool_call`, which this name does not catch.
     subagent_tools = frozenset({"sessions_spawn"})
+    #: The side calls whose answer the task's conversation goes on from: the summary stands for
+    #: the conversation before it once OpenClaw compacts. So a summary call that failed, or was
+    #: edited at a breakpoint, leaves the run out, as a task call does (`runner.named_side_call`),
+    #: and it is no review of the answer (`ops.chain.skill_edits`).
+    fed_back_side_calls = frozenset({COMPACTION})
     #: What differs between two launches of one task besides per-run paths, as (pattern,
     #: replacement) over a request's JSON text; see `tuningfork.replay`. Found by replaying
     #: recorded runs: the time OpenClaw writes before the prompt, the date in the system prompt,
@@ -427,7 +434,7 @@ class OpenClawAdapter:
         messages = request.get("messages") or []
         first = messages[0] if messages and isinstance(messages[0], dict) else {}
         if first.get("role") == "system" and content_text(first.get("content")).startswith(SUMMARIZER):
-            return "compaction summary"
+            return COMPACTION
         return None
 
     def harness_note(self, message: dict[str, Any]) -> str | None:

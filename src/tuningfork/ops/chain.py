@@ -406,20 +406,21 @@ def skill_edits(
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Every call of a skill-editing tool (the adapter's `skill_tools`) in a launch, each
     with who made it — judged step by step, since one thread can hold more than one: the
-    task's own conversation; the harness's review after an answer (a `side_call` its adapter
-    names a review); another call of the harness's own, by the name its adapter gives it
-    (OpenClaw's compaction summary, made during the task); the turn the harness was told the
-    check's result (`told`, the message); else a subagent. And a summary of the review's
-    calls, when the harness made any."""
+    task's own conversation; the harness's review after an answer (a `side_call` it never
+    feeds back); a side call whose answer the conversation goes on from, by the name its
+    adapter gives it (`fed_back_side_calls`: OpenClaw's compaction summary, made during the
+    task); the turn the harness was told the check's result (`told`, the message); else a
+    subagent. And a summary of the review's calls, when the harness made any."""
     tools = frozenset(getattr(adapter, "skill_tools", ()) or ())
     side_call = getattr(adapter, "side_call", None)
+    fed_back = frozenset(getattr(adapter, "fed_back_side_calls", ()) or ())
     edits: list[dict[str, Any]] = []
     review: dict[str, Any] | None = None
     for run in store.launch_runs(launch_id):
         for step in store.steps(run.id):
             request = store.harness_request(step)
             said = side_call(request) if side_call is not None else None
-            if said and "review" in said:
+            if said and said not in fed_back:
                 thread = "review"
                 review = review or {"steps": 0, "ended": True, "edit_calls": 0}
                 review["steps"] += 1
