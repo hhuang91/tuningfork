@@ -1,0 +1,65 @@
+# A release: a tag v* on main is built from its own checkout and, once a person approves the
+# `pypi` environment, uploaded to PyPI by trusted publishing. No token is kept anywhere: PyPI
+# trusts this workflow, in this repository, through that environment. Run by hand, it builds and
+# checks the packages and uploads nothing.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # Pinned to commits: a tag can move, and setup-uv publishes no major-version tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+      - name: The tag is on main
+        if: github.event_name == 'push'
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Build
+        run: uv build --no-sources
+      - name: The packages are the tag's version
+        if: github.event_name == 'push'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          ls dist
+          test -f "dist/tuningfork_lab-$version-py3-none-any.whl"
+          test -f "dist/tuningfork_lab-$version.tar.gz"
+          test "$(ls dist | wc -l)" -eq 2
+      - name: PyPI can read them
+        run: uvx --from twine==7.0.0 twine check --strict dist/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Upload to PyPI
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tuningfork-lab/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
