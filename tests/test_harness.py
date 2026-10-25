@@ -7,6 +7,7 @@ single non-interactive query, `-s` for preloaded skills, and `HERMES_HOME` for i
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -481,10 +482,13 @@ class TestOpenClaw:
         """A stray OPENCLAW_* would move OpenClaw's state or config to a real installation."""
         from tuningfork.harness import OpenClawAdapter
 
+        from tuningfork.harness.openclaw import INHERITED_ENV
+
         for name in ("OPENCLAW_STATE_DIR", "OPENCLAW_CONFIG_PATH", "OPENCLAW_HOME", "OPENCLAW_PROFILE", "NODE_OPTIONS"):
             monkeypatch.setenv(name, "/real")
+        monkeypatch.setenv("SOMETHING_ELSE", "x")
         env = OpenClawAdapter().environment(tmp_path)
-        assert not [key for key in env if key.startswith("OPENCLAW_")] and "NODE_OPTIONS" not in env
+        assert set(env) <= {*INHERITED_ENV, "HOME"}  # built from scratch: nothing else of the parent's
         assert env["HOME"] == str(tmp_path.resolve())
 
     def test_a_launch_is_one_headless_agent_exec(self, tmp_path):
@@ -494,13 +498,24 @@ class TestOpenClaw:
                                         extra_args=["--thinking", "low"])
         assert spec.argv[:3] == ("openclaw", "agent", "exec")
         argv = list(spec.argv)
-        assert argv[argv.index("--config") + 1] == str(tmp_path / "home" / ".openclaw" / "openclaw.json")
-        assert argv[argv.index("--cwd") + 1] == str(tmp_path / "work")
+        assert argv[argv.index("--config") + 1] == str((tmp_path / "home" / ".openclaw" / "openclaw.json").resolve())
+        assert argv[argv.index("--cwd") + 1] == str((tmp_path / "work").resolve())
         assert argv[argv.index("--timeout") + 1] == "0" and "--json" in argv
         # The prompt goes last, after `--`, and the extra arguments before it.
         assert argv[-2:] == ["--", "-x looks like a flag"] and argv[-4:-2] == ["--thinking", "low"]
-        assert spec.cwd == tmp_path / "work"
+        assert spec.cwd == (tmp_path / "work").resolve()
         assert OpenClawAdapter().skill_roots(tmp_path) == (tmp_path / ".openclaw" / "skills",)
+
+    def test_a_relative_home_and_workspace_are_given_whole(self, tmp_path, monkeypatch):
+        """Found in review: OpenClaw reads `--config` and `--cwd` from the workspace it starts in,
+        so a relative path — a recordings folder named `--home rec` — pointed nowhere."""
+        from tuningfork.harness import OpenClawAdapter
+
+        monkeypatch.chdir(tmp_path)
+        spec = OpenClawAdapter().launch("go", home=Path("rec/batches/b/0/home"), workspace=Path("rec/batches/b/0/workspace"))
+        argv = list(spec.argv)
+        assert argv[argv.index("--config") + 1] == str(tmp_path.resolve() / "rec/batches/b/0/home/.openclaw/openclaw.json")
+        assert argv[argv.index("--cwd") + 1] == str(tmp_path.resolve() / "rec/batches/b/0/workspace")
 
     def test_each_option_turns_one_thing_off_and_is_recorded(self, tmp_path):
         """Off, the Skill Workshop's tool is denied: OpenClaw writes its section of the system
@@ -585,9 +600,9 @@ class TestOpenClaw:
         assert needs(off)["n_ctx"] == 32_768
         assert "Tool Search off" in next(r.why for r in off.requirements if r.what == "n_ctx")
 
-    def test_a_skill_read_as_a_file_is_found_with_its_listed_name(self):
+    def test_a_skill_read_as_a_file_is_found_by_its_folder(self):
         """Tool Search on, as shipped: the model reads the location `<available_skills>` gives,
-        and the result is the file as it is, frontmatter and all."""
+        and the result is the file, frontmatter and all, as `read` gives any file."""
         from tuningfork.harness import OpenClawAdapter
 
         call = {"id": "c1", "type": "function", "function": {
@@ -636,19 +651,45 @@ class TestOpenClaw:
             {"role": "assistant", "tool_calls": [wrapped]}, {"role": "tool", "tool_call_id": "c2", "content": refused},
         ]}) == []
 
-    def test_a_listed_name_is_its_own_skills(self):
-        """A skill listed without a location never lends its name to the next one's."""
+    def test_a_read_is_named_as_skill_load_names_it(self):
+        """Found in review: named by its listed name in a span and by its folder in `skill_load`,
+        a scenario stopping at the next skill would stop at a read of its own. Both name it by
+        its folder, the name tuningfork installs it under."""
         from tuningfork.harness import OpenClawAdapter
 
-        listing = ("<available_skills>\n  <skill>\n    <name>other</name>\n    <description>d</description>\n"
-                   "  </skill>\n  <skill>\n    <name>tally-report</name>\n"
+        listing = ("<available_skills>\n  <skill>\n    <name>tally-report</name>\n"
                    "    <location>/x/tally/SKILL.md</location>\n  </skill>\n</available_skills>")
         call = {"id": "c1", "function": {"name": "read", "arguments": '{"path":"/x/tally/SKILL.md"}'}}
-        (span,) = OpenClawAdapter().skill_spans({"messages": [
+        adapter = OpenClawAdapter()
+        (span,) = adapter.skill_spans({"messages": [
             {"role": "system", "content": listing},
             {"role": "assistant", "tool_calls": [call]}, {"role": "tool", "tool_call_id": "c1", "content": "text"},
         ]})
-        assert span.name == "tally-report"  # its listed name, not its folder's
+        assert span.name == adapter.skill_load(call) == "tally"
+
+    @pytest.mark.parametrize("answer", [
+        # A listed skill is never paged: too long, it is refused; read again, OpenClaw says so.
+        "Skill instructions cannot be partially served: the whole document exceeds this call's read or model-context "
+        "budget. Ask the operator to reduce the document or increase the model context.",
+        "Skill instructions were already served whole earlier in the current model context. Reuse that content; the "
+        "full document will be served again if compaction removes it.",
+        # A call that failed: OpenClaw's error, as JSON.
+        '{\n  "status": "error",\n  "tool": "read",\n  "error": "ENOENT: no such file or directory"\n}',
+    ])
+    def test_what_openclaw_sends_in_place_of_a_skill_is_no_skill(self, answer):
+        """Found in review: each of these was taken for a skill's text."""
+        from tuningfork.harness import OpenClawAdapter
+
+        read = {"id": "c1", "function": {"name": "read", "arguments": '{"path":"~/.openclaw/skills/x/SKILL.md"}'}}
+        named = {"id": "c2", "function": {"name": "skills_read", "arguments": '{"name":"x"}'}}
+        wrapped = {"id": "c3", "function": {"name": "tool_call", "arguments": '{"id":"skills_read","args":{"name":"x"}}'}}
+        inside = json.dumps({"tool": {"id": "openclaw:core:skills_read"}, "result": {"content": [{"type": "text", "text": answer}]}})
+        assert OpenClawAdapter().skill_spans({"messages": [
+            {"role": "assistant", "tool_calls": [read, named, wrapped]},
+            {"role": "tool", "tool_call_id": "c1", "content": answer},
+            {"role": "tool", "tool_call_id": "c2", "content": answer},
+            {"role": "tool", "tool_call_id": "c3", "content": inside},
+        ]}) == []
 
     def test_a_chain_is_told_that_nothing_of_openclaws_changes_its_skill(self):
         from tuningfork.harness import OpenClawAdapter
@@ -658,16 +699,17 @@ class TestOpenClaw:
 
     @pytest.mark.parametrize("note", [
         "[812 more lines in file. Use offset=2001 to continue.]",
-        "[Read output capped at 32KB for this call. Use offset=926 to continue.]",  # seen near a full context
+        "[Read output capped at 32KB for this call. Use offset=926 to continue.]",  # seen with a 40,000-token window
         "[Showing lines 1-1873 of 2812 (50KB limit). Use offset=1874 to continue.]",
         "[Showing part of line 1 (50KB limit). Use read with offset=1, cursor=51200 to continue.]",
     ])
-    def test_a_long_skills_continuation_note_is_not_its_text(self, note):
-        """`read` gives 2,000 lines or 50 KB at a time — less as the context fills — and says
-        where the rest begins, in one of three wordings."""
+    def test_a_long_unlisted_skills_continuation_note_is_not_its_text(self, note):
+        """A SKILL.md the system prompt does not list is read as any file is: 2,000 lines or
+        50 KB at a time — less for a small window — with a note in one of three wordings saying
+        where the rest begins."""
         from tuningfork.harness import OpenClawAdapter
 
-        call = {"id": "c1", "function": {"name": "read", "arguments": '{"path":"/home/user/.openclaw/skills/x/SKILL.md"}'}}
+        call = {"id": "c1", "function": {"name": "read", "arguments": '{"path":"/home/user/project/vendor/x/SKILL.md"}'}}
         (span,) = OpenClawAdapter().skill_spans({"messages": [
             {"role": "assistant", "content": None, "tool_calls": [call]},
             {"role": "tool", "tool_call_id": "c1", "content": f"{TALLY_SKILL}\n\n{note}"},
@@ -747,5 +789,33 @@ class TestOpenClaw:
         wire, volatile = get_wire(None), OpenClawAdapter.volatile
         one = request("Sun 2026-10-25 02:32 EDT", "8c12999b-4161-406e-a1c3-efca3c0867f8", "2026-10-25")
         two = request("Mon 2026-10-26 09:05 EDT", "2d2c7fdc-68dd-4a66-8c1b-119b0e05a2dd", "2026-10-26")
+        assert masked_request(one, wire, volatile=volatile) == masked_request(two, wire, volatile=volatile)
+        assert masked_request(one, wire) != masked_request(two, wire)
+
+    def test_the_ids_a_tool_result_names_do_not_take_a_fork_off_its_recording(self):
+        """Found forking a run whose `sessions_spawn` had failed: the fork departed at the step
+        after, the result — through `tool_call`, JSON inside JSON — naming the child session and
+        run it made. A command left running names its own process (source)."""
+        from tuningfork.harness import OpenClawAdapter
+        from tuningfork.replay import masked_request
+        from tuningfork.wire import get_wire
+
+        def request(child: str, run: str, slug: str, pid: int) -> dict:
+            refused = json.dumps({"status": "error", "error": "published reply runtime missing for main",
+                                  "childSessionKey": f"agent:main:subagent:{child}", "runId": run}, indent=2)
+            wrapped = json.dumps({"tool": {"id": "openclaw:core:sessions_spawn", "name": "sessions_spawn"},
+                                  "result": {"content": [{"type": "text", "text": refused}],
+                                             "details": json.loads(refused)}}, indent=2)
+            running = f"Command still running (session {slug}, pid {pid}). Use process to follow it."
+            return {"model": "m", "messages": [
+                {"role": "user", "content": "go"},
+                {"role": "tool", "tool_call_id": "c1", "content": wrapped},
+                {"role": "tool", "tool_call_id": "c2", "content": refused},
+                {"role": "tool", "tool_call_id": "c3", "content": running},
+            ]}
+
+        wire, volatile = get_wire(None), OpenClawAdapter.volatile
+        one = request("d60c553d-c539-4462-b742-64d2f0863baf", "1f53135b-fd56-4b53-a934-eb259f0e7cd8", "calm-ember", 4210)
+        two = request("7708c599-32a3-432a-b78e-a22cd2408c08", "49b16e5a-0fea-4102-90bb-4c2bd2f1e7a0", "quiet-nova", 77)
         assert masked_request(one, wire, volatile=volatile) == masked_request(two, wire, volatile=volatile)
         assert masked_request(one, wire) != masked_request(two, wire)

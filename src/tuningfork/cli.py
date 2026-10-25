@@ -4759,9 +4759,11 @@ def connections_show(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)
     for harness in found["harnesses"]:
         where = harness["path"] or "[red]not found[/red]"
         version = escape(harness["version"] or "")
-        if harness["error"]:
-            # A version and a problem both: it answers --version and still cannot launch.
-            version = f"{version} [red]{escape(harness['error'])}[/red]".strip()
+        # What went wrong reading its version, or a version and a problem both: it answers
+        # --version and still cannot launch.
+        said = harness["error"] or harness.get("problem")
+        if said:
+            version = f"{version} [red]{escape(said)}[/red]".strip()
         console.print(f"  {harness['name']:<12} {where} ({harness['source']}) {version}")
     sandbox = found.get("sandbox") or {}
     if sandbox.get("available"):

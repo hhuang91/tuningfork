@@ -135,8 +135,9 @@ class TestTheRefineToolset:
 
     # `all` grew by start_check_along's 1,500 characters, the check run along a task's runs, and by
     # where_it_holds' 1,800, one question of every run; the loops took it within theirs. Each grew again
-    # by 350 to 1,250 for paging a file or a message, a screen's forks asked, and the quick look.
-    @pytest.mark.parametrize("toolset, budget", [("refine", 30_400), ("refine-to-end", 33_700), ("all", 54_400)])
+    # by 350 to 1,250 for paging a file or a message, a screen's forks asked, and the quick look. `all`
+    # grew by 144 for OpenClaw's options, named where a batch and a chain take harness options.
+    @pytest.mark.parametrize("toolset, budget", [("refine", 30_400), ("refine-to-end", 33_700), ("all", 54_600)])
     def test_each_toolset_stays_small(self, toolset, budget):
         listed = [tool.model_dump(by_alias=True, exclude_none=True, mode="json")
                   for tool in ToolServer(store=None, jobs=None, toolset=toolset).listed()]

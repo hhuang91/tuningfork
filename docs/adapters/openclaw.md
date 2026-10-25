@@ -22,8 +22,8 @@ Implementation: `tuningfork/harness/openclaw.py`. Template for other harnesses:
 `agent exec` takes no turn limit, so a task's `max_turns` does not reach OpenClaw: a run ends
 where the model stops, or at the task's timeout. OpenClaw's own default timeout, 600 s, would
 end a run by itself and have it judged; with `--timeout 0`, tuningfork ends it as it ends any
-harness, and the run is not counted. The prompt goes after `--`, so one that starts with a dash
-is not read as a flag.
+harness, as timed out — left out of a batch's pass rate, a failure in a test run to the end.
+The prompt goes after `--`, so one that starts with a dash is not read as a flag.
 
 Each `agent exec` is a new session, with a random id, in a temporary state folder of its own
 (`/tmp/openclaw-agent-exec-*`, the sandbox's own `/tmp`), deleted when it ends.
@@ -31,15 +31,18 @@ Each `agent exec` is a new session, with a random id, in a temporary state folde
 ## Installing it
 
 OpenClaw runs on Node 24.22.1 or later in 24, or 26.12.1 or later. Install it with that Node's
-npm, as its docs say: `npm install -g openclaw@2026.10.7 --allow-scripts=openclaw`. Its own
-install scripts touch only its own folder.
+npm, as its docs say: `npm install -g openclaw@2026.10.7 --allow-scripts=openclaw` with npm
+11.16 or later, the same without `--allow-scripts` on an older npm. Its own install scripts
+touch only its own folder.
 
-On a Node it does not run on, OpenClaw looks for another `node` on `PATH` (then nvm's, fnm's,
-Volta's and Homebrew's) and runs itself again with it. Finding none, `agent exec` exits before
-its first call, while `openclaw --version` still answers, with a warning. The Connections page
-and `tuningfork connections show` read that warning, and say that a launch would fail. A
-launch never installs a Node of OpenClaw's own: it offers to only with a terminal, and a launch
-has none. Ubuntu 26.04's own Node is 22.
+On a Node it does not run on, OpenClaw looks for another `node` and runs itself again with it
+(source): on `PATH`, in nvm's, fnm's and Volta's folders in its home — a launch's own home,
+which has none — and Homebrew's. Finding none, `agent exec` exits before its first call, while
+`openclaw --version` still answers, with a warning. tuningfork reads that warning: the
+Connections page says OpenClaw cannot run here, and why, as `tuningfork connections show` does,
+and a batch or a fork is refused before it starts, in the same words. A launch never installs a Node of
+OpenClaw's own: it offers to only with a terminal, and a launch has none. Ubuntu 26.04's own
+Node is 22.
 
 ## Isolation
 
@@ -87,10 +90,15 @@ The config tuningfork writes, `~/.openclaw/openclaw.json` (JSON5, so a comment l
   OpenClaw's docs say a custom provider pointed at llama-server must ask.
 - **`contextWindow`**: OpenClaw never asks the server, and of a model its config does not size
   it assumes 200,000 tokens. It compacts a conversation by this, and bounds each answer below
-  it. A batch writes the server's own (`n_ctx`), a fork its source's, and the harness option
-  `context_window` another. The output limit is left to OpenClaw: 8,192 tokens, sent as
-  `max_completion_tokens`, which llama-server honours (measured: `finish_reason: length` at the
-  limit, as for `max_tokens`).
+  it. A batch writes the server's own (`n_ctx`), as OpenClaw's own discovery of a server it
+  manages does, a fork its source's, and the harness option `context_window` another. OpenClaw
+  counts tokens its own way, though: on a log full of digits it counted about a third fewer
+  than the server (below), so a conversation can outgrow the server's window before OpenClaw
+  compacts it. The server then refuses the call, and OpenClaw compacts and asks again (source);
+  tuningfork, finding a failed call, leaves such a run out.
+- **The output limit** is left to OpenClaw: 8,192 tokens, sent as `max_completion_tokens`,
+  which llama-server honours (measured: `finish_reason: length` at the limit, as for
+  `max_tokens`).
 - **`timeoutSeconds`**: see [holding a call](#holding-a-call).
 - **`memoryFlush`**: off, the one setting a launch makes otherwise than OpenClaw's own; see
   [options](#options-a-launch-takes).
@@ -129,7 +137,7 @@ after a failed run:
 
 OpenClaw itself refuses only a window under 4,000 tokens, before its first call: "Model context
 window too small (3000 tokens; source=modelsConfig). Minimum is 4000." So the option
-`context_window` takes no less. It keeps back a quarter of the window, at most 16,384 tokens,
+`context_window` takes no less. It keeps back a quarter of the window, at most 20,000 tokens,
 for compacting the conversation (source).
 
 ## Payload anatomy
@@ -151,7 +159,7 @@ as the server gave it.
 
 ### Message layout
 
-Two messages on the first step: `system`, then `user`; with the tools, 9,022 tokens. The
+Two messages on the first step: `system`, then `user`; with the tools, about 9,000 tokens. The
 system prompt (26,886 characters) opens `You are a personal assistant running inside
 OpenClaw.`, in two parts marked for caching. `<!-- openclaw:attempt:STABLE -->` holds the
 tooling, the deferred tools' directory, tool-call style, execution bias, the Skills section,
@@ -172,23 +180,26 @@ node=v26.12.1 | active_node=unknown | active_node_identity=unknown | model=local
 ```
 
 The system prompt asks the model to begin a reply with `[[reply_to_current]]`, which OpenClaw
-takes out before a person sees it, and the model does: a run's final reply, as a reply check
-reads it, starts with it.
+takes out before a person sees it, and the model mostly does — 14 of the 16 batch runs' final
+replies here began with it. A reply check reads the reply as the model wrote it, so allow for
+it.
 
 ### Tools
 
-With **Tool Search** on, as OpenClaw ships for a model on this machine, 11 tools are in the
-request — `read`, `write`, `edit`, `apply_patch`, `ls`, `exec`, `process`, `sessions_yield`
-and `tool_search`, `tool_describe`, `tool_call` — and the system prompt lists 40 more, a line
-each, reached only through `tool_call` (`{"id": "<tool>", "args": {…}}`): `skills_read`,
-`sessions_spawn`, `skill_workshop`, `memory_search`, `gateway`, `plugins`, `web_fetch`… With
-it off, all 41 schemas are in the request (85,000 characters), and the first request is about
-23,000 tokens instead of 9,000.
+With **Tool Search** on, as OpenClaw ships it, 11 tools are in the request — `read`, `write`,
+`edit`, `apply_patch`, `ls`, `exec`, `process`, `sessions_yield` and `tool_search`,
+`tool_describe`, `tool_call` — and the system prompt lists OpenClaw's 33 others, a line each,
+reached only through `tool_call` (`{"id": "<tool>", "args": {…}}`): `skills_read`,
+`sessions_spawn`, `skill_workshop`, `memory_search`, `gateway`, `plugins`, `web_fetch`… An MCP
+server's tools are not named there at all: `tool_search` finds them (source). With it off, all
+41 schemas are in the request (85,000 characters), and the first request is about 23,000
+tokens instead of 9,000.
 
-Two of the deferred tools reach past the run: `gateway` offers only `update.run`, an update of
-OpenClaw itself, which the sandbox's read-only machine stops; `plugins` lists and installs
-plugins from OpenClaw's catalog and ClawHub, into the launch's home, over the network. The
-system prompt tells the model to use either only when asked.
+Two of the deferred tools reach past the run. `gateway` offers only `update.run`, an update of
+OpenClaw itself, which the sandbox's read-only machine stops; its line tells the model to use
+it only on its owner's explicit request. `plugins` lists and installs plugins from OpenClaw's
+catalog and ClawHub, into the launch's home, over the network, and nothing in the prompt holds
+it back.
 
 ### Skills
 
@@ -208,14 +219,17 @@ How the model loads a skill depends on Tool Search:
 - **Off:** it calls `skills_read` (`{"name":"tally-report"}`).
 
 Each way the result is the SKILL.md as a text tool result, **frontmatter included**: from
-`skills_read`, the file as it is; from `read`, as `read` gives any file — a byte-order mark
-dropped, CRLF made LF, and at most 2,000 lines or 50 KB at a time, less as the context fills,
-with a note after it saying where the rest begins; through `tool_call`, inside the JSON it
-returns (`{"tool": {…}, "result": {"content": [{"type": "text", "text": …}]}}`). The adapter
-takes the skill's text from each (`skill_spans`), the note left out, and names it as
-`<available_skills>` does. A wording A/B finds it there: verified at a checkpoint (the
-examples' `SKILL.v2.md`, which names the report's keys: `row_count` 0/5 → 5/5, p = 0.008) and
-to the end (the check 0/3 → 3/3).
+`skills_read`, the file as it is; through `tool_call`, the same inside the JSON it returns
+(`{"tool": {…}, "result": {"content": [{"type": "text", "text": …}]}}`); from `read`, as `read`
+gives any file — a byte-order mark dropped, CRLF made LF — but whole (source). A skill the
+system prompt lists is never served in part: any paging the call asks for is dropped, a skill
+too long for the call's budget is refused ("Skill instructions cannot be partially served…"),
+and one read again in the same context is not sent again ("Skill instructions were already
+served whole earlier in the current model context…"). The adapter takes the skill's text from
+each result (`skill_spans`), and none from those notices or a call that failed; it names a
+`read` by the skill's folder, as `skill_load` does. A wording A/B finds the skill there:
+verified at a checkpoint (the examples' `SKILL.v2.md`, which names the report's keys:
+`row_count` 0/5 → 5/5, p = 0.008) and to the end (the check 0/3 → 3/3).
 
 ### User messages it writes itself
 
@@ -297,12 +311,19 @@ differs between two launches of one task, besides per-run paths, is declared in 
 
 - the time before the prompt (`[Sun 2026-10-25 02:32 EDT]`, to the minute), and before
   OpenClaw's turn after a compaction;
-- the session id in the `Runtime:` line (`session=agent:main:explicit:<uuid>`);
-- the date in the system prompt (`Current date: …`).
+- the date in the system prompt (`Current date: …`);
+- a session key, of any kind: the `Runtime:` line's (`agent:main:explicit:<uuid>`), and those a
+  tool's result names — a failed `sessions_spawn` names the child session and the run it made
+  (`agent:main:subagent:<uuid>`, `"runId": "<uuid>"`), and `subagents` the session it was
+  called from;
+- the process a command left running in the background is named by, a slug and a pid
+  (`Command still running (session <slug>, pid <pid>)`, source).
 
 With those masked, two launches' first requests are identical, and every fork's replayed calls
-matched the recording. Re-verify on an upgrade: the system prompt is OpenClaw's own words, and
-OpenClaw releases about every two days.
+matched the recording — a fork of the run that tried to spawn a subagent too, replayed past its
+spawns; before the session keys and run ids were masked, its fork departed at the step after the
+first. Re-verify on an upgrade: the system prompt is OpenClaw's own words, and OpenClaw releases
+about every two days.
 
 ## Options a launch takes
 
@@ -314,7 +335,7 @@ launch is OpenClaw as shipped but for the memory flush.
 
 | Option | Default | What it does |
 |---|---|---|
-| `tool_search` | on | On, as OpenClaw ships for a model on this machine: 11 tools and a directory of the rest (above). Off (`tools.toolSearch: false`), every tool's schema is in every call, and the model loads a skill with `skills_read`. A run that drives tuningfork's MCP tools wants it off: Tool Search keeps a tool's description out of the prompt, and tuningfork's tools carry what an agent must know in theirs. |
+| `tool_search` | on | On, as OpenClaw ships it: 11 tools and a directory of the rest (above). Off (`tools.toolSearch: false`), every tool's schema is in every call, and the model loads a skill with `skills_read`. A run that drives tuningfork's MCP tools wants it off: with it on, an MCP server's tools are not named in the prompt at all, and tuningfork's tools carry what an agent must know in their descriptions. |
 | `skill_workshop` | on | On, as shipped: the Skill Workshop's section of the system prompt and the `skill_workshop` tool (above). Off, the tool is denied (`tools.deny: ["skill_workshop"]`), and OpenClaw leaves the section out with it: verified, the only difference in the request, 1,051 characters. OpenClaw's own `skills.workshop.autonomous.mode: "off"` stops only the background review, and changed nothing sent. |
 | `memory_flush` | off | Off, every launch's config says `agents.defaults.compaction.memoryFlush.enabled: false`; on, the launch keeps OpenClaw's own default, on. The flush never runs in a one-shot launch either way (above): the setting is there for a later turn of a kept session. |
 | `mcp_servers` | none | MCP servers for the launch's config, as OpenClaw takes them under `mcp.servers` (`command`, `args`, `env`, or `url` with its `transport`; name the transport of a URL server, which OpenClaw takes as SSE otherwise): how a launched OpenClaw gets tuningfork's own tools. Verified with the proxy's own route (`{"url": "http://127.0.0.1:8787/_tuningfork/mcp", "transport": "streamable-http", "headers": {"Authorization": "Bearer <the MCP token>"}}`) and Tool Search off: the model was given each tool as `tuningfork__<tool>`, and called `tuningfork__list_tasks`. A server is written whole into the launch's config, in its home, where the run can read it; the settings record its command or URL, never its environment or headers. |
@@ -326,3 +347,7 @@ launch is OpenClaw as shipped but for the memory flush.
 - Chains: one more turn of a launch's session (`continue_launch`), which needs a kept state
   folder (`--state-dir`) and its session id
 - Importing a session OpenClaw kept, from its SQLite store or its trajectory export
+- A scenario made from an OpenClaw run: its prompt is the run's first user message whole, the
+  time OpenClaw wrote before it and its `Runtime:` line included (the session key, the recording
+  machine's host), which the scenario's runs would be sent again — seen in the code that makes
+  one, not tried

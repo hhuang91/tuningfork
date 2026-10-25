@@ -52,11 +52,11 @@ CALL_TIMEOUT = 86_400
 #: each recorded in the launch's settings under `harness`, so a run says how its harness was
 #: set up, and a fork of it is set up the same:
 #:
-#: - `tool_search`: on, OpenClaw is as shipped for a model on this machine: the model is given
-#:   its core tools and `tool_search`, `tool_describe` and `tool_call`, and every other tool
-#:   (`skills_read`, `sessions_spawn`, an MCP server's tools…) only as a line in a directory,
-#:   reached through `tool_call`. Off (`tools.toolSearch: false`), every tool's schema is in
-#:   the request, and called directly.
+#: - `tool_search`: on, as OpenClaw ships it: the model is given its core tools and
+#:   `tool_search`, `tool_describe` and `tool_call`; OpenClaw's other tools (`skills_read`,
+#:   `sessions_spawn`…) are a line each in a directory in the system prompt, reached through
+#:   `tool_call`, and an MCP server's are not named at all, found only by `tool_search`. Off
+#:   (`tools.toolSearch: false`), every tool's schema is in the request, and called directly.
 #: - `skill_workshop`: on, as shipped: the system prompt has a Skill Workshop section, and the
 #:   `skill_workshop` tool saves and patches the model's *learned* skills — in a folder of
 #:   their own, never the skill under test. Off, the tool is denied (`tools.deny`), and the
@@ -109,13 +109,16 @@ _UNSUPPORTED = re.compile(r"Running on an unsupported Node \(([^)\s]+)\)")
 #: A server's name, as a folder name is: nothing a config path could be built from.
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
-#: How a location in `<available_skills>` names a skill file: within one `<skill>`.
-_LISTED = re.compile(
-    r"<skill>\s*<name>(?P<name>[^<]+)</name>(?:(?!</skill>).)*?<location>(?P<location>[^<]+)</location>",
-    re.DOTALL,
+#: What `read` answers in place of a skill the system prompt lists, in OpenClaw 2026.10.7
+#: (`src/agents/agent-tools.read.ts`): refused, where the whole file would not fit the call's
+#: budget — a listed skill is never served in part — and read again in the same context.
+NOT_SERVED = (
+    "Skill instructions cannot be partially served:",
+    "Skill instructions were already served whole earlier in the current model context.",
 )
 #: What `read` writes after a page of a longer file, in each of its three wordings
-#: (`src/agents/sessions/tools/read-page.ts`): OpenClaw's words, not the file's.
+#: (`src/agents/sessions/tools/read-page.ts`): OpenClaw's words, not the file's. A skill the
+#: system prompt lists is never paged, but a SKILL.md it does not list is.
 _MORE = re.compile(
     r"\n\n\[(?:\d+ more lines? in file|Read output capped at [^\]\n]+ for this call|Showing [^\]\n]+ limit\))\. "
     r"Use (?:read with )?offset=\d+(?:, cursor=\d+)?(?:, limit=\d+)? to continue\.\]\Z"
@@ -208,16 +211,23 @@ class OpenClawAdapter:
     #: The wire format its calls take.
     wire = "openai-chat"
     #: The tool that starts a subagent. Under `agent exec` none starts: 2026.10.7 refuses every
-    #: spawn without a Gateway ("published reply runtime missing for main").
+    #: spawn without a Gateway ("published reply runtime missing for main"). Under Tool Search
+    #: a spawn would come as a `tool_call`, which this name does not catch.
     subagent_tools = frozenset({"sessions_spawn"})
     #: What differs between two launches of one task besides per-run paths, as (pattern,
     #: replacement) over a request's JSON text; see `tuningfork.replay`. Found by replaying
-    #: recorded runs: the time OpenClaw writes before the prompt, the session its `Runtime:`
-    #: line names, and the date in the system prompt.
+    #: recorded runs: the time OpenClaw writes before the prompt, the date in the system prompt,
+    #: and the session key its `Runtime:` line names — a key of any kind, as a tool's result
+    #: names one too, with a run's id: a fork of a run whose `sessions_spawn` had failed
+    #: departed at the step after, its result naming the child session and run it made. A
+    #: command left running in the background is named by a slug and pid of its own (source).
+    #: Each pattern holds whatever escaping a result's JSON inside the request's has.
     volatile = (
         (r"\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2} \d{2}:\d{2}[^\]\\\"]*\]", "[<time>]"),
-        (r"(session=agent:[a-z0-9_-]+:explicit:)[0-9a-f-]{36}", r"\1<session>"),
         (r"Current date: \d{4}-\d{2}-\d{2}", "Current date: <date>"),
+        (r"(agent:[a-z0-9_-]+:[a-z0-9_-]+:)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", r"\1<session>"),
+        (r'(runId\\*"\s*:\s*\\*")[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', r"\1<run>"),
+        (r"Command still running \(session [a-z0-9-]+, pid (?:\d+|n/a)\)", "Command still running (session <process>)"),
     )
 
     #: How a launch lays OpenClaw's files out, recorded with each launch so a fork is laid out
@@ -370,8 +380,10 @@ class OpenClawAdapter:
         runner installs. `--config` pins the launch's own config. `--timeout 0` leaves the end
         to tuningfork, which stops a run at its task's timeout as it stops any harness: with
         OpenClaw's own 600 s, a run would end itself first and be judged. The prompt goes
-        after `--`, so one that starts with a dash is not read as a flag.
+        after `--`, so one that starts with a dash is not read as a flag. Both paths are given
+        whole: OpenClaw reads a relative one from the workspace, where it starts.
         """
+        home, workspace = Path(home).resolve(), Path(workspace).resolve()
         argv = [
             self.executable,
             "agent",
@@ -428,8 +440,9 @@ class OpenClawAdapter:
 
     def skill_load(self, call: dict[str, Any]) -> str | None:
         """The skill a tool call loads, by name, on the request's OpenAI-style view: a `read` of
-        a skill's SKILL.md, by its folder's name, or a `skills_read`, called directly or through
-        `tool_call`, by the name it gives."""
+        a skill's SKILL.md, by its folder's name — the name tuningfork installs it under — or a
+        `skills_read`, called directly or through `tool_call`, by the name it gives. The same
+        names `skill_spans` gives, so a scenario that stops at the next skill knows its own."""
         function = call.get("function") if isinstance(call, dict) else None
         loads = _loads(function) if isinstance(function, dict) else None
         return loads[1] if loads else None
@@ -437,51 +450,48 @@ class OpenClawAdapter:
     def skill_spans(self, request: dict[str, Any]) -> list[SkillSpan]:
         """Skills loaded in an OpenClaw payload, each a tool result holding the SKILL.md's text:
 
-        - a `read` of the file, as the model finds it listed with Tool Search on — its text with
-          line endings made LF and a byte-order mark dropped, as `read` gives any file, up to
-          2,000 lines or 50 KB, a note after it saying where the rest begins;
+        - a `read` of the file, as the model finds it listed with Tool Search on. A skill the
+          system prompt lists is served whole — any paging the call asks for dropped — its line
+          endings made LF and a byte-order mark dropped, as `read` gives any file. Too long for
+          the call's budget, it is refused, and read again in the same context, OpenClaw says it
+          was already served: neither notice is the skill (`NOT_SERVED`). A SKILL.md it does not
+          list is read as any file is, a page at a time, a note after each saying where the rest
+          begins, which is left out (`_MORE`);
         - `skills_read`, with Tool Search off — the file's text as it is;
         - `skills_read` through `tool_call` — the same text, inside the JSON `tool_call` returns.
 
-        A `read`'s skill is named as `<available_skills>` lists its location, else by its
-        folder; a `skills_read`'s by the name it was given."""
+        A call that failed returns OpenClaw's error as JSON, which is no skill either. A `read`'s
+        skill is named by its folder, a `skills_read`'s by the name it was given, as `skill_load`
+        names them."""
         messages = request.get("messages") or []
-        listed: dict[str, str] = {}
-        loads: dict[str, tuple[str, str]] = {}  # tool_call_id -> (how, the path or name)
+        loads: dict[str, tuple[str, str]] = {}  # tool_call_id -> (how, the skill's name)
         spans: list[SkillSpan] = []
         for index, message in enumerate(messages):
             if not isinstance(message, dict):
                 continue
             content = message.get("content")
-            if message.get("role") == "system" and isinstance(content, str):
-                for found in _LISTED.finditer(content):
-                    listed[found["location"].strip()] = found["name"].strip()
             for call in message.get("tool_calls") or []:
                 function = call.get("function") if isinstance(call, dict) else None
                 found = _loads(function) if isinstance(function, dict) else None
                 if found:
-                    loads[call.get("id")] = (found[0], found[2])
+                    loads[call.get("id")] = (found[0], found[1])
             if message.get("role") != "tool" or not isinstance(content, str):
                 continue
             if message.get("tool_call_id") not in loads:
                 continue
-            how, which = loads[message["tool_call_id"]]
+            how, name = loads[message["tool_call_id"]]
+            text = _wrapped_text(content) if how == "tool_call" else content
+            if text is None or _not_served(text):
+                continue
             if how == "read":
-                more = _MORE.search(content)
-                end = more.start() if more else len(content)
-                spans.append(SkillSpan(
-                    name=listed.get(which) or _skill_of(which) or "?", message_index=index, source="tool",
-                    text=content[:end], start=0, end=end,
-                ))
+                more = _MORE.search(text)
+                end = more.start() if more else len(text)
+                spans.append(SkillSpan(name=name, message_index=index, source="tool", text=text[:end], start=0, end=end))
             elif how == "skills_read":
-                spans.append(SkillSpan(
-                    name=which, message_index=index, source="tool", text=content, start=0, end=len(content),
-                ))
+                spans.append(SkillSpan(name=name, message_index=index, source="tool", text=text, start=0, end=len(text)))
             else:
-                text = _wrapped_text(content)
-                if text is not None:
-                    # Decoded out of `tool_call`'s JSON: no offsets in the message.
-                    spans.append(SkillSpan(name=which, message_index=index, source="tool", text=text))
+                # Decoded out of `tool_call`'s JSON: no offsets in the message.
+                spans.append(SkillSpan(name=name, message_index=index, source="tool", text=text))
         return spans
 
 
@@ -506,6 +516,19 @@ def _loads(function: dict[str, Any]) -> tuple[str, str, str] | None:
             if isinstance(skill, str) and skill.strip():
                 return ("tool_call", skill.strip(), skill.strip())
     return None
+
+
+def _not_served(text: str) -> bool:
+    """Whether a tool result holds no skill: one of OpenClaw's notices in its place
+    (`NOT_SERVED`), or the JSON of a call that failed (`{"status": "error", "tool": …,
+    "error": …}`)."""
+    if text.startswith(NOT_SERVED):
+        return True
+    try:
+        found = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(found, dict) and found.get("status") == "error" and "error" in found
 
 
 def _wrapped_text(content: str) -> str | None:

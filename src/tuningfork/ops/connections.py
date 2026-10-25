@@ -127,8 +127,12 @@ class HarnessInfo:
     #: override | PATH | missing
     source: str
     version: str | None
+    #: Why it could not be found, or its `--version` not read.
     error: str | None
     requirements: list[dict[str, Any]] = field(default_factory=list)
+    #: What its `--version` said that stops it launching here, as its adapter reads it
+    #: (`version_problem`): it answers, and every run of it would end before its first call.
+    problem: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -139,14 +143,15 @@ class HarnessInfo:
             "version": self.version,
             "error": self.error,
             "requirements": self.requirements,
+            "problem": self.problem,
         }
 
 
-def _version(path: str, problem: Any = None) -> tuple[str | None, str | None]:
+def _version(path: str, problem: Any = None) -> tuple[str | None, str | None, str | None]:
     """A harness's `--version`, run where it can touch nothing real: a throwaway home, its
-    own config dirs pointed there, no input. `problem` is its adapter's reading of what it
-    printed (`version_problem`): what answers --version and still cannot launch — OpenClaw on
-    a Node it does not support."""
+    own config dirs pointed there, no input. Its first line, what went wrong running it, and
+    `problem`'s reading of what it printed (its adapter's `version_problem`): what answers
+    --version and still cannot launch — OpenClaw on a Node it does not support."""
     with tempfile.TemporaryDirectory(prefix="tuningfork-detect-") as scratch:
         env = {
             "PATH": os.environ.get("PATH", ""),
@@ -164,14 +169,43 @@ def _version(path: str, problem: Any = None) -> tuple[str | None, str | None]:
                 capture_output=True, text=True, timeout=VERSION_TIMEOUT,
             )
         except subprocess.TimeoutExpired:
-            return None, f"--version did not answer in {VERSION_TIMEOUT:g} s"
+            return None, f"--version did not answer in {VERSION_TIMEOUT:g} s", None
         except OSError as exc:
-            return None, f"could not run it: {exc}"
+            return None, f"could not run it: {exc}", None
     lines = [line.strip() for line in (done.stdout or done.stderr or "").splitlines() if line.strip()]
     if done.returncode != 0:
-        return None, f"--version exited {done.returncode}: {lines[0] if lines else 'no output'}"
+        return None, f"--version exited {done.returncode}: {lines[0] if lines else 'no output'}", None
     said = problem(f"{done.stdout or ''}\n{done.stderr or ''}") if problem is not None else None
-    return (lines[0] if lines else None), said
+    return (lines[0] if lines else None), None, said
+
+
+#: The programs `launch_problem` found nothing wrong with, by path, mtime and the PATH they ran
+#: with: a batch's plan asks, and so does each fork's, and `--version` takes a second or two. A
+#: problem found is not kept, so a Node put right counts at the next launch.
+_LAUNCHABLE: set[tuple[str, float, str]] = set()
+
+
+def launch_problem(adapter: Any) -> str | None:
+    """Why a harness that answers `--version` still cannot launch here, as its adapter reads
+    what that printed (`version_problem`), or None: OpenClaw on a Node it does not run on, whose
+    runs would each end before their first call. Asked of the program a launch would run."""
+    problem = getattr(adapter, "version_problem", None)
+    executable = getattr(adapter, "executable", None)
+    if problem is None or not executable:
+        return None
+    path = executable if os.sep in executable else shutil.which(executable)
+    try:
+        key = (str(Path(path).resolve()), Path(path).stat().st_mtime, os.environ.get("PATH", "")) if path else None
+    except OSError:
+        key = None
+    if key is None or key in _LAUNCHABLE:
+        return None
+    _, _, said = _version(path, problem)
+    if said is None:
+        # Nothing wrong, or nothing to read: a --version that failed is not this harness's to say.
+        _LAUNCHABLE.add(key)
+        return None
+    return said
 
 
 def detect_harnesses(home: Path | str) -> list[HarnessInfo]:
@@ -198,9 +232,9 @@ def detect_harnesses(home: Path | str) -> list[HarnessInfo]:
                 requirements,
             ))
             continue
-        version, error = _version(path, getattr(adapter, "version_problem", None))
+        version, error, problem = _version(path, getattr(adapter, "version_problem", None))
         found.append(HarnessInfo(
-            name, chosen, path, "override" if name in named else "PATH", version, error, requirements,
+            name, chosen, path, "override" if name in named else "PATH", version, error, requirements, problem,
         ))
     return found
 

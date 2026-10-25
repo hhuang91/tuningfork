@@ -59,11 +59,13 @@ def check_proxy(base_url: str, home: Path, *, timeout: float = 5.0) -> ProxyStat
 
 
 def check_launchable(adapter: Any) -> None:
-    """That tuningfork can start this harness here: an adapter that launches headlessly, and
-    an executable that resolves — refused before a launch is recorded, not by its first run."""
+    """That tuningfork can start this harness here: an adapter that launches headlessly, an
+    executable that resolves, and nothing its `--version` says that stops it launching (OpenClaw
+    on a Node it does not run on) — refused before a launch is recorded, not by its first run."""
     import shutil
 
     from tuningfork.harness.base import GenericHarness
+    from tuningfork.ops.connections import launch_problem
 
     if isinstance(adapter, GenericHarness):
         raise OperationError(
@@ -78,3 +80,6 @@ def check_launchable(adapter: Any) -> None:
             "shell?",
             field="harness",
         )
+    said = launch_problem(adapter)
+    if said:
+        raise OperationError(said, field="harness")

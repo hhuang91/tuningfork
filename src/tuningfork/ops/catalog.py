@@ -467,7 +467,8 @@ def execute_fork_job(context: JobContext, prepared: ForkJob, *, progress: Any, c
 
 HARNESS_OPTIONS_HELP = (
     "Harness options, recorded with each run (Hermes: self_improvement, await_review, "
-    "review_every_turn, mcp_servers)."
+    "review_every_turn, mcp_servers; OpenClaw: tool_search, skill_workshop, memory_flush, "
+    "mcp_servers, context_window)."
 )
 
 

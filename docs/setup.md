@@ -239,8 +239,8 @@ or memory files, and none needs an API key.
 | Install (the versions the guides use) | `uv tool install hermes-agent==0.18.2` | `npm install -g @anthropic-ai/claude-code@2.1.281` (Node 18 or later) | `npm install -g openclaw@2026.10.7 --allow-scripts=openclaw` (Node 24.22.1 or later in 24, or 26.12.1 or later) |
 | `--harness` | `hermes` (the default) | `claude-code` | `openclaw` |
 | Speaks | OpenAI chat completions | Anthropic Messages | OpenAI chat completions |
-| The skill arrives | preloaded into the system prompt, whole file | through the `Skill` tool, body only | read as a file when the model chooses it, whole file |
-| What it needs of the server | tool calls in a stream, and a context of 64,000 tokens or more | the Messages API, which llama.cpp serves itself | tool calls in a stream |
+| The skill arrives | preloaded into the system prompt, whole file | through the `Skill` tool, body only | through `read` or `skills_read` when the model chooses it, whole file |
+| What it needs of the server | tool calls in a stream, and a context of 64,000 tokens or more | the Messages API, which llama.cpp serves itself | tool calls in a stream, and a context of 16,384 tokens or more (32,768 with Tool Search off) |
 
 tuningfork finds each on your `PATH`; `tuningfork connections harness <name> --executable <path>`
 names another copy. A batch or a fork refuses to start a harness against a server that lacks

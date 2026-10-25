@@ -103,7 +103,7 @@ export async function batchView(root, _, scope) {
       h("div", { class: "form-grid" },
         field("Runs at once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "On one GPU, 1 is fastest. A chain's runs go one at a time." }),
         field("Harness options", h("textarea", { class: "field", name: "harness_options", rows: 2, placeholder: '{"await_review": true, "review_every_turn": true}' }),
-          { help: "As JSON, recorded with each run. Hermes: await_review (let its background review finish before it exits), review_every_turn (its skill review after every run), mcp_servers. OpenClaw: tool_search (false: every tool's schema in each call), skill_workshop (false: no Skill Workshop), memory_flush (true: OpenClaw's own), context_window, mcp_servers.", wide: true }))),
+          { help: "As JSON, recorded with each run. Hermes: await_review (let its background review finish before it exits), review_every_turn (its skill review after every run), mcp_servers. OpenClaw: tool_search (false: every tool's schema in each call), skill_workshop (false: no Skill Workshop), memory_flush (true: keep OpenClaw's own flush before a compaction), context_window, mcp_servers.", wide: true }))),
   ];
   const modeOf = (form) => (textOf(form, "mode") === "chain" ? "chain" : "batch");
   const { element } = planForm({

@@ -69,14 +69,20 @@ export function whatItMeans({ server = {}, harnesses = [], sandbox = null, propo
   }
   const found = harnesses.filter((harness) => harness.path);
   const missing = harnesses.filter((harness) => !harness.path).map((harness) => harness.name);
-  const blocked = found.filter((harness) => (harness.preflight?.problems || []).length).map((harness) => harness.name);
+  // What stops a harness found here: this machine, as its --version said (OpenClaw on a Node it
+  // does not run on), or this server.
+  const broken = found.filter((harness) => harness.problem).map((harness) => harness.name);
+  const blocked = found.filter((harness) => !harness.problem && (harness.preflight?.problems || []).length).map((harness) => harness.name);
   if (!found.length) {
     lines.push("No harness was found, so tuningfork can record your own agent but cannot start runs of its own.");
-  } else if (!asksKey && blocked.length === found.length) {
-    lines.push("No harness found here can run against this server, so tuningfork cannot start runs of its own.");
-  } else if (!asksKey && (missing.length || blocked.length)) {
+  } else if (!asksKey && broken.length + blocked.length === found.length) {
+    lines.push(broken.length
+      ? "No harness found here can run, so tuningfork cannot start runs of its own."
+      : "No harness found here can run against this server, so tuningfork cannot start runs of its own.");
+  } else if (!asksKey && (missing.length || broken.length || blocked.length)) {
     lines.push([
       missing.length ? `${listed(missing)} ${missing.length === 1 ? "was" : "were"} not found, so runs of ${missing.length === 1 ? "it" : "them"} cannot start.` : null,
+      broken.length ? `${listed(broken)} ${broken.length === 1 ? "was" : "were"} found but cannot run on this machine.` : null,
       blocked.length ? `${listed(blocked)} cannot run against this server.` : null,
     ].filter(Boolean).join(" "));
   }
@@ -195,6 +201,7 @@ export async function connectionsView(root, _, scope) {
   /** A harness in a word: found, not found, or found and unable to run against this server. */
   function harnessWord(harness) {
     if (!harness.path) return ["not found", "warn", harness.error || "Not on PATH, and no program named for it"];
+    if (harness.problem) return ["cannot run here", "warn", harness.problem];
     const problems = harness.preflight?.problems || [];
     if (problems.length) return ["cannot run here", "warn", problems.join("; ")];
     return ["found", "muted", [harness.version, harness.path].filter(Boolean).join(", ")];
@@ -511,7 +518,8 @@ export async function connectionsView(root, _, scope) {
               h("li", { title: need.what }, needName(need),
                 h("span", { class: "faint" }, ` — ${need.why}`)))))
         : null,
-      pre.problems.map((problem) => h("div", { class: "banner banner-warn" }, h("strong", null, "Cannot run here: "), problem)),
+      [harness.problem, ...pre.problems].filter(Boolean)
+        .map((problem) => h("div", { class: "banner banner-warn" }, h("strong", null, "Cannot run here: "), problem)),
       pre.notes.map((note) => h("div", { class: "banner" }, note)),
       h("details", { class: "fold" }, h("summary", null, "Use another program"),
         h("div", { class: "stack", style: { gap: "8px", marginTop: "8px" } },

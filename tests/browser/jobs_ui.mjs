@@ -838,6 +838,9 @@ try {
         serverWord({ problem: "nothing is listening there" }).word, serverWord(fine.server).word],
       down: whatItMeans({ ...fine, server: { problem: "nothing is listening there" } }),
       missing: whatItMeans({ ...fine, harnesses: [hermes, { name: "claude-code", path: null }] }),
+      // One that answers --version and cannot launch: OpenClaw on a Node it does not run on.
+      broken: whatItMeans({ ...fine, harnesses: [hermes, { ...hermes, name: "openclaw", problem: "OpenClaw found only Node 22.22.1" }] }),
+      allBroken: whatItMeans({ ...fine, harnesses: [{ ...hermes, name: "openclaw", problem: "OpenClaw found only Node 22.22.1" }] }),
       remote: whatItMeans({ ...fine, proposer: { url: "https://api.example.test", remote: true, allow_remote: false } }),
       // More than three to say: the sentence beside the strip's "not tested yet" is kept.
       crowded: whatItMeans({ server: { identity: { id: "s" }, token_work: {} }, harnesses: [hermes, { name: "claude-code", path: null }],
@@ -855,6 +858,9 @@ try {
     && meant.missing.includes("claude-code was not found, so runs of it cannot start.")
     && meant.remote.includes("The proposing model is on another machine and not allowed yet, so asking it is refused."),
     "a server down, a harness missing, a proposing model elsewhere: each amber part has its sentence");
+  check(meant.broken.join(" / ") === "openclaw was found but cannot run on this machine."
+    && meant.allBroken.join(" / ") === "No harness found here can run, so tuningfork cannot start runs of its own.",
+    `a harness that cannot launch here is said to, never as one this server stops (${meant.broken.join(" / ")}; ${meant.allBroken.join(" / ")})`);
   check(meant.crowded.length === 3 && meant.crowded[1].startsWith("Test the server to measure"),
     `with more to say than three sentences, the server test's is among them (${meant.crowded.join(" / ")})`);
   check(meant.noProps.join(" / ") === "Test the server to measure what each harness needs of it. / “Score this answer” and “Find forking tokens…” are greyed out on this server.",
