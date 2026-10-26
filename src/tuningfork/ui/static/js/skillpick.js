@@ -1,9 +1,10 @@
 // Which skill a scenario runs, wherever one is made: a skill the Skills page lists, by its folder
 // there, or a folder named by its path — and, making one of a run, a copy of what the run had,
 // kept in the scenario's own folder. Where the run says which folder it is (its task's own, or
-// the one named when its chat was imported), the folder is shown, greyed, and not chosen. The
-// scenario's editor and Make a scenario choose it with this one picker, as they choose a check
-// with `checkPicker`.
+// the one named when its chat was imported), the folder is shown, greyed, and not chosen — but
+// for one whose SKILL.md has changed since the run, offered beside the others. The scenario's
+// editor and Make a scenario choose it with this one picker, as they choose a check with
+// `checkPicker`.
 
 import { h, replace } from "./dom.js";
 import { input } from "./forms.js";
@@ -38,7 +39,9 @@ export function skillNameOf(path) {
  *           typed while that is not a full path, once `setBase` has said where it is
  * copy      a copy of what the run had can be kept: `{ where }`, the folder it is kept in. The
  *           choice to begin with, then
- * fixed     `{ path, why }`: the run says which folder it is — shown, greyed, nothing to choose
+ * fixed     `{ path, why }`: the run says which folder it is — shown, greyed, nothing to choose; with
+ *           `changed` (and `label`, its choice's name), its SKILL.md is no longer what the run had:
+ *           the folder is the choice to begin with, and the others are offered beside it
  * onChange  `({ kind, path, skill })` for each change: "known", "path" or "copy"; `skill` the
  *           name a listed skill goes by
  * The element, `value()`, `note` — under the field, for what the path resolves to — `setBase(folder)`,
@@ -96,11 +99,12 @@ export function skillPicker({ skills = [], path = "", resolved = null, relative 
   });
 
   const choices = [
+    ...(fixed?.changed ? [["fixed", fixed.label || "The run's folder, as it is now"]] : []),
     ...(copy ? [["copy", "A copy of what the run had"]] : []),
     ["known", "Existing skill"],
     ["path", "Path to skill"],
   ];
-  const radios = fixed ? null : h("div", { class: "controls", role: "radiogroup", "aria-label": "Skill folder" }, choices.map(([choice, label]) =>
+  const radios = fixed && !fixed.changed ? null : h("div", { class: "controls", role: "radiogroup", "aria-label": "Skill folder" }, choices.map(([choice, label]) =>
     h("label", { class: "check" },
       h("input", {
         type: "radio", name: `skill-from-${name}`, value: choice, checked: kind === choice, disabled: !editable,

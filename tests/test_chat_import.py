@@ -737,6 +737,34 @@ def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_chec
     assert stack.store.get_run(again.run_id).task_id == "tally-report/tally-again"
 
 
+def test_a_task_folder_changed_since_the_run_can_give_way_to_a_copy_of_what_it_had(stack):
+    """Found in review: the form fixed the task's folder whenever its SKILL.md was there, so a
+    scenario of an old failing run could not study the text it failed with. A folder whose
+    SKILL.md has changed since the run is said to have, and a copy of what the run had can be
+    kept in its place."""
+    from tuningfork.ops import scenarios
+
+    stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")  # the task's file, read back
+    source = stack.record()
+    task_skill = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+    had = task_skill.read_bytes()
+    assert not imports.scenario_choices(stack.store, source.run_id)["skill_dir_changed"]
+    task_skill.write_bytes(had + b"\nAn edit approved since.\n")
+    choices = imports.scenario_choices(stack.store, source.run_id)
+    assert choices["skill_dir_from"] == "task" and choices["skill_dir_changed"] and choices["can_copy"]
+    as_now = imports.prepare_scenario(stack.store, source.run_id, "as-now")
+    assert not as_now.own_skill
+    assert any("has changed since run" in warning and "--copy-skill" in warning for warning in as_now.warnings)
+    as_it_was = imports.prepare_scenario(stack.store, source.run_id, "as-it-was", copy_skill=True)
+    assert as_it_was.own_skill and not any("has changed since" in warning for warning in as_it_was.warnings)
+    imports.make_scenario(stack.store, as_it_was)
+    kept = scenarios.folder(stack.store.home, "as-it-was") / "skill" / "tally-report" / "SKILL.md"
+    assert kept.read_bytes() == had
+    with pytest.raises(OperationError) as both:
+        imports.prepare_scenario(stack.store, source.run_id, "both", copy_skill=True, skill_dir=str(task_skill.parent))
+    assert both.value.field == "skill_dir"
+
+
 def test_a_launched_runs_scenario_from_later_in_its_turn_has_its_workspace_there(stack, monkeypatch):
     """Where the skill came in after earlier steps of the turn, the scenario starts after them,
     taken as done, and its inputs are the workspace as the run had it then: what those steps
@@ -872,6 +900,12 @@ async def test_the_web_ui_makes_a_scenario_and_edits_its_conversation(proxy_clie
     assert choices["cut"] == 3 and choices["skill"] == "tally-report" and choices["imported"]
     odd = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "x", "task_check": "no"})
     assert odd.status_code == 400 and odd.json()["error"]["field"] == "task_check"
+    # A copy of what the run had, asked for in place of the folder its skill came from.
+    copied = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario",
+                                     json={"name": "a-copy", "copy_skill": True, "dry_run": True})
+    assert copied.status_code == 200 and copied.json()["plan"]["own_skill"]
+    odd = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "x", "copy_skill": "yes"})
+    assert odd.status_code == 400 and odd.json()["error"]["field"] == "copy_skill"
     other = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "by-run", "harness": "hermes"})
     assert other.status_code == 201 and other.json()["harness"] == "hermes"
 

@@ -53,7 +53,7 @@ def test_the_tool_list_is_small_and_always_in_one_order():
     # Grew by where_it_holds' 1,800 characters: one question of every run, the way to the step when a
     # check prints only its verdict; and by 650 for reading a file or a message page by page, and asking
     # a screen's forks (findings §31.57: a 12,000-character file was cut where the check failed it); and
-    # by 700 for what a probe's continuations wrote, read page by page (issue #29).
+    # by 708 for what a probe's continuations wrote, read page by page (issue #29).
     assert len(json.dumps(listed)) <= 30_100, len(json.dumps(listed))
     names = [tool["name"] for tool in listed]
     assert names[0] == "list_tasks" and names[-1] == "cancel_job"
@@ -137,7 +137,7 @@ class TestTheRefineToolset:
     # `all` grew by start_check_along's 1,500 characters, the check run along a task's runs, and by
     # where_it_holds' 1,800, one question of every run; the loops took it within theirs. Each grew again
     # by 350 to 1,250 for paging a file or a message, a screen's forks asked, and the quick look; and by
-    # 700 for what a probe's continuations wrote (issue #29).
+    # 708 for what a probe's continuations wrote (issue #29).
     @pytest.mark.parametrize("toolset, budget", [("refine", 31_100), ("refine-to-end", 34_400), ("all", 55_100)])
     def test_each_toolset_stays_small(self, toolset, budget):
         listed = [tool.model_dump(by_alias=True, exclude_none=True, mode="json")

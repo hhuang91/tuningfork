@@ -610,6 +610,12 @@ OWN_OPTIONS = ("check", "context", "stop_at_next_skill", "held_out")
 PATH_ARGUMENTS = ("path", "file_path", "filepath", "filename", "file", "notebook_path")
 #: What a check reads from its task's folder: `$TUNINGFORK_SPEC_DIR/<path>`.
 SPEC_DIR_PATH = re.compile(r"\$\{?TUNINGFORK_SPEC_DIR\}?/([^\s\"'`;|&()<>]+)")
+
+
+def spec_dir_parts(relative: str) -> tuple[str, ...]:
+    """A path `SPEC_DIR_PATH` found, in parts, as the shell reads it: inside the task's folder,
+    a doubled slash read as one — never from the machine's root."""
+    return PurePosixPath(relative.lstrip("/")).parts
 #: What a scenario's runs do with each step of the conversation from its prompt on: take it as
 #: done (in their context, as the chat had it), make it first or as they go on — each its own
 #: answer, the chat's path only one — or never reach it: past where each run stops, or after the
@@ -1077,6 +1083,8 @@ def scenario_choices(store: Store, reference: str, *, skill: str | None = None, 
         # run's task's own ("import", "task"); else none, and the scenario keeps a copy of what the
         # run had — the copy it kept, or the SKILL.md its model read — where there is one.
         "skill_dir": str(folder) if folder is not None else None, "skill_dir_from": given_by,
+        # That folder's SKILL.md is no longer the text the run had: a copy of that can be kept instead.
+        "skill_dir_changed": folder is not None and studied is not None and _changed_since(folder, studied),
         "can_copy": studied is not None and (studied.kept is not None or studied.found is not None),
         "copy_dir": f"{SKILL_FOLDER}/{_folder_name(studied.name)}" if studied is not None else None,
         "turns": [{**turn, "offered": turn["message"] in offered} for turn in turns(chat)],
@@ -1108,7 +1116,7 @@ def _gist(message: dict[str, Any]) -> dict[str, Any]:
 def prepare_scenario(
     store: Store, reference: str, name: str, *, cut: int | None = None, check: Any = None, skill: str | None = None,
     skill_dir: str | Path | None = None, harness: str | None = None, task_check: bool = True,
-    prompt: str | None = None,
+    prompt: str | None = None, copy_skill: bool = False,
 ) -> ScenarioPlan:
     """A scenario of a run — imported, launched by tuningfork, or recorded as it happened —
     checked and shown before anything is written. The conversation before the person's turn
@@ -1117,7 +1125,8 @@ def prepare_scenario(
     prompt, in the person's words, or `prompt` (a file the chat named where the scenario's inputs
     put it, say). The skill, `skill` where the run kept or showed several: in `skill_dir`, else the
     folder an import named, else its task's own (a launched run's spec), else a copy in the
-    scenario's own folder — the one the run kept, or the text its model read. Its inputs: a
+    scenario's own folder — the one the run kept, or the text its model read; that copy whatever
+    folder there is where `copy_skill` asks for it (one changed since the run, say). Its inputs: a
     launched run's workspace where the scenario starts, from its snapshots, else its task's input
     files; for any other run, the files its conversation names, for a person to add. Its check:
     `check`, else a launched run's task's own (unless `task_check` is False), with what it reads
@@ -1141,6 +1150,9 @@ def prepare_scenario(
     launch = store.get_launch(run.launch_id) if run.launch_id else None
     task = launch.eval if launch is not None and isinstance(launch.eval, dict) else {}
     folder = None
+    if skill_dir and copy_skill:
+        raise OperationError("the skill's folder, or a copy of what the run had: not both", code="bad_params",
+                             field="skill_dir")
     if skill_dir:
         folder = resolve_path(str(skill_dir)).path
         if not (folder / "SKILL.md").is_file():
@@ -1171,7 +1183,7 @@ def prepare_scenario(
     own = place / SKILL_FOLDER / _folder_name(studied.name)
     copy_from: Path | None = None
     extract: str | None = None
-    found_folder, given_by = _default_folder(run, launch, studied)
+    found_folder, given_by = (None, None) if copy_skill else _default_folder(run, launch, studied)
     if folder is not None:
         skill_folder = folder
         text = (folder / "SKILL.md").read_text(encoding="utf-8", errors="replace")
@@ -1180,10 +1192,11 @@ def prepare_scenario(
                             "runs read it as the folder has it")
     elif found_folder is not None:
         skill_folder = found_folder
-        if (given_by == "task" and studied.kept is not None
-                and (found_folder / "SKILL.md").read_bytes() != studied.kept.read_bytes()):
-            warnings.append(f"{found_folder}/SKILL.md has changed since run {run.id[:8]} was given it: the scenario's "
-                            "runs read it as it is now")
+        if _changed_since(found_folder, studied):
+            since = "was given it" if given_by == "task" else "was imported"
+            warnings.append(f"{found_folder}/SKILL.md has changed since run {run.id[:8]} {since}: the scenario's runs read "
+                            "it as it is now — keep a copy of what the run had instead (--copy-skill, or “A copy of what "
+                            "the run had” on the form) to study the text it had")
     elif studied.kept is not None or studied.found is not None:
         skill_folder = own
         if studied.kept is not None:
@@ -1196,9 +1209,12 @@ def prepare_scenario(
             extract = written
         what = (f"the copy run {run.id[:8]} kept" if copy_from is not None
                 else "the SKILL.md the model read — the rest of its folder, scripts and references, the chat never showed")
-        warnings.append(f"no folder of {studied.name}'s own was found: the scenario keeps {what}, in its own folder "
-                        f"({own}), where an approved edit is written; name the skill's folder (--skill-dir, or “Skill folder” "
-                        "on the scenario's form) to tune that one")
+        if copy_skill:
+            notes.append(f"the scenario keeps {what}, in its own folder ({own}), where an approved edit is written")
+        else:
+            warnings.append(f"no folder of {studied.name}'s own was found: the scenario keeps {what}, in its own folder "
+                            f"({own}), where an approved edit is written; name the skill's folder (--skill-dir, or “Skill "
+                            "folder” on the scenario's form) to tune that one")
         if made_up:
             notes.append(f"the model read {studied.name} without its frontmatter: the scenario's SKILL.md is given "
                          "one, its name and a description, so that the harness lists it")
@@ -1306,6 +1322,18 @@ def _default_folder(run: Any, launch: Any, studied: Studied) -> tuple[Path | Non
     return (task_folder, "task") if task_folder is not None else (None, None)
 
 
+def _changed_since(found_folder: Path, studied: Studied) -> bool:
+    """Whether the SKILL.md in the folder a scenario of a run would take is no longer the text
+    the run kept: edited since, by an approval or by hand (found in review: the form fixed such a
+    folder, and a scenario of an old failing run could not study the text it failed with)."""
+    if studied.kept is None:
+        return False
+    try:
+        return (found_folder / "SKILL.md").read_bytes() != studied.kept.read_bytes()
+    except OSError:
+        return False
+
+
 def _task_skill_dir(run: Any, launch: Any, kept: Path | None) -> Path | None:
     """The skill folder of the task a launched run was of — its spec's, while the spec and the
     folder are there — where the skill studied is the one the run was given."""
@@ -1345,8 +1373,9 @@ def _check_files(check: Any, spec_dir: Path | None) -> tuple[dict[str, Path], li
         return {}, []
     found: dict[str, Path] = {}
     unread: list[str] = []
-    for relative in SPEC_DIR_PATH.findall(check):
-        parts = PurePosixPath(relative).parts
+    for captured in SPEC_DIR_PATH.findall(check):
+        parts = spec_dir_parts(captured)
+        relative = "/".join(parts) or captured
         top = parts[0] if parts else ""
         if top == scenarios.INPUTS:
             continue  # the scenario's own inputs

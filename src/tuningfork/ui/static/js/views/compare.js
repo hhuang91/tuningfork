@@ -127,12 +127,14 @@ export async function divergenceView(root, [task, conditionId], scope) {
   const asked = /^\d+$/.test(scope?.query?.get("step") || "") ? Number(scope.query.get("step")) : null;
   const first = asked !== null && asked < report.steps.length ? asked : at ?? 0;
   let section = null;
-  const show = (index, { focus = false, scroll = false } = {}) => {
+  // `focus`: the control the person used, found again in the new panel — a step's button, or ‹ or ›
+  // while it can still be pressed — so that the keys go on from it.
+  const show = (index, { focus = null, scroll = false } = {}) => {
     const next = atStep(report, index, { verdicts: report.verdicts || {}, best, show });
     section.replaceWith(next);
     section = next;
     settle(address(index));
-    if (focus) next.querySelector(".step-pick.current")?.focus();
+    if (focus) (next.querySelector(`${focus}:not(:disabled)`) || next.querySelector(".step-pick.current"))?.focus();
     if (scroll) next.scrollIntoView({ block: "start" });
   };
   section = report.steps.length ? atStep(report, first, { verdicts: report.verdicts || {}, best, show }) : null;
@@ -185,26 +187,39 @@ function atStep(report, index, { verdicts, best, show }) {
 }
 
 /** Every step of the runs, to show each in turn: shaded where they split, the one shown in the
- *  accent; the arrow keys move along. */
+ *  accent; the arrow keys move along, and the focus stays on the control used. */
 function stepPicker(report, index, show) {
   const last = report.steps.length - 1;
   const at = report.divergence_index;
-  const said = (step) =>
-    `Step ${step.index}: ${step.diverged ? "the runs split here" : "every run did the same"}${step.index === at ? ", for the first time" : ""}`;
+  // Each button's tip says what its step's note says (found in review: a step where some runs had
+  // only ended was "the runs split here", its note "The runs that got this far did the same here").
+  const said = (step) => {
+    const ended = step.groups.filter((group) => group.outcome.kind === "ended").reduce((total, group) => total + group.run_ids.length, 0);
+    const split = step.diverged && step.groups.length - (ended ? 1 : 0) > 1;
+    const what = split ? `the runs split here${step.index === at ? ", for the first time" : ""}`
+      : step.diverged ? "the runs that got this far did the same" : "every run did the same";
+    return `Step ${step.index}: ${what}${ended ? `; ${plural(ended, "run")} had ended` : ""}`;
+  };
   const keys = (event) => {
     const next = index + ({ ArrowLeft: -1, ArrowRight: 1 }[event.key] || 0);
     if (next === index || next < 0 || next > last) return;
     event.preventDefault();
-    show(next, { focus: true });
+    show(next, { focus: ".step-pick.current" });
   };
   return h("div", { class: "step-picker", onkeydown: keys },
-    h("button", { class: "btn btn-small", type: "button", disabled: index <= 0, title: "The step before", "aria-label": "The step before", onclick: () => show(index - 1) }, "‹"),
+    h("button", {
+      class: "btn btn-small step-before", type: "button", disabled: index <= 0, title: "The step before", "aria-label": "The step before",
+      onclick: () => show(index - 1, { focus: ".step-before" }),
+    }, "‹"),
     h("div", { class: "step-picks", role: "group", "aria-label": "Steps" }, report.steps.map((step) =>
       h("button", {
         class: ["step-pick", step.diverged && "diverged", step.index === index && "current"], type: "button",
-        "aria-pressed": String(step.index === index), title: said(step), onclick: () => show(step.index),
+        "aria-pressed": String(step.index === index), title: said(step), onclick: () => show(step.index, { focus: ".step-pick.current" }),
       }, String(step.index)))),
-    h("button", { class: "btn btn-small", type: "button", disabled: index >= last, title: "The step after", "aria-label": "The step after", onclick: () => show(index + 1) }, "›"),
+    h("button", {
+      class: "btn btn-small step-after", type: "button", disabled: index >= last, title: "The step after", "aria-label": "The step after",
+      onclick: () => show(index + 1, { focus: ".step-after" }),
+    }, "›"),
     h("span", { class: "faint small" }, "Shaded where the runs split."));
 }
 

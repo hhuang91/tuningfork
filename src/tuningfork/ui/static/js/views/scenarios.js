@@ -176,19 +176,20 @@ function byUpload() {
   const name = input("name", { placeholder: "its folder's name" });
   const said = h("span", null, "The folder holding the task file, with what it names: its skill folder, its input files, "
     + "what its check reads. A repository's history and caches are left out.");
-  // The chosen folder's files, read once chosen: sent with every plan, as they will be kept.
+  // The chosen folder's files, by their paths in it, each read only as it is sent: a plan sends
+  // each one's size, and the task files at its top, which it reads; the scenario made, all of
+  // them (found in review: every plan sent the whole folder again, once a pause in typing).
   let files = null;
   let top = "";
-  picker.addEventListener("change", async () => {
-    files = null;
+  const atTop = (path) => !path.includes("/") && path.endsWith(".json");
+  picker.addEventListener("change", () => {
     const chosen = [...(picker.files || [])];
     top = chosen[0]?.webkitRelativePath.split("/")[0] || "";
     const parts = (file) => file.webkitRelativePath.split("/").slice(1);
     const sent = chosen.filter((file) => !parts(file).some((part) => IGNORED.has(part)));
-    replace(said, "reading…");
-    files = await Promise.all(sent.map(async (file) => ({ path: parts(file).join("/"), data: await base64(file) })));
+    files = sent.map((file) => ({ path: parts(file).join("/"), file }));
     // The task files at its top: its evals.json, unless the person chooses another.
-    const tops = files.map((file) => file.path).filter((path) => !path.includes("/") && path.endsWith(".json")).sort();
+    const tops = files.map((file) => file.path).filter(atTop).sort();
     replace(which, tops.length
       ? tops.map((path) => h("option", { value: path, selected: path === "evals.json" || (tops.length === 1) }, path))
       : h("option", { value: "" }, "no .json file at its top"));
@@ -201,13 +202,22 @@ function byUpload() {
   });
   return planForm({
     ...keeping,
+    send: async (params, extra) => {
+      const chosen = new Map((files || []).map((entry) => [entry.path, entry.file]));
+      const sent = await Promise.all(params.files.filter(({ path }) => chosen.has(path)).map(async ({ path, size }) =>
+        (extra.dry_run && !atTop(path) ? { path, size } : { path, data: await base64(chosen.get(path)) })));
+      return keeping.send({ ...params, files: sent }, extra);
+    },
     fields: h("div", { class: "form-grid" },
       field("The task file's folder", picker, { wide: true, help: said }),
       field("The task file in it", which, { help: "Where the folder's top holds several." }),
       field("Scenario name", name, { help: "lowercase letters, digits, - and _: its folder's name, by default" })),
     read: () => {
       if (!files) throw Object.assign(new Error("Choose the task file's folder."), { field: "folder" });
-      return { name: name.value.trim() || scenarioNameOf(top), files, folder: top, ...(which.value ? { spec: which.value } : {}) };
+      return {
+        name: name.value.trim() || scenarioNameOf(top), files: files.map(({ path, file }) => ({ path, size: file.size })),
+        folder: top, ...(which.value ? { spec: which.value } : {}),
+      };
     },
     startLabel: "Upload it",
   }).element;

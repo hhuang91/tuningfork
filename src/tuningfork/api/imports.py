@@ -34,7 +34,8 @@ RUNS = "/_tuningfork/api/runs"
 #: What a body may hold besides the file's text: `prepare_import`'s options.
 OPTIONS = ("session", "skill", "skill_dir", "harness", "label", "task_id", "tools_from")
 #: What a scenario's body may hold: `prepare_scenario`'s options, and whether only to show it.
-SCENARIO_FIELDS = ("name", "cut", "check", "skill", "skill_dir", "harness", "task_check", "prompt", "dry_run", "quiet")
+SCENARIO_FIELDS = ("name", "cut", "check", "skill", "skill_dir", "copy_skill", "harness", "task_check", "prompt", "dry_run",
+                   "quiet")
 
 
 async def _body(request: Request) -> tuple[str, dict[str, Any]]:
@@ -122,13 +123,14 @@ def import_routes(*, store: Any) -> list[Route]:
             for name in ("skill", "skill_dir", "harness", "prompt"):
                 if body.get(name) is not None and not isinstance(body[name], str):
                     raise OperationError(f"{name} is text", code="bad_params", field=name)
-            for name in ("task_check", "dry_run", "quiet"):
+            for name in ("task_check", "copy_skill", "dry_run", "quiet"):
                 if not isinstance(body.get(name, False), bool):
                     raise OperationError(f"{name} is true or false", code="bad_params", field=name)
             plan = imports.prepare_scenario(store, request.path_params["run"], str(body.get("name") or ""), cut=cut,
                                             check=body.get("check"), skill=body.get("skill") or None,
                                             skill_dir=body.get("skill_dir") or None, harness=body.get("harness") or None,
-                                            task_check=body.get("task_check", True), prompt=body.get("prompt"))
+                                            task_check=body.get("task_check", True), prompt=body.get("prompt"),
+                                            copy_skill=body.get("copy_skill", False))
             if body.get("dry_run"):
                 return {"plan": plan.to_json(), "warnings": plan.warnings, "notes": plan.notes, "harness": plan.harness}
             made = imports.make_scenario(store, plan)

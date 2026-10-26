@@ -1277,7 +1277,7 @@ def tokens(
             who = "the run's own token" if forced["original"] else "a token forced"
             at = "[" + str(forced["position"]) + "]"
             console.print(f"  a continuation: {who}, {escape(repr(forced['text']))} at {escape(at)}, "
-                          "then the tokens below, as the model wrote them")
+                          "then the tokens below, as the model wrote them — numbered from 0, the token after it")
     choice = view.choice()
     if choice is not None:
         from tuningfork.ops.compact import choice_text
@@ -1665,6 +1665,10 @@ def scenario_of_run(
         None, "--skill-dir", help="The skill's folder on this machine, which the scenario tunes: by default the folder "
         "the run's skill came from, else a copy kept in the scenario's own folder.",
     ),
+    copy_skill: bool = typer.Option(
+        False, "--copy-skill", help="Keep a copy of what the run had, in the scenario's own folder, even where the "
+        "folder its skill came from is there: one changed since the run, say, whose old text the scenario studies.",
+    ),
     harness: Optional[str] = typer.Option(
         None, "--harness", help="The harness the conversation was had with, where the run does not say (hermes, "
         "claude-code, generic).",
@@ -1692,7 +1696,7 @@ def scenario_of_run(
     try:
         plan = prepare_scenario(store, run, name, cut=cut, check=checked, skill=skill,
                                 skill_dir=str(skill_dir) if skill_dir else None, harness=harness, task_check=not no_check,
-                                prompt=prompt)
+                                prompt=prompt, copy_skill=copy_skill)
     except OperationError as error:
         _refuse(error)
     console.print(f"[bold]{escape(name)}[/bold] · a scenario of run {plan.run_id[:8]} · {escape(plan.harness or '-')}")

@@ -207,7 +207,9 @@ prompt and everything before it each run's context.
 - **The skill.** `--skill-dir <folder>` names the skill's own folder, which the scenario tunes.
   By default it is the folder the run's skill came from — the one an import named, or a launched
   run's task's — else a copy kept in the scenario's own folder (`skill/<name>/`): the copy the run
-  kept, or the SKILL.md the model read. `--skill <name>` chooses where the run shows several.
+  kept, or the SKILL.md the model read. Where that folder's SKILL.md has changed since the run,
+  the plan says so, and `--copy-skill` keeps the copy instead, to study the text the run had.
+  `--skill <name>` chooses where the run shows several.
 - **The check.** `--check '<command>'` or `--reply-contains <text>`. A launched run's is its
   task's own by default, and what that check reads from the task's folder
   (`$TUNINGFORK_SPEC_DIR/…`) is copied beside the scenario's spec, where no run sees it;
@@ -224,9 +226,10 @@ prompt and everything before it each run's context.
 The web UI has the same, from a run's page (**Make a scenario…**) or from the Scenarios page
 (**From a run…**, which lists the runs to choose from, and imports a chat first where it is not
 a run yet). Its first fields are a new scenario's — its name, the harness, the skill's name and
-its folder — each greyed where the run says it: a launched run's harness, skill and its task's
-folder. Where the run has no folder of the skill's own, the folder is a copy of what the run had,
-an existing skill the Skills page lists, or a path. Then the form sets each run beside the chat,
+its folder — each greyed where the run says it: the harness it recorded, the skill where it had
+one, and the folder its task or its import named. Where that folder has changed since the run,
+it is offered beside the others instead; where the run has no folder of the skill's own, the
+folder is a copy of what the run had, an existing skill the Skills page lists, or a path. Then the form sets each run beside the chat,
 for the skill chosen: first what each run is
 given — its harness's own system prompt and tools (the chat's shown, never sent), the
 conversation before the starting prompt, and the prompt, which can be rewritten there — then the

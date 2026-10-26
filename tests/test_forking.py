@@ -426,6 +426,11 @@ class TestContinuations:
         probe, at = result.experiment.id, result.report.positions[0].position
 
         assert continuations(store, probe, behaviour="b").to_json()["count"] == 2
+        # A behaviour by its key too, as the page names it: a probe still drawing letters its
+        # behaviours by how often each happened so far (found in review).
+        key = continuations(store, probe, behaviour="B").to_json()["positions"][0]["tokens"][0]["behaviours"][0]["outcome"]["key"]
+        by_key = continuations(store, probe, behaviour=key)
+        assert by_key.to_json()["count"] == 2 and by_key.filters["behaviour"] == "B"
         # A token as the probe shows it, or as typed without its space.
         only = continuations(store, probe, position=at, token="search").to_json()
         assert [token["text"] for token in only["positions"][0]["tokens"]] == [" search"]
@@ -446,6 +451,9 @@ class TestContinuations:
         assert view["sample"]["forced"] == {"position": position, "text": " search", "original": False}
         assert view["stream"]["source"] == "continuation" and view["format"] == "gemma4"
         assert [kind for kind, _, _ in view["parts"]] == ["reasoning", "marker", "tool_call", "marker"]
+        # Kept with the token drawn alone at each position: no chance of each tool to say (found in
+        # review: the tool drawn read as a certainty, 100%).
+        assert view["top_k"] == 1 and view["choice"] is None
 
     async def test_in_the_terminal(self, store, served):
         _, result = await self.probe(store, served)
@@ -462,6 +470,23 @@ class TestContinuations:
         assert tokens.exit_code == 0, tokens.output
         at = result.report.positions[0].position
         assert f"a continuation: a token forced, ' search' at [{at}], then the tokens below" in tokens.output
+        assert "numbered from 0, the token after it" in tokens.output and "choice of tool" not in tokens.output
+
+    async def test_never_of_a_held_out_task_over_mcp(self, store, served):
+        """Found in review: nothing held a probe's continuations, asked for over MCP, from a held-out
+        task's run — its runs are the person's evidence for judging an edit, never an agent's."""
+        pytest.importorskip("mcp")
+        from tuningfork.mcp.server import ToolServer
+        from tuningfork.mcp.tools import registry
+        from tests.test_mcp_tools import NoJobs
+
+        run_id, result = await self.probe(store, served)
+        store.create_launch(kind="batch", label="t/1#x.0", harness="fake", model="m", task_id=store.get_run(run_id).task_id,
+                            eval={"id": "1", "prompt": "p", "tuningfork": {"held_out": True}}, settings={})
+        server, tool = ToolServer(store=store, jobs=NoJobs(), toolset="all"), registry("all")["show_experiment"]
+        with pytest.raises(OperationError) as refused:
+            await server.call(tool, {"experiment": result.experiment.id[:8], "continuations": True})
+        assert refused.value.code == "held_out"
 
     async def test_over_mcp_a_page_at_a_time(self, store, served):
         pytest.importorskip("mcp")

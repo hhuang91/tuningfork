@@ -97,12 +97,14 @@ class TokensView:
 
 def stream_choice(stream: Any, sampler: Any, tools: Sequence[str]) -> Any:
     """`analysis.tokens.tool_choice` for a stream, the name's prefix taken from the format
-    that marked its parts."""
+    that marked its parts. None for a stream that kept only the token drawn at each position — a
+    probe's continuation, say: it says nothing of what else the model weighed, and the drawn
+    tool would read as a certainty (found in review)."""
     from tuningfork.analysis.tokens import tool_choice
     from tuningfork.backends.formats import get_format
 
     fmt = get_format(stream.format)
-    if fmt is None:
+    if fmt is None or stream.top_k == 1:
         return None
     return tool_choice(stream, sampler, tools=tools, prefix=getattr(fmt, "call_name_prefix", ""))
 

@@ -405,13 +405,15 @@ def delete_input(home: Path | str, name: str, relative: str) -> None:
 
 def _check_reads(check: str) -> list[str]:
     """What a shell check reads from its task's folder, `$TUNINGFORK_SPEC_DIR/<path>`: each path
-    inside it, in the order the check names them."""
-    from tuningfork.ops.imports import SPEC_DIR_PATH
+    inside it, in the order the check names them — `$TUNINGFORK_SPEC_DIR//x` as the shell reads
+    it, the folder's own `x`, never the machine's root (found in review: an import planned from
+    such a check read every file on the machine)."""
+    from tuningfork.ops.imports import SPEC_DIR_PATH, spec_dir_parts
 
     found: list[str] = []
     for relative in SPEC_DIR_PATH.findall(check):
-        parts = PurePosixPath(relative).parts
-        if not parts or any(part in ("", ".", "..") for part in parts):
+        parts = spec_dir_parts(relative)
+        if not parts or ".." in parts:
             continue
         if (cleaned := PurePosixPath(*parts).as_posix()) not in found:
             found.append(cleaned)
@@ -419,6 +421,18 @@ def _check_reads(check: str) -> list[str]:
 
 
 # --- a task file kept as a scenario -----------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Unsent:
+    """A file of a folder an upload plans, by its size alone: a form plans as it is filled in, and
+    sends each file's data only when the scenario is made (found in review: every plan sent the
+    whole folder again, up to a scenario's 100 MiB, once a pause)."""
+
+    size: int
+
+    def __len__(self) -> int:
+        return self.size
 
 
 @dataclass(slots=True)
@@ -475,7 +489,11 @@ class _Beside:
         from tuningfork.ops.addskill import _read_folder
 
         if self.directory is not None:
-            path = self.directory / relative
+            # Inside the folder, always: a path from the root, or climbing out, names nothing here.
+            inside = PurePosixPath(relative.replace("\\", "/")).parts
+            if not inside or inside[0].startswith("/") or ".." in inside:
+                return {}
+            path = self.directory.joinpath(*inside)
             if path.is_file():
                 return {"": path.read_bytes()}
             return _read_folder(path)[0] if path.is_dir() else {}
@@ -537,7 +555,25 @@ def _take_files(plan: ImportPlan, beside: _Beside) -> None:
             else:
                 entries.append(entry)
         item["files"] = entries
+    # The conversation a task's runs continue, where it names one, beside the spec as it was
+    # (found in review: a task file kept by its path, or its folder uploaded, came without it, and
+    # could not run).
+    conversations: list[str] = []
+    for item in plan.spec["evals"]:
+        context = (item.get("tuningfork") or {}).get("context")
+        if not isinstance(context, str) or not context:
+            continue
+        data = beside.tree(context).get("")
+        if data is None:
+            raise OperationError(f"{context} is not {beside.where}: the task file names it as the conversation its runs "
+                                 "continue", field="path")
+        plan.beside[PurePosixPath(context.replace("\\", "/")).as_posix()] = data
+        conversations.append(context)
+    if conversations:
+        plan.notes.append(f"the conversation its runs continue, {', '.join(dict.fromkeys(conversations))}: copied beside "
+                          "the scenario's evals.json")
     unread: list[str] = []
+    read: set[str] = set()
     for item in plan.spec["evals"]:
         check = (item.get("tuningfork") or {}).get("check")
         for relative in _check_reads(check) if isinstance(check, str) else []:
@@ -552,9 +588,9 @@ def _take_files(plan: ImportPlan, beside: _Beside) -> None:
                 unread.append(relative)
             for sub, data in found.items():
                 plan.beside[_placed(top, sub)] = data
-    if plan.beside:
-        tops = sorted({PurePosixPath(path).parts[0] for path in plan.beside})
-        plan.notes.append(f"its check reads {', '.join(tops)} from its task's folder: copied beside the scenario's "
+                read.add(top)
+    if read:
+        plan.notes.append(f"its check reads {', '.join(sorted(read))} from its task's folder: copied beside the scenario's "
                           "evals.json, where no run sees it")
     if unread:
         plan.warnings.append(f"its check reads {', '.join(dict.fromkeys(unread))} from its task's folder, which is not "
@@ -608,13 +644,14 @@ def prepare_import(home: Path | str, source: Path | str, name: str) -> ImportPla
     return plan
 
 
-def prepare_upload(home: Path | str, name: str, files: dict[str, bytes], *, spec: str | None = None,
+def prepare_upload(home: Path | str, name: str, files: dict[str, bytes | Unsent], *, spec: str | None = None,
                    folder_name: str | None = None) -> ImportPlan:
     """A task file in a folder uploaded from elsewhere, as a scenario: the input files it names,
     and what its check reads from its folder, copied in, and the skill folder it names, where the
     folder uploaded holds it, copied into the scenario's own (`skill/<its name>/`) — the copy an
     approved edit is written to. `spec`: the task file's path in the folder, where its top holds
-    no evals.json or several task files."""
+    no evals.json or several task files. A plan can be made of the files' sizes (`Unsent`), the
+    task file's own bytes apart; it is made only of their data."""
     from tuningfork.ops.addskill import IGNORED
     from tuningfork.ops.imports import SKILL_FOLDER, _folder_name
     from tuningfork.paths import resolve_path
@@ -638,6 +675,9 @@ def prepare_upload(home: Path | str, name: str, files: dict[str, bytes], *, spec
             hint=f"the task files at its top: {', '.join(tops)}" if tops else "upload the folder that holds the task file",
             field="spec")
     uploaded = folder_name or "the folder uploaded"
+    if isinstance(cleaned[spec], Unsent):
+        raise OperationError(f"{spec}'s own bytes are needed to plan it: send them, and the other files' sizes",
+                             code="bad_params", field="files")
     try:
         raw = json.loads(cleaned[spec].decode("utf-8-sig"))
     except (UnicodeDecodeError, ValueError) as exc:
@@ -684,6 +724,9 @@ def execute_import(home: Path | str, plan: ImportPlan) -> Scenario:
     """Write what the plan says: the scenario's folder made new — a skill's copy and what its
     check reads, then its evals.json, then its input files — and taken away whole when anything
     fails."""
+    if any(isinstance(data, Unsent) for part in (plan.inputs, plan.skill, plan.beside) for data in part.values()):
+        raise OperationError("a plan made of the files' sizes is shown, never made: send their data", code="bad_params",
+                             field="files")
     target = folder(home, plan.name)
     try:
         target.mkdir(parents=True)

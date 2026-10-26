@@ -765,6 +765,54 @@ try {
   await until(() => page.eval(`location.hash === "#/scenarios/kept-${scenarioName}" && document.querySelector(".save-state")?.textContent === "saved"`),
     "the task file kept, its page");
   check(true, "a task file named by its path is planned, then kept as a scenario and opened");
+  // Or its folder uploaded: planned by each file's size as the form is filled in, the task file's
+  // own bytes apart, and sent whole only when it is added (found in review: every plan sent the
+  // whole folder again).
+  {
+    const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = mkdtempSync(join(tmpdir(), "tf-task-"));
+    const folder = join(root, "upload-task");
+    const rows = "id\n1\n";
+    mkdirSync(join(folder, "upload-task"), { recursive: true });
+    writeFileSync(join(folder, "upload-task", "SKILL.md"), "---\nname: upload-task\ndescription: says done\n---\n\nSay done.\n");
+    writeFileSync(join(folder, "rows.csv"), rows);
+    writeFileSync(join(folder, "evals.json"), JSON.stringify({
+      skill_name: "upload-task", tuningfork: { skill_dir: "upload-task" },
+      evals: [{ id: "1", prompt: "Say done.", files: ["rows.csv"], tuningfork: { check: { reply_contains: "done" } } }],
+    }));
+    await page.eval(`location.hash = "#/scenarios"`);
+    await until(() => page.eval(`!!document.querySelector('input[name="import-way"][value="upload"]')`), "the Scenarios page's import form");
+    await page.eval(`(() => {
+      window.importBodies = [];
+      const sent = window.fetch;
+      window.fetch = (url, init) => {
+        if (String(url).endsWith("/scenarios/import")) window.importBodies.push(JSON.parse(init.body));
+        return sent(url, init);
+      };
+      document.querySelector('input[name="import-way"][value="upload"]').click();
+      return true;
+    })()`);
+    await until(() => page.eval(`!!document.querySelector('.plan-form input[type="file"][name="folder"]')`), "the folder's picker");
+    const { root: doc } = await page.send("DOM.getDocument", { depth: -1, pierce: true });
+    const { nodeId } = await page.send("DOM.querySelector", { nodeId: doc.nodeId, selector: '.plan-form input[type="file"][name="folder"]' });
+    await page.send("DOM.setFileInputFiles", { nodeId, files: [folder] });
+    await planShows(page, "skill/upload-task");
+    await startButtonReady(page, "Upload it");
+    await page.click("Upload it");
+    await until(() => page.eval(`location.hash === "#/scenarios/upload-task"`), "the uploaded task's scenario");
+    const bodies = await page.eval(`window.importBodies`);
+    const of = (body, path) => body.files.find((file) => file.path === path) || {};
+    const planned = bodies.filter((body) => body.dry_run);
+    const made = bodies.filter((body) => !body.dry_run);
+    check(planned.length > 0
+      && planned.every((body) => typeof of(body, "evals.json").data === "string" && of(body, "rows.csv").size === rows.length
+        && !("data" in of(body, "rows.csv")) && !("data" in of(body, "upload-task/SKILL.md")))
+      && made.length === 1 && made[0].files.length === 3 && made[0].files.every((file) => typeof file.data === "string"),
+      `a folder uploaded is planned by its files' sizes, the task file's own bytes apart, and sent whole when added (${planned.length} plan(s))`);
+    rmSync(root, { recursive: true, force: true });
+  }
 
   // The check, tried before trusting it: on the run the batch just made, then on files written here.
   await page.eval(`location.hash = "#/scenarios/${scenarioName}"`);
@@ -2231,19 +2279,30 @@ try {
     "it says its inputs come from the run's workspace");
   // A new scenario's first fields, in its order, each shown whether or not there is a choice: greyed
   // where the run says it (found in use: a task run's form left out the harness and the skill, and
-  // said them in a line above the form).
+  // said them in a line above the form). The approval earlier here wrote to its task's folder, so
+  // that folder is offered beside a copy of what the run had: the run no longer says what it holds
+  // (found in review: the form fixed it, and the text the run had could not be studied).
+  check((await api(`/runs/${ofTask.id}/scenario`)).skill_dir_changed === true,
+    "the task's folder has changed since the run: the approval earlier here wrote to it");
   check(await page.eval(`(() => {
     const form = document.querySelector(".plan-form");
     const harness = form.querySelector('select[name="harness"]'), skill = form.querySelector('select[name="skill"]');
     const folder = form.querySelector('[name="skill_dir-run"]');
     const labels = [...form.querySelectorAll(".form-grid > .form-field > .form-label")].slice(0, 4).map((label) => label.textContent);
+    const ways = [...form.querySelectorAll('input[name="skill-from-run"]')].map((radio) => radio.value + (radio.checked ? "*" : "")).join(",");
     return labels.join(",") === "Scenario name,Harness,Skill name,Skill folder"
       && harness.disabled && harness.value === "fake" && skill.disabled && skill.value === "tally-report"
       && folder.readOnly && folder.classList.contains("field-fixed") && folder.value === ${JSON.stringify(`${health.home}/lab-task/tally-report`)}
-      && !form.querySelector('input[name="skill-from-run"]');
-  })()`), "a launched run's harness, skill and skill folder are shown greyed, in a new scenario's order");
+      && ways === "fixed*,copy,known,path" && form.textContent.includes("Its SKILL.md has changed since the run");
+  })()`), "a launched run's harness and skill are greyed, in a new scenario's order; its task's folder, changed since, is offered beside a copy of what the run had");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
   await planShows(page, "data.csv");
+  await page.eval(`document.querySelector('input[name="skill-from-run"][value="copy"]').click()`);
+  await planShows(page, "a copy kept in the scenario's own folder");
+  await page.eval(`document.querySelector('input[name="skill-from-run"][value="fixed"]').click()`);
+  await until(() => page.eval(`!(document.querySelector(".plan-preview")?.textContent || "").includes("a copy kept in the scenario's own folder")`),
+    "the task's folder chosen again");
+  check(true, "the copy of what the run had is planned when chosen, and the task's folder again when chosen back");
   await startButtonReady(page, "Make the scenario");
   // Tried before it is trusted, on the run it is made of: the check in a copy of the workspace it
   // left, on its final reply — and the trial's own Try it, a form inside this one, makes nothing.

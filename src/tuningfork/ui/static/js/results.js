@@ -324,10 +324,11 @@ function groupPicker(by, show) {
 /** What each continuation wrote, from the token forced on — what a forced token did to the
  *  model's deliberation, not only where it ended: for each position, each token (the run's own
  *  first) and the behaviours its continuations ended in, from the report. Each behaviour is
- *  folded until opened, and its continuations' text asked for then (`load(position, token,
- *  letter)`: `GET …/continuations`). `opened`, which the page keeps across its draws, holds the
- *  folds open, so a probe still drawing closes none under the reader, nor a grouping picked. */
-function tokenGroups(report, ledTo, { load, opened }) {
+ *  folded until opened, and its continuations' text asked for then (`written.load`: `GET
+ *  …/continuations`). What the page keeps across its draws — the folds open, what each read,
+ *  how far its texts were scrolled — keeps a probe still drawing, or a grouping picked, from
+ *  changing anything under the reader. */
+function tokenGroups(report, ledTo, written) {
   const clusters = new Map(report.behaviours.clusters.map((cluster) => [cluster.letter, cluster]));
   const failed = report.behaviours.errors || 0;
   return [
@@ -346,7 +347,7 @@ function tokenGroups(report, ledTo, { load, opened }) {
             h("span", { class: "mono" }, JSON.stringify(arm.arm.text)),
             h("span", { class: "muted small" }, ` · ${plural(count, "continuation")}`)),
           went.map(([letter, n]) => writtenGroup({
-            position: position.position, token: arm.arm.text, own, letter, count: n, cluster: clusters.get(letter), load, opened,
+            position: position.position, token: arm.arm.text, own, letter, count: n, cluster: clusters.get(letter), written,
           })));
       }))),
     failed ? h("p", { class: "hint" }, `${plural(failed, "continuation")} wrote nothing, because the call itself failed.`) : null,
@@ -354,29 +355,34 @@ function tokenGroups(report, ledTo, { load, opened }) {
 }
 
 /** One token's continuations that ended in one behaviour, folded: the behaviour's letter, whether
- *  what was counted matches it, how many, and what it was; opened, their text. */
-function writtenGroup({ position, token, own, letter, count, cluster, load, opened }) {
-  const key = [position, token, letter].join("\u0000");
+ *  what was counted matches it, how many, and what it was; opened, their text — what the fold
+ *  read before shown at once, and asked for again only where the group has grown since. */
+function writtenGroup({ position, token, own, letter, count, cluster, written }) {
+  const key = cluster?.outcome?.key ?? letter;
+  const group = [position, token, key].join("\u0000");
   const list = h("div", { class: "written-list" });
+  const show = (found) => replace(list, found.length
+    ? found.map((continuation) => writtenOne(continuation, own, written.scrolled, `${group}\u0000${continuation.idx}`))
+    : h("p", { class: "muted small" }, "None of them kept its text."));
   const fill = () => {
-    replace(list, loading("Loading what they wrote…"));
-    load(position, token, letter)
-      .then((data) => {
-        const found = data.positions?.[0]?.tokens?.[0]?.behaviours?.[0]?.continuations || [];
-        replace(list, found.length ? found.map((continuation) => writtenOne(continuation, own))
-          : h("p", { class: "muted small" }, "None of them kept its text."));
-      })
-      .catch((error) => replace(list, h("p", { class: "small warn-text" }, `Could not load them: ${error.message}`)));
+    const before = written.read.get(group);
+    if (before) show(before);
+    else replace(list, loading("Loading what they wrote…"));
+    written.load({ group, position, token, key, count })
+      .then((found) => { if (found !== before) show(found); })
+      .catch((error) => {
+        if (!before) replace(list, h("p", { class: "small warn-text" }, `Could not load them: ${error.message}`));
+      });
   };
   const fold = h("details", {
     class: "fold",
-    open: opened.has(key),
+    open: written.opened.has(group),
     ontoggle: () => {
       if (!fold.open) {
-        opened.delete(key);
+        written.opened.delete(group);
         return;
       }
-      opened.add(key);
+      written.opened.add(group);
       if (!list.childElementCount) fill();
     },
   },
@@ -391,8 +397,9 @@ function writtenGroup({ position, token, own, letter, count, cluster, load, open
 
 /** One continuation's text: the token forced marked — teal where tuningfork forced it, as a
  *  change is, grey where it was the run's own (`own`) — then each part the model wrote, named
- *  where it starts. The text is the model's, put on the page as text. */
-function writtenOne(continuation, own) {
+ *  where it starts. The text is the model's, put on the page as text. How far its box was
+ *  scrolled is kept (`scrolled`, by `id`), and given back when the page draws it again. */
+function writtenOne(continuation, own, scrolled, id) {
   const meta = h("div", { class: "written-meta" }, `#${continuation.idx}`,
     continuation.generated === null || continuation.generated === undefined ? null : ` · ${plural(continuation.generated, "token")} after it`,
     continuation.finish_reason === "length" ? chip("cut off at its token budget", "warn") : null);
@@ -410,7 +417,10 @@ function writtenOne(continuation, own) {
     text.push(h("span", { class: `written-${part.part || "text"}` }, part.text));
     kind = part.part;
   }
-  return h("div", { class: "written-one" }, meta, h("div", { class: "written-text" }, text));
+  const box = h("div", { class: "written-text", onscroll: () => scrolled.set(id, box.scrollTop) }, text);
+  // Once the page holds it: a box not yet on the page scrolls nowhere.
+  if (scrolled.get(id)) requestAnimationFrame(() => { box.scrollTop = scrolled.get(id); });
+  return h("div", { class: "written-one" }, meta, box);
 }
 
 /** A probe's behaviours, each badged as its target counts it, with the tokens whose

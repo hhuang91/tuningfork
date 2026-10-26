@@ -100,9 +100,11 @@ export async function experimentView(root, [id], scope) {
       .then(() => { if (scope.active) draw(); });
   };
   // Every continuation of a probe, a section of its own, by token or by behaviour: which grouping,
-  // the address's and kept in it as the reader picks one; which of its folds are open, kept across
-  // draws so a probe still drawing closes none under the reader; and what each fold asked for,
-  // kept once the probe has finished — asked again while it draws on.
+  // the address's and kept in it as the reader picks one. Kept across draws, so a probe still
+  // drawing changes nothing under the reader: which folds are open, what each read and how far
+  // its texts were scrolled, each fold by its behaviour's key (a running probe letters its
+  // behaviours by how often each happened so far, so a letter can move to another). A fold asks
+  // again only when its group grew, showing what it read meanwhile.
   const grouped = (by) => {
     const [path, search = ""] = location.hash.split("?");
     const params = new URLSearchParams(search);
@@ -110,19 +112,26 @@ export async function experimentView(root, [id], scope) {
     else params.delete("by");
     settle(params.toString() ? `${path}?${params}` : path);
   };
-  const opened = new Set();
   const asked = new Map();
-  const load = (position, token, behaviour) => {
-    const key = [position, token, behaviour].join("\u0000");
-    if (asked.has(key)) return asked.get(key);
-    const found = api.get(`/experiments/${enc(experiment.id)}/continuations${query({ position, token, behaviour })}`);
-    if (experiment.status !== "running") {
-      asked.set(key, found);
-      found.catch(() => asked.delete(key));
+  const read = new Map();
+  const load = ({ group, position, token, key, count }) => {
+    const at = `${group}\u0000${count}`;
+    if (!asked.has(at)) {
+      const found = api.get(`/experiments/${enc(experiment.id)}/continuations${query({ position, token, behaviour: key })}`)
+        .then((data) => {
+          const listed = data.positions?.[0]?.tokens?.[0]?.behaviours?.[0]?.continuations || [];
+          read.set(group, listed);
+          return listed;
+        });
+      asked.set(at, found);
+      found.catch(() => asked.delete(at));
     }
-    return found;
+    return asked.get(at);
   };
-  const written = { load, opened, by: scope.query?.get("by") === "behaviour" ? "behaviour" : "token", onGroup: grouped };
+  const written = {
+    load, read, opened: new Set(), scrolled: new Map(),
+    by: scope.query?.get("by") === "behaviour" ? "behaviour" : "token", onGroup: grouped,
+  };
   draw();
   loadTally();
   if (experiment.kind === "forking-tokens" && experiment.run_id && experiment.settings?.base_stream) {

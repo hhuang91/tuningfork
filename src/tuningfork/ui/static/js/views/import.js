@@ -262,16 +262,22 @@ export async function scenarioFromRunView(root, [runId], scope) {
   let picker = null;
   let pickedFor = null;
   const drawFolder = () => {
-    const key = JSON.stringify([found.skill, found.skill_dir, found.skill_dir_from, found.can_copy]);
+    const key = JSON.stringify([found.skill, found.skill_dir, found.skill_dir_from, found.skill_dir_changed, found.can_copy]);
     if (key === pickedFor) return;
     pickedFor = key;
-    const why = found.skill_dir_from === "task"
-      ? `The folder of the task this run was launched from: each run gets a copy, and an approved edit is written to it.`
-      : "The folder named when this chat was imported: each run gets a copy, and an approved edit is written to it.";
-    // Its fields' own events reach the form, which plans again for each.
+    const task = found.skill_dir_from === "task";
+    const why = (task ? "The folder of the task this run was launched from" : "The folder named when this chat was imported")
+      + (found.skill_dir_changed
+        ? ". Its SKILL.md has changed since the run: each run reads it as it is now, and an approved edit is written to it."
+        : ": each run gets a copy, and an approved edit is written to it.");
+    // Its fields' own events reach the form, which plans again for each. A folder changed since the
+    // run is offered, not fixed: the run no longer says what it holds (found in review).
     picker = skillPicker({
       skills, name: "run",
-      fixed: found.skill_dir ? { path: found.skill_dir, why } : null,
+      fixed: found.skill_dir ? {
+        path: found.skill_dir, why, changed: Boolean(found.skill_dir_changed),
+        label: task ? "The task's folder, as it is now" : "The folder named at import, as it is now",
+      } : null,
       copy: found.can_copy ? { where: `scenarios/<name>/${found.copy_dir}/` } : null,
     });
     replace(folderSlot, h("span", { class: "form-label" }, "Skill folder"), picker.element);
@@ -396,6 +402,8 @@ export async function scenarioFromRunView(root, [runId], scope) {
     // where none is sent.
     const chosen = picker.value();
     if ((chosen.kind === "known" || chosen.kind === "path") && chosen.path) said.skill_dir = chosen.path;
+    // The run's folder has changed since, and the copy of what the run had is chosen over it.
+    if (chosen.kind === "copy" && found.skill_dir) said.copy_skill = true;
     // Sent as nothing, the check is the task's own where the run's task had one; a kind chosen
     // with nothing typed for it yet is no check, as it is in a scenario's editor.
     const { kind, text } = checks.value();

@@ -235,6 +235,68 @@ class TestKeepingATaskFile:
         assert (scenarios.folder(tmp_path / "home", "kept") / "checks" / "report.py").is_file()
         assert not any("holds no such file" in warning for warning in made.checked.warnings)
 
+    def test_a_doubled_slash_is_read_inside_its_folder(self, tmp_path, monkeypatch):
+        """Found in review: `$TUNINGFORK_SPEC_DIR//checks/report.py` was read as `/checks/report.py`,
+        and an import planned from such a check read every file on the machine. The shell reads it
+        inside the task's folder, and so does every reader of a check's paths."""
+        from tuningfork.ops import addskill
+        from tuningfork.ops.imports import _check_files
+
+        source = task_folder(tmp_path / "task", check='python3 "$TUNINGFORK_SPEC_DIR//checks/report.py"')
+        reading = addskill._read_folder
+
+        def inside(folder):
+            assert Path(folder).resolve().is_relative_to(source.resolve()), f"read {folder}"
+            return reading(folder)
+
+        monkeypatch.setattr(addskill, "_read_folder", inside)
+        assert scenarios._check_reads("cat $TUNINGFORK_SPEC_DIR//checks/report.py $TUNINGFORK_SPEC_DIR/../x") == ["checks/report.py"]
+        plan = scenarios.prepare_import(tmp_path / "home", source / "evals.json", "kept")
+        assert plan.to_json()["beside"] == ["checks/report.py"]
+        made = scenarios.execute_import(tmp_path / "home", plan)
+        assert not any("holds no such file" in warning for warning in made.checked.warnings)
+        # A scenario of a run of the task copies the same.
+        assert _check_files('python3 "$TUNINGFORK_SPEC_DIR//checks/report.py"', source) == ({"checks": source / "checks"}, [])
+
+    def test_the_conversation_its_runs_continue_comes_too(self, tmp_path):
+        """Found in review: a task file naming the conversation its runs continue
+        (`tuningfork.context`) was kept without it — by its path, or its folder uploaded — and
+        could not run."""
+        source = task_folder(tmp_path / "task")
+        data = json.loads((source / "evals.json").read_text(encoding="utf-8"))
+        data["evals"][0]["tuningfork"]["context"] = "chat/context.json"
+        (source / "evals.json").write_text(json.dumps(data), encoding="utf-8")
+        (source / "chat").mkdir()
+        (source / "chat" / "context.json").write_text(json.dumps(
+            [{"role": "user", "content": "Earlier, a word."}, {"role": "assistant", "content": "Noted."}]), encoding="utf-8")
+        by_path = scenarios.prepare_import(tmp_path / "home", source / "evals.json", "kept")
+        assert by_path.to_json()["beside"] == ["chat/context.json", "checks/report.py"]
+        assert any("the conversation its runs continue, chat/context.json" in note for note in by_path.notes)
+        assert not any("its check reads chat" in note for note in by_path.notes)
+        made = scenarios.execute_import(tmp_path / "home", by_path)
+        assert made.checked.ok, made.checked.problems
+        up = scenarios.prepare_upload(tmp_path / "home", "up", uploaded(source), folder_name="task")
+        assert any("1 other file(s) in task are left out" in note for note in up.notes)  # the README alone
+        assert scenarios.execute_import(tmp_path / "home", up).checked.ok
+        (source / "chat" / "context.json").unlink()
+        with pytest.raises(OperationError, match="chat/context.json is not beside it"):
+            scenarios.prepare_import(tmp_path / "home", source / "evals.json", "gone")
+
+    def test_a_folder_is_planned_by_its_files_sizes(self, tmp_path):
+        """A form plans an upload as it is filled in: by each file's size, the task file's own bytes
+        apart, its data sent only when the scenario is made (found in review: every plan sent the
+        whole folder again)."""
+        files = uploaded(task_folder(tmp_path / "task"))
+        sized = {path: data if path == "evals.json" else scenarios.Unsent(len(data)) for path, data in files.items()}
+        plan = scenarios.prepare_upload(tmp_path / "home", "up", sized, folder_name="task")
+        assert plan.to_json() == scenarios.prepare_upload(tmp_path / "home", "up", files, folder_name="task").to_json()
+        with pytest.raises(OperationError, match="shown, never made"):
+            scenarios.execute_import(tmp_path / "home", plan)
+        assert not scenarios.folder(tmp_path / "home", "up").exists()
+        with pytest.raises(OperationError) as unread:
+            scenarios.prepare_upload(tmp_path / "home", "up", {**sized, "evals.json": scenarios.Unsent(10)})
+        assert unread.value.field == "files"
+
     def test_a_check_reading_what_the_scenarios_folder_lacks_is_said(self, tmp_path, skill):
         data = spec(str(skill))
         data["evals"][0]["tuningfork"]["check"] = CHECK
@@ -280,8 +342,11 @@ class TestKeepingATaskFile:
 
     @pytest.mark.parametrize("path", ["../escape.json", "/etc/evals.json", "a/../../b.json"])
     def test_an_uploaded_file_stays_inside(self, tmp_path, path):
-        with pytest.raises(OperationError):
-            scenarios.prepare_upload(tmp_path / "home", "up", {path: b"{}"})
+        # Beside a task file that plans well, so that the path alone is refused (found in review:
+        # alone, it was refused for want of an evals.json, the check of its path never reached).
+        with pytest.raises(OperationError) as refused:
+            scenarios.prepare_upload(tmp_path / "home", "up", {**uploaded(task_folder(tmp_path / "task")), path: b"{}"})
+        assert refused.value.field == "files" and "is not a path inside the folder uploaded" in refused.value.message
 
 
 class TestTheScenariosFolder:
@@ -341,6 +406,13 @@ class TestOverHttp:
         files = [{"path": path, "data": base64.b64encode(data).decode()} for path, data in uploaded(source).items()]
         up = await proxy_client.post(f"{API}/import", json={"name": "u", "files": files, "folder": "task"})
         assert up.status_code == 201 and up.json()["scenario"]["spec"]["tuningfork"]["skill_dir"] == "skill/tally"
+        # Planned by the files' sizes, the task file's own bytes apart; made only of their data.
+        sized = [each if each["path"] == "evals.json" else {"path": each["path"], "size": len(base64.b64decode(each["data"]))}
+                 for each in files]
+        planned = await proxy_client.post(f"{API}/import", json={"name": "s", "files": sized, "folder": "task", "dry_run": True})
+        assert planned.status_code == 200 and planned.json()["plan"]["inputs"] == ["rows.csv"], planned.text
+        unsent = await proxy_client.post(f"{API}/import", json={"name": "s", "files": sized, "folder": "task"})
+        assert unsent.status_code == 400 and unsent.json()["error"]["field"] == "files"
         # Asked quietly as a form is filled in: a refusal is the answer.
         quiet = await proxy_client.post(f"{API}/import", json={"name": "u", "files": files, "dry_run": True, "quiet": True})
         assert quiet.status_code == 200 and quiet.json()["refused"]["code"] == "conflict"

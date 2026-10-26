@@ -82,10 +82,17 @@ def _import_plan(home: Any, body: dict[str, Any]) -> scenarios.ImportPlan:
     files = body["files"]
     if not isinstance(files, list):
         raise OperationError("files is a list of {path, data}, data in base64", code="bad_params", field="files")
-    decoded: dict[str, bytes] = {}
+    decoded: dict[str, bytes | scenarios.Unsent] = {}
     for each in files:
+        # A plan only: a file by its size, its data sent when the scenario is made.
+        size = each.get("size") if isinstance(each, dict) and "data" not in each else None
+        if (isinstance(size, int) and not isinstance(size, bool) and size >= 0 and body.get("dry_run") is True
+                and isinstance(each.get("path"), str)):
+            decoded[each["path"]] = scenarios.Unsent(size)
+            continue
         if not isinstance(each, dict) or not isinstance(each.get("path"), str) or not isinstance(each.get("data"), str):
-            raise OperationError("each file is {path, data}, data in base64", code="bad_params", field="files")
+            raise OperationError("each file is {path, data}, data in base64 (a plan's, {path, size})", code="bad_params",
+                                 field="files")
         try:
             decoded[each["path"]] = base64.b64decode(each["data"], validate=True)
         except (binascii.Error, ValueError):
@@ -162,8 +169,9 @@ def scenario_routes(*, store: Any, writable: bool) -> list[Route]:
     async def import_(request: Request) -> Response:
         """A task file kept as a scenario: one on this machine by its path, `{"path", "name"}`, or
         a folder uploaded, `{"name", "files": [{"path", "data": <base64>}], "spec"?, "folder"?}` —
-        `dry_run` its plan, writing nothing, and `quiet` a dry run's refusal as `{"refused": …}`,
-        for a form asking as it is filled in."""
+        `dry_run` its plan, writing nothing, each file but the task file there by its size alone
+        if wished (`{"path", "size"}`), and `quiet` a dry run's refusal as `{"refused": …}`, for a
+        form asking as it is filled in."""
         body: Any = {}
         try:
             raw = await _capped(request, _upload_cap())
