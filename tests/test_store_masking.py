@@ -473,6 +473,30 @@ class TestWhatIsShown:
         assert "Xy7pQ2" in store.masking.shown(edited).value  # alone, the value reads as no key
         was, now = store.masking.alike([original, edited])
         assert "Xy7pQ2" not in was + now and now.startswith("Call it: http -a admin:")
+        short = "Call it: curl -u admin:a1b https://api.test\n"  # too short to be found by its value
+        assert "a1b" not in "".join(store.masking.alike([short, short.replace("curl -u admin:", "http -a admin:")]))
+
+    def test_a_short_value_on_a_changed_line_is_masked_where_the_other_holds_it_changed(self, store):
+        """Found in review: a four-character password whose `mysql -p` was rewritten, among eighty
+        lines changed — too many to compare their characters — showed on the other side; so did one on
+        a line moved. A mask of four characters or more is masked wherever its value stands on the
+        other's changed lines; lines that did not change are masked alike."""
+        lines = [f"step {n}: copy part {n} of the tally into the report" for n in range(80)]
+        was = "Run: mysql -pZ9q4 tally < dump.sql\n" + "\n".join(lines) + "\nKeep Z9q4 out of the logs.\n"
+        rewritten = "Run: the Z9q4 load first\n" + "\n".join(line.replace("copy", "move") for line in lines) + "\n"
+        assert "Z9q4" in store.masking.shown(rewritten, lines=True).value  # alone, the value reads as no key
+        moved = "\n".join(lines) + "\nRun: load Z9q4 into the tally first\n"
+        for other, line in ((rewritten, f"Run: the {REDACTED} load first"), (moved, f"Run: load {REDACTED} into the tally first")):
+            was_shown, now = store.masking.alike([was, other + "Keep Z9q4 out of the logs.\n"])
+            assert line in now.splitlines() and was_shown.startswith(f"Run: mysql -p{REDACTED} tally")
+            assert was_shown.endswith("Keep Z9q4 out of the logs.\n") and now.endswith("Keep Z9q4 out of the logs.\n")
+            assert line in store.masking.alike([other + "Keep Z9q4 out of the logs.\n", was])[0].splitlines()
+        # Masked on a line both hold, and said bare on a line the other changed.
+        kept = "Run: mysql -pZ9q4 tally < dump.sql\nThen check it.\n"
+        assert store.masking.alike([kept, kept.replace("check it", "echo Z9q4")])[1].endswith(f"Then echo {REDACTED}.\n")
+        # A mask of fewer than four characters is found by its value nowhere: so few stand anywhere by chance.
+        short = "curl -u admin:a1b https://api.test/x\nThen check it.\n"
+        assert store.masking.alike([short, short.replace("check it", "read part a1b2 of it")])[1].endswith("part a1b2 of it.\n")
 
     def test_letters_a_changed_line_shares_with_a_key_by_chance_are_shown(self, store):
         """Found in review: a key's line rewritten as a word read `rot<redacted>t<redacted>d`, the

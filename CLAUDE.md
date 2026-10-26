@@ -730,8 +730,11 @@ lines, show_files' pages, a task's prompt in a plan or the packet — is masked 
 at its number, each line a mask covers reading `<redacted>` (`Masking.shown`'s `lines`): line by
 line, a private key's lines pass, and a cut through a key leaves a part no pattern reads. Texts set
 side by side — a diff: show_files', an A/B's wording, a refinement's proposals — are masked alike,
-what they share masked as either masks it (`Masking.alike`): an edit can take away a private key's
-first line, or the command a password's pattern reads. An edit's quotes — the text it replaced, the
+what they share masked as either masks it, and a mask of four characters or more wherever its
+value stands on the other's changed lines (`Masking.alike`): an edit can take away a private key's
+first line, or the command a password's pattern reads. A shorter mask is carried onto a changed
+line only where the lines around it are compared character by character (`CHARS_COMPARED`). An
+edit's quotes — the text it replaced, the
 lines a refusal finds closest — are the skill as show_skill shows it. A file where_it_holds asks of
 for an agent is matched as the agent is shown it. A run's views show its task's check masked
 (`timeline.launch_json`, `inspect.task_summaries`); the form that makes a scenario of the run takes
@@ -742,8 +745,9 @@ leaves a key to read as none — the words its pattern reads changed beside it, 
 refused (`Masking.bared`): every run given it would record the key bare. A variant given as text that
 reads the mask more often than the file does — written from the skill as shown — is set on the file
 as it stands (`experiments.variant_onto`), each line it kept the file's, a key whole or not at all
-and still masked; any other, a person's, is tested as given. No answer gives a digest (`*sha256`) of what
-it shows masked (`mcp.server._without_digests`): against one, a short key is guessed. Masking is not
+and still masked; any other, a person's, is tested as given. No answer gives a digest (a field named
+`sha256` or `*_sha256`) of what it shows masked (`mcp.server._without_digests`): against one, a short
+key is guessed. Masking is not
 idempotent, and a fork matches a call masked once against a step stored masked once;
 `tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
 `tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file
