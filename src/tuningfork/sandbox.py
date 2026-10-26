@@ -48,6 +48,9 @@ TMP = Path("/tmp")
 
 #: The environment variable that turns the sandbox off.
 SWITCH = "TUNINGFORK_SANDBOX"
+#: Why no launch runs in the sandbox, where one thing would let them (`remedy`).
+TURNED_OFF = f"turned off ({SWITCH}=off)"
+NOT_INSTALLED = "bubblewrap is not installed (Linux: the bubblewrap package)"
 #: Folders every launch sees empty besides tuningfork's own, named by the person as PATH
 #: is (`os.pathsep` between them): a benchmark's folder of tasks, say. A check sees them
 #: empty too, but for its own task's folder, where its scripts and keys belong.
@@ -135,14 +138,22 @@ def status() -> Status:
     """Whether a launch can run in the sandbox now: bubblewrap found, able to make the
     namespaces it needs, and the person's own home not where a launch's would go."""
     if turned_off():
-        return Status(None, None, f"turned off ({SWITCH}=off)")
+        return Status(None, None, TURNED_OFF)
     return _probe(shutil.which("bwrap"), str(Path.home()))
+
+
+def remedy(reason: str | None) -> str | None:
+    """What would let launches run in the sandbox, for the reason `status` gave that they
+    cannot: the sandbox turned on again, or bubblewrap installed. Else none: bubblewrap is
+    there and could not make a sandbox, or the person's home is where a launch's goes, and
+    the reason says which."""
+    return {TURNED_OFF: f"turn it on again (unset {SWITCH})", NOT_INSTALLED: "install bubblewrap"}.get(reason or "")
 
 
 @lru_cache(maxsize=8)
 def _probe(executable: str | None, real_home: str) -> Status:
     if os.name != "posix" or executable is None:
-        return Status(None, None, "bubblewrap is not installed (Linux: the bubblewrap package)")
+        return Status(None, None, NOT_INSTALLED)
     version = None
     try:
         done = subprocess.run(

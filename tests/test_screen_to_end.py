@@ -240,6 +240,45 @@ def test_a_screen_to_the_end_draws_its_forks_from_several_checkpoints(stack):
     assert alone.exit_code == 0 and "from      " not in alone.output, alone.output
 
 
+def test_a_screen_pools_the_forks_of_runs_set_up_alike(stack):
+    """A run set up otherwise — another harness or model, other harness options, another layout,
+    another sandbox or clock — tells its forks something else, so a screen never pools them with
+    the refinement's own: found in review, it drew any run of the task. A later screen chooses
+    its checkpoints again where the latest drew from a run set up otherwise."""
+    from tuningfork.ops.experiments import load
+    from tuningfork.ops.screen import choose_checkpoints
+
+    plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                         model="m", harness="fake", n=4)
+    execute_batch(stack.store, plan)
+    anchor, *others = stack.store.runs(limit=5, task_id="tally-report/1")
+    made = refine.create(stack.store, anchor.id, "write_file", target_check=True)
+    proposal = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="the check reads row_count",
+                                   proposer={"via": "person"})
+    original = refine.get(stack.store, made.id).baseline_text()
+    screen = dict(to_end=True, n=4, base_url=f"{stack.url}/v1", workdir=stack.tmp / "forks", checkpoints=4)
+    first = refine.prepare_refinement_screen(stack.store, made.id, [proposal.id], **screen)
+    assert [each["run"] for each in first.to_json()["checkpoints"]] == [anchor.id, *(run.id for run in others)]
+    execute_screen_to_end(stack.store, first)
+
+    # Two of the runs, as they would be recorded had one had an option and one the sandbox.
+    stack.store.note_launch(others[0].launch_id, harness={"self_improvement": False})
+    stack.store.note_launch(others[1].launch_id, sandbox={"kind": "bubblewrap", "clock": "2026-10-08 09:00:00"})
+    chosen, notes = choose_checkpoints(stack.store, load(stack.store, anchor.id, "write_file"), 4,
+                                       original_text=original, aligned=["write_file"])
+    assert [found.run.id for found in chosen] == [anchor.id, others[2].id]
+    assert notes == [
+        f'run {others[0].id[:8]} was set up otherwise: harness options {{"self_improvement": false}}, not none',
+        f"run {others[1].id[:8]} was set up otherwise: in the sandbox, not without it",
+    ]
+    again = refine.prepare_refinement_screen(stack.store, made.id, [proposal.id], **screen).to_json()
+    assert [each["run"] for each in again["checkpoints"]] == [anchor.id, others[2].id]
+    assert again["notes"][0] == (f"the latest screen drew from run(s) {others[0].id[:8]}, {others[1].id[:8]}, set up "
+                                 f"otherwise than run {anchor.id[:8]}: the checkpoints are chosen again")
+    assert any("2 checkpoint(s) of the 4 asked for" in warning and "set up as the refinement's run was" in warning
+               for warning in again["warnings"])
+
+
 def test_a_screen_at_the_step_samples_one_checkpoint(stack):
     made, proposal = proposed(stack, target_rules=RULES)
     with pytest.raises(OperationError) as refused:

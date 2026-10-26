@@ -21,12 +21,26 @@ from tuningfork.ops.common import Cancel, Cancelled, OperationError
 from tuningfork.ops.private import PREFIX
 from tuningfork.ops.screen import execute_screen
 from tuningfork.specs import Eval, TuningforkOptions
-from tests.helpers import CHECK, task_stack
+from tests.helpers import CHECK, FakeAgent, task_stack
 
 MARKER = "HELD-OUT-MARKER"
 RULES = [{"if": "calls", "value": "write_file"}, {"if": "contains", "value": "row_count"}]
 KEYS = {"old": "Write the totals to report.json.",
         "new": "Write the totals to report.json, using the keys row_count and amount_total."}
+
+
+class SetUp(FakeAgent):
+    """The fake agent, set up as Hermes is: laid out one of two ways, and taking options, each
+    kept in its launch's settings."""
+
+    layouts = ("install", "flat")
+
+    def __init__(self, executable=None, *, layout="install", options=None):
+        self.layout, self.options = layout, dict(options or {})
+
+    @property
+    def settings(self):
+        return {"harness": dict(self.options)} if self.options else {}
 
 
 @pytest.fixture
@@ -46,11 +60,11 @@ def stack(tmp_path, mock_server, monkeypatch, request):
         yield built
 
 
-def screened(stack, n: int = 5):
+def screened(stack, n: int = 5, harness_options=None):
     """A run of the training task, a refinement at its write step, the keys fix proposed, and
     a complete screen it survived."""
     plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
-                         model="m", harness="fake", n=1)
+                         model="m", harness="fake", n=1, harness_options=harness_options)
     execute_batch(stack.store, plan)
     (run,) = stack.store.runs(limit=5, task_id="tally-report/1")
     made = refine.create(stack.store, run.id, "write_file", target_rules=RULES)
@@ -200,6 +214,128 @@ def test_the_held_out_runs_are_held_to_the_proxys_cap(stack, monkeypatch):
     monkeypatch.setattr(private, "run_verdict_only", lambda *args, **kwargs: asked.append(kwargs["max_output"]) or [])
     validate.execute_validate(stack.store, plan)
     assert asked == [50, 50]  # the held-out task's two arms
+
+
+def test_every_run_is_set_up_as_the_checkpoints_run_was(stack, monkeypatch):
+    """A harness option changes what the model is told (Hermes's self_improvement takes away the
+    tool that patches a skill), and so does how its files are laid out, whose paths the model
+    reads; a launch records both. The forks take them from the checkpoint's launch, and so do
+    the training and held-out runs: found in review, they were launched with the harness's
+    defaults, laid out as installed. An MCP server, which a launch records by name only,
+    reaches none of them, and the plan says so once."""
+    from tuningfork.harness import ADAPTERS
+    from tuningfork.store.db import Store
+
+    monkeypatch.setitem(ADAPTERS, "fake", SetUp)
+    monkeypatch.setattr(validate, "MINIMUM", 1)
+    made, proposal = screened(stack, harness_options={"self_improvement": False, "mcp_servers": {"tf": "http://127.0.0.1:1/mcp"}})
+    # The checkpoint's run as one recorded before layouts were would be laid out: flat.
+    stack.store.note_launch(stack.store.get_run(made.run_id).launch_id, layout="flat")
+    keep = stack.tmp / "kept"
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url, keep_private=keep)
+    quiet = {"self_improvement": False}
+    assert plan.setup.options == plan.to_json()["setup"]["harness_options"] == quiet
+    assert plan.to_json()["setup"] == {"harness_options": quiet, "dropped_servers": ["tf"], "layout": "flat",
+                                       "sandboxed": False, "clock": None}
+    said = [warning for warning in plan.warnings if "MCP server" in warning]
+    assert said == [f"run {made.run_id[:8]} had MCP server(s) tf, which a launch records by name only: its forks, the "
+                    "training runs and the held-out runs go without them, and the forks may depart from the recording"]
+
+    record = validate.execute_validate(stack.store, plan).record
+    assert record["setup"] == plan.to_json()["setup"]
+    launches = [stack.store.get_launch(stack.store.get_run(verdict["run_id"]).launch_id)
+                for part in ("forward", "training") for arm in ("original", "edit") for verdict in record[part][arm]]
+    for arm in ("original", "edit"):
+        private = Store(keep / f"2-{arm}")
+        try:
+            launches += [private.get_launch(run.launch_id) for run in private.runs(limit=10)]
+        finally:
+            private.close()
+    assert [(launch.settings.get("harness"), launch.settings.get("layout")) for launch in launches] == [(quiet, "flat")] * 6
+
+    # A spec with no held-out task: the warning names no held-out runs.
+    spec = json.loads(stack.spec.path.read_text(encoding="utf-8"))
+    spec["evals"] = spec["evals"][:1]
+    stack.spec.path.write_text(json.dumps(spec), encoding="utf-8")
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    assert [warning for warning in plan.warnings if "MCP server" in warning] == [
+        said[0].replace("its forks, the training runs and the held-out runs", "its forks and the training runs")]
+
+
+def test_the_fresh_runs_run_where_the_checkpoints_run_ran_and_read_its_date(stack, monkeypatch):
+    """A fork runs as its source did: in the sandbox only if its source was, its clock starting
+    where its source's did. So do a validation's fresh runs, whatever this process says: found
+    in review, a batch took the instant this process pins (`TUNINGFORK_CLOCK`) and the sandbox
+    wherever it runs, so its fresh runs could read another date, and other paths, than its forks."""
+    import tuningfork.sandbox
+    from tuningfork.sandbox import CLOCK, FROM_ENV, NOT_INSTALLED, SWITCH, TURNED_OFF, Sandbox
+
+    monkeypatch.setattr(validate, "MINIMUM", 1)
+    made, proposal = screened(stack)
+    launch_id = stack.store.get_run(made.run_id).launch_id
+    # Here bubblewrap runs, and this process pins an instant of its own.
+    monkeypatch.delenv(SWITCH, raising=False)
+    monkeypatch.setenv(CLOCK, "2030-01-01 00:00:00")
+    asked = []
+
+    def sandbox_here(hide, *, own=(), clock=FROM_ENV):
+        asked.append(clock)
+        return Sandbox("/usr/bin/bwrap", "0.11.1", hide=tuple(hide), own=tuple(own), clock_library="/lib/x.so",
+                       clock="2030-01-01 00:00:00" if clock == FROM_ENV else clock), None
+
+    monkeypatch.setattr(tuningfork.sandbox, "for_launches", sandbox_here)
+
+    # The checkpoint's run ran without the sandbox: so does every part, and the plan says so.
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    assert plan.forward.original.sandbox is None and [batch.sandbox for batch in plan.training_plans.values()] == [None] * 2
+    assert asked == [] and plan.to_json()["setup"]["sandboxed"] is False
+    assert any(f"run {made.run_id[:8]} ran without it, and so does every run set up as it was" in warning
+               for warning in plan.warnings), plan.warnings
+
+    # It ran in the sandbox, its clock pinned, a folder kept from it: every part runs there,
+    # starting at that instant, kept from that folder too.
+    kept_from = stack.tmp / "kept-from-the-run"
+    stack.store.note_launch(launch_id, sandbox={"kind": "bubblewrap", "version": "0.11.1", "home": "/home/user",
+                                                "workspace": "/home/user/project", "clock": "2026-10-08 09:00:00",
+                                                "hidden": [str(kept_from)], "own": []})
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    sandboxes = [plan.forward.original.sandbox, plan.forward.variant.sandbox,
+                 *(batch.sandbox for batch in plan.training_plans.values())]
+    assert [sandbox.clock for sandbox in sandboxes] == ["2026-10-08 09:00:00"] * 4 and FROM_ENV not in asked
+    assert all(kept_from in sandbox.hide for sandbox in sandboxes)
+    assert plan.to_json()["setup"]["clock"] == "2026-10-08 09:00:00"
+    assert not any("cannot be pinned" in warning for warning in plan.warnings)
+
+    # Where the clock cannot be pinned here, every run reads today's date: the plan says the
+    # clock as the runs will read it, and why, once.
+    problem = "the clock cannot be pinned at 2026-10-08 09:00:00: libfaketime is not installed; runs keep the real clock"
+    monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, *, own=(), clock=FROM_ENV: (
+        Sandbox("/usr/bin/bwrap", "0.11.1", hide=tuple(hide), own=tuple(own), clock_problem=problem), None))
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    assert plan.to_json()["setup"]["clock"] is None
+    assert [warning for warning in plan.warnings if "cannot be pinned" in warning] == [
+        f"{problem}: run {made.run_id[:8]}'s forks, the training runs and the held-out runs read today's date where "
+        "the recording read 2026-10-08 09:00:00"]
+
+    # Where the sandbox cannot run, runs set up as a sandboxed run are refused, as its forks are,
+    # each hinting what would let it run, where one thing would.
+    def refused_for(reason):
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (None, reason))
+        with pytest.raises(OperationError) as batch:
+            prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                          model="m", harness="fake", n=1, setup=plan.setup)
+        with pytest.raises(OperationError) as fork:
+            validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+        assert batch.value.code == fork.value.code == "no_sandbox"
+        assert batch.value.message == f"run {made.run_id[:8]} ran in the sandbox, so the runs set up as it was must: {reason}"
+        return batch.value.hint, fork.value.hint
+
+    assert refused_for(NOT_INSTALLED) == ("install bubblewrap", "install bubblewrap, or fork a run launched without it")
+    assert refused_for(TURNED_OFF) == (f"turn it on again (unset {SWITCH})",
+                                       f"turn it on again (unset {SWITCH}), or fork a run launched without it")
+    # Installed, and unable to make a sandbox here: the reason says why, and installing it would not help.
+    assert refused_for("bubblewrap could not make a sandbox here: Permission denied") == (
+        None, "fork a run launched without it")
 
 
 def test_cancelled_it_keeps_what_finished_and_gives_no_verdict(stack, monkeypatch):

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from tuningfork.ops.common import Cancel, Cancelled, OperationError, Progress, emit
-from tuningfork.ops.launch import ProxyStatus
+from tuningfork.ops.launch import ProxyStatus, Setup
 from tuningfork.store.db import Store
 
 
@@ -135,6 +135,7 @@ def prepare_batch(
     hide: Sequence[Path] = (),
     skill_dir: Path | None = None,
     harness_options: dict[str, Any] | None = None,
+    setup: Setup | None = None,
 ) -> BatchPlan:
     """Everything a batch needs, checked before any run is launched: a missing input file or
     an unknown harness is refused before a single launch is recorded.
@@ -144,6 +145,10 @@ def prepare_batch(
     gives every run a skill folder other than the spec's — how a chain hands a link the skill
     the one before left. `harness_options` are the harness's own (Hermes: `await_review`,
     `review_every_turn`, `mcp_servers`), read by its adapter and recorded with each run.
+    `setup` sets every run up as a recorded run was, as a fork of it is (`ops.launch.Setup`):
+    its harness options in place of `harness_options`, but its MCP servers; its layout; its
+    sandbox, or none where it had none; its clock; and what its sandbox hid — how a
+    validation's fresh runs are measured beside its forks.
 
     A held-out eval judges an edit, so its runs must stay where no agent can read them: it
     runs here only with `include_held_out`, and is never the default (`refine validate` runs
@@ -158,7 +163,7 @@ def prepare_batch(
     from tuningfork.ops.launch import check_launchable, check_proxy
     from tuningfork.paths import host_path
     from tuningfork.runner import lookalike_skill_files
-    from tuningfork.sandbox import for_launches, turned_off as sandbox_turned_off
+    from tuningfork.sandbox import FROM_ENV, for_launches, recorded_hiding, remedy, turned_off as sandbox_turned_off
     from tuningfork.specs import SpecError, check_env_sources, check_kind, load_spec, missing_files
 
     if harness not in ADAPTERS:
@@ -173,7 +178,11 @@ def prepare_batch(
         skill_file = Path(host_path(str(skill_file)))
         if not skill_file.is_file():
             raise OperationError(f"no such skill file: {skill_file}", field="skill_file")
-    adapter = adapter_for(store.home, harness, options=harness_options)
+    if setup is not None:
+        harness_options = setup.options or None
+    adapter = adapter_for(
+        store.home, harness, layout=(setup.layout or "flat") if setup is not None else None, options=harness_options,
+    )
     check_launchable(adapter)
 
     base_url = base_url or f"{default_proxy()}/v1"
@@ -273,7 +282,21 @@ def prepare_batch(
     if cached:
         notes.append(Note("warning", cached))
     # The recordings, the runs' folder and `hide` are tuningfork's own: no check sees them either.
-    sandbox, unsandboxed = for_launches([store.home, workdir, spec.directory, *hide], own=[store.home, workdir, *hide])
+    recorded = setup.sandbox if setup is not None else None
+    if setup is not None and recorded is None:
+        sandbox, unsandboxed = None, f"run {(setup.run or '')[:8]} ran without it, and so does every run set up as it was"
+    else:
+        # Set up as a sandboxed run, they are kept from what it was kept from, and start where its clock did.
+        hid, mine = recorded_hiding(recorded, task=spec.directory.resolve()) if recorded else ([], [])
+        sandbox, unsandboxed = for_launches(
+            [store.home, workdir, spec.directory, *hide, *hid], own=[store.home, workdir, *hide, *mine],
+            clock=setup.clock if setup is not None else FROM_ENV,
+        )
+        if recorded and sandbox is None:
+            raise OperationError(
+                f"run {(setup.run or '')[:8]} ran in the sandbox, so the runs set up as it was must: {unsandboxed}",
+                hint=remedy(unsandboxed), code="no_sandbox",
+            )
     if sandbox is None and not sandbox_turned_off():
         notes.append(Note(
             "warning",

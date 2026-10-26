@@ -201,6 +201,7 @@ def run_verdict_only(
     harness: str,
     model: str | None,
     proxy_url: str,
+    setup: Any = None,
     skill_file: Path | None = None,
     concurrency: int = 1,
     keep: Path | None = None,
@@ -209,15 +210,16 @@ def run_verdict_only(
     progress: Progress | None = None,
     cancel: Cancel | None = None,
 ) -> list[Verdict]:
-    """Run a held-out eval n times, privately, and return only how each run ended — each held
-    to `max_output` tokens a call, the main proxy's cap, as the runs it is compared with are.
+    """Run a held-out eval n times, privately, and return only how each run ended — each set
+    up as `setup` says (`ops.launch.Setup`) and held to `max_output` tokens a call, the main
+    proxy's cap, as the runs it is compared with are.
 
     The progress events say a run ended, never how: they reach whoever follows the job."""
     from tuningfork.ops.batch import execute_batch, prepare_batch
 
     with private_proxy(store, proxy_url, concurrency=concurrency, keep=keep, max_output=max_output) as private:
         plan = prepare_batch(
-            private.store, spec, eval_id=item.id, n=n, model=model, harness=harness,
+            private.store, spec, eval_id=item.id, n=n, model=model, harness=harness, setup=setup,
             skill_file=skill_file, workdir=private.home / "batches", concurrency=concurrency,
             base_url=f"{private.url}/v1", include_held_out=True,
             # In the sandbox, the recordings the main proxy keeps are out of sight too.
