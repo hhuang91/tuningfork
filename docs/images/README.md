@@ -17,7 +17,7 @@ The pictures in the top-level README, and in [the web UI page](../web-ui.md).
 | `ui-demo.gif` | A run opened, its write step's work beside it, an edited wording A/B-tested there, its job running, and the A/B's own page: the edit, then the original arm against it, with intervals and Fisher's test. About 35 seconds, no sound | `tuningfork demo` |
 | `ui-guide.png` | The front page from its title down: where you left off, what is set up, and the loop from a skill to its next version | the guide's recordings |
 | `ui-run.png` | A step's exact context: every message as the model saw it, the skill marked in it, and the call it made | find-the-file's |
-| `ui-divergence.png` | A task's divergence page: the step that best predicts the verdict, then where the runs split and how each behaviour fared | find-the-file's |
+| `ui-divergence.png` | A task's divergence page: the step that best predicts the verdict, then where the runs split, each step a click away, and how each behaviour fared | find-the-file's |
 | `ui-ab.png` | An A/B's result at a step: the edit it tested, both arms with their intervals, and the declared target's test | find-the-file's |
 | `ui-tokens.png` | An answer's token heatmap, one uncertain token's alternatives open | find-the-file's |
 | `ui-refine.png` | A refinement: its target and its four stages, then the evidence — each proposal's screen, the approved one's validation — and a section for each stage | the guide's recordings |
@@ -72,7 +72,7 @@ picture whose source is not named is skipped. What it does for you:
 
 - **The page alone, one pixel to one.** Headless, there is no address bar — and so no access
   token — on a picture, and nothing to crop. A page is 1440 pixels wide and 896 high (the chat
-  made a scenario 1000, the GIF 1200 by 800), at a device scale of one, in the light theme, its
+  made a scenario 1160, the GIF 1200 by 800), at a device scale of one, in the light theme, its
   scrollbars hidden.
 - **Nothing of one machine.** A screenshot is a tracked file like any other. The script reads what
   each page shows — its text and what its fields hold, and on the GIF's every page, any text it

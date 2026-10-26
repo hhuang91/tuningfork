@@ -212,9 +212,10 @@ export function heatmap(view, { onProbe = null, probeOff = null, marks = null, f
       h("div", { class: "label" }, mark.flips ? "Probed here: a forced token changed what the model did" : "Probed here: no forced token decided what the model did"),
       mark.probes.map(({ experiment, position }) => h("div", { class: "tk-probe" },
         h("a", { class: "mono", href: `#/experiments/${experiment.id}?at=${position.position}` }, `probe ${short(experiment.id)}`),
-        h("span", { class: "small muted" }, arm(position.baseline, "as run")),
+        h("span", { class: "small muted" }, "did what was counted:"),
+        h("span", { class: "small muted" }, arm(position.baseline, "the run's own")),
         position.alternatives.map((alt) => h("span", { class: ["small", alt.flips ? "tk-probe-flip" : "muted"] },
-          arm(alt, "forced") + (alt.flips ? `, flips ${alt.direction === "away" ? "away from" : "toward"} what you count` : ""))))));
+          arm(alt, "forced") + (alt.flips ? `, ${alt.direction === "away" ? "less" : "more"} often` : ""))))));
   }
 
   function choose(position) {

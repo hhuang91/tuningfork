@@ -4,7 +4,9 @@
 a sample's — with no network calls: the positions, the tokens forced at each, the target
 declared before sampling, the size of the family of tests and what it can detect, and an
 estimate. `execute_forking` draws it (`tuningfork.experiment.forking`), and `forking_result`
-reports it again from the store.
+reports it again from the store. `continuations` reads back what each continuation wrote from
+the token it forced on — the deliberation, not only where it ended — and `continuation_tokens`
+one continuation as tokens.
 """
 
 from __future__ import annotations
@@ -284,6 +286,329 @@ def forking_result(store: Store, experiment: Any) -> Any:
         arms, outcomes, per_arm=per_arm, target=target_from_spec(settings.get("target")),
         alpha=float(settings.get("alpha") or 0.05), contexts=contexts, parts=parts,
         letters=target_letters(store, settings.get("target")),
+    )
+
+
+#: How the parts an output format marks are named to a reader.
+PART_WORDS = {"reasoning": "reasoning", "content": "answer", "tool_call": "tool call"}
+
+
+def _read_after(base: Any, position: int, forced: str, stream: Any, fmt: Any) -> tuple[str | None, list[tuple[str | None, bytes]]]:
+    """A continuation as its output format reads it: the forced token's part, then each token the
+    model wrote after it with its part (`marker` for the format's own). Read after the base's
+    tokens before the position, so that one starting inside the reasoning, or inside a call, is
+    read as that. A position the store masked reads as the mask."""
+    before = [base.token_bytes(i) for i in range(min(position, len(base)))] if base is not None else []
+    after = [forced.encode()] + [
+        stream.token_bytes(i) if stream.ids[i] is not None else stream.text(i, i + 1).encode()
+        for i in range(len(stream))
+    ]
+    pieces = before + after
+    kinds: list[str | None] = [None] * len(pieces)
+    if fmt is not None:
+        thinking = base.thinking if base is not None else None
+        for kind, start, end in fmt.parts([piece.decode("utf-8", "replace") for piece in pieces], thinking=thinking):
+            kinds[start:end] = [kind] * (end - start)
+    return kinds[len(before)], list(zip(kinds[len(before) + 1:], after[1:]))
+
+
+def _written(base: Any, position: int, forced: str, stream: Any, fmt: Any) -> tuple[str | None, list[tuple[str | None, str]]]:
+    """What a continuation wrote from the token it forced on: the forced token's part, and what
+    followed it in the parts its output format marks, the format's own markers left out."""
+    forced_part, read = _read_after(base, position, forced, stream, fmt)
+    runs: list[tuple[str | None, list[bytes]]] = []
+    for kind, piece in read:
+        if kind == "marker":
+            continue
+        if runs and runs[-1][0] == kind:
+            runs[-1][1].append(piece)
+        else:
+            runs.append((kind, [piece]))
+    return forced_part, [(kind, b"".join(chunks).decode("utf-8", "replace")) for kind, chunks in runs]
+
+
+def _probe_parts(store: Store, settings: dict[str, Any]) -> tuple[Any, Any]:
+    """A probe's base stream, and the output format its continuations are read by."""
+    from tuningfork.analysis.tokens import TokenStream
+    from tuningfork.backends.formats import get_format
+
+    record = store.token_stream(settings.get("base_stream") or "")
+    base = TokenStream.from_json(store.token_stream_data(record)) if record is not None else None
+    return base, get_format(settings.get("format"))
+
+
+def continuation_tokens(store: Store, experiment: Any, sample: Any, record: Any) -> Any:
+    """A probe's continuation as tokens (`tokens --sample`): what the model wrote after the
+    token it forced, each token's part marked as `continuations` reads them, and which token
+    was forced where. Its stream kept only the token each continuation drew (`n_probs` 1), so it
+    says how sure the model was of it, and little of what else it weighed."""
+    from tuningfork.analysis.tokens import TokenStream
+    from tuningfork.ops.experiments import load
+    from tuningfork.ops.targets import offered_tools
+    from tuningfork.ops.tokens import StepTokens, TokensView, _sampler
+
+    settings = experiment.settings
+    arms, per_arm = settings.get("arms") or [], int(settings.get("per_arm") or 1)
+    if sample.idx // per_arm >= len(arms):
+        raise OperationError(f"sample {sample.idx} of probe {experiment.id[:8]} is of no arm it planned")
+    arm = arms[sample.idx // per_arm]
+    checkpoint = load(store, experiment.run_id, str(experiment.step_idx))
+    stream = TokenStream.from_json(store.token_stream_data(record))
+    base, fmt = _probe_parts(store, settings)
+    _, read = _read_after(base, int(arm["position"]), arm["text"], stream, fmt)
+    runs: list[tuple[str, int, int]] = []
+    for position, (kind, _) in enumerate(read):
+        if kind is None:
+            continue
+        if runs and runs[-1][0] == kind and runs[-1][2] == position:
+            runs[-1] = (kind, runs[-1][1], position + 1)
+        else:
+            runs.append((kind, position, position + 1))
+    stream.parts, stream.format = runs, fmt.name if fmt is not None else None
+    view = TokensView(
+        record=record,
+        stream=stream,
+        sampler=_sampler(checkpoint),
+        same_server=(None if record.server_id is None or checkpoint.step.server_id is None
+                     else record.server_id == checkpoint.step.server_id),
+        sample={"experiment_id": experiment.id, "idx": sample.idx, "outcome": sample.outcome_label,
+                "forced": {"position": int(arm["position"]), "text": arm["text"], "original": bool(arm.get("original"))}},
+        tools=offered_tools(checkpoint.request),
+    )
+    return StepTokens(run_id=checkpoint.run.id, step_idx=checkpoint.step.idx, step_id=checkpoint.step.id,
+                      wire=checkpoint.wire.name, view=view)
+
+
+@dataclass(slots=True)
+class Continuation:
+    """One continuation of a probe: the token it forced, what the model wrote after it (`parts`,
+    each with what its format marks it as), and the behaviour it ended in."""
+
+    idx: int
+    position: int
+    token: str
+    original: bool
+    letter: str | None
+    outcome: Any
+    #: Whether what the probe counted counts this continuation's behaviour.
+    counted: bool
+    forced_part: str | None
+    parts: list[tuple[str | None, str]]
+    finish_reason: str | None
+    error: str | None
+    #: Tokens the model wrote after the forced one; None where its call failed.
+    generated: int | None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "idx": self.idx,
+            "forced": {"text": self.token, "part": self.forced_part},
+            "parts": [{"part": kind, "text": text} for kind, text in self.parts],
+            "counted": self.counted,
+            "finish_reason": self.finish_reason,
+            "error": self.error,
+            "generated": self.generated,
+        }
+
+    def text(self) -> str:
+        """The continuation in words: the forced token marked as the probe's context marks it,
+        then each part, named. A forced token that is one of the format's markers opens the part
+        after it."""
+        if self.error:
+            return f"no text: the call failed ({self.error})"
+        own = self.forced_part if self.forced_part not in (None, "marker") else None
+        segments: list[list[Any]] = [[own, f"⟦{self.token}⟧"]]
+        for part, text in self.parts:
+            if segments[-1][0] in (None, part):
+                segments[-1][0] = part
+                segments[-1][1] += text
+            else:
+                segments.append([part, text])
+        lines = [f"{PART_WORDS.get(kind or '', 'text')}: {text}" for kind, text in segments]
+        if self.finish_reason == "length":
+            lines.append("(cut off at its token budget)")
+        return "\n".join(lines)
+
+
+@dataclass(slots=True)
+class Continuations:
+    """What a probe's continuations wrote (`continuations`), grouped as a reader reads them: by
+    position, then token — the run's own first — then behaviour, as the probe's report letters
+    them."""
+
+    experiment: Any
+    target: str
+    #: Each position probed: its part of the answer, the text before it, its arms in order.
+    positions: list[dict[str, Any]]
+    found: list[Continuation]
+    filters: dict[str, Any]
+
+    def groups(self) -> list[dict[str, Any]]:
+        out = []
+        for position in self.positions:
+            tokens = []
+            for arm in position["arms"]:
+                mine = [c for c in self.found if c.position == position["position"] and c.token == arm["text"]
+                        and c.original == arm["original"]]
+                if not mine:
+                    continue
+                behaviours: dict[Any, list[Continuation]] = {}
+                for continuation in sorted(mine, key=lambda c: (c.letter is None, len(c.letter or ""), c.letter or "", c.idx)):
+                    behaviours.setdefault(continuation.letter or continuation.outcome.key, []).append(continuation)
+                tokens.append({"arm": arm, "behaviours": list(behaviours.values())})
+            if tokens:
+                out.append({**position, "tokens": tokens})
+        return out
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "experiment": self.experiment.id,
+            "run_id": self.experiment.run_id,
+            "step_idx": self.experiment.step_idx,
+            "target": self.target,
+            "filters": self.filters,
+            "count": len(self.found),
+            "positions": [
+                {
+                    "position": group["position"], "part": group["part"], "lead_in": group["lead_in"],
+                    "tokens": [
+                        {
+                            "text": token["arm"]["text"], "original": token["arm"]["original"], "p": token["arm"].get("p"),
+                            "count": sum(len(behaviour) for behaviour in token["behaviours"]),
+                            "behaviours": [
+                                {
+                                    "letter": behaviour[0].letter, "outcome": behaviour[0].outcome.to_json(),
+                                    "count": len(behaviour), "counted": sum(1 for c in behaviour if c.counted),
+                                    "continuations": [c.to_json() for c in behaviour],
+                                }
+                                for behaviour in token["behaviours"]
+                            ],
+                        }
+                        for token in group["tokens"]
+                    ],
+                }
+                for group in self.groups()
+            ],
+        }
+
+    def text(self) -> str:
+        """Every continuation in words, as the terminal prints them and MCP pages them."""
+        lines = []
+        for group in self.groups():
+            part = PART_WORDS.get(group["part"] or "", group["part"] or "the answer")
+            lines.append(f"[{group['position']}] {part}, after {group['lead_in']!r}")
+            for token in group["tokens"]:
+                arm = token["arm"]
+                count = sum(len(behaviour) for behaviour in token["behaviours"])
+                who = "the run's own" if arm["original"] else "forced"
+                lines.append(f"  {who} {arm['text']!r}: {count} continuation{'s' if count != 1 else ''}")
+                for behaviour in token["behaviours"]:
+                    first = behaviour[0]
+                    counted = sum(1 for c in behaviour if c.counted)
+                    said = ("" if not counted else ", what was counted" if counted == len(behaviour)
+                            else f", what was counted in {counted} of {len(behaviour)}")
+                    lines.append(f"    {first.letter or '-'} {first.outcome.label} — {len(behaviour)}{said}")
+                    for continuation in behaviour:
+                        lines.append(f"      #{continuation.idx}")
+                        lines.extend(f"        {line}" for line in continuation.text().splitlines())
+            lines.append("")
+        return "\n".join(lines).rstrip("\n") + "\n" if lines else "no continuation matches\n"
+
+
+def continuations(
+    store: Store,
+    experiment: str,
+    *,
+    position: int | None = None,
+    token: str | None = None,
+    behaviour: str | None = None,
+) -> Continuations:
+    """What a probe's continuations wrote, each from the token it forced on — not only the
+    behaviour it ended in, which is all the report counts. The text is the continuation's own
+    tokens, kept with each sample (`source` continuation), read in the parts the probe's output
+    format marks. `position`, `token` (its text, as the probe shows it) and `behaviour` (a
+    letter of the probe's, or a behaviour's key) keep only those. A continuation whose call failed wrote nothing: it
+    is listed with its error. The text is the model's: data to read, never instructions."""
+    from tuningfork.analysis.distribution import target_from_spec
+    from tuningfork.analysis.normalize import Outcome
+    from tuningfork.analysis.tokens import TokenStream
+    from tuningfork.experiment.forking import forking_outcome
+
+    found = store.get_experiment(experiment)
+    if found is None:
+        raise OperationError(f"no experiment matching {experiment!r}", code="not_found")
+    if found.kind != "forking-tokens":
+        raise OperationError(f"experiment {found.id[:8]} is a {found.kind}: continuations are a forking-token probe's",
+                             code="bad_params", field="experiment")
+    settings = found.settings
+    arms, per_arm = settings.get("arms") or [], int(settings.get("per_arm") or 1)
+    positions = sorted({int(arm["position"]) for arm in arms})
+    if position is not None and position not in positions:
+        raise OperationError(f"the probe forced tokens at {', '.join(map(str, positions))}, not {position}",
+                             code="bad_params", field="position")
+    picked = [arm for arm in arms if position is None or arm["position"] == position]
+    if token is not None:
+        exact = [arm for arm in picked if arm["text"] == token]
+        picked = exact or [arm for arm in picked if arm["text"].strip() == token.strip()]
+        if not picked:
+            raise OperationError(f"no token {token!r} was forced{'' if position is None else f' at {position}'}",
+                                 hint="the tokens are as the probe shows them, the run's own among them",
+                                 code="bad_params", field="token")
+    report = forking_result(store, found)
+    letters = report.letters
+    # A behaviour by its letter, or by its key (`Outcome.short_key`, as the report gives it): a
+    # probe still drawing letters its behaviours by how often each happened so far, so a page
+    # asking for one it shows names it by its key.
+    by_key = {Outcome(kind="", key=key, label="").short_key: letter for key, letter in letters.items()}
+    wanted = None
+    if behaviour is not None:
+        wanted = by_key.get(behaviour.strip()) or behaviour.strip().upper()
+        if wanted not in set(letters.values()):
+            raise OperationError(f"the probe's behaviours are {', '.join(sorted(set(letters.values())))}, not {behaviour!r}",
+                                 code="bad_params", field="behaviour")
+    target = target_from_spec(settings.get("target"))
+    normalizers = list(settings.get("normalizers") or [])
+    base, fmt = _probe_parts(store, settings)
+    samples = store.samples(found.id)
+    streams = {}
+    for kept in store.token_streams(sample_ids=[sample.id for sample in samples], source="continuation"):
+        streams.setdefault(kept.sample_id, kept)  # newest first: one a sample
+    listed = []
+    for sample in samples:
+        slot = sample.idx // per_arm
+        if slot >= len(arms) or arms[slot] not in picked:
+            continue
+        arm = arms[slot]
+        outcome = (Outcome("error", "error", sample.error) if sample.error
+                   else forking_outcome(store.sample_response(sample), normalizers))
+        letter = letters.get(outcome.key)
+        if wanted is not None and letter != wanted:
+            continue
+        kept = streams.get(sample.id)
+        forced_part, parts, generated = None, [], None
+        if kept is not None:
+            stream = TokenStream.from_json(store.token_stream_data(kept))
+            forced_part, parts = _written(base, int(arm["position"]), arm["text"], stream, fmt)
+            generated = len(stream)
+        listed.append(Continuation(
+            idx=sample.idx, position=int(arm["position"]), token=arm["text"], original=bool(arm.get("original")),
+            letter=letter, outcome=outcome, counted=bool(target and target.matches(outcome)),
+            forced_part=forced_part, parts=parts, finish_reason=sample.finish_reason, error=sample.error,
+            generated=generated,
+        ))
+    described = []
+    for at in positions:
+        mine = [arm for arm in picked if arm["position"] == at]
+        if not mine:
+            continue
+        # The run's own token first, then each forced in the order the probe drew them.
+        ordered = [arm for arm in mine if arm.get("original")] + [arm for arm in mine if not arm.get("original")]
+        lead_in = base.text(max(0, at - 12), at)[-40:] if base is not None and at <= len(base) else ""
+        described.append({"position": at, "part": base.part(at) if base is not None and at < len(base) else None,
+                          "lead_in": lead_in, "arms": ordered})
+    return Continuations(
+        experiment=found, target=report.target, positions=described, found=listed,
+        filters={"position": position, "token": token, "behaviour": wanted},
     )
 
 

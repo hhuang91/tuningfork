@@ -373,6 +373,7 @@ function foundPanel(job, finding) {
           finding.target ? targetLine(finding.target[1], finding.target[2], finding.target[0]) : null,
           h("div", { class: "verdict-big" }, finding.text),
           finding.seen ? h("p", { class: "verdict-lines" }, finding.seen) : null,
+          finding.lines?.length ? h("ul", { class: "verdict-lines" }, finding.lines.map((line) => h("li", null, line))) : null,
           bars.length
             ? h("div", { class: "stack", style: { gap: "4px" } }, bars.map(([label, rate, tone, said]) =>
                 h("span", null, h("span", { class: "muted" }, `${label}  `), said ? [outcome(said), " "] : null, rateBar(rate, tone))))

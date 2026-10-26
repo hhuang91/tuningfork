@@ -609,6 +609,7 @@ class TestAScenarioOfAnImport:
         result = imports.execute_import(store, imports.prepare_import(store, export(rows)))
         choices = imports.scenario_choices(store, result.run_id)
         assert choices["skill"] is None and choices["cut"] == 1 and choices["prompt"] == "Look at data.csv."
+        assert not choices["can_copy"] and choices["skill_dir"] is None  # nothing to copy: a folder is named
         assert [turn["offered"] for turn in choices["turns"]] == [True, True]
         later = imports.scenario_choices(store, result.run_id, cut=3)
         assert later["prompt"] == "Now summarize it into report.json." and later["context"] == 2
@@ -675,6 +676,8 @@ class TestAScenarioOfAnImport:
         result = imports.execute_import(store, imports.prepare_import(store, chat_with_earlier_turns(), skill_dir=str(folder)))
         plan = imports.prepare_scenario(store, result.run_id, "own-folder")
         assert plan.skill_dir == folder.resolve() and not any("extracted" in warning for warning in plan.warnings)
+        choices = imports.scenario_choices(store, result.run_id)
+        assert (choices["skill_dir"], choices["skill_dir_from"]) == (str(folder.resolve()), "import")
 
     def test_a_run_recorded_as_it_happened_keeps_the_skill_its_model_read(self, store):
         """A run that came through the proxy outside any launch: its conversation is its last
@@ -690,6 +693,8 @@ class TestAScenarioOfAnImport:
         assert not run.parity.get("imported") and not run.launch_id
         choices = imports.scenario_choices(store, run.id)
         assert (choices["skill"], choices["cut"], choices["launched"]) == ("tally-report", 3, False)
+        # No folder of its own: unless one is named, the scenario keeps a copy of what its model read.
+        assert (choices["skill_dir"], choices["can_copy"], choices["copy_dir"]) == (None, True, "skill/tally-report")
         # Only the turn the skill came in after: a run sent the earlier one would never vary it.
         assert [(turn["message"], turn["offered"]) for turn in choices["turns"]] == [(1, False), (3, True)]
         assert choices["prompt"] == "Summarize data.csv into report.json."
@@ -868,6 +873,9 @@ def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_chec
     choices = imports.scenario_choices(stack.store, source.run_id)
     assert choices["launched"] and choices["check"] == stack.item.tuningfork.check and choices["cut"] == 1
     assert choices["prompt"] == stack.item.prompt
+    # Its skill folder is its task's own: the form shows it, fixed.
+    assert choices["skill_dir_from"] == "task"
+    assert choices["skill_dir"] == str((stack.tmp / "skills-src" / "tally-report").resolve())
     plan = imports.prepare_scenario(stack.store, source.run_id, "tally-again")
     assert (plan.cut, plan.prompt, plan.context.messages) == (1, stack.item.prompt, 0)
     assert plan.skill == "tally-report" and not plan.own_skill
@@ -889,6 +897,34 @@ def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_chec
     (again,) = runner.run(spec, spec.evals[0], 1).outcomes
     assert again.passed, again.stderr  # its check found its script beside the scenario's spec
     assert stack.store.get_run(again.run_id).task_id == "tally-report/tally-again"
+
+
+def test_a_task_folder_changed_since_the_run_can_give_way_to_a_copy_of_what_it_had(stack):
+    """Found in review: the form fixed the task's folder whenever its SKILL.md was there, so a
+    scenario of an old failing run could not study the text it failed with. A folder whose
+    SKILL.md has changed since the run is said to have, and a copy of what the run had can be
+    kept in its place."""
+    from tuningfork.ops import scenarios
+
+    stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")  # the task's file, read back
+    source = stack.record()
+    task_skill = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+    had = task_skill.read_bytes()
+    assert not imports.scenario_choices(stack.store, source.run_id)["skill_dir_changed"]
+    task_skill.write_bytes(had + b"\nAn edit approved since.\n")
+    choices = imports.scenario_choices(stack.store, source.run_id)
+    assert choices["skill_dir_from"] == "task" and choices["skill_dir_changed"] and choices["can_copy"]
+    as_now = imports.prepare_scenario(stack.store, source.run_id, "as-now")
+    assert not as_now.own_skill
+    assert any("has changed since run" in warning and "--copy-skill" in warning for warning in as_now.warnings)
+    as_it_was = imports.prepare_scenario(stack.store, source.run_id, "as-it-was", copy_skill=True)
+    assert as_it_was.own_skill and not any("has changed since" in warning for warning in as_it_was.warnings)
+    imports.make_scenario(stack.store, as_it_was)
+    kept = scenarios.folder(stack.store.home, "as-it-was") / "skill" / "tally-report" / "SKILL.md"
+    assert kept.read_bytes() == had
+    with pytest.raises(OperationError) as both:
+        imports.prepare_scenario(stack.store, source.run_id, "both", copy_skill=True, skill_dir=str(task_skill.parent))
+    assert both.value.field == "skill_dir"
 
 
 def test_a_launched_runs_scenario_from_later_in_its_turn_has_its_workspace_there(stack, monkeypatch):
@@ -1026,6 +1062,12 @@ async def test_the_web_ui_makes_a_scenario_and_edits_its_conversation(proxy_clie
     assert choices["cut"] == 3 and choices["skill"] == "tally-report" and choices["imported"]
     odd = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "x", "task_check": "no"})
     assert odd.status_code == 400 and odd.json()["error"]["field"] == "task_check"
+    # A copy of what the run had, asked for in place of the folder its skill came from.
+    copied = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario",
+                                     json={"name": "a-copy", "copy_skill": True, "dry_run": True})
+    assert copied.status_code == 200 and copied.json()["plan"]["own_skill"]
+    odd = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "x", "copy_skill": "yes"})
+    assert odd.status_code == 400 and odd.json()["error"]["field"] == "copy_skill"
     other = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "by-run", "harness": "hermes"})
     assert other.status_code == 201 and other.json()["harness"] == "hermes"
 

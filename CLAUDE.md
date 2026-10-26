@@ -163,6 +163,22 @@ loads a skill other than the spec's (`LaunchState.next_skill`, the adapter's `sk
 notes the launch (`Store.note_launch`), the runner ends the harness and runs the check on the
 workspace as it is, and the run counts, its result saying where it stopped (`stopped_at_skill`).
 
+A task file a person has becomes a scenario too (`scenarios.prepare_import`, `prepare_upload`,
+`execute_import`; the Scenarios page's Add a task file you have, `POST /scenarios/import`), planned
+before anything is written: by its path, its skill folder kept where it is, or its folder uploaded,
+the skill folder it holds copied into the scenario's own (`skill/<name>/`). Either way its input
+files, the conversation its runs continue, and what its check reads from its folder
+(`$TUNINGFORK_SPEC_DIR/…`, read inside it as the shell reads it, `//` too) come with it; a
+scenario whose check reads what its folder lacks says so before it runs. A form plans an upload by
+its files' sizes, and makes it with the data of the files it takes alone (`scenarios.Unsent`, the
+plan's `taken`). A new scenario's page and
+Make a scenario name the skill alike (`ui/static/js/skillpick.js`): the scenario's name, the
+harness (of a run), the skill's name, then its folder — an existing skill the Skills page lists, or
+a path, a relative one shown after the scenario's own folder it is taken from, and of a run a copy
+of what it had — each greyed where the run says it, but a folder whose SKILL.md has changed since
+the run, offered beside a copy of what the run had (`copy_skill`). A scenario's input files go into
+it only once it is saved, each at a path in the workspace the person can change.
+
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
 agent's sight). It can run what the model wrote — a `conftest.py` its `pytest` finds — so its
@@ -344,7 +360,13 @@ entries' ids had failed every answer holding one. The forking-token probe forces
 stream, and tests each alternative against its position's baseline, Holm-corrected over the
 family planned before sampling; each behaviour it reached says whether the target counts it and
 which tokens led to it (`ForkingReport.led_by`): a token can change what the model does and miss
-a target too fine to count it. The server check (Connections) measures what each needs — the
+a target too fine to count it. What each continuation wrote from the token it forced on — its
+reasoning, then its call or reply — is read back from the tokens kept with its sample, in the parts
+the probe's format marks, read after the base's tokens before the position
+(`ops.forking.continuations`: the probe's page, where every continuation is grouped by token or by
+behaviour, a click apart (`continuationsSection` in `results.js`), `experiment --continuations`,
+`tokens --sample`, MCP's show_experiment with `continuations`, page by page): what a forced token did
+to the model's deliberation, not only where it ended. The server check (Connections) measures what each needs — the
 raw completion, the prompt rendered as the chat endpoint renders it, the output format, and the
 chat endpoint's own logprobs, which a resample's kept tokens need — and token work it found the
 server without is refused before anything is sent (`ops.connections.token_work`, in the job
@@ -522,7 +544,11 @@ greyed and saying why, and its foot is a status strip — the proxy, the server 
 from `GET /connections`. Its front page is `#/guide` — setup, where you left off, a map of the
 loop and the ways in — and its words have a page of their own, `#/words`, each living once in
 `ops/glossary.py`. Each page leads with its take-away: a run its verdict strip; the divergence
-page the step whose behaviour best predicts the verdict, in a callout with the ways to it;
+page the step whose behaviour best predicts the verdict, in a callout with the ways to it, then the
+runs side by side one step at a time, from the first split, every step a click away (`atStep` in
+`views/compare.js`: the first split is often not the step that decides); a forking-token probe the
+forced tokens that changed what the model did, each beside the run's own token there — what each
+led to, and how often it did what was counted (`flipsTable` in `results.js`);
 Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model, a
 word and a colour each, the server in the status strip's words (`serverWord`), and what that means
 in at most three sentences (`whatItMeans`); a refinement its four stages in a line (`stagesOf` in
@@ -725,8 +751,9 @@ than on a hardcoded assumption about which server is running.
 - The UI puts every string on the page as a text node — payloads are full of markup-looking
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
 - The web UI says some terms more plainly than the CLI, MCP and the docs, which keep the precise
-  words: an arm is a *wording*, a target *what you count* (a refinement's, *what the model should
-  do*), a screen a *test at this step*, a validation *full test runs*, a spec a *task file*.
+  words: an arm is a *wording*, a target *what you count* (in a result, *what was counted*, its
+  label on a line of its own; a refinement's, *what the model should do*), a screen a *test at this
+  step*, a validation *full test runs*, a spec a *task file*.
   `ui/static/js/words.js` holds the phrase for each term the glossary defines (a term's `ui`;
   `tests/test_words.py` holds the two together), the Words page shows both, and `tuningfork
   glossary` finds a term by its page phrase too. A sentence the server writes — a refusal, a plan's

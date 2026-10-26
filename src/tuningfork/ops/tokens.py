@@ -97,12 +97,14 @@ class TokensView:
 
 def stream_choice(stream: Any, sampler: Any, tools: Sequence[str]) -> Any:
     """`analysis.tokens.tool_choice` for a stream, the name's prefix taken from the format
-    that marked its parts."""
+    that marked its parts. None for a stream that kept only the token drawn at each position — a
+    probe's continuation, say: it says nothing of what else the model weighed, and the drawn
+    tool would read as a certainty (found in review)."""
     from tuningfork.analysis.tokens import tool_choice
     from tuningfork.backends.formats import get_format
 
     fmt = get_format(stream.format)
-    if fmt is None:
+    if fmt is None or stream.top_k == 1:
         return None
     return tool_choice(stream, sampler, tools=tools, prefix=getattr(fmt, "call_name_prefix", ""))
 
@@ -325,6 +327,9 @@ def sample_tokens(store: Store, experiment: str, idx: int) -> StepTokens:
     if sample is None:
         raise OperationError(f"experiment {found.id[:8]} has no sample {idx}")
     records = store.token_streams(sample_ids=[sample.id])
+    if not records and found.kind == "forking-tokens":
+        raise OperationError(f"continuation {idx} of probe {found.id[:8]} kept no tokens"
+                             + (f": its call failed ({sample.error})" if sample.error else ""))
     if not records:
         raise OperationError(
             f"sample {idx} of experiment {found.id[:8]} kept no tokens",
@@ -332,4 +337,9 @@ def sample_tokens(store: Store, experiment: str, idx: int) -> StepTokens:
         )
     if found.run_id is None:
         raise OperationError("the sample is of a held call that was never recorded as a step")
+    if found.kind == "forking-tokens":
+        # A probe's continuation: the tokens the model wrote after the one it was forced.
+        from tuningfork.ops.forking import continuation_tokens
+
+        return continuation_tokens(store, found, sample, records[0])
     return step_tokens(store, found.run_id, str(found.step_idx), stream=records[0].id)

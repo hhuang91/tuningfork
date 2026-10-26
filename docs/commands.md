@@ -207,7 +207,9 @@ prompt and everything before it each run's context.
 - **The skill.** `--skill-dir <folder>` names the skill's own folder, which the scenario tunes.
   By default it is the folder the run's skill came from — the one an import named, or a launched
   run's task's — else a copy kept in the scenario's own folder (`skill/<name>/`): the copy the run
-  kept, or the SKILL.md the model read. `--skill <name>` chooses where the run shows several.
+  kept, or the SKILL.md the model read. Where that folder's SKILL.md has changed since the run,
+  the plan says so, and `--copy-skill` keeps the copy instead, to study the text the run had.
+  `--skill <name>` chooses where the run shows several.
 - **The check.** `--check '<command>'` or `--reply-contains <text>`. A launched run's is its
   task's own by default, and what that check reads from the task's folder
   (`$TUNINGFORK_SPEC_DIR/…`) is copied beside the scenario's spec, where no run sees it;
@@ -223,7 +225,12 @@ prompt and everything before it each run's context.
 
 The web UI has the same, from a run's page (**Make a scenario…**) or from the Scenarios page
 (**From a run…**, which lists the runs to choose from, and imports a chat first where it is not
-a run yet). Its form sets each run beside the chat, for the skill chosen: first what each run is
+a run yet). Its first fields are a new scenario's — its name, the harness, the skill's name and
+its folder — each greyed where the run says it: the harness it recorded, the skill where it had
+one, and the folder its task or its import named. Where that folder has changed since the run,
+it is offered beside the others instead; where the run has no folder of the skill's own, the
+folder is a copy of what the run had, an existing skill the Skills page lists, or a path. Then the form sets each run beside the chat,
+for the skill chosen: first what each run is
 given — its harness's own system prompt and tools (the chat's shown, never sent), the
 conversation before the starting prompt, and the prompt, which can be rewritten there — then the
 conversation's steps from there on: already done, where each run starts, where it stops. Claude Code's calls cannot yet carry a conversation before the prompt, so a
@@ -338,7 +345,10 @@ breakpoints apply from there: a restart from any step of a recorded run.
 result again, drawing no new samples: `--normalizer` analyses its samples again under another
 normalizer, `--alpha` judges an A/B at another level than the one it was declared with, and says
 so. An A/B's starts with the edit it tested, as a line diff of the two texts its arms sent the
-model.
+model. `--continuations` shows a [forking-token probe](#forking-tokens)'s continuations: what the
+model wrote after each forced token — its reasoning, then its call or reply — grouped by token
+and by the behaviour it ended in; `--at`, `--token` and `--behaviour` (a letter) keep only
+some.
 
 ## Which token decided it?
 
@@ -354,8 +364,9 @@ sampler could most easily have drawn another.
 - `--score` — score the answer the run gave first: its exact context sent once more with the
   answer forced, reading the model's distribution at each token (`--top-k` alternatives kept,
   default 8).
-- `--sample EXPERIMENT:INDEX` — a sample's tokens, from a resample run with `--logprobs`;
-  `--stream <id>` — a stream by its id.
+- `--sample EXPERIMENT:INDEX` — a sample's tokens, from a resample run with `--logprobs`, or one
+  continuation of a forking-token probe, from the token it forced on; `--stream <id>` — a stream
+  by its id.
 - `--hotspots N` (default 10), `--color auto|always|never`, `--json`.
 
 ### `forking-tokens`
@@ -374,6 +385,10 @@ before sampling.
 - `--target`, `--target-match` — the behaviour to test for; by default, what the run did.
 - `--score` — score the answer first, if it has no tokens yet. `--dry-run` — show the plan; draw
   nothing.
+
+What each continuation wrote, and not only where it ended, is kept: `experiment <id>
+--continuations` shows it, and so does the probe's page, in its Every continuation section,
+grouped by token or by behaviour.
 
 ## What is the model doing right now?
 
@@ -520,7 +535,8 @@ folder instead (`skills/<name>/`, `--name` naming it), as the Skills page's uplo
 edit is then written to the copy, never back to where it came from. `--run <run>` keeps the skill a
 run had as such a copy — the copy the run kept of it, else the SKILL.md its model read — `--skill
 <name>` choosing where the run had several. `--dry-run` says what would be added. The Skills page
-then lists it, and a scenario names its folder to run it. `forget-skill <name>` forgets one: a
+then lists it, and a scenario names its folder to run it: on a scenario's page, its skill folder is
+an existing skill, chosen from those the Skills page lists, or a path. `forget-skill <name>` forgets one: a
 folder named stays where it is; a copy is moved aside whole, to `skills/.forgotten/`, never deleted,
 and not while a scenario runs from it.
 

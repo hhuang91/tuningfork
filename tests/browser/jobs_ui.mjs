@@ -401,7 +401,7 @@ try {
   check(variants.some((variant) => variant.name === variantName), "the variant was saved when the A/B started");
   await until(() => page.eval(`!!document.querySelector(".verdict-block.significant")`), "the verdict on the job page");
   // The job's page says it in a line, with what it counts, and leaves the behaviours' table to the A/B's page.
-  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What you count"
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What was counted:"
     && !document.querySelector(".table tr.is-target") && !document.querySelector(".diff-line")`),
     "the A/B's job page says what it found and what it counts, and leaves the rest to the A/B's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
@@ -417,7 +417,7 @@ try {
     return block.classList.contains("significant") && !block.classList.contains("tone-ok")
       && block.firstElementChild.classList.contains("verdict-target")
       && block.querySelector(".verdict-target-text").textContent.startsWith("A from resample ")
-      && block.querySelector(".verdict-big").textContent === "What you count happened less often with the variant: 0 of 6 samples, against 6 of 6 with the original. That is more than chance would explain.";
+      && block.querySelector(".verdict-big").textContent === "What was counted happened less often with the variant: 0 of 6 samples, against 6 of 6 with the original. That is more than chance would explain.";
   })()`), "the result says the target first, then which way the variant moved it, in the accent's colour, not green");
   const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
     [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
@@ -664,10 +664,23 @@ try {
   await page.eval(`location.hash = "#/scenarios/new"`);
   await until(() => page.eval(`!!document.querySelector('[name="scenario_name"]')`), "the new scenario form");
   await page.type(`document.querySelector('[name="scenario_name"]')`, scenarioName);
+  // Nothing is written until Save: the page says so, and files have nowhere to go yet (found in
+  // use: files dropped before the first save went nowhere, and saving said nothing).
+  check(await page.eval(`document.querySelector(".save-state")?.textContent === "not saved yet"
+    && document.querySelector(".drop-zone").classList.contains("disabled") && document.querySelector('.drop-zone + input[type="file"]').disabled`),
+    "before its first save a scenario says it is not saved, and takes no files");
   await page.type(`document.querySelector('[name="skill_name"]')`, "tally-scenario");
-  await page.type(`document.querySelector('[name="skill_dir"]')`, `${health.home}/lab-task/tally-report`);
+  // The skill folder: one the Skills page lists, or a path — a relative one shown after the
+  // scenario's own folder, where it is taken from.
+  await page.eval(`document.querySelector('input[name="skill-from-editor"][value="path"]').click()`);
+  await page.type(`document.querySelector('[name="skill_dir-editor"]')`, "skill");
+  await until(() => page.eval(`(() => { const base = document.querySelector(".path-base");
+    return !!base && !base.hidden && base.textContent === ${JSON.stringify(`${health.home}/scenarios/${scenarioName}/`)}; })()`), "the scenario's folder before a relative path");
+  check(true, "a relative skill folder is shown after the scenario's own folder, where it is taken from");
+  await page.type(`document.querySelector('[name="skill_dir-editor"]')`, `${health.home}/lab-task/tally-report`);
   await until(() => page.eval(`(document.querySelector(".path-line.path-ok")?.textContent || "").includes("holds a SKILL.md")`), "the skill folder, resolved");
-  check(true, "the skill folder field says where it resolves, and that it holds a SKILL.md");
+  check(await page.eval(`document.querySelector(".path-base").hidden && document.querySelector('[name="skill_name"]').value === "tally-scenario"`),
+    "the skill folder field says where it resolves, and that it holds a SKILL.md; a full path has no folder before it, and a name typed stays");
   await page.type(`document.querySelector('[name="prompt-0"]')`, "Summarize data.csv into report.json.");
   await page.type(`document.querySelector('[name="skills-0"]')`, "tally-report");
   await page.type(`document.querySelector('[name="turns-0"]')`, "6");
@@ -688,6 +701,9 @@ try {
   await page.click("Save");
   await until(() => page.eval(`location.hash === "#/scenarios/${scenarioName}"`), "the saved scenario's page");
   await until(() => page.eval(`!!document.querySelector(".drop-zone")?.textContent.startsWith("Drop files")`), "the drop zone");
+  check(await page.eval(`document.querySelector(".save-state")?.textContent === "saved"
+    && [...document.querySelectorAll(".toast")].some((toast) => toast.textContent.includes("Saved scenarios/${scenarioName}/evals.json"))`),
+    "saved, it says so: a note that outlives the page's change, and its state beside Save");
   // A file chosen the way a person would, through the page's own file picker.
   const csv = process.env.TUNINGFORK_UPLOAD;
   if (csv) {
@@ -736,6 +752,69 @@ try {
   await until(() => page.eval(`[...document.querySelectorAll(".scenario-result")].some((row) => row.textContent.includes("tally-scenario/1"))`), "the scenario's result in the list");
   check(await page.eval(`(() => { const bars = [...document.querySelectorAll(".scenario-result .ci-track")];
     return bars.length > 0 && bars.every((bar) => bar.classList.contains("tone-accent")); })()`), "the list shows the scenario's pass rate, in the accent");
+  // A task file you have, by its path — or its folder uploaded — planned as the form is filled
+  // in, as Add a skill plans, then kept as a scenario and opened.
+  check(await page.eval(`[...document.querySelectorAll('input[name="import-way"]')].map((radio) => radio.value).join(",") === "path,upload"`),
+    "a task file you have is added by its path, or its folder uploaded");
+  // The one just made, kept again: a task file on the proxy's machine, with no held-out task in it.
+  await page.type(`document.querySelector('.plan-form [name="path"]')`, `${health.home}/scenarios/${scenarioName}/evals.json`);
+  await page.type(`document.querySelector('.plan-form [name="name"]')`, `kept-${scenarioName}`);
+  await planShows(page, `kept-${scenarioName}`);
+  await startButtonReady(page, "Add it");
+  await page.click("Add it");
+  await until(() => page.eval(`location.hash === "#/scenarios/kept-${scenarioName}" && document.querySelector(".save-state")?.textContent === "saved"`),
+    "the task file kept, its page");
+  check(true, "a task file named by its path is planned, then kept as a scenario and opened");
+  // Or its folder uploaded: planned by each file's size as the form is filled in, the task file's
+  // own bytes apart; and, added, the data sent of the files it takes only (found in review: every
+  // plan sent the whole folder again, and Upload it what the task file never names).
+  {
+    const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = mkdtempSync(join(tmpdir(), "tf-task-"));
+    const folder = join(root, "upload-task");
+    const rows = "id\n1\n";
+    mkdirSync(join(folder, "upload-task"), { recursive: true });
+    writeFileSync(join(folder, "upload-task", "SKILL.md"), "---\nname: upload-task\ndescription: says done\n---\n\nSay done.\n");
+    writeFileSync(join(folder, "rows.csv"), rows);
+    writeFileSync(join(folder, "NOTES.md"), "# Notes the task file never names\n");
+    writeFileSync(join(folder, "evals.json"), JSON.stringify({
+      skill_name: "upload-task", tuningfork: { skill_dir: "upload-task" },
+      evals: [{ id: "1", prompt: "Say done.", files: ["rows.csv"], tuningfork: { check: { reply_contains: "done" } } }],
+    }));
+    await page.eval(`location.hash = "#/scenarios"`);
+    await until(() => page.eval(`!!document.querySelector('input[name="import-way"][value="upload"]')`), "the Scenarios page's import form");
+    await page.eval(`(() => {
+      window.importBodies = [];
+      const sent = window.fetch;
+      window.fetch = (url, init) => {
+        if (String(url).endsWith("/scenarios/import")) window.importBodies.push(JSON.parse(init.body));
+        return sent(url, init);
+      };
+      document.querySelector('input[name="import-way"][value="upload"]').click();
+      return true;
+    })()`);
+    await until(() => page.eval(`!!document.querySelector('.plan-form input[type="file"][name="folder"]')`), "the folder's picker");
+    const { root: doc } = await page.send("DOM.getDocument", { depth: -1, pierce: true });
+    const { nodeId } = await page.send("DOM.querySelector", { nodeId: doc.nodeId, selector: '.plan-form input[type="file"][name="folder"]' });
+    await page.send("DOM.setFileInputFiles", { nodeId, files: [folder] });
+    await planShows(page, "skill/upload-task");
+    await startButtonReady(page, "Upload it");
+    await page.click("Upload it");
+    await until(() => page.eval(`location.hash === "#/scenarios/upload-task"`), "the uploaded task's scenario");
+    const bodies = await page.eval(`window.importBodies`);
+    const of = (body, path) => body.files.find((file) => file.path === path) || {};
+    const planned = bodies.filter((body) => body.dry_run);
+    const made = bodies.filter((body) => !body.dry_run);
+    const sentAs = (body) => body.files.map((file) => `${file.path}:${"data" in file ? "data" : "size"}`).sort().join(",");
+    check(planned.length > 0
+      && planned.every((body) => sentAs(body) === "NOTES.md:size,evals.json:data,rows.csv:size,upload-task/SKILL.md:size"
+        && of(body, "rows.csv").size === rows.length)
+      && made.length === 1 && sentAs(made[0]) === "NOTES.md:size,evals.json:data,rows.csv:data,upload-task/SKILL.md:data",
+      `a folder uploaded is planned by its files' sizes, the task file's own bytes apart, and added with the data of the files it takes (${planned.length} plan(s); ${made.map(sentAs).join(" ")})`);
+    rmSync(root, { recursive: true, force: true });
+  }
 
   // The check, tried before trusting it: on the run the batch just made, then on files written here.
   await page.eval(`location.hash = "#/scenarios/${scenarioName}"`);
@@ -1150,7 +1229,44 @@ try {
     `the page leads with the step whose behaviour best predicts a pass (${lead.first}: ${lead.big})`);
   check(lead.ways === `Open step ${best.index} in run ${best.run_id.slice(0, 8)}=#/runs/${best.run_id}/${best.index} | Resample step ${best.index}…=#/runs/${best.run_id}/${best.index}?start=resample`
     && /^\(p = /.test(lead.p || ""), `with the ways to it, and its p last (${lead.ways}; ${lead.p})`);
-  const tallied = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What the failed runs' checks said")`;
+  // Under the lead, one step at a time, opening where the runs first split, and every step a
+  // click away: the first split is often not the step that decides.
+  console.log("the divergence page, step by step");
+  const splitAt = split.divergence_index;
+  const shownStep = () => page.eval(`(() => {
+    const panel = document.querySelector(".at-step");
+    return {
+      title: panel?.querySelector(".panel-head h2")?.textContent,
+      current: [...panel.querySelectorAll(".step-pick")].filter((pick) => pick.getAttribute("aria-pressed") === "true").map((pick) => pick.textContent).join(","),
+      shaded: [...panel.querySelectorAll(".step-pick.diverged")].map((pick) => pick.textContent).join(","),
+      note: panel.querySelector(".step-note")?.textContent,
+      hash: location.hash,
+    };
+  })()`);
+  const atSplit = await shownStep();
+  check(atSplit.title === `At step ${splitAt}` && atSplit.current === String(splitAt)
+    && atSplit.shaded === split.steps.filter((step) => step.diverged).map((step) => step.index).join(",")
+    && atSplit.note.startsWith("The runs split here for the first time"),
+    `the section opens at the first split, every step offered and the ones where the runs split shaded (${JSON.stringify(atSplit)})`);
+  const other = split.steps.find((step) => step.index > splitAt) || split.steps.find((step) => step.index !== splitAt);
+  await page.eval(`[...document.querySelectorAll(".at-step .step-pick")].find((pick) => pick.textContent === "${other.index}").click()`);
+  const moved = await shownStep();
+  check(moved.title === `At step ${other.index}` && moved.current === String(other.index)
+    && moved.note.startsWith(other.diverged ? "The runs split here" : "Every run did the same here")
+    && moved.hash === `#/divergence/${encodeURIComponent("tally-report/1")}?step=${other.index}`,
+    `a click shows another step in its place, said in a line, the address naming it (${JSON.stringify(moved)})`);
+  await page.eval(`document.querySelector(".at-step .step-pick.current").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))`);
+  const back = await shownStep();
+  check(back.current === String(Math.max(0, other.index - 1)) && await page.eval(`document.activeElement?.classList.contains("current")`),
+    `the arrow keys move along, the step shown keeping the focus (${back.current})`);
+  await page.eval(`[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "Every step")
+    .querySelector("tbody tr:last-child td a").click()`);
+  const fromTable = await shownStep();
+  check(fromTable.title === `At step ${split.steps.length - 1}`, `a step's number in Every step shows it above (${fromTable.title})`);
+  await page.eval(`location.hash = "#/divergence/${encodeURIComponent("tally-report/1")}?step=0"`);
+  await until(async () => (await shownStep()).title === "At step 0", "the address's step, opened");
+  check(true, "an address naming a step opens the page there");
+  const tallied =`[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What the failed runs' checks said")`;
   check(await page.eval(`(() => {
     const panel = ${tallied};
     return !!panel && panel.querySelector("th").textContent === "failed runs that printed it"
@@ -1205,13 +1321,31 @@ try {
   const forkJobId = await until(async () => jobIdIn(await page.eval("location.hash")), "the probe's job page");
   const forkJob = await finished(forkJobId, 120000);
   check(forkJob.status === "done" && forkJob.result.forking.flips === 1, "the probe found the token that decides the answer");
-  // Its job's page says so in a line, and hands off to the probe's own page for the rest.
+  // Its job's page says so in a line, which token beside the run's own in another, and hands off
+  // to the probe's own page for the rest.
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 forced token changed what the model did"`), "what the probe found, on its job's page");
-  check(await page.eval(`!document.querySelector(".fork-position")`), "the probe's job page says what it found in a line, and leaves the positions to the probe's page");
+  const flipLine = await page.eval(`[...document.querySelectorAll(".verdict-block ul.verdict-lines li")].map((li) => li.textContent).join(" | ")`);
+  check(flipLine === `At [${forkSpot.position}], "search_files" forced in place of the run's own "read_file": what was counted happened in 0 of 6 continuations, against 6 of 6.`,
+    `and names the token, beside the run's own, with what each did (${flipLine})`);
+  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".flips-table")`),
+    "the probe's job page says what it found in lines, and leaves the tables to the probe's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
-  await until(() => page.eval(`location.hash.startsWith("#/experiments/") && [...document.querySelectorAll(".chip")].some((c) => c.textContent === "flips away")`), "the result, marked where it forks");
-  check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => c.textContent.startsWith("flips")).every((c) => c.classList.contains("tone-accent"))`),
-    "a flip is the accent's colour, its direction in words: a result, not a check's red");
+  await until(() => page.eval(`location.hash.startsWith("#/experiments/") && [...document.querySelectorAll(".chip")].some((c) => c.textContent === "less often")`), "the result, marked where it forks");
+  check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => /^(less|more) often$/.test(c.textContent)).every((c) => c.classList.contains("tone-accent"))`),
+    "a forced token that changed what the model did is the accent's colour, its direction in words: a result, not a check's red");
+  // The block the page leads with: what was counted on a line of its own, then the forced token
+  // beside the run's own — what each led to, how many did what was counted, which way it moved.
+  const probeLead = await page.eval(`(() => {
+    const block = document.querySelector(".verdict-block");
+    const rows = [...block.querySelectorAll(".flips-table tbody tr")].map((row) => [...row.children].map((cell) => cell.textContent.trim()));
+    return { label: block.querySelector(".verdict-target .label").textContent, rows };
+  })()`);
+  const [place, own, forced] = probeLead.rows;
+  check(probeLead.label === "What was counted:" && probeLead.rows.length === 3 && place[0].startsWith(`[${forkSpot.position}]`)
+    && own[0] === "the run's own" && own[1].startsWith('"read_file"') && own[2].includes("read_file(") && own[3].startsWith("6/6")
+    && forced[0] === "forced" && forced[1].startsWith('"search_files"') && forced[2].includes("search_files(") && forced[3].startsWith("0/6")
+    && forced[4].startsWith("less often"),
+    `the probe's page leads with the forced token beside the run's own: what each led to, how often it was counted, and which way it moved (${JSON.stringify(probeLead.rows)})`);
 
   console.log("from a probe's result to the token it forced, and back");
   const probeId = forkJob.result.experiment.id;
@@ -1219,13 +1353,80 @@ try {
   await page.eval(`location.hash = "#/experiments/${probeId}"`);
   await until(() => page.eval(`!!document.querySelector('.fork-answer .tk-t.tk-flipped[data-i="${at}"]')`), "the answer it forked from");
   check(true, "the result shows the answer it forked from, the forking token ringed");
+  check(await page.eval(`[...document.querySelectorAll("#fork-pos-${at} thead th")].pop().textContent === "led to"`),
+    "and each token's row says where its continuations went");
+  // Every continuation, in one section under the lead, grouped by token or by behaviour: by token
+  // first, each token's behaviours listed and their continuations folded until opened.
+  const grouping = () => page.eval(`(() => {
+    const titles = [...document.querySelectorAll("main .panel > .panel-head h2")].map((h2) => h2.textContent);
+    const section = document.querySelector(".panel.continuations");
+    if (!section) return {};
+    return {
+      after: titles[titles.indexOf("Every continuation") - 1],
+      sections: titles.filter((title) => ["What each continuation wrote", "Behaviours, across the probe", "Every continuation"].includes(title)).length,
+      picks: [...section.querySelectorAll(".group-pick")].map((pick) => pick.textContent + (pick.getAttribute("aria-pressed") === "true" ? "*" : "")).join(","),
+      tokens: !!section.querySelector(".written-position"),
+      behaviours: !!section.querySelector(".probe-behaviours"),
+      hash: location.hash,
+    };
+  })()`);
+  const byToken = await grouping();
+  check(byToken.after === "Which forced tokens changed what the model did" && byToken.sections === 1 && byToken.picks === "By token*,By behaviour"
+    && byToken.tokens && !byToken.behaviours,
+    `every continuation is in one section under the lead, grouped by token first (${JSON.stringify(byToken)})`);
+  const written = `document.querySelector(".continuations #written-pos-${at}")`;
+  check(await page.eval(`${written}.querySelectorAll(".written-token").length === 2 && !${written}.querySelector(".written-text")
+    && ${written}.querySelectorAll("details.fold:not([open])").length === ${written}.querySelectorAll("details.fold").length`),
+    "each token's behaviours listed there, their continuations folded until asked for");
+  // By behaviour, drawn in its place: each behaviour, whether the target counts it, and the tokens
+  // whose continuations reached it.
+  await page.click("By behaviour", `document.querySelector(".continuations")`);
+  const byBehaviour = await grouping();
+  check(byBehaviour.picks === "By token,By behaviour*" && byBehaviour.behaviours && !byBehaviour.tokens
+    && byBehaviour.hash === `#/experiments/${probeId}?by=behaviour` && await page.eval(`document.activeElement?.textContent === "By behaviour"`),
+    `grouped by behaviour in its place, the address naming it, the focus kept (${JSON.stringify(byBehaviour)})`);
   check(await page.eval(`(() => {
-    const rows = [...document.querySelectorAll(".probe-behaviours tbody tr")];
+    const rows = [...document.querySelectorAll(".continuations .probe-behaviours tbody tr")];
     return rows.length >= 2 && rows.some((row) => row.querySelector(".chip.tone-target")) && rows.some((row) => row.querySelector(".chip.tone-not-target"))
       && rows.every((row) => row.querySelectorAll(".led-by button.chip").length >= 1);
   })()`), "each behaviour says whether the target counts it, and which tokens' continuations reached it");
-  check(await page.eval(`[...document.querySelectorAll("#fork-pos-${at} thead th")].pop().textContent === "led to"`),
-    "and each token's row says where its continuations went");
+  await page.eval(`[...document.querySelectorAll("#fork-pos-${at} button")].find((button) => button.textContent === "What they wrote").click()`);
+  const fromPosition = await grouping();
+  check(fromPosition.picks === "By token*,By behaviour" && fromPosition.hash === `#/experiments/${probeId}`
+    && await page.eval(`(() => { const box = ${written}.getBoundingClientRect(); return box.top >= -1 && box.top < innerHeight; })()`),
+    `a position's table leads to what its continuations wrote, by token again (${JSON.stringify(fromPosition)})`);
+  await page.eval(`${written}.querySelectorAll(".written-token > details.fold > summary").forEach((summary) => summary.click())`);
+  await until(() => page.eval(`${written}.querySelectorAll(".written-text").length === 12`), "what each continuation wrote");
+  const wrote = await page.eval(`[...${written}.querySelectorAll(".written-token")].map((token) => ({
+    head: token.querySelector(".written-head").textContent,
+    marks: [...token.querySelectorAll("mark.forced")].map((mark) => mark.textContent + (mark.classList.contains("changed") ? "*" : "")),
+    texts: [...token.querySelectorAll(".written-text")].map((text) => text.textContent),
+  }))`);
+  check(wrote[0].head.startsWith('the run\'s own "read_file"') && wrote[1].head.startsWith('forced "search_files"')
+    && wrote[0].marks.length === 6 && wrote[0].marks.every((mark) => mark === "read_file")
+    && wrote[1].marks.length === 6 && wrote[1].marks.every((mark) => mark === "search_files*")
+    && wrote[1].texts.every((text) => text.startsWith("tool callsearch_files{pattern:")),
+    `each continuation's text from the token forced on, the run's own first, a forced token marked as a change (${JSON.stringify(wrote.map((token) => [token.head, token.marks[0], token.texts[0]]))})`);
+  // The arrow keys move between the groupings, and what was opened by token stays open: shown again
+  // at once from what it read, nothing asked again (found in review: a fold asked again at every
+  // draw, its text "Loading…" meanwhile).
+  await page.eval(`(() => {
+    window.continuationsAsked = 0;
+    const sent = window.fetch;
+    window.fetch = (url, init) => {
+      if (String(url).includes("/continuations")) window.continuationsAsked += 1;
+      return sent(url, init);
+    };
+    return true;
+  })()`);
+  await page.eval(`document.querySelector(".continuations .group-pick.current").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`);
+  check((await grouping()).picks === "By token,By behaviour*" && await page.eval(`document.activeElement?.textContent === "By behaviour"`),
+    "the arrow keys move between the groupings, the one shown keeping the focus");
+  await page.eval(`document.querySelector(".continuations .group-pick.current").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))`);
+  const again = await page.eval(`({ texts: ${written}.querySelectorAll(".written-text").length, loading: !!${written}.querySelector(".loading"),
+    asked: window.continuationsAsked })`);
+  check(again.texts === 12 && !again.loading && again.asked === 0,
+    `grouped by token again, the continuations opened before are open, shown at once from what they read (${JSON.stringify(again)})`);
   await page.click("In the answer", `document.querySelector("#fork-pos-${at}")`);
   await until(() => page.eval(`(document.querySelector(".fork-answer .tk-detail")?.textContent || "").includes("Probed here")`), "the token, opened in the answer");
   check(true, "a position opens its token in the answer, with what the probe found there");
@@ -1236,6 +1437,9 @@ try {
   await page.eval(`[...document.querySelectorAll(".tk-host .tk-detail a")].find((a) => a.textContent.startsWith("probe")).click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/${probeId}") && !!document.querySelector("#fork-pos-${at}")`), "the result again");
   check(true, "and the token leads back to the result");
+  await page.eval(`location.hash = "#/experiments/${probeId}?by=behaviour"`);
+  await until(async () => (await grouping()).picks === "By token,By behaviour*", "the address's grouping");
+  check(true, "an address naming a grouping opens the section in it");
 
   console.log("a target described, set against what the step has done");
   await page.eval(`location.hash = "#/runs/${scored.id}/0?start=forking-tokens"`);
@@ -1416,12 +1620,12 @@ try {
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 proposal beat the original by more than chance would explain."`), "the verdict on the job's page");
   // The job's page says it in a line, and hands off: the test's own page has the rest.
   check(await page.eval(`!document.querySelector(".screen-table") && [...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "What it found")
-    && document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do"
+    && document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do:"
     && !document.querySelector(".verdict-block.tone-ok")`),
     "the test's job page says what it found and what the model should do, in the accent, and leaves the table to the test's own page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && !!document.querySelector(".screen-table")`), "the screen's own page");
-  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do"
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What the model should do:"
     && [...document.querySelectorAll(".screen-table th")].some((th) => th.textContent === "did what it should")`),
     "a refinement's test at its step names what it counts as the refinement does: what the model should do");
   // At the step, a survivor is a shift of a behaviour, not a check passed: the accent's, never green.
@@ -1745,7 +1949,12 @@ try {
     `the skill's page runs it again and makes a scenario for it (${ways})`);
   await page.eval(`[...document.querySelectorAll(".page-head .actions a")].find((a) => a.textContent === "Make a scenario for it…").click()`);
   await until(() => page.eval(`document.querySelector('input[name="skill_name"]')?.value === "tally-report"`), "a new scenario, its task named for the skill");
-  check(await page.eval(`document.querySelector('input[name="skill_dir"]').value === ${JSON.stringify(skill.folders[0].path)}`), "its skill folder filled in");
+  // Its folder, one the Skills page lists, chosen from the list (the user's ask: an existing skill
+  // or a path to one).
+  check(await page.eval(`(() => { const list = document.querySelector('[name="skill_known-editor"]');
+    return document.querySelector('input[name="skill-from-editor"][value="known"]').checked
+      && list.options[list.selectedIndex].textContent === ${JSON.stringify(`tally-report — ${skill.folders[0].path}`)}; })()`),
+    "its skill folder filled in, the skill chosen from the list");
   await page.eval(`location.hash = "#/skills/tally-report"`);
   await until(() => page.eval(`!!document.querySelector(".markdown .md-front")`), "back on the skill's page");
   check(skill.versions.length >= 2 && await page.eval(`document.querySelectorAll(".condition-rate .ci").length >= 2
@@ -1940,6 +2149,11 @@ try {
   check(await page.eval(`document.querySelector('[name="check-kind-run"][value="none"]')?.checked
     && !document.querySelector('[name="check-kind-run"][value="own"]') && !document.querySelector('[name="check-run"], [name="check-text-run"]')`),
     "its check is chosen as a new scenario's is: with no task to take one from, none yet, and no text to give it");
+  // No folder of the skill's own: a copy of what the run had, unless one the Skills page lists, or
+  // a path, is chosen instead.
+  check(await page.eval(`["copy", "known", "path"].every((kind) => !!document.querySelector('input[name="skill-from-run"][value="' + kind + '"]'))
+    && document.querySelector('input[name="skill-from-run"][value="copy"]').checked`),
+    "with no folder of the skill's own, a copy of what the run had, or an existing skill, or a path");
   await until(() => page.eval(`(document.querySelector(".plan-status .form-note-box")?.textContent || "").includes("Name the scenario")`),
     "what it still needs, as a note");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-the-chat");
@@ -2078,8 +2292,32 @@ try {
     "its check is the task's own unless told otherwise, chosen as a new scenario's is");
   check(await page.eval(`document.querySelector("main").textContent.includes("Its inputs are the run's workspace where the scenario starts")`),
     "it says its inputs come from the run's workspace");
+  // A new scenario's first fields, in its order, each shown whether or not there is a choice: greyed
+  // where the run says it (found in use: a task run's form left out the harness and the skill, and
+  // said them in a line above the form). The approval earlier here wrote to its task's folder, so
+  // that folder is offered beside a copy of what the run had: the run no longer says what it holds
+  // (found in review: the form fixed it, and the text the run had could not be studied).
+  check((await api(`/runs/${ofTask.id}/scenario`)).skill_dir_changed === true,
+    "the task's folder has changed since the run: the approval earlier here wrote to it");
+  check(await page.eval(`(() => {
+    const form = document.querySelector(".plan-form");
+    const harness = form.querySelector('select[name="harness"]'), skill = form.querySelector('select[name="skill"]');
+    const folder = form.querySelector('[name="skill_dir-run"]');
+    const labels = [...form.querySelectorAll(".form-grid > .form-field > .form-label")].slice(0, 4).map((label) => label.textContent);
+    const ways = [...form.querySelectorAll('input[name="skill-from-run"]')].map((radio) => radio.value + (radio.checked ? "*" : "")).join(",");
+    return labels.join(",") === "Scenario name,Harness,Skill name,Skill folder"
+      && harness.disabled && harness.value === "fake" && skill.disabled && skill.value === "tally-report"
+      && folder.readOnly && folder.classList.contains("field-fixed") && folder.value === ${JSON.stringify(`${health.home}/lab-task/tally-report`)}
+      && ways === "fixed*,copy,known,path" && form.textContent.includes("Its SKILL.md has changed since the run");
+  })()`), "a launched run's harness and skill are greyed, in a new scenario's order; its task's folder, changed since, is offered beside a copy of what the run had");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
   await planShows(page, "data.csv");
+  await page.eval(`document.querySelector('input[name="skill-from-run"][value="copy"]').click()`);
+  await planShows(page, "a copy kept in the scenario's own folder");
+  await page.eval(`document.querySelector('input[name="skill-from-run"][value="fixed"]').click()`);
+  await until(() => page.eval(`!(document.querySelector(".plan-preview")?.textContent || "").includes("a copy kept in the scenario's own folder")`),
+    "the task's folder chosen again");
+  check(true, "the copy of what the run had is planned when chosen, and the task's folder again when chosen back");
   await startButtonReady(page, "Make the scenario");
   // Tried before it is trusted, on the run it is made of: the check in a copy of the workspace it
   // left, on its final reply — and the trial's own Try it, a form inside this one, makes nothing.

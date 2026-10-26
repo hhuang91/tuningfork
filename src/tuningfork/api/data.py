@@ -137,6 +137,29 @@ def data_routes(*, store: Store, adapters: Sequence[Any]) -> list[Route]:
         except OperationError as error:
             raise LookupError(error.message) from None
 
+    async def continuations(request: Request) -> Response:
+        """What a forking-token probe's continuations wrote, each from the token it forced on:
+        `?position=`, `?token=` and `?behaviour=` keep only those."""
+        from tuningfork.ops import OperationError
+        from tuningfork.ops.forking import continuations as written
+
+        def build() -> dict[str, Any]:
+            raw = request.query_params.get("position") or None
+            if raw is not None and not raw.strip().isdigit():
+                raise ValueError(f"position must be a whole number, not {raw!r}")
+            try:
+                return written(
+                    store, request.path_params["id"], position=int(raw) if raw is not None else None,
+                    token=request.query_params.get("token") or None,
+                    behaviour=request.query_params.get("behaviour") or None,
+                ).to_json()
+            except OperationError as error:
+                if error.code == "not_found":
+                    raise LookupError(error.message) from None
+                raise ValueError(error.message) from None
+
+        return await threaded(build)
+
     async def sample(request: Request) -> Response:
         """One sample of an experiment, with its tokens if it kept them."""
         from tuningfork.ops.tokens import sample_tokens
@@ -417,6 +440,7 @@ def data_routes(*, store: Store, adapters: Sequence[Any]) -> list[Route]:
         Route(f"{prefix}/runs/{{run}}/steps/{{idx:int}}/tokens", tokens, methods=["GET"]),
         Route(f"{prefix}/experiments/{{id}}/samples/{{idx:int}}", sample, methods=["GET"]),
         Route(f"{prefix}/experiments/{{id}}/samples/{{idx:int}}/answer", sample_answer, methods=["GET"]),
+        Route(f"{prefix}/experiments/{{id}}/continuations", continuations, methods=["GET"]),
         Route(f"{prefix}/diff", diff, methods=["GET"]),
         Route(f"{prefix}/divergence", divergence, methods=["GET"]),
         Route(f"{prefix}/tally", tally, methods=["GET"]),
