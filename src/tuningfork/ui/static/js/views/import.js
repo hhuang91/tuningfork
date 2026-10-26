@@ -9,6 +9,7 @@ import { checkPicker } from "../checktry.js";
 import { chip, command, crumbs, firstLine, h, kv, loading, longText, panel, plural, replace } from "../dom.js";
 import { field, formError, input, planForm } from "../forms.js";
 import { live } from "../live.js";
+import { skillNameLabel, skillPicker } from "../skillpick.js";
 import { toolsOffered } from "../stepinfo.js";
 
 const SOURCES = {
@@ -232,22 +233,55 @@ export async function scenarioFromRunView(root, [runId], scope) {
     return api.get(`/runs/${runId}/scenario${text ? `?${text}` : ""}`);
   };
   let found;
+  let skills;
   try {
-    found = await ask(null, null, null);
+    // The skills the Skills page lists, each a folder to choose: none where they cannot be read.
+    [found, skills] = await Promise.all([ask(null, null, null), api.get("/skills").catch(() => [])]);
   } catch (error) {
     replace(root, ...head("Make a scenario"), formError(error));
     return;
   }
   const problem = h("div");
   const name = input("scenario_name", { placeholder: "a-name" });
+  // The fields a new scenario's page has, in its order, each shown whether or not there is a
+  // choice: greyed where the run says it (found in use: a task run's form left out the harness
+  // and the skill, and said them only in a line above the form).
   // A run recorded as it happened may not say which harness it came through: the page shows the
   // one its conversation looks like, and the person can say otherwise.
-  const harness = h("select", { class: "field", name: "harness" },
-    ["hermes", "claude-code", "generic"].map((each) => h("option", { value: each, selected: each === found.harness }, each)));
+  const recorded = Boolean(found.recorded_harness);
+  const harness = h("select", { class: "field", name: "harness", disabled: recorded },
+    [...new Set(["hermes", "claude-code", "generic", found.harness])].map((each) =>
+      h("option", { value: each, selected: each === found.harness }, each)));
   // The run kept or showed several skills: the scenario studies the one chosen, and starts
   // where that one came in.
   const studies = h("select", { class: "field", name: "skill" });
-  const folder = input("skill_dir", { placeholder: "optional: the skill's folder on this machine" });
+  const studiesHelp = h("span");
+  // The skill's folder: the run's own where it says which (its task's, or the one named when its
+  // chat was imported), else a copy of what it had, or one the Skills page lists, or a path.
+  const folderSlot = h("div", { class: "form-field wide" });
+  let picker = null;
+  let pickedFor = null;
+  const drawFolder = () => {
+    const key = JSON.stringify([found.skill, found.skill_dir, found.skill_dir_from, found.skill_dir_changed, found.can_copy]);
+    if (key === pickedFor) return;
+    pickedFor = key;
+    const task = found.skill_dir_from === "task";
+    const why = (task ? "The folder of the task this run was launched from" : "The folder named when this chat was imported")
+      + (found.skill_dir_changed
+        ? ". Its SKILL.md has changed since the run: each run reads it as it is now, and an approved edit is written to it."
+        : ": each run gets a copy, and an approved edit is written to it.");
+    // Its fields' own events reach the form, which plans again for each. A folder changed since the
+    // run is offered, not fixed: the run no longer says what it holds (found in review).
+    picker = skillPicker({
+      skills, name: "run",
+      fixed: found.skill_dir ? {
+        path: found.skill_dir, why, changed: Boolean(found.skill_dir_changed),
+        label: task ? "The task's folder, as it is now" : "The folder named at import, as it is now",
+      } : null,
+      copy: found.can_copy ? { where: `scenarios/<name>/${found.copy_dir}/` } : null,
+    });
+    replace(folderSlot, h("span", { class: "form-label" }, "Skill folder"), picker.element);
+  };
   // The person's messages a run can start from with the skill coming in live: a choice only where
   // there are several, the skill having never come in, or come with the harness's instructions.
   const from = h("select", { class: "field", name: "cut" });
@@ -269,9 +303,6 @@ export async function scenarioFromRunView(root, [runId], scope) {
     drawPromptRun();
   });
   const fromNote = h("p", { class: "hint", style: { gridColumn: "1 / -1" } });
-  // What it studies: under the choice of skill, or alone where there is none to make.
-  const about = h("span");
-  const several = (found.skills || []).length > 1;
   // What each run is given and does, beside the chat: across the form's width, so that the
   // fields after it keep their places.
   const steps = h("div", { class: "form-field wide" });
@@ -294,11 +325,15 @@ export async function scenarioFromRunView(root, [runId], scope) {
     },
   });
   const shown = (before) => {
-    replace(studies,
-      h("option", { value: "", selected: !found.skill, disabled: true }, "choose the skill it studies"),
-      (found.skills || []).map((each) => h("option", { value: each, selected: each === found.skill }, each)));
+    const several = (found.skills || []).length > 1;
+    replace(studies, (found.skills || []).length
+      ? [h("option", { value: "", selected: !found.skill, disabled: true }, "choose the skill it studies"),
+         (found.skills || []).map((each) => h("option", { value: each, selected: each === found.skill }, each))]
+      : h("option", { value: "", selected: true }, "none shows in the conversation"));
+    // A choice only where the run had several: else the one it had, greyed.
+    studies.disabled = !several;
     // Asked for first: until it is chosen, nothing below can say where each run starts.
-    studies.classList.toggle("field-ask", !found.skill && (found.skills || []).length > 1);
+    studies.classList.toggle("field-ask", !found.skill && several);
     const offered = (found.turns || []).filter((turn) => turn.offered);
     replace(from, offered.map((turn) => h("option", { value: String(turn.message), selected: turn.message === found.cut },
       `message ${turn.message} — ${turn.text || "(no text)"}`)));
@@ -318,13 +353,15 @@ export async function scenarioFromRunView(root, [runId], scope) {
         : "The conversation has no message of the person's to start from.";
     drawPromptRun();
     replace(fromNote, startNote(found, offered));
-    replace(about, found.skill
+    const filed = `Its runs are filed under ${found.skill || "<skill name>"}/<scenario name>, never shown to the model.`;
+    replace(studiesHelp, found.skill
       ? found.came_in
-        ? `It studies ${found.skill}, which comes into each run live, through the harness, so a variant replaces it `
-          + "everywhere the model reads it."
-        : `It studies ${found.skill}, which never came into the conversation: each run starts from the message chosen.`
-      : (found.skills || []).length ? "Choose the skill it studies: a scenario studies one."
-        : "No skill shows in the conversation: name its folder below.");
+        ? `The skill it studies${several ? "" : ", the one the run had"}: it comes into each run live, through the harness, so `
+          + `a variant replaces it everywhere the model reads it. ${filed}`
+        : `The skill it studies, which never came into the conversation: each run starts from the message chosen. ${filed}`
+      : several ? "Choose the skill it studies: a scenario studies one, and starts where it came in."
+        : "No skill shows in the conversation: choose its folder below, and the scenario studies the skill in it.");
+    drawFolder();
     replace(steps, unknown ? null
       : [h("span", { class: "form-label" }, "Each run beside the chat: what it is given, then what it does"), stepsView(found, promptRun)]);
   };
@@ -338,7 +375,8 @@ export async function scenarioFromRunView(root, [runId], scope) {
     replace(problem);
     const before = found.cut;
     try {
-      const answer = await ask(studies.value || null, harness.value, keepStart ? Number(from.value) : null);
+      // The harness the run recorded is the one it had: only another the person chose is sent.
+      const answer = await ask(studies.value || null, recorded ? null : harness.value, keepStart ? Number(from.value) : null);
       if (mine !== asking) return;
       found = answer;
       shown(before);
@@ -354,12 +392,18 @@ export async function scenarioFromRunView(root, [runId], scope) {
   const done = h("div", { class: "slot" });
   // What the form says, as the body `POST /runs/{run}/scenario` takes.
   function body() {
-    const said = { name: name.value.trim(), harness: harness.value };
+    const said = { name: name.value.trim() };
+    if (!recorded) said.harness = harness.value;
     if (found.cut !== null && found.cut !== undefined) said.cut = found.cut;
     // Sent only where the person changed it: else the scenario keeps the chat's words as they were.
     if (edited) said.prompt = prompt.value;
     if (studies.value || found.skill) said.skill = studies.value || found.skill;
-    if (folder.value.trim()) said.skill_dir = folder.value.trim();
+    // A folder chosen, or typed: the run's own, or a copy of what it had, is what the server takes
+    // where none is sent.
+    const chosen = picker.value();
+    if ((chosen.kind === "known" || chosen.kind === "path") && chosen.path) said.skill_dir = chosen.path;
+    // The run's folder has changed since, and the copy of what the run had is chosen over it.
+    if (chosen.kind === "copy" && found.skill_dir) said.copy_skill = true;
     // Sent as nothing, the check is the task's own where the run's task had one; a kind chosen
     // with nothing typed for it yet is no check, as it is in a scenario's editor.
     const { kind, text } = checks.value();
@@ -374,15 +418,17 @@ export async function scenarioFromRunView(root, [runId], scope) {
   const plan = planForm({
     fields: [
       h("div", { class: "form-grid" },
-        found.recorded_harness ? null
-          : field("Harness", harness, { help: "The agent the conversation was had with: the run does not say, so this is "
-            + "what its conversation looks like." }),
-        // A row of its own, first: the rest of the form follows from it.
-        several ? field("The skill it studies", studies, { wide: true, help: about }) : null,
-        field("Its folder", folder, { wide: true, help: "Where the skill lives on this machine, with its scripts and "
-          + "references. An approved edit is written there. Left empty, it is the folder the run's skill came from, "
-          + "or else a copy kept in the scenario's own folder." }),
-        field("Name", name, { help: "lowercase letters, digits, - and _" }),
+        field("Scenario name", name, { wide: true, help: "lowercase letters, digits, - and _" }),
+        field("Harness", harness, {
+          wide: true,
+          help: recorded
+            ? `The harness the run went through, as it recorded it: its conversation is read as ${found.harness} sends it. Run `
+              + "the scenario through it too."
+            : "The agent the conversation was had with: the run does not say, so this is what its conversation looks like.",
+        }),
+        // The rest of the form follows from it: where each run starts, its prompt, its folder.
+        field(skillNameLabel(), studies, { wide: true, help: studiesHelp }),
+        folderSlot,
         fromField,
         field("Starting prompt", prompt, { wide: true, help: "What each run is sent as the person's message. It is the "
           + "chat's words unless you change them: a file the chat named on another machine, say, changed to where the "
@@ -398,6 +444,14 @@ export async function scenarioFromRunView(root, [runId], scope) {
     read: () => {
       const said = body();
       if (!said.name) throw Object.assign(new Error("Name the scenario: lowercase letters, digits, - and _."), { field: "scenario_name" });
+      // A way to the skill's folder chosen, and nothing named by it yet: never the run's own in its place.
+      const chosen = picker.value();
+      if (chosen.kind === "known" && !chosen.path) {
+        throw Object.assign(new Error("Choose the skill from the list, or another way to its folder."), { field: "skill_known-run" });
+      }
+      if (chosen.kind === "path" && !chosen.path) {
+        throw Object.assign(new Error("Name the skill's folder by its path, or another way to it."), { field: "skill_dir-run" });
+      }
       return said;
     },
     render: scenarioPlan,
@@ -414,7 +468,6 @@ export async function scenarioFromRunView(root, [runId], scope) {
   refreshPlan = plan.refresh;
   replace(root, ...head("Make a scenario"), h("div", { class: "stack" },
     panel("The scenario", h("div", { class: "stack" },
-      several ? null : h("p", { class: "hint" }, about),
       problem,
       plan.element)),
     done));

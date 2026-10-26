@@ -13,11 +13,11 @@ prints; `tuningfork token` prints it again.
 <table>
   <tr>
     <td width="50%"><img src="images/ui-run.png" alt="A step's exact context: every message as the model saw it, the skill marked in it, and the call it made"></td>
-    <td width="50%"><img src="images/ui-divergence.png" alt="The divergence page: the step that best predicts whether a run passes, then where a task's runs split and how each behaviour fared"></td>
+    <td width="50%"><img src="images/ui-divergence.png" alt="The divergence page: the step that best predicts whether a run passes, then where a task's runs split, each step a click away, and how each behaviour fared"></td>
   </tr>
   <tr>
     <td>A step's exact context: every message as the model saw it, the skill marked line by line, and the call it made</td>
-    <td>The step that best predicts the verdict, then where a task's runs stop agreeing and how the runs that took each path fared</td>
+    <td>The step that best predicts the verdict, then a task's runs side by side one step at a time, from where they stop agreeing, and how the runs that took each path fared</td>
   </tr>
   <tr>
     <td width="50%"><img src="images/ui-ab.png" alt="An A/B result: the edit it tested, each arm's rate with its interval, and Fisher's test"></td>

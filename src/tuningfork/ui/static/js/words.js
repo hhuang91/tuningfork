@@ -14,7 +14,7 @@ export const UI_WORDS = {
   "launch": "a run tuningfork started",
   "skill version": "version 1, 2, … in order of first run, on the Skills page",
   "arm": "wording",
-  "target": "what you count; in a refinement, what the model should do",
+  "target": "what you count (in a result, what was counted); in a refinement, what the model should do",
   "to the end": "whether the whole run then passes",
   "checkpoint": "this step",
   "proposer": "proposing model (the built-in one)",

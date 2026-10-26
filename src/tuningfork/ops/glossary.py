@@ -215,7 +215,7 @@ TERMS: tuple[Term, ...] = (
     Term("target", "What should happen at the step, declared before anything is sampled: a behaviour's letter, a "
          "pattern, or conditions in words. Run to the end, the target is the task's check.",
          "experiments", see=("A/B", "refinement"),
-         ui="what you count; in a refinement, what the model should do"),
+         ui="what you count (in a result, what was counted); in a refinement, what the model should do"),
     Term("to the end", "Each sample a fork run to the end of the task and judged by its check, instead of the one "
          "answer at the step: whether a change at the step carries through.",
          "experiments", aka=("each to the end", "--to-end"), see=("fork", "sample"),

@@ -100,7 +100,7 @@ const SHOTS = [
   {
     // A chat had elsewhere, made a scenario: its first message the starting prompt, and each of
     // its steps beside what a run of the scenario does there.
-    name: "ui-scenario.png", source: "lab", prepare: importedChat, hash: (run) => `#/runs/${run}/scenario`, ready: '[name="scenario_name"]', height: 1000,
+    name: "ui-scenario.png", source: "lab", prepare: importedChat, hash: (run) => `#/runs/${run}/scenario`, ready: '[name="scenario_name"]', height: 1160,
     act: async (page) => {
       await page.type(`document.querySelector('[name="scenario_name"]')`, "expenses-report");
       await page.eval(`document.querySelector('[name="check-kind-run"][value="shell"]').click()`);
