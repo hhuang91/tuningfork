@@ -217,7 +217,9 @@ class TestChain:
         assert stack.store.get_launch(link.launch_id).exit["told"] == link.told
 
     def test_the_chains_record_is_masked_but_what_was_masked_where_it_was_made(self, stack):
-        """The lines a link wrote into its skill are masked in the chain's record; the copy it left,
+        """The lines a link wrote into its skill are masked in the chain's record, of each text
+        masked whole: found in review, masked line by line, a private key's lines and a block's
+        stood, and so did a password the skill named, said bare in a line added. The copy it left,
         the next link's start, keeps them. What its harness was told, masked where the check ran,
         and its skill-editing calls, read from the store, are kept as they were masked: masked
         again, a command's second password would fall too."""
@@ -225,6 +227,13 @@ class TestChain:
 
         key = "sk-" "tfchainkey7Hq2Lm9Xw3Rv5Pz8B"
         command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        body = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW"
+        private = f"-----BEGIN OPENSSH PRIVATE KEY-----\n{body}\nQyNTUxOQAAACDx2Jx7dGgHJ1s0kpk8q9fG1hX\n-----END OPENSSH PRIVATE KEY-----"
+        blocked, named = "Hq8xK3vN5wLpQ7Tr", "Zq8xK3vN5wLpQ7Tq"
+        given = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+        given.write_text(given.read_text(encoding="utf-8") + f"\nThe database: password={named}\n", encoding="utf-8")
+        added = (f"\nThe key is {key}.\n\n{private}\n\ndb:\n  password: |\n    {blocked}\n\nRemember: it is {named}.\n"
+                 f"\nConnect with {command}.\n")
 
         def noting(payload: dict) -> MockTurn:
             messages = payload["messages"]
@@ -240,7 +249,11 @@ class TestChain:
                     "path": f"{workdir}/report.json", "content": json.dumps({"row_count": 4, "amount_total": 61.5})}},
                 {"name": "write_file", "arguments": {
                     "path": str(Path(workdir).parent / "home" / "skills" / "tally-report" / "SKILL.md"),
-                    "file_path": command, "content": skill.rstrip("\n") + f"\nThe key is {key}.\n"}},
+                    "file_path": command, "content": skill.rstrip("\n") + added}},
+                # A file of its own in the skill, named with the key: every field of the record is masked.
+                {"name": "write_file", "arguments": {
+                    "path": str(Path(workdir).parent / "home" / "skills" / "tally-report" / f"{key}.md"),
+                    "content": "Notes.\n"}},
             ])
 
         stack.mock.responder = noting
@@ -251,8 +264,14 @@ class TestChain:
 
         (link,) = report.links
         kept = get_chain(stack.store, report.plan.id)
-        assert key in json.dumps(link.diff) and key in (Path(link.left) / "SKILL.md").read_text(encoding="utf-8")
-        assert key not in json.dumps(kept) and REDACTED in json.dumps(kept["links"][0]["diff"])
+        secrets = (key, body, blocked, named)
+        left = (Path(link.left) / "SKILL.md").read_text(encoding="utf-8")
+        assert all(secret in left for secret in secrets)  # the next link's start, as the link left it
+        assert (Path(link.left) / f"{key}.md").is_file() and any(key in name for name in link.changed)
+        shown = json.dumps([link.diff, kept])
+        assert not [secret for secret in secrets if secret in shown]
+        assert REDACTED in json.dumps(kept["links"][0]["diff"]) and kept["links"][0]["diff"] == link.diff
+        assert "-pZq8xK3vN5wLp" in json.dumps(link.diff)  # masked once: masked again, it would fall too
         assert "-pZq8xK3vN5wLp" in link.told["message"] and kept["links"][0]["told"] == link.told
         assert any(edit["file"] and "-pZq8xK3vN5wLp" in edit["file"] for edit in link.edits)
         assert kept["links"][0]["edits"] == link.edits

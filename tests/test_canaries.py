@@ -46,6 +46,7 @@ PLANTED = (
     "check output its cut falls inside", "variable named as a secret", "key of tuningfork's own",
     "reply cut to its quote", "reply cut to what a trial shows", "check output given from inside it",
     "skill a chain's link edited", "skill an imported chat shows", "turn a scenario starts from",
+    "password an imported answer repeats",
 )
 #: Keys no pattern reads alone: masked by a password's name in a call, then quoted bare by the
 #: server's error — masked there only as a value the call's own mask took.
@@ -55,6 +56,9 @@ NAMED_ONLY = ("password a server's error quotes",)
 BY_PLACE = ("variable named as a secret", "key of tuningfork's own")
 #: A line a chain's link wrote into its skill: what the chain's record shows of each link.
 NOTED = "skill a chain's link edited"
+#: A password a person gave an imported chat by its name, which the model's reasoning — never sent
+#: back — repeats bare: masked there only as a value the masks before it took.
+REPEATED = ("password an imported answer repeats",)
 #: What of a key the sweep looks for: its first characters and its last, each enough to name it.
 #: Where a cut fell inside a key, its start or its end is what stands.
 STARTS, ENDS = 16, 20
@@ -76,10 +80,13 @@ def canaries() -> dict[str, str]:
     keys = {}
     for number, name in enumerate(PLANTED):
         while True:
-            key = ("Pw" if name in NAMED_ONLY + BY_PLACE else "sk-tfcanary") + f"{number:02d}" + "".join(
+            key = ("Pw" if name in NAMED_ONLY + BY_PLACE + REPEATED else "sk-tfcanary") + f"{number:02d}" + "".join(
                 draw.choices(string.ascii_letters + string.digits, k=ENDS))
             if name in BY_PLACE:
                 if redact(f"said={key}") == f"said={key}":
+                    break
+            elif name in REPEATED:
+                if key not in redact(f"password={key}") and redact(f"said {key}") == f"said {key}":
                     break
             elif key not in redact(f"password={key}" if name in NAMED_ONLY else key):
                 break
@@ -181,6 +188,10 @@ KEPT_AS_IT_WAS = {
     ".proposer-key": "tuningfork's own key",
     "scenarios/*/inputs": "a scenario's input files: a run's workspace where the scenario starts",
 }
+#: What a scenario's spec takes from the task of the run it was made of, as the task's file wrote it
+#: (`launches.eval`, kept as given): its check, and the output and expectations it names. The rest
+#: of the spec is searched.
+GIVEN_TO_A_SCENARIO = ("check", "expected_output", "expectations")
 
 
 def kept_as_it_was(relative: Path) -> bool:
@@ -190,12 +201,26 @@ def kept_as_it_was(relative: Path) -> bool:
     return top in KEPT_AS_IT_WAS or (top == "scenarios" and len(rest) > 1 and f"scenarios/*/{rest[1]}" in KEPT_AS_IT_WAS)
 
 
+def searched(home: Path, path: Path) -> bytes:
+    """What the sweep reads of a file: all of it, but of a scenario's spec what it takes from its
+    run's task as written (`GIVEN_TO_A_SCENARIO`)."""
+    parts = path.relative_to(home).parts
+    if len(parts) != 3 or parts[0] != "scenarios" or parts[2] != "evals.json":
+        return path.read_bytes()
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    for item in spec.get("evals") or []:
+        for given in GIVEN_TO_A_SCENARIO:
+            item.pop(given, None)
+            (item.get("tuningfork") or {}).pop(given, None)
+    return json.dumps(spec, ensure_ascii=False).encode("utf-8")
+
+
 def found_in_files(home: Path, keys: dict[str, str]) -> list[str]:
     """Each file of the recordings folder a key's start or end stands in, but where kept as it was."""
     return [
         f"{name} in {path.relative_to(home).as_posix()}"
         for path in sorted(home.rglob("*")) if path.is_file() and not kept_as_it_was(path.relative_to(home))
-        for name, key in keys.items() if any(piece.encode() in path.read_bytes() for piece in pieces(key))
+        for name, key in keys.items() if any(piece.encode() in searched(home, path) for piece in pieces(key))
     ]
 
 
@@ -332,13 +357,16 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
         from tuningfork.ops import addskill, imports
 
         rows = [{"id": 1001, "role": "user", "content": f"Remember my key {keys['imported chat']}.", "timestamp": 0.5},
-                {"id": 1002, "role": "assistant", "content": "Noted.", "finish_reason": "stop", "timestamp": 0.7}]
+                {"id": 1002, "role": "assistant", "content": "Noted.", "finish_reason": "stop", "timestamp": 0.6},
+                {"id": 1003, "role": "user", "content": f"Log in with password={keys[REPEATED[0]]}.", "timestamp": 0.7},
+                {"id": 1004, "role": "assistant", "content": "Logged in.", "finish_reason": "stop", "timestamp": 0.8,
+                 "reasoning_content": f"The password is {keys[REPEATED[0]]}."}]
         chat = conversation(("tally-report", CHAT_SKILL + f"\nThe key is {keys['skill an imported chat shows']}.\n"))
         chat[0] = {**chat[0], "content": f"{chat[0]['content']} My key is {keys['turn a scenario starts from']}."}
         imported = imports.execute_import(store, imports.prepare_import(store, export(rows + chat)))
         # What is made of recordings: a scenario of the chat, and of the batch's run; the chat's skill added.
         imports.make_scenario(store, imports.prepare_scenario(store, imported.run_id, "from-import"))
-        imports.make_scenario(store, imports.prepare_scenario(store, run_id, "from-run", task_check=False))
+        imports.make_scenario(store, imports.prepare_scenario(store, run_id, "from-run"))
         addskill.execute_add(store, addskill.prepare_from_run(store, imported.run_id, name="from-import"))
     finally:
         store.close()
@@ -369,7 +397,7 @@ def test_every_key_planted_reaches_the_store_where_nothing_masks_it(tmp_path, mo
     assert {
         f"{NOTED} in chains/<id>.json",
         *(f"{name} in imports/<id>/chat.json"
-          for name in ("imported chat", "skill an imported chat shows", "turn a scenario starts from")),
+          for name in ("imported chat", "skill an imported chat shows", "turn a scenario starts from", *REPEATED)),
         "skill an imported chat shows in imports/<id>/skills/tally-report/SKILL.md",
         "imported chat in scenarios/from-import/context.json",
         "turn a scenario starts from in scenarios/from-import/evals.json",

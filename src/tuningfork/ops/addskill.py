@@ -233,13 +233,15 @@ def prepare_from_run(store: Store, reference: str, *, skill: str | None = None, 
             raise OperationError(f"run {run.id[:8]} kept no skill, and its conversation shows none", field="run") from None
         raise
     name = _check_name(store.home, name if name is not None else (_clean(studied.name) or ""))
-    if studied.kept is not None and extracted_unmasked(run, studied.kept_name):
-        # Taken from its chat before an import was masked: masked as it is read, as the chat is.
-        text = store.masking.text(studied.kept.read_text(encoding="utf-8", errors="replace")).value
-        files, left_out = {"SKILL.md": text.encode("utf-8")}, []
+    if studied.kept is not None and not extracted_unmasked(run, studied.kept_name):
+        files, left_out = _read_folder(studied.kept.parent)
         how = "the copy it kept"
     elif studied.kept is not None:
-        files, left_out = _read_folder(studied.kept.parent)
+        # An import's extract, kept before an import was masked: taken again from its chat, masked as
+        # it is read (`chat_of`), as an import keeps one now; masked as text where the chat does not show it.
+        text = (studied.found.text if studied.found is not None
+                else store.masking.text(studied.kept.read_text(encoding="utf-8", errors="replace")).value)
+        files, left_out = {"SKILL.md": text.encode("utf-8")}, []
         how = "the copy it kept"
     elif studied.found is not None:
         text, made_up = _skill_file(studied.found.text, studied.name, chat)

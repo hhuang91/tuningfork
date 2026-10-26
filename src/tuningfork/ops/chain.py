@@ -173,7 +173,8 @@ class Link:
     #: The harness's own review after the answer, when it ran: its run, how many steps, whether
     #: it ended, and how many skill-editing calls it made.
     review: dict[str, Any] | None
-    #: The lines of SKILL.md that changed, when they did (`ops.diff.line_diff`).
+    #: The lines of SKILL.md that changed, when they did (`ops.diff.line_diff`), of each text
+    #: masked whole.
     diff: dict[str, Any] | None
     #: Where the skill was left, copied: the next link's start.
     left: str | None
@@ -376,7 +377,12 @@ def _link(
             )
             old, new = _text(given / "SKILL.md"), _text(left / "SKILL.md")
             if old != new:
-                diff = line_diff(old, new)
+                # The lines that changed, of each text masked whole, as the store masks the call that
+                # wrote it: found in review, masked line by line, a private key's lines and a block's
+                # stood, and so did a value the skill names a password, said bare in a line added.
+                was = store.masking.text(old)
+                found = was.found | store.masking.text(new).found
+                diff = line_diff(was.value, store.masking.text(new, also=found).value)
         else:
             changed = sorted({*changed, "SKILL.md (gone: the chain goes on from the skill before)"})
     told = getattr(outcome, "told", None) or {}
@@ -470,15 +476,15 @@ def _last_user(request: dict[str, Any]) -> str:
 
 
 #: What a chain's record keeps of each link as it was masked where it was made: what its harness
-#: was told, masked where its check ran (`runner.MASKED_WHERE_MADE`), and its skill-editing calls,
-#: read from the store as it keeps them. Masked again, a command's second password would fall too.
-LINK_MASKED = ("told", "edits")
+#: was told, masked where its check ran (`runner.MASKED_WHERE_MADE`); its skill-editing calls, read
+#: from the store as it keeps them; and the lines it changed in the skill, of each text masked
+#: whole (`_link`). Masked again, a command's second password would fall too.
+LINK_MASKED = ("told", "edits", "diff")
 
 
 def _write(store: Store, report: ChainReport) -> None:
-    """The chain's record, masked as the store masks what it keeps (`Store.keep_file`), once: the
-    lines each link changed in the skill with the rest. The copy of the skill a link left, the next
-    link's start, is kept as it was left."""
+    """The chain's record, masked as the store masks what it keeps (`Store.keep_file`), once. The
+    copy of the skill a link left, the next link's start, is kept as it was left."""
     data = report.to_json()
     links = [store.masking.of(link, masked=LINK_MASKED).value for link in data["links"]]
     store.keep_file(root(store.home) / f"{report.plan.id}.json",

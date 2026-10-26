@@ -364,12 +364,19 @@ class TestAFileKeptBesideIt:
         assert "-pZq8xK3vN5wLp" in path.read_text(encoding="utf-8")  # masked again, it would fall too
 
     def test_it_is_written_whole_or_not_at_all(self, store, tmp_path, monkeypatch):
+        import os
+        from pathlib import Path
+
         path = store.keep_file(tmp_path / "kept" / "record.json", {"links": 1})
+        replace = os.replace
 
-        def interrupted(source, target):
-            raise OSError("the disk is full")
+        def interrupted(source, target, **options):
+            # The disk full only for this file: whatever else replaces a file meanwhile goes on.
+            if Path(target) == path:
+                raise OSError("the disk is full")
+            return replace(source, target, **options)
 
-        monkeypatch.setattr("tuningfork.store.db.os.replace", interrupted)
+        monkeypatch.setattr(os, "replace", interrupted)
         with pytest.raises(OSError):
             store.keep_file(path, {"links": 2})
         assert json.loads(path.read_text(encoding="utf-8")) == {"links": 1}

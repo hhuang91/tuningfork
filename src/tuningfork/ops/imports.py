@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -138,6 +139,24 @@ def as_sent(harness: str | None, messages: list[dict[str, Any]]) -> list[dict[st
     adapter = ADAPTERS.get(harness or "generic")
     shape = getattr(adapter(), "as_sent", None) if adapter is not None else None
     return shape(kept) if shape is not None else kept
+
+
+def kept_chat(store: Store, chat: Chat) -> Any:
+    """The conversation as an import keeps it beside the run (a `Masked`), masked as the store masks
+    the steps it records from it: each message as a step's request holds it, and each answer also
+    wherever a value the masks of the messages before it took stands, as a step's answer is masked
+    of what its request's masks took. Found in review: masked whole by the patterns alone, a password
+    the person gave by its name and the model's reasoning then repeated bare — which no later request
+    sends back — was in the chat beside a store that held it nowhere."""
+    data = chat.to_json()
+    tools = store.masking.of(data["tools"])
+    found = set(tools.found)
+    messages = []
+    for message in data["messages"]:
+        masked = store.masking.of(message, also=found if message.get("role") == "assistant" else ())
+        found |= masked.found
+        messages.append(masked.value)
+    return store.masking.of({**data, "tools": tools.value, "messages": messages}, masked=("tools", "messages"))
 
 
 # --- reading a file ------------------------------------------------------------------------------
@@ -512,6 +531,19 @@ def _folder_name(skill: str) -> str:
     return re.sub(r"[^\w.-]+", "-", skill).strip(".-") or "skill"
 
 
+def _own_folder(skill: str, taken: set[str]) -> str:
+    """A skill's folder name, one no other skill of the import took: two names can make the same
+    one ("tally report", "tally-report"), and found in review, the second's SKILL.md went over the
+    first's, each skill's record leading to it."""
+    base = folder = _folder_name(skill)
+    number = 1
+    while folder in taken:
+        number += 1
+        folder = f"{base}-{number}"
+    taken.add(folder)
+    return folder
+
+
 def _locatable(chat: Chat, skill: FoundSkill, text: str) -> bool:
     from tuningfork.experiment.skill import locate
 
@@ -556,7 +588,6 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
     waits on the label a live call could take (`Store.begin_run`)."""
     from tuningfork.launches import Assignment
     from tuningfork.specs import hash_tree
-
     from tuningfork.store.masking import Masked
 
     chat = plan.chat
@@ -565,15 +596,16 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
     folder.mkdir(parents=True)
     shown = {skill.name: skill for skill in plan.skills}
     kept: dict[str, Path] = {}
+    taken: set[str] = set()
     try:
-        # Kept beside the run masked, as the store masks the steps it records (`Store.keep_file`):
-        # the conversation, and the SKILL.md of each skill the model read, as the masked chat shows it.
-        conversation = store.masking.of(chat.to_json())
+        # Kept beside the run masked as its steps are (`Store.keep_file`): the conversation, and the
+        # SKILL.md of each skill the model read, as the masked chat shows it.
+        conversation = kept_chat(store, chat)
         store.keep_file(folder / "chat.json", conversation, indent=1)
         read = {found.name: found.text for found in find_skills(Chat.from_json(conversation.value), plan.harness)}
         skills = folder / "skills"
         for name in plan.names:
-            place = skills / _folder_name(name)
+            place = skills / _own_folder(name, taken)
             if name in plan.folders:
                 shutil.copytree(plan.folders[name], place, ignore=shutil.ignore_patterns(".git", "__pycache__"))
             else:
@@ -602,8 +634,8 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
         "skill_dir": str(plan.folders[study]) if study in plan.folders else None,
         "warnings": plan.warnings,
         # What it kept beside the run, its chat and each SKILL.md extracted from it, was masked as it
-        # was written (`extracted_unmasked`: one kept before is masked as it is read).
-        "masked": True,
+        # was written, by these patterns (`extracted_unmasked`: one kept before is masked as it is read).
+        "masked": store.masking.digest,
     }
     parity: dict[str, Any] = {"imported": imported, "skill_dirs": {name: str(place) for name, place in kept.items()}}
     if study:
@@ -648,10 +680,9 @@ def chat_of(store: Store, run: Any, harness: str | None = None) -> Chat:
     path = root(store.home) / run.id / "chat.json"
     imported = (run.parity or {}).get("imported")
     if imported and path.is_file():
-        kept = json.loads(path.read_text(encoding="utf-8"))
-        if not imported.get("masked"):
-            kept = store.masking.value(kept)  # kept whole, before an import was masked: masked as it is read
-        return Chat.from_json(kept, harness=harness)
+        if imported.get("masked"):
+            return Chat.from_json(json.loads(path.read_text(encoding="utf-8")), harness=harness)
+        return Chat.from_json(_read_masked(store, path), harness=harness)
     steps = store.steps(run.id)
     if not steps:
         raise OperationError(f"run {run.id[:8]} has no step: no conversation to start from", field="run")
@@ -674,6 +705,32 @@ def chat_of(store: Store, run: Any, harness: str | None = None) -> Chat:
         depths = store.node_depths([step.request_node_id for step in steps])
         chat.numbers = {depths[step.request_node_id] + 1: step.idx for step in steps if step.request_node_id in depths}
     return chat
+
+
+#: The chats of imports kept whole, before an import was masked, as each was last read masked
+#: (`_read_masked`): by its file, the file's size and time, and the patterns. A scenario's form
+#: asks at every change, and found in review, masking a chat of 5 MB took more than a second.
+_MASKED_CHATS: dict[tuple[str, int, int, str], str] = {}
+#: How much of them is kept, at most: the chats read last.
+_MASKED_HELD = 64 * 1024 * 1024
+_MASKED_LOCK = threading.Lock()
+
+
+def _read_masked(store: Store, path: Path) -> dict[str, Any]:
+    """An import's chat kept whole, before an import was masked, masked as it is read
+    (`kept_chat`): once for each version of the file and of the patterns."""
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns, store.masking.digest)
+    with _MASKED_LOCK:
+        text = _MASKED_CHATS.pop(key, None)
+    if text is None:
+        text = json.dumps(kept_chat(store, Chat.from_json(json.loads(path.read_text(encoding="utf-8")))).value,
+                          ensure_ascii=False)
+    with _MASKED_LOCK:
+        _MASKED_CHATS[key] = text
+        while len(_MASKED_CHATS) > 1 and sum(len(held) for held in _MASKED_CHATS.values()) > _MASKED_HELD:
+            del _MASKED_CHATS[next(iter(_MASKED_CHATS))]
+    return json.loads(text)
 
 
 def _guessed_harness(chat: Chat, wire: str) -> str:
@@ -1198,14 +1255,15 @@ def prepare_scenario(
                             "runs read it as it is now")
     elif studied.kept is not None or studied.found is not None:
         skill_folder = own
-        if studied.kept is not None:
+        if studied.kept is not None and not extracted_unmasked(run, studied.kept_name):
+            copy_from = studied.kept.parent
             text = studied.kept.read_text(encoding="utf-8", errors="replace")
-            if extracted_unmasked(run, studied.kept_name):
-                text = store.masking.text(text).value  # taken from its chat before an import was masked
-            else:
-                copy_from = studied.kept.parent
-        else:
-            text = studied.found.text if studied.found is not None else ""
+        elif studied.found is not None:
+            # What the model read, as the chat shows it — an import's extract kept before an import
+            # was masked taken again so, masked as the chat is read (`chat_of`), as an import keeps one now.
+            text = studied.found.text
+        else:  # such an extract, where the chat does not show it
+            text = store.masking.text(studied.kept.read_text(encoding="utf-8", errors="replace")).value
         written, made_up = _skill_file(text, studied.name, chat)
         if made_up or copy_from is None:
             extract = written
@@ -1302,8 +1360,9 @@ def named_steps(numbers: list[int]) -> str:
 
 def extracted_unmasked(run: Any, skill: str | None) -> bool:
     """Whether the SKILL.md a run kept of `skill` was extracted from an imported chat before an
-    import's files were masked: what is made of it — a scenario's own skill, a skill added — is
-    masked as it is read, as its chat is (`chat_of`)."""
+    import's files were masked: what is made of it — a scenario's own skill, a skill added — takes
+    it again from the chat, masked as it is read (`chat_of`), as an import keeps one now; or, where
+    the chat does not show it, masks it as text (`Masking.text`)."""
     imported = (run.parity or {}).get("imported") or {}
     if not imported or imported.get("masked") or skill is None:
         return False

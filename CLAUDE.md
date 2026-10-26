@@ -682,19 +682,23 @@ set of patterns (`Store.masking`, `store/masking.py`): a writer hands it what it
 must read a value as it will be stored first (an outcome computed from an answer), the `Masked`
 it asked the store's masking for; a check's output and what a harness was told of it, masked
 where the check ran, are fields of a run's result and of its launch's exit kept as they are
-(`Masking.of`'s `masked`). So is a file it keeps beside them, made from what was recorded
-(`Store.keep_file`): a chain's record, but what each link's harness was told and its
-skill-editing calls, masked already (`chain.LINK_MASKED`); an imported chat, and the SKILL.md of
-each skill the model read in it (`parity.imported.masked`). One imported before them is masked as
-it is read, wherever a scenario or a skill is made of it (`imports.chat_of`,
-`imports.extracted_unmasked`). What a run is given is kept as it was given, since a fork runs
+(`Masking.of`'s `masked`). A file the store keeps beside its rows, made from what was recorded,
+it masks as it writes it (`Store.keep_file`): a chain's record — the lines each link changed in
+the skill, of each text masked whole, and what its harness was told and its skill-editing calls,
+masked already (`chain.LINK_MASKED`), kept as they are; an imported chat, each answer also of what
+the masks before it took, as a step's answer is (`imports.kept_chat`), and the SKILL.md of each
+skill the model read, as the masked chat shows it; the import names the patterns
+(`parity.imported.masked`). The chat of an import made before that is masked as it is read
+(`imports.chat_of`), and so is its SKILL.md extracted, wherever a scenario or a skill added is
+made of it (`imports.extracted_unmasked`). What a run is given is kept as it was given, since a fork runs
 it again — a launch's eval and variant, a scenario's context (`Store.put_given`) — and so is an
 experiment's settings, the test it declared. Masking is not idempotent, and a fork matches a call
 masked once against a step stored masked once; `tests/test_store_masking.py` fails on code
 elsewhere that masks or writes a blob itself, and `tests/test_canaries.py` plants a key in the
 loop's inputs and searches every row, blob and file for it, but the files kept as they were
 (`KEPT_AS_IT_WAS`: a launch's folders, the workspace's snapshots, a scenario's inputs, the
-wordings tried). Never report a rate without its interval — see `analysis/stats.py`.
+wordings tried) and what a scenario's spec takes from its run's task as written
+(`GIVEN_TO_A_SCENARIO`). Never report a rate without its interval — see `analysis/stats.py`.
 
 Server- and harness-specific knowledge lives behind the `backends/`, `harness/` and `wire/`
 seams, never in the core. Supporting another harness or inference server must not require
