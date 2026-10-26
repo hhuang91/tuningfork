@@ -231,7 +231,8 @@ class TestChain:
         private = f"-----BEGIN OPENSSH PRIVATE KEY-----\n{body}\nQyNTUxOQAAACDx2Jx7dGgHJ1s0kpk8q9fG1hX\n-----END OPENSSH PRIVATE KEY-----"
         blocked, named = "Hq8xK3vN5wLpQ7Tr", "Zq8xK3vN5wLpQ7Tq"
         given = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
-        given.write_text(given.read_text(encoding="utf-8") + f"\nThe database: password={named}\n", encoding="utf-8")
+        given.write_text(given.read_text(encoding="utf-8") + f"\nThe database: password={named}\nUse {named} for "
+                         "staging only.\n", encoding="utf-8")
         added = (f"\nThe key is {key}.\n\n{private}\n\ndb:\n  password: |\n    {blocked}\n\nRemember: it is {named}.\n"
                  f"\nConnect with {command}.\n")
 
@@ -272,6 +273,13 @@ class TestChain:
         assert not [secret for secret in secrets if secret in shown]
         assert REDACTED in json.dumps(kept["links"][0]["diff"]) and kept["links"][0]["diff"] == link.diff
         assert "-pZq8xK3vN5wLp" in json.dumps(link.diff)  # masked once: masked again, it would fall too
+        # Only the lines the link added, each by its number in the file: found in review, a line it
+        # never changed, holding a value the masks took bare, was masked on one side alone; and a
+        # private key masked to one line moved every line after it.
+        added_lines = [line for hunk in link.diff["hunks"] for line in hunk["lines"] if line["op"] == "+"]
+        assert link.diff["removed"] == 0 and len(added_lines) == link.diff["added"]
+        (remember,) = [line for line in added_lines if line["text"].startswith("Remember:")]
+        assert left.splitlines()[remember["new"] - 1] == f"Remember: it is {named}."
         assert "-pZq8xK3vN5wLp" in link.told["message"] and kept["links"][0]["told"] == link.told
         assert any(edit["file"] and "-pZq8xK3vN5wLp" in edit["file"] for edit in link.edits)
         assert kept["links"][0]["edits"] == link.edits

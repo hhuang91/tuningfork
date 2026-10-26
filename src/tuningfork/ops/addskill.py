@@ -237,10 +237,8 @@ def prepare_from_run(store: Store, reference: str, *, skill: str | None = None, 
         files, left_out = _read_folder(studied.kept.parent)
         how = "the copy it kept"
     elif studied.kept is not None:
-        # An import's extract, kept before an import was masked: taken again from its chat, masked as
-        # it is read (`chat_of`), as an import keeps one now; masked as text where the chat does not show it.
-        text = (studied.found.text if studied.found is not None
-                else store.masking.text(studied.kept.read_text(encoding="utf-8", errors="replace")).value)
+        # An import's extract, kept before an import was masked: masked as it is read, as it is now.
+        text = store.masking.text(studied.kept.read_text(encoding="utf-8", errors="replace")).value
         files, left_out = {"SKILL.md": text.encode("utf-8")}, []
         how = "the copy it kept"
     elif studied.found is not None:

@@ -371,11 +371,14 @@ class TestWhatItKeepsBesideTheRun:
         from pathlib import Path
 
         other = SKILL.replace("name: tally-report", "name: tally report").replace("Write the totals", "Count the rows")
-        data = export(conversation(("tally-report", SKILL), ("tally report", other)))
+        # And one whose name differs only in case: one folder where a file system ignores case.
+        third = SKILL.replace("name: tally-report", "name: Tally-Report").replace("Write the totals", "Sum the rows")
+        data = export(conversation(("tally-report", SKILL), ("tally report", other), ("Tally-Report", third)))
         result = imports.execute_import(store, imports.prepare_import(store, data))
         kept = store.get_run(result.run_id).parity["skill_dirs"]
         assert {name: (Path(place) / "SKILL.md").read_text(encoding="utf-8") for name, place in kept.items()} == {
-            "tally-report": SKILL, "tally report": other}
+            "tally-report": SKILL, "tally report": other, "Tally-Report": third}
+        assert len({Path(place).name.casefold() for place in kept.values()}) == 3
 
     def test_one_kept_before_it_was_masked_is_masked_as_it_is_read(self, store):
         """An import made before kept its chat and the SKILL.md extracted from it whole: what is made
@@ -391,6 +394,16 @@ class TestWhatItKeepsBesideTheRun:
         for place in ("context.json", "skill/tally-report/SKILL.md", "added/SKILL.md"):
             assert made[place] == made_now[place], place
         assert CHAT_KEY in (store.home / "imports" / run.id / "chat.json").read_text(encoding="utf-8")
+
+    def test_one_kept_before_and_changed_since_is_taken_as_it_now_is(self, store):
+        """Its SKILL.md changed since the import — an approved edit written to it, say — is what a
+        scenario and a skill added take, masked as text: found in review, they took the chat's."""
+        run = imported_before(store, chat_with_keys())
+        kept = store.home / "imports" / run.id / "skills" / "tally-report" / "SKILL.md"
+        kept.write_text(kept.read_text(encoding="utf-8") + "\nCheck the totals twice.\n", encoding="utf-8")
+        made = made_of(store, run.id, "changed-since")
+        for place in ("skill/tally-report/SKILL.md", "added/SKILL.md"):
+            assert "Check the totals twice." in made[place] and CHAT_KEY not in made[place], place
 
     def test_one_kept_before_is_masked_once_for_each_version_of_its_chat(self, store, monkeypatch):
         """A scenario's form asks at every change: found in review, each read masked a chat of 5 MB
@@ -410,7 +423,9 @@ class TestWhatItKeepsBesideTheRun:
 
     @pytest.mark.parametrize("imported, skill, unmasked", [
         ({"skills": [{"name": "tally-report", "source": "extracted"}]}, "tally-report", True),
-        ({"skills": [{"name": "tally-report", "source": "extracted"}], "masked": True}, "tally-report", False),
+        # Its mark names the patterns that masked it; one that names none is read masked.
+        ({"skills": [{"name": "tally-report", "source": "extracted"}], "masked": "5f0c9a2e41d7"}, "tally-report", False),
+        ({"skills": [{"name": "tally-report", "source": "extracted"}], "masked": True}, "tally-report", True),
         # A folder its person named is kept as it was given.
         ({"skills": [{"name": "tally-report", "source": "folder"}]}, "tally-report", False),
         ({"skills": [{"name": "tally-report", "source": "extracted"}]}, "csv-tidy", False),

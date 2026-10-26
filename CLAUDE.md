@@ -684,7 +684,8 @@ it asked the store's masking for; a check's output and what a harness was told o
 where the check ran, are fields of a run's result and of its launch's exit kept as they are
 (`Masking.of`'s `masked`). A file the store keeps beside its rows, made from what was recorded,
 it masks as it writes it (`Store.keep_file`): a chain's record — the lines each link changed in
-the skill, of each text masked whole, and what its harness was told and its skill-editing calls,
+the skill, of both texts masked whole and alike, each line keeping its number (`Masking.text`'s
+`lines`), and what its harness was told and its skill-editing calls,
 masked already (`chain.LINK_MASKED`), kept as they are; an imported chat, each answer also of what
 the masks before it took, as a step's answer is (`imports.kept_chat`), and the SKILL.md of each
 skill the model read, as the masked chat shows it; the import names the patterns

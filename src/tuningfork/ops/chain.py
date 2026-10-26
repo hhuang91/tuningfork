@@ -379,10 +379,13 @@ def _link(
             if old != new:
                 # The lines that changed, of each text masked whole, as the store masks the call that
                 # wrote it: found in review, masked line by line, a private key's lines and a block's
-                # stood, and so did a value the skill names a password, said bare in a line added.
-                was = store.masking.text(old)
-                found = was.found | store.masking.text(new).found
-                diff = line_diff(was.value, store.masking.text(new, also=found).value)
+                # stood, and so did a value the skill names a password, said bare in a line added. Both
+                # masked alike, of what the masks took in either, or a line holding such a value bare
+                # would differ though the link never changed it; each mask keeps its line breaks, so
+                # the lines keep their numbers in the file.
+                found = store.masking.text(old).found | store.masking.text(new).found
+                was, now = (store.masking.text(text, also=found, lines=True).value for text in (old, new))
+                diff = line_diff(was, now)
         else:
             changed = sorted({*changed, "SKILL.md (gone: the chain goes on from the skill before)"})
     told = getattr(outcome, "told", None) or {}

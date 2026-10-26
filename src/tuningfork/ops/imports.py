@@ -537,10 +537,10 @@ def _own_folder(skill: str, taken: set[str]) -> str:
     first's, each skill's record leading to it."""
     base = folder = _folder_name(skill)
     number = 1
-    while folder in taken:
+    while folder.casefold() in taken:  # one folder where names differ only in case, on some file systems
         number += 1
         folder = f"{base}-{number}"
-    taken.add(folder)
+    taken.add(folder.casefold())
     return folder
 
 
@@ -680,7 +680,7 @@ def chat_of(store: Store, run: Any, harness: str | None = None) -> Chat:
     path = root(store.home) / run.id / "chat.json"
     imported = (run.parity or {}).get("imported")
     if imported and path.is_file():
-        if imported.get("masked"):
+        if masked_import(imported):
             return Chat.from_json(json.loads(path.read_text(encoding="utf-8")), harness=harness)
         return Chat.from_json(_read_masked(store, path), harness=harness)
     steps = store.steps(run.id)
@@ -1258,12 +1258,10 @@ def prepare_scenario(
         if studied.kept is not None and not extracted_unmasked(run, studied.kept_name):
             copy_from = studied.kept.parent
             text = studied.kept.read_text(encoding="utf-8", errors="replace")
-        elif studied.found is not None:
-            # What the model read, as the chat shows it — an import's extract kept before an import
-            # was masked taken again so, masked as the chat is read (`chat_of`), as an import keeps one now.
-            text = studied.found.text
-        else:  # such an extract, where the chat does not show it
+        elif studied.kept is not None:  # an import's extract kept before an import was masked
             text = store.masking.text(studied.kept.read_text(encoding="utf-8", errors="replace")).value
+        else:
+            text = studied.found.text if studied.found is not None else ""
         written, made_up = _skill_file(text, studied.name, chat)
         if made_up or copy_from is None:
             extract = written
@@ -1358,13 +1356,19 @@ def named_steps(numbers: list[int]) -> str:
     return f"steps {', '.join(map(str, numbers[:-1]))} and {numbers[-1]}"
 
 
+def masked_import(imported: dict[str, Any]) -> bool:
+    """Whether an import's files beside its run were masked as they were written: its mark names
+    the patterns that masked them (`parity.imported.masked`)."""
+    return isinstance(imported.get("masked"), str)
+
+
 def extracted_unmasked(run: Any, skill: str | None) -> bool:
     """Whether the SKILL.md a run kept of `skill` was extracted from an imported chat before an
-    import's files were masked: what is made of it — a scenario's own skill, a skill added — takes
-    it again from the chat, masked as it is read (`chat_of`), as an import keeps one now; or, where
-    the chat does not show it, masks it as text (`Masking.text`)."""
+    import's files were masked: what is made of it — a scenario's own skill, a skill added — masks
+    it as it is read, as text (`Masking.text`), the file as it is now: found in review, an approved
+    edit can have been written to it since."""
     imported = (run.parity or {}).get("imported") or {}
-    if not imported or imported.get("masked") or skill is None:
+    if not imported or masked_import(imported) or skill is None:
         return False
     listed = imported.get("skills")
     if not isinstance(listed, list):  # it kept one skill, before an import kept several
