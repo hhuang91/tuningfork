@@ -152,7 +152,7 @@ def prepare_fork(
     if setup.sandbox:
         # What it replays names the sandbox's paths, and what the model saw was the same
         # home and folder: a fork of it runs there too, or not at all.
-        from tuningfork.sandbox import SWITCH, for_launches, recorded_hiding, turned_off
+        from tuningfork.sandbox import for_launches, recorded_hiding, remedy
 
         # And its clock starts where its source's did, so its live steps read the
         # recording's date; a source made on the real clock forks on the real clock. It is
@@ -164,8 +164,7 @@ def prepare_fork(
         if sandbox is None:
             raise OperationError(
                 f"run {source_run.id[:8]} ran in the sandbox, so its forks must: {unsandboxed}",
-                hint=(f"turn it on again (unset {SWITCH})" if turned_off() else "install bubblewrap")
-                + ", or fork a run launched without it",
+                hint=", or ".join(part for part in (remedy(unsandboxed), "fork a run launched without it") if part),
                 code="no_sandbox",
             )
     if skill is not None and not skill.exists() and not skill_commit:

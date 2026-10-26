@@ -163,7 +163,7 @@ def prepare_batch(
     from tuningfork.ops.launch import check_launchable, check_proxy
     from tuningfork.paths import host_path
     from tuningfork.runner import lookalike_skill_files
-    from tuningfork.sandbox import SWITCH, FROM_ENV, for_launches, recorded_hiding, turned_off as sandbox_turned_off
+    from tuningfork.sandbox import FROM_ENV, for_launches, recorded_hiding, remedy, turned_off as sandbox_turned_off
     from tuningfork.specs import SpecError, check_env_sources, check_kind, load_spec, missing_files
 
     if harness not in ADAPTERS:
@@ -295,8 +295,7 @@ def prepare_batch(
         if recorded and sandbox is None:
             raise OperationError(
                 f"run {(setup.run or '')[:8]} ran in the sandbox, so the runs set up as it was must: {unsandboxed}",
-                hint=f"turn it on again (unset {SWITCH})" if sandbox_turned_off() else "install bubblewrap",
-                code="no_sandbox",
+                hint=remedy(unsandboxed), code="no_sandbox",
             )
     if sandbox is None and not sandbox_turned_off():
         notes.append(Note(

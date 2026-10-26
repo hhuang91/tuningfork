@@ -379,7 +379,8 @@ def execute_validate(
         "id": vid, "refinement": plan.refinement.id, "proposal": plan.proposal.id,
         "created_at": time.time(), "task": plan.task_id, "harness": plan.harness, "model": plan.model,
         # How every part's runs were set up, the held-out ones among them, whose launches go with
-        # their private folders: the run's harness options, the MCP servers they went without.
+        # their private folders: the run's harness options and the MCP servers they went without,
+        # its layout, whether they ran in the sandbox, and the clock they read.
         "setup": plan.setup_json(),
         # The process running it: a record still "running" after that process died was cut off.
         "pid": os.getpid(),

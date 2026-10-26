@@ -268,7 +268,7 @@ def test_the_fresh_runs_run_where_the_checkpoints_run_ran_and_read_its_date(stac
     in review, a batch took the instant this process pins (`TUNINGFORK_CLOCK`) and the sandbox
     wherever it runs, so its fresh runs could read another date, and other paths, than its forks."""
     import tuningfork.sandbox
-    from tuningfork.sandbox import CLOCK, FROM_ENV, SWITCH, Sandbox
+    from tuningfork.sandbox import CLOCK, FROM_ENV, NOT_INSTALLED, SWITCH, TURNED_OFF, Sandbox
 
     monkeypatch.setattr(validate, "MINIMUM", 1)
     made, proposal = screened(stack)
@@ -317,24 +317,25 @@ def test_the_fresh_runs_run_where_the_checkpoints_run_ran_and_read_its_date(stac
         f"{problem}: run {made.run_id[:8]}'s forks, the training runs and the held-out runs read today's date where "
         "the recording read 2026-10-08 09:00:00"]
 
-    # Where the sandbox cannot run, runs set up as a sandboxed run are refused, as its forks are.
-    monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (None, "bubblewrap is not installed"))
-    with pytest.raises(OperationError) as refused:
-        prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
-                      model="m", harness="fake", n=1, setup=plan.setup)
-    assert refused.value.code == "no_sandbox" and refused.value.hint == "install bubblewrap"
-    assert refused.value.message == (f"run {made.run_id[:8]} ran in the sandbox, so the runs set up as it was must: "
-                                     "bubblewrap is not installed")
-    # Turned off, the hint says how to turn it on, as a fork's does.
-    monkeypatch.setenv(SWITCH, "off")
-    with pytest.raises(OperationError) as refused:
-        prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
-                      model="m", harness="fake", n=1, setup=plan.setup)
-    assert refused.value.hint == f"turn it on again (unset {SWITCH})"
-    with pytest.raises(OperationError) as forked:
-        validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
-    assert forked.value.code == "no_sandbox" and forked.value.hint == (
-        f"turn it on again (unset {SWITCH}), or fork a run launched without it")
+    # Where the sandbox cannot run, runs set up as a sandboxed run are refused, as its forks are,
+    # each hinting what would let it run, where one thing would.
+    def refused_for(reason):
+        monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (None, reason))
+        with pytest.raises(OperationError) as batch:
+            prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                          model="m", harness="fake", n=1, setup=plan.setup)
+        with pytest.raises(OperationError) as fork:
+            validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+        assert batch.value.code == fork.value.code == "no_sandbox"
+        assert batch.value.message == f"run {made.run_id[:8]} ran in the sandbox, so the runs set up as it was must: {reason}"
+        return batch.value.hint, fork.value.hint
+
+    assert refused_for(NOT_INSTALLED) == ("install bubblewrap", "install bubblewrap, or fork a run launched without it")
+    assert refused_for(TURNED_OFF) == (f"turn it on again (unset {SWITCH})",
+                                       f"turn it on again (unset {SWITCH}), or fork a run launched without it")
+    # Installed, and unable to make a sandbox here: the reason says why, and installing it would not help.
+    assert refused_for("bubblewrap could not make a sandbox here: Permission denied") == (
+        None, "fork a run launched without it")
 
 
 def test_cancelled_it_keeps_what_finished_and_gives_no_verdict(stack, monkeypatch):

@@ -71,7 +71,8 @@ class Setup:
         return found
 
     def to_json(self) -> dict[str, Any]:
-        """As a plan shows it and a record keeps it, beside the harness and the model."""
+        """As the launch recorded it, beside the harness and the model: a validation's plan and
+        record give the clock as its runs will read it instead (`ValidatePlan.setup_json`)."""
         return {
             "harness_options": self.options, "dropped_servers": self.dropped_servers, "layout": self.layout,
             "sandboxed": self.sandbox is not None, "clock": self.clock,
