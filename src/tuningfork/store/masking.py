@@ -12,11 +12,15 @@ sample's answer, so a report recomputing it from the store agrees — asks for i
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, Sequence
 
 from tuningfork.config import (
     _FOUND, DEFAULT_REDACTIONS, REDACTED, _masking, patterns_digest, redact_json_found, text_spans,
 )
+
+
+#: What a value is shown as itself: a number, a truth, nothing. Any other is shown as its text.
+_PLAIN = (bool, int, float, type(None))
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +90,55 @@ class Masking:
         given, start, end = _applied(text, spans, start, max(start, end))
         return given.value, start, end
 
+    def quoted(self, text: str, *, also: Iterable[str] = ()) -> Callable[[int, int], str]:
+        """`text` as it is shown — masked whole, of what its own masks took too — quoted a part at a
+        time, from `start` to `end`: each part as `part` gives it, an edge moved past a mask that
+        covers it. Masked alone, a part can read as no key: a line of a private key, or a line saying
+        bare a password another line names."""
+        also = tuple(also)
+        spans = text_spans(text, self.patterns, (*also, *self.text(text, also=also).found))
+
+        def quote(start: int, end: int) -> str:
+            for span_start, span_end in spans:
+                if span_start < start < span_end:
+                    start = span_end
+                if span_start < end < span_end:
+                    end = span_start
+            return _applied(text, spans, start, max(start, end))[0].value
+
+        return quote
+
+    def alike(self, texts: Sequence[str]) -> list[str]:
+        """Texts shown side by side — a text and what was made of it, the two sides of a diff — each
+        masked whole and alike (`shown`, each line at its number), and each line the first holds
+        shown as the first shows it, wherever it stands in the others: an edit can take away what a
+        key's pattern needs, a private key's first line, and leave its body to read as no key."""
+        texts = list(texts)
+        shown = self.shown(texts, lines=True).value
+        if not texts:
+            return shown
+
+        def lines_of(text: str) -> list[tuple[str, str]]:
+            """Each line, and the break after it."""
+            found = []
+            for line in text.splitlines(keepends=True):
+                body = (line.splitlines() or [""])[0]
+                found.append((body, line[len(body):]))
+            return found
+
+        first, first_shown = lines_of(texts[0]), lines_of(shown[0])
+        held = {raw: said for (raw, _), (said, _) in zip(first, first_shown) if raw != said}
+        if not held or len(first) != len(first_shown):
+            return shown
+        result = [shown[0]]
+        for text, said in zip(texts[1:], shown[1:]):
+            raw_lines, said_lines = lines_of(text), lines_of(said)
+            if len(raw_lines) != len(said_lines):  # each mask keeps its breaks: never
+                result.append(said)
+                continue
+            result.append("".join(held.get(raw, body) + end for (raw, _), (body, end) in zip(raw_lines, said_lines)))
+        return result
+
     def value(self, value: Any, *, also: Iterable[str] = ()) -> Any:
         """`value` masked, for a write that keeps no count."""
         return self.of(value, also=also).value
@@ -99,21 +152,21 @@ class Masking:
         launch's eval, a workspace's files, a skill — is masked here. Its numbers and its shape are
         kept. A text a view splits — into numbered lines, pages, a diff — is shown so whole first,
         with `lines` where its line numbers must hold: masked line by line, a private key's lines
-        each read as no key."""
+        each read as no key. A value JSON cannot write is read as the text it would be written as
+        (`default=str`), and masked so: an answer is written so."""
         also = tuple(also)
         strings: dict[str, Masked] = {}
 
         def read(item: Any) -> None:
-            if isinstance(item, str):
-                if item not in strings:
-                    strings[item] = self.text(item, also=also, lines=lines)
-            elif isinstance(item, dict):
+            if isinstance(item, dict):
                 for key, each in item.items():
                     read(key)
                     read(each)
             elif isinstance(item, (list, tuple)):
                 for each in item:
                     read(each)
+            elif not isinstance(item, _PLAIN) and str(item) not in strings:
+                strings[str(item)] = self.text(str(item), also=also, lines=lines)
 
         read(value)
         found = frozenset().union(*(masked.found for masked in strings.values()))
@@ -121,8 +174,6 @@ class Masking:
             strings = {text: self.text(text, also=(*also, *found), lines=lines) for text in strings}
 
         def written(item: Any) -> Any:
-            if isinstance(item, str):
-                return strings[item].value
             if isinstance(item, dict):
                 kept: dict[Any, Any] = {}
                 for key, each in item.items():
@@ -133,7 +184,7 @@ class Masking:
                 return kept
             if isinstance(item, (list, tuple)):
                 return [written(each) for each in item]
-            return item
+            return item if isinstance(item, _PLAIN) else strings[str(item)].value
 
         return Masked(written(value), sum(masked.made for masked in strings.values()), found)
 

@@ -904,7 +904,8 @@ def test_a_long_text_is_read_page_by_page():
 
 #: The skill a run was given, holding a key, and a private key's lines: an agent's model may not
 #: be shown them.
-KEYED = SKILL + f"\nLog in with {KEY}.\n\n" + "\n".join(PRIVATE) + "\n\nThen write the report.\n"
+KEYED = (SKILL + f"\nLog in with {KEY}.\nUse password={PASSWORD} first.\nIf asked again, answer {PASSWORD}.\n\n"
+         + "\n".join(PRIVATE) + "\n\nThen write the report.\n")
 
 
 class TestWhatAnAgentIsShown:
@@ -963,10 +964,27 @@ class TestWhatAnAgentIsShown:
         removed = await call(server, "propose_edit", {"refinement": made.id, "rationale": "r", "edits": [
             {"line": first, "through": last, "new": "Keep keys out of the skill."}]})
         assert not refusal(removed) and PRIVATE[1] not in text(removed), text(removed)
-        refined = await call(server, "show_refinement", {"refinement": made.id})
+        # The private key's first line taken away, or a line put after it: what is left of it reads as
+        # no key on its own, and is shown as the skill shows it (found in review).
+        for edit in ({"line": first, "new": "The deploy key is kept in the vault."},
+                     {"after": first, "insert": "(the deploy key)"}):
+            assert not refusal(await call(server, "propose_edit", {"refinement": made.id, "rationale": "r",
+                                                                   "edits": [edit]}))
+        # A line saying bare a password another line names is quoted as the skill shows it, and so are
+        # the lines a refusal finds closest (found in review).
+        bare = lines.index(f"If asked again, answer {PASSWORD}.") + 1
+        quoted = await call(server, "propose_edit", {"refinement": made.id, "rationale": "r", "edits": [
+            {"line": bare, "new": "If asked again, answer it."}]})
+        assert f"'If asked again, answer {REDACTED}.' →" in text(quoted)
+        missed = await call(server, "propose_edit", {"refinement": made.id, "rationale": "r", "edits": [
+            {"old": "If asked again, answer it.", "new": "x"}]})
+        assert refusal(missed) and f"answer {REDACTED}." in text(missed)
+        refined = await call(server, "show_refinement", {"refinement": made.id, "evidence": True})
         said = text(refined) + json.dumps(refined.structured_content)
-        assert "Keep keys out of the skill." in said
-        assert KEY not in said and PRIVATE[1] not in said and PRIVATE[2] not in said
+        assert "Keep keys out of the skill." in said and "tried_before" in said
+        for each in (refined, quoted, missed, removed):
+            said = text(each) + json.dumps(each.structured_content)
+            assert KEY not in said and PASSWORD not in said and PRIVATE[1] not in said and PRIVATE[2] not in said
 
     async def test_what_a_tool_cuts_short_is_masked_whole_before_it_is_cut(self, store, tmp_path):
         """A tool fits a long answer to its budget, cutting its texts: what is kept as given — a
@@ -1007,17 +1025,22 @@ class TestWhatAnAgentIsShown:
         from tuningfork.ops.inspect import workspace_at, workspace_patch
         from tests.helpers import task_stack
 
-        notes = "Totals checked by hand.\n" * 3 + f"Log in with {KEY}.\n"
+        notes = "Totals checked by hand.\n" * 3 + f"Log in with {KEY}.\n" + "\n".join(PRIVATE) + "\nDone.\n"
+        # A file the run started with and rewrote: in a diff, each of its lines removed reads after a
+        # `-`, where a key's pattern no longer reads it (found in review).
+        deploy = "\n".join(PRIVATE) + f"\n{KEY}\n"
 
         def writes(payload: dict) -> MockTurn:
             messages = payload["messages"]
             workdir = re.search(r"Working directory: (\S+)", messages[0]["content"]).group(1)
             if not any(message["role"] == "tool" for message in messages):
-                return MockTurn(tool_calls=[{"name": "write_file", "arguments": {
-                    "path": f"{workdir}/notes.txt", "content": notes}}])
+                return MockTurn(tool_calls=[
+                    {"name": "write_file", "arguments": {"path": f"{workdir}/notes.txt", "content": notes}},
+                    {"name": "write_file", "arguments": {"path": f"{workdir}/deploy.pem", "content": "rotated\n"}}])
             return MockTurn(content="Noted.")
 
         with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+            stack.item.files.append({"path": "deploy.pem", "content": deploy})
             stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
             mock_server.responder = writes
             plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1",
@@ -1031,6 +1054,14 @@ class TestWhatAnAgentIsShown:
                 first = asyncio.run(call(server, "show_files", {"run": run_id[:8], **arguments}))
                 said = text(first) + json.dumps(first.structured_content)
                 assert not refusal(first) and "Totals checked by hand." in said and KEY[:10] not in said, arguments
+            monkeypatch.setattr("tuningfork.mcp.tools.FILE_PAGE", 8000)
+            # A whole file keeps each line at its number; a diff of the whole run shows no line of a key.
+            read = asyncio.run(call(server, "show_files", {"run": run_id[:8], "path": "notes.txt"}))
+            assert len(read.structured_content["text"].splitlines()) == len(notes.splitlines())
+            changed = asyncio.run(call(server, "show_files", {"run": run_id[:8], "diff": True}))
+            said = text(changed) + json.dumps(changed.structured_content)
+            assert "deploy.pem" in said and "+rotated" in said and "Totals checked by hand." in said
+            assert KEY[:10] not in said and PRIVATE[1] not in said and PRIVATE[2] not in said
 
     def test_an_ab_s_wording_read_from_its_files_is_shown_masked_whole(self, tmp_path, monkeypatch, mock_server):
         """Where an A/B's texts are read from the files it names, kept as given, an agent is shown its

@@ -194,8 +194,10 @@ async def test_what_it_is_sent_and_keeps_is_masked_with_the_store_s_own_patterns
     from tuningfork.config import DEFAULT_REDACTIONS
     from tuningfork.store.db import Store
     from tests.helpers import KEY as A_KEY, SKILL
+    from tests.test_store_masking import PRIVATE
 
-    (stack.tmp / "skills-src" / "tally-report" / "SKILL.md").write_text(SKILL + f"\nLog in with {A_KEY}.\n", encoding="utf-8")
+    skill = SKILL + f"\nLog in with {A_KEY}.\n" + "\n".join(PRIVATE) + "\nThen write the report.\n"
+    (stack.tmp / "skills-src" / "tally-report" / "SKILL.md").write_text(skill, encoding="utf-8")
     # In a thread of its own, as the fixture's batch: a batch's plan reads the server on a loop of its own.
     await asyncio.to_thread(lambda: execute_batch(stack.store, prepare_batch(
         stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "keyed", model="m",
@@ -204,11 +206,21 @@ async def test_what_it_is_sent_and_keeps_is_masked_with_the_store_s_own_patterns
     own = Store(stack.store.home, patterns=(*DEFAULT_REDACTIONS, r"(?P<secret>zebra-\d+)"))
     try:
         made = refine.create(own, run.id, "write_file", target_rules=RULES)
-        stack.mock.responder = answering(json.dumps({"proposals": [{**GOOD, "rationale": "zebra-421 never helped"}]}))
-        result = await proposer.execute_propose(own, proposer.prepare_propose(own, made.id, m=1, proxy_url=stack.url))
+        # And an edit that misses, one character off a line of the private key: the lines its refusal
+        # finds closest are quoted as the skill shows them (found in review: as the file holds them,
+        # kept in the job's result).
+        near = {"edits": [{"old": PRIVATE[2][:-1] + "Y", "new": "x"}], "rationale": "r"}
+        stack.mock.responder = answering(json.dumps({"proposals": [{**GOOD, "rationale": "zebra-421 never helped"},
+                                                                   near]}))
+        result = await proposer.execute_propose(own, proposer.prepare_propose(own, made.id, m=2, proxy_url=stack.url))
         (proposal,) = result.accepted
+        (missed,) = result.rejected
+        assert "not in the skill" in missed["reason"] and PRIVATE[2] not in json.dumps(result.to_json())
         assert "zebra-421" not in proposal.data["proposers"][0]["rationale"]
-        assert A_KEY not in json.dumps(stack.mock.requests[-1])
+        assert A_KEY not in json.dumps(stack.mock.requests[-1]) and PRIVATE[1] not in json.dumps(stack.mock.requests[-1])
+        # The skill it is sent beside the packet keeps each line at the number the packet gives it.
+        sent = json.loads(stack.mock.requests[-1]["messages"][-1]["content"])["skill"]
+        assert len(sent.splitlines()) == len(skill.splitlines()) and sent.splitlines()[-1] == "Then write the report."
         kept = "".join(path.read_text(encoding="utf-8") for path in made.folder.rglob("*.json"))
         assert "zebra-421" not in kept and A_KEY not in kept
         assert A_KEY in (made.folder / "baseline.md").read_text(encoding="utf-8")  # the skill as it was given

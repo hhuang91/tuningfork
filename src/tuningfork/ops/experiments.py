@@ -186,6 +186,26 @@ def kept_text(store: Store, run: Run, path: Path, text: str) -> str:
     return store.masking.text(text).value if extracted_unmasked(run, name) else text
 
 
+def variant_onto(store: Store, original: str, text: str) -> str:
+    """A variant given as text — an agent's, written from the skill as it is shown, masked, each
+    line at its number — set on the skill as it stands (`ops.diff.onto`): each line it kept is the
+    file's, a key with it, and each it changed is as written. Refused where it reads the mask more
+    often than the file does: the runs would read `<redacted>` for a key. A text written from the
+    file itself comes back as it was."""
+    from tuningfork.config import REDACTED
+    from tuningfork.ops.diff import onto
+
+    set_on = onto(original, store.masking.shown(original, lines=True).value, text)
+    if set_on.count(REDACTED) > original.count(REDACTED):
+        raise OperationError(
+            f"the variant reads {REDACTED} where the skill holds a key: what is shown of a skill is masked, and "
+            "the runs would read the mask, not the key",
+            hint=f"keep each line that reads {REDACTED} as show_skill shows it, or rewrite the line without it",
+            code="bad_params", field="variant_text",
+        )
+    return set_on
+
+
 def study_skill(run: Run, skill: str | None = None) -> tuple[str, Path] | None:
     """The skill to study in `run`, by name, and its SKILL.md: the one named, else the run's own —
     a batch run's, the one an import was told to study, or the only one it kept. None where it
@@ -645,6 +665,8 @@ def prepare_ab(
     original_text = original.read_text(encoding="utf-8")
     if variant_text is None:
         variant_text = variant.read_text(encoding="utf-8")
+    else:
+        variant_text = variant_onto(store, original_text, variant_text)
     if variant_text == original_text:
         raise OperationError("the variant and the original are the same text", field="variant_text")
 
@@ -790,7 +812,8 @@ def ab_wording(store: Store, arms: dict[str, Any], *, masking: Any = None) -> Wo
     Else the files the A/B names, each only while it still holds the text it tested. None for
     an experiment that swapped no wording. With `masking`, as an agent is shown it: a fork's
     launch and the files keep the texts as given, and both are masked whole and alike before
-    the lines between them are read (`Masking.shown`), each line keeping its number."""
+    the lines between them are read, each line keeping its number, the original's lines shown
+    as it shows them wherever the variant holds them (`Masking.alike`)."""
     from tuningfork.experiment.skill import swapped
     from tuningfork.ops.diff import line_diff
 
@@ -824,7 +847,7 @@ def ab_wording(store: Store, arms: dict[str, Any], *, masking: Any = None) -> Wo
         found.missing = "neither what its arms recorded nor the files it names hold the texts it tested"
         return found
     if masking is not None:
-        texts = tuple(masking.shown(list(texts), lines=True).value)
+        texts = tuple(masking.alike(texts))
     found.diff = _renumbered(line_diff(*texts), offset)
     return found
 

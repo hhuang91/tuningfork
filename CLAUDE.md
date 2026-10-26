@@ -725,22 +725,28 @@ too), and an experiment's settings, the test it declared. What leaves tuningfork
 leaves, whatever the store keeps (`Masking.shown`): every answer and refusal an agent is given over
 MCP (`ToolServer.shown`), its model maybe hosted, and what a proposing model is sent — the packet,
 masked as it is built and kept so (`Packet.keep`), and the skill beside it, its exchange kept as the
-store keeps a file (`Store.keep_file`). A text a view splits — show_skill's numbered lines,
-show_files' pages and diff, an A/B's wording, a refinement's proposals, the packet's skill — is
-masked whole first, each line at its number: line by line, a private key's lines pass. A file
+store keeps a file (`Store.keep_file`). A text a view splits or cuts short — show_skill's numbered
+lines, show_files' pages, a task's prompt in a plan or the packet — is masked whole first, each line
+at its number: line by line, a private key's lines pass, and a cut through a key leaves a part no
+pattern reads. Texts set side by side — a diff: show_files', an A/B's wording, a refinement's
+proposals — are masked alike, each line the first holds shown as the first shows it
+(`Masking.alike`): an edit can take away a private key's first line. A part quoted — an edit's old
+text, the lines a refusal finds closest — is quoted as the whole shows it (`Masking.quoted`). A file
 where_it_holds asks of for an agent is matched as the agent is shown it. A run's views show its
 task's check masked (`timeline.launch_json`, `inspect.task_summaries`); the form that makes a
 scenario of the run takes it as written, as the scenario copies and tries it. An edit is resolved
-against the skill's file, never what was shown of it: one that would write the mask into it is
-refused (`ops.diff`). Masking is not idempotent, and a fork matches a call masked once against a
-step stored masked once; `tests/test_store_masking.py` fails on code elsewhere that masks or writes
-a blob itself, and `tests/test_canaries.py` plants a key in the loop's inputs and searches every
-row, blob and file for it, and every answer an agent is given over MCP, but the files kept as they
-were (`KEPT_AS_IT_WAS`: a launch's folders, the workspace's snapshots, a scenario's inputs, the
-wordings tried), what a copy of the skill a launched run was given holds as given, or a refinement
-of it keeps (`GIVEN_COPIES`, `GIVEN_TO_A_REFINEMENT`), and what a scenario's spec takes from its
-run's task as written (`GIVEN_TO_A_SCENARIO`). Never report a rate without its interval — see
-`analysis/stats.py`.
+against the skill's file, never what was shown of it: one that would write the mask where the text
+it replaces held what was shown masked is refused (`ops.diff`), and a variant given as text is set
+on the file as it stands (`experiments.variant_onto`), each line it kept the file's. Masking is not
+idempotent, and a fork matches a call masked once against a step stored masked once;
+`tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
+`tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file
+for it, and every answer an agent is given over MCP, but the files kept as they were
+(`KEPT_AS_IT_WAS`: a launch's folders, the workspace's snapshots, a scenario's inputs, the
+wordings tried), what a copy of the skill a launched run was given holds as given, or a
+refinement's copy of it (`GIVEN_COPIES`, `GIVEN_TO_A_REFINEMENT`), and what a scenario's spec
+takes from its run's task as written (`GIVEN_TO_A_SCENARIO`). Never report a rate without its
+interval — see `analysis/stats.py`.
 
 Server- and harness-specific knowledge lives behind the `backends/`, `harness/` and `wire/`
 seams, never in the core. Supporting another harness or inference server must not require

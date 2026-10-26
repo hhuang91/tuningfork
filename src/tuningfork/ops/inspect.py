@@ -854,12 +854,33 @@ def workspace_at(store: Store, run: str, where: str) -> WorkspaceView:
         raise OperationError(f"cannot read the snapshot: {exc}") from None
 
 
-def workspace_patch(store: Store, view: WorkspaceView, path: str | None = None) -> str:
+def workspace_patch(store: Store, view: WorkspaceView, path: str | None = None, *, masking: Any = None) -> str:
     """What changed since the snapshot the view is compared with (`view.since`), as a unified
-    diff."""
+    diff. With `masking`, as an agent is shown it: each file's two texts masked whole and alike
+    (`Masking.alike`) before the lines between them are read — git's patch masked as a text puts
+    a `-` before each line it removed, where a key's pattern no longer reads it."""
+    import difflib
+
     from tuningfork.snapshots import Snapshots
 
-    return Snapshots(store.home).patch(view.before, view.commit, path)
+    snapshots = Snapshots(store.home)
+    if masking is None:
+        return snapshots.patch(view.before, view.commit, path)
+    pieces = []
+    for status, changed in view.changes:
+        if path and changed != path and not changed.startswith(path.rstrip("/") + "/"):
+            continue
+        before = snapshots.read(view.before, changed) if view.before and status != "A" else b""
+        after = snapshots.read(view.commit, changed) if status != "D" else b""
+        pieces.append(f"diff --git a/{changed} b/{changed}\n")
+        if b"\0" in before or b"\0" in after:
+            pieces.append(f"Binary files a/{changed} and b/{changed} differ\n")
+            continue
+        was, now = masking.alike([before.decode("utf-8", "replace"), after.decode("utf-8", "replace")])
+        pieces.extend(line if line.endswith("\n") else line + "\n" for line in difflib.unified_diff(
+            was.splitlines(keepends=True), now.splitlines(keepends=True),
+            "/dev/null" if status == "A" else f"a/{changed}", "/dev/null" if status == "D" else f"b/{changed}"))
+    return "".join(pieces)
 
 
 def workspace_states(store: Store, run: Run) -> list[tuple[int, str]] | None:

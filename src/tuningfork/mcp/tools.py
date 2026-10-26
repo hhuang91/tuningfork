@@ -577,10 +577,11 @@ def show_files(context: Context, args: FilesArgs) -> Answer:
             f"{path} {statuses.get(status, status)}" for status, path in view.changes[:12]
         ) if view.changes else "nothing changed"))
     # The workspace is kept as the run left it. What an agent reads of it is masked whole before
-    # it is paged (`Masking.shown`): a page's edge, or a diff's lines, would cut a key apart.
+    # it is paged (`Masking.shown`), a page's edge cutting no key apart, and a diff is of each
+    # file's two texts masked whole and alike (`workspace_patch`'s `masking`).
     masking = context.store.masking
     if args.diff:
-        patch = masking.shown(workspace_patch(context.store, view, args.path), lines=True).value if view.before else ""
+        patch = workspace_patch(context.store, view, args.path, masking=masking) if view.before else ""
         shown, where, words = page(patch, min(args.offset, len(patch)), data)
         data["diff"] = shown
         if patch:
@@ -928,14 +929,20 @@ def list_experiments(context: Context, args: ExperimentsArgs) -> Answer:
     return Answer({"experiments": shown}, [f"{count} experiment(s), newest first; an A/B's two arms are one"])
 
 
-def show_experiment(context: Context, args: ExperimentArgs) -> Answer:
+def shown_report(context: Context, experiment: str) -> dict[str, Any]:
+    """An experiment's report as an agent is shown it: an A/B's wording from its two texts masked
+    whole and alike (`ab_wording`'s `masking`), wherever an agent reads a report."""
     from tuningfork.ops.inspect import experiment_report
 
+    return experiment_report(context.store, experiment, masking=context.store.masking).to_json()
+
+
+def show_experiment(context: Context, args: ExperimentArgs) -> Answer:
     chosen = [name for name in ("position", "token", "behaviour") if getattr(args, name) is not None]
     if (chosen or args.offset) and not args.continuations:
         raise OperationError(f"{', '.join(chosen) or 'offset'} reads a probe's continuations: add continuations=true",
                              code="bad_params", field="continuations")
-    report = experiment_report(context.store, args.experiment, masking=context.store.masking).to_json()
+    report = shown_report(context, args.experiment)
     if report.get("run_id"):
         refuse_hidden(context, context.store.get_run(report["run_id"]))
     if args.continuations:
@@ -1360,10 +1367,7 @@ def job_answer(context: Context, job: dict[str, Any]) -> Answer:
     experiments = (job.get("links") or {}).get("experiments") or []
     result = job.get("result")
     if experiments and status in ("done", "cancelled", "interrupted"):
-        from tuningfork.ops.inspect import experiment_report
-
-        report = experiment_report(context.store, experiments[0], masking=context.store.masking)
-        view = compact.experiment(report.to_json())
+        view = compact.experiment(shown_report(context, experiments[0]))
         data["result"] = view
         lines += [line for line in compact.experiment_lines(view)[1:] if line not in lines]
     elif job.get("kind") == "tokens" and isinstance(result, dict):

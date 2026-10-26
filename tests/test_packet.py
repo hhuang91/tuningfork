@@ -3,6 +3,7 @@ records, kept by its digest — on runs a real batch made (the fake agent, the m
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -89,14 +90,23 @@ def test_what_a_proposer_is_shown_of_the_skill_and_the_task_is_masked_each_line_
     show_skill numbers them (line by line, a private key's lines pass). Kept, the packet is as built."""
     keyed = SKILL + f"\nLog in with {KEY}.\n\n" + "\n".join(PRIVATE) + "\n\nThen write the report.\n"
     (stack.tmp / "skills-src" / "tally-report" / "SKILL.md").write_text(keyed, encoding="utf-8")
-    stack.item.prompt += f" My key is {KEY}."
+    # A key where a plan cuts the task's prompt short (240 characters), one where the packet does
+    # (2,000): masked whole before it is cut, or the part left reads as no key (found in review).
+    stack.item.prompt = "p" * 229 + f" {KEY} " + "q" * 1735 + f" {KEY} Summarize data.csv into report.json."
+    assert (stack.item.prompt.index(KEY), stack.item.prompt.rindex(KEY)) == (230, 1990)
     stack.item.tuningfork.check = f": {KEY}; {stack.item.tuningfork.check}"
     stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+    plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                         model="m", harness="fake", n=1)
+    (brief,) = plan.to_json()["evals"]
+    assert brief["prompt"].startswith("p" * 229) and KEY[:10] not in brief["prompt"]
     made = refine.create(stack.store, runs(stack, 1)[0], "write_file", target_rules=RULES)
     found = packets.build_packet(stack.store, made.id)
-    kept = (made.folder / "packets" / f"{found.sha}.json").read_text(encoding="utf-8")
-    for said in (json.dumps(found.data), kept):
-        assert KEY not in said and PRIVATE[1] not in said and PRIVATE[2] not in said
+    kept = (made.folder / "packets" / f"{found.sha}.json").read_bytes()
+    for said in (json.dumps(found.data), kept.decode("utf-8")):
+        assert KEY[:10] not in said and PRIVATE[1] not in said and PRIVATE[2] not in said
+    # Kept as its digest was taken: the file's bytes are what its name says (found in review).
+    assert hashlib.sha256(kept).hexdigest().startswith(found.sha)
     lines, numbered = keyed.splitlines(), found.data["skill"]["lines"]
     at, after = lines.index(f"Log in with {KEY}.") + 1, lines.index("Then write the report.") + 1
     assert numbered[at - 1] == f"{at}: Log in with {REDACTED}." and numbered[after - 1] == f"{after}: Then write the report."

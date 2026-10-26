@@ -212,8 +212,8 @@ GIVEN_TO_A_SCENARIO = ("check", "expected_output", "expectations")
 #: and nothing else planted.
 GIVEN_COPIES = ("scenarios/from-link/skill", "skills/from-link")
 #: And what a refinement of that link keeps of it, in its folder: the skill it refines, as the run
-#: was given it, and each edit proposed, the text it replaces quoted from it.
-GIVEN_TO_A_REFINEMENT = ("baseline.md", "proposals")
+#: was given it. An edit proposed quotes the text it replaces as a proposer was shown it, masked.
+GIVEN_TO_A_REFINEMENT = ("baseline.md",)
 #: The line of that skill the first link wrote: an agent's edit names it by its number.
 NOTED_LINE = 9
 

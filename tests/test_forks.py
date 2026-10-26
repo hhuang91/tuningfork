@@ -121,6 +121,24 @@ class TestReplay:
         assert "row_count" not in json.dumps(stack.store.harness_request(steps[1]))
         assert plan.spans  # the original was found in the context at the step
 
+    def test_a_variant_given_as_text_is_set_on_the_skill_as_it_stands(self, stack):
+        """An agent writes a variant from show_skill, which shows the skill masked: a fork is given it
+        set on the skill as it stands, the key it kept with it — never the mask (found in review)."""
+        from tests.helpers import KEY
+
+        skill_file = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+        skill = skill_file.read_text(encoding="utf-8") + f"\nLog in with {KEY}.\n"
+        skill_file.write_text(skill, encoding="utf-8")
+        source = stack.record()
+        shown = stack.store.masking.shown(skill, lines=True).value
+        line = "Write the totals to report.json."
+        better = "Write the totals to report.json, using the keys row_count and amount_total."
+        variant = stack.tmp / "variants" / "SKILL.v2.md"
+        variant.parent.mkdir()
+        plan = prepare_fork(stack.store, source.run_id, "1", base_url=f"{stack.url}/v1", workdir=stack.tmp / "forks",
+                            variant=variant, variant_text=shown.replace(line, better))
+        assert KEY not in shown and plan.variant.variant_text == skill.replace(line, better)
+
     def test_served_answers_name_the_forks_own_workspace(self, stack):
         """The model wrote to an absolute path: replayed as recorded, every fork would
         write into the source run's workspace — and per-run path masking would hide it."""

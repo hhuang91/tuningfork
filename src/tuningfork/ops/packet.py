@@ -9,9 +9,10 @@ criteria, and what was proposed and screened before.
 
 Built only from the refinement's own task's records: a held-out task never reaches a proposer.
 What the store keeps of them is masked as it was kept; the run's skill, kept as it was given,
-and the task's criteria, as its file wrote them, are masked here — the skill whole, each line
-keeping its number, then the rest of what the masks took in it (`Masking.shown`). A proposer's
-model may be hosted. Kept by its digest in the refinement's folder (`packets/<sha>.json`), so
+and the task's criteria, as its file wrote them, are masked here: the skill whole, each line
+keeping its number, the task's criteria whole before they are clipped, earlier proposals beside
+the skill as it shows them (`Masking.alike`), and all of it of what the skill's masks took
+(`Masking.shown`). A proposer's model may be hosted. Kept by its digest in the refinement's folder (`packets/<sha>.json`), so
 every proposal says exactly what its proposer saw. Where there is no evidence of a kind, the
 packet says so rather than leaving it out: "no answer sampled here reached the target" is
 itself what a proposer must know.
@@ -50,10 +51,11 @@ class Packet:
 
     def keep(self, store: Store, folder: Path) -> None:
         """Keep it in a refinement's folder, by its digest: what a proposal cites. It is masked
-        as it was built (`build_packet`), and kept as it is (`Store.keep_file`)."""
+        as it was built (`build_packet`), and kept as it is (`Store.keep_file`), written as its
+        digest was taken, so that the file's bytes are what its name says."""
         path = folder / "packets" / f"{self.sha}.json"
         if not path.exists():
-            store.keep_file(path, Masked(self.data))
+            store.keep_file(path, Masked(canonical(self.data)))
 
 
 def canonical(data: Any) -> str:
@@ -187,6 +189,8 @@ def _task(store: Store, run: Any) -> dict[str, Any] | None:
     item = (launch.eval if launch is not None else None) or {}
     if not item:
         return None
+    # Kept as its file wrote it: masked whole before it is clipped, which would cut a key apart.
+    item = store.masking.shown(item).value
     options = item.get("tuningfork") or {}
     return {
         "prompt": compact.clip(item.get("prompt"), 2000),
@@ -263,8 +267,8 @@ def build_packet(store: Store, reference: str, *, include_task: bool = True, kee
         "included": {"task_criteria": include_task},
         "tried_before": _tried(store, refinement) or None,
     }
-    # The task as its file wrote it, what was tried as each was given: all of it masked, of what
-    # the skill's masks took too, before it is fitted — a cut would leave half a key.
+    # All of it masked again, of what the skill's masks took too — its parts masked whole where
+    # each was cut or set beside the skill — before it is fitted: a cut would leave half a key.
     data = store.masking.shown({key: value for key, value in data.items() if value is not None}, also=skill.found)
     data = compact.fit(data.value, BUDGET)
     packet = Packet(sha=hashlib.sha256(canonical(data).encode("utf-8")).hexdigest()[:16], data=data)

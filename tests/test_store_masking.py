@@ -437,6 +437,40 @@ class TestWhatIsShown:
         kept = store.masking.value(f"{NAMED}, then {KEY}")
         assert store.masking.shown(kept).value == kept
 
+    def test_a_value_json_cannot_write_is_shown_as_the_text_it_is_written_as(self, store):
+        """An answer is written with `default=str`: found in review, anything but text, a mapping or
+        a list was let through unread."""
+        from pathlib import PurePosixPath
+
+        shown = store.masking.shown({"path": PurePosixPath(f"/keys/{KEY}.txt"), "count": 3, "done": True}).value
+        assert shown == {"path": f"/keys/{REDACTED}.txt", "count": 3, "done": True}
+
+    def test_texts_side_by_side_show_the_first_s_lines_as_it_shows_them(self, store):
+        """An edit can take away what a key's pattern needs — a private key's first line — and leave
+        its body to read as no key (found in review): each line the first holds is shown as the
+        first shows it, wherever it stands; each keeps its number."""
+        original = "\n".join(["# Deploy", *PRIVATE, "Then run the tests."]) + "\n"
+        edited = original.replace(PRIVATE[0], "The deploy key is kept in the vault.")
+        inserted = original.replace(PRIVATE[0] + "\n", PRIVATE[0] + "\n(the deploy key)\n")
+        for other in (edited, inserted):
+            assert PRIVATE[1] in store.masking.shown(other, lines=True).value  # alone, the body reads as no key
+            was, now = store.masking.alike([original, other])
+            assert PRIVATE[1] not in now and PRIVATE[2] not in now and "the deploy key" in now.lower()
+            assert len(now.splitlines()) == len(other.splitlines()) and len(was.splitlines()) == len(original.splitlines())
+        named = f"{NAMED}\nThen: it was {PASSWORD}.\n"
+        assert PASSWORD not in store.masking.alike([named, f"Then: it was {PASSWORD}.\n"])[1]
+
+    def test_a_part_is_quoted_as_the_whole_shows_it(self, store):
+        """A line of a private key, or a line saying bare a password another line names: masked
+        alone, each reads as no key (found in review)."""
+        text = f"{NAMED}\nit was {PASSWORD}\n" + "\n".join(PRIVATE) + "\n"
+        quote = store.masking.quoted(text)
+        repeated = text.index(f"it was {PASSWORD}")
+        assert quote(repeated, repeated + len(f"it was {PASSWORD}")) == f"it was {REDACTED}"
+        body = text.index(PRIVATE[1])
+        assert quote(body, body + len(PRIVATE[1])) == ""
+        assert store.masking.text(PRIVATE[1]).value == PRIVATE[1]  # what masking it alone gives
+
 
 class TestAnAddressKeptAndShown:
     @pytest.mark.parametrize("url, kept", [

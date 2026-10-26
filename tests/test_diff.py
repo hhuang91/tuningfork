@@ -6,7 +6,9 @@ import pytest
 
 from tuningfork.config import REDACTED
 from tuningfork.ops.common import OperationError
-from tuningfork.ops.diff import apply_edits, line_diff
+from tuningfork.ops.diff import apply_edits, apply_resolved, line_diff, onto, resolve_edits
+from tuningfork.store.masking import Masking
+from tests.test_store_masking import PRIVATE
 
 SKILL = "---\nname: tally-report\n---\n\n# Tally report\n\n## Steps\n\n1. Read the CSV file.\n2. Work out the totals.\n3. Write report.json.\n"
 
@@ -236,29 +238,81 @@ def test_line_breaks_escaped_twice_are_line_breaks():
 
 
 
+KEY_HELD = "sk-a1B2c3D4e5F6g7H8i9J0"
+
+
 class TestAMaskedLine:
     """What an agent or a proposing model reads of a skill is masked, each line at its number, while
-    the skill's file keeps what it holds: an edit is resolved against the file."""
+    the skill's file keeps what it holds: an edit is resolved against the file, and quoted as the
+    reader was shown it (`resolve_edits`' `shown`)."""
 
-    KEYED = SKILL + "4. Log in with sk-a1B2c3D4e5F6g7H8i9J0.\n"
+    KEYED = SKILL + f"4. Log in with {KEY_HELD}.\n"
+    #: A password named on line 12 and said bare on line 13, then a private key, lines 14–17.
+    NAMED = (SKILL + "4. Log in with password=Tr0ub4dor3xyz first.\n5. If asked again, answer Tr0ub4dor3xyz.\n"
+             + "\n".join(PRIVATE) + "\n")
+
+    def resolved(self, text: str, edits: list) -> str:
+        return apply_resolved(text, resolve_edits(text, edits, shown=Masking().quoted(text)))
 
     def test_an_edit_that_would_write_the_mask_into_the_skill_is_refused(self):
         """Line 12 is shown as `4. Log in with <redacted>.`: rewritten as it was shown, the key the
         skill holds would be lost to the mask in its file."""
         for edit in ({"line": 12, "new": f"4. Log in with {REDACTED}, then check."},
-                     {"after": 12, "insert": f"5. Never print {REDACTED}."},
-                     {"old": "4. Log in with", "new": f"4. Use {REDACTED} to log in with"}):
+                     {"line": 11, "through": 12, "new": f"3. Write report.json.\n4. Log in with {REDACTED}."}):
             with pytest.raises(OperationError) as refused:
-                apply_edits(self.KEYED, [edit])
+                self.resolved(self.KEYED, [edit])
             assert refused.value.field == "edits" and f"would write {REDACTED} into the skill" in refused.value.message
-        assert "sk-a1B2c3D4e5F6g7H8i9J0" in apply_edits(self.KEYED, [{"line": 11, "new": "3. Write report.json, checked."}])
+        assert KEY_HELD in self.resolved(self.KEYED, [{"line": 11, "new": "3. Write report.json, checked."}])
 
-    def test_a_mask_the_skill_itself_holds_may_stay(self):
+    def test_a_mask_written_where_no_key_was_shown_may_stand(self):
+        """An insert, or an edit of text that held no key, loses none: the mask it writes is the
+        skill's own words, as a skill about masking would hold them (found in review)."""
+        inserted = self.resolved(self.KEYED, [{"after": 12, "insert": f"5. Logs show {REDACTED} where a key was."}])
+        assert inserted.endswith(f"5. Logs show {REDACTED} where a key was.\n") and KEY_HELD in inserted
+        beside = self.resolved(self.KEYED, [{"old": "4. Log in with", "new": f"4. Mask as {REDACTED}, then log in with"}])
+        assert f"4. Mask as {REDACTED}, then log in with {KEY_HELD}." in beside
         held = SKILL + f"4. Logs show {REDACTED} where a key was.\n"
-        edited = apply_edits(held, [{"line": 12, "new": f"4. Logs show {REDACTED} where a key was masked."}])
+        edited = self.resolved(held, [{"line": 12, "new": f"4. Logs show {REDACTED} where a key was masked."}])
         assert edited.endswith("where a key was masked.\n")
+
+    def test_each_edit_and_each_refusal_quotes_the_skill_as_it_was_shown(self):
+        """Masked alone, a part of the skill reads as no key: a line of a private key, or a line saying
+        bare a password another line names (found in review). Each is quoted as the whole skill shows
+        it; the edit is still resolved against the file."""
+        quote = Masking().quoted(self.NAMED)
+        resolved = resolve_edits(self.NAMED, [{"line": 13, "new": "5. If asked again, answer it."},
+                                              {"line": 15, "new": "A line."}], shown=quote)
+        assert [found["shown"] for found in resolved] == [f"5. If asked again, answer {REDACTED}.", ""]
+        assert "Tr0ub4dor3xyz" in resolved[0]["old"] and resolved[1]["old"] == PRIVATE[1]
+        with pytest.raises(OperationError) as closest:
+            resolve_edits(self.NAMED, [{"old": "5. If asked again, answer it.", "new": "x"}], shown=quote)
+        assert f"answer {REDACTED}." in closest.value.hint and "Tr0ub4dor3xyz" not in closest.value.hint
+        with pytest.raises(OperationError) as same:
+            resolve_edits(self.NAMED, [{"line": 13, "new": "5. If asked again, answer Tr0ub4dor3xyz."}], shown=quote)
+        assert "changes nothing" in same.value.message and "Tr0ub4dor3xyz" not in same.value.message
 
     def test_an_old_text_copied_with_the_mask_is_told_to_name_its_line(self):
         with pytest.raises(OperationError) as refused:
-            apply_edits(self.KEYED, [{"old": f"4. Log in with {REDACTED}.", "new": "4. Log in."}])
+            self.resolved(self.KEYED, [{"old": f"4. Log in with {REDACTED}.", "new": "4. Log in."}])
         assert "not in the skill" in refused.value.message and "name the line by its number" in refused.value.hint
+
+
+class TestATextWrittenFromWhatWasShown:
+    """A whole text written from the skill as it was shown — masked, each line at its number — is set
+    on the file as it stands (`onto`)."""
+
+    TEXT = SKILL + f"4. Log in with {KEY_HELD}.\n" + "\n".join(PRIVATE) + "\n5. Then send it.\n"
+
+    def test_the_lines_it_kept_are_the_file_s_a_key_with_them(self):
+        shown = Masking().shown(self.TEXT, lines=True).value
+        assert KEY_HELD not in shown and PRIVATE[1] not in shown
+        edited = onto(self.TEXT, shown, shown.replace("5. Then send it.", "5. Then send it once."))
+        assert edited == self.TEXT.replace("5. Then send it.", "5. Then send it once.")
+        rewrote = onto(self.TEXT, shown, shown.replace(f"4. Log in with {REDACTED}.", f"4. Log in first with {REDACTED}."))
+        assert f"4. Log in first with {REDACTED}." in rewrote and PRIVATE[1] in rewrote
+
+    def test_a_text_written_from_the_file_comes_back_as_it_was(self):
+        shown = Masking().shown(self.TEXT, lines=True).value
+        written = self.TEXT.replace("5. Then send it.", "5. Then send it twice.")
+        assert onto(self.TEXT, shown, written) == written
+        assert onto(self.TEXT, shown, written.replace("\n", "\r\n")).count(KEY_HELD) == 1

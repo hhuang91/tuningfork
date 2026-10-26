@@ -323,6 +323,31 @@ class TestAMaskedContext:
         assert f"postgres://report:{REDACTED}@db.internal" in system and "row_count and amount_total" in system
         assert "Tr0ub4dor9" not in json.dumps(sent)
 
+    def test_a_variant_written_from_the_skill_as_shown_is_set_on_the_file(self, store, tmp_path):
+        """An agent writes a variant from show_skill, which shows the skill masked, each line at its
+        number: the A/B tests it set on the file as it stands — each line it kept the file's, a key
+        and a private key's lines with them — never the masks (found in review). A line it rewrote
+        that still reads the mask is refused."""
+        from tuningfork.ops.common import OperationError
+        from tuningfork.ops.experiments import prepare_ab
+        from tests.test_store_masking import PRIVATE
+
+        skill = SKILL + f"\nLog in with {KEY}.\n\n" + "\n".join(PRIVATE) + "\n"
+        (tmp_path / "SKILL.md").write_text(skill, encoding="utf-8")
+        run = record_pilot(store, skill=skill)
+        shown = store.masking.shown(skill, lines=True).value
+        assert KEY not in shown and PRIVATE[1] not in shown
+        line = "Write the totals to report.json."
+        better = "Write the totals to report.json, using the keys row_count and amount_total."
+        plan = prepare_ab(store, run, "1", variant=tmp_path / "variant.md", variant_text=shown.replace(line, better),
+                          original=tmp_path / "SKILL.md", base_url=UPSTREAM)
+        assert plan.variant_text == skill.replace(line, better)
+        with pytest.raises(OperationError) as refused:
+            prepare_ab(store, run, "1", variant=tmp_path / "variant.md", original=tmp_path / "SKILL.md",
+                       variant_text=shown.replace(f"Log in with {REDACTED}.", f"Log in once with {REDACTED}."),
+                       base_url=UPSTREAM)
+        assert refused.value.field == "variant_text" and REDACTED in refused.value.message
+
     def test_an_edit_inside_masked_text_is_said_to_be_one(self, store, tmp_path):
         from tuningfork.experiment.skill import NothingToCompare
 

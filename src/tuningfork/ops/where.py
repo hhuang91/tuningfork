@@ -59,6 +59,10 @@ class Probe:
     path: str | None = None
     pattern: re.Pattern[str] | None = None
     at_least: int = 1
+    #: Asked for an agent, a file is matched as the agent is shown it, masked whole
+    #: (`Masking.shown`): matched as it stands, a pattern would spell a key out to it a
+    #: character at a time. Asked by a person, None: the file as it stands.
+    masking: Any = None
 
     @property
     def kind(self) -> str:
@@ -304,16 +308,13 @@ def answers_along(store: Store, run: Run, probe: Probe) -> RunHeld:
 
 class FileReader:
     """A probe's file read once a content: the same text in two snapshots, or in two runs, is one
-    object in the store, and is counted once. With `masking`, as an agent is shown it, masked whole
-    (`Masking.shown`): a pattern matched against a workspace kept as the run left it would read a
-    key out to an agent a character at a time."""
+    object in the store, and is counted once — as the probe's asker is shown it (`Probe.masking`)."""
 
-    def __init__(self, store: Store, probe: Probe, masking: Any = None) -> None:
+    def __init__(self, store: Store, probe: Probe) -> None:
         from tuningfork.snapshots import Snapshots
 
         self.snapshots = Snapshots(store.home)
         self.probe = probe
-        self.masking = masking
         self.counts: dict[str, int | None] = {}
 
     def count(self, commit: str, entry: Any) -> int | None:
@@ -325,8 +326,8 @@ class FileReader:
             else:
                 raw = self.snapshots.blob(entry.sha) if entry.sha else self.snapshots.read(commit, entry.path)
                 text = raw.decode("utf-8", "replace")
-                if self.masking is not None:
-                    text = self.masking.shown(text, lines=True).value
+                if self.probe.masking is not None:
+                    text = self.probe.masking.shown(text, lines=True).value
                 self.counts[key] = sum(1 for _ in self.probe.pattern.finditer(text))
         return self.counts[key]
 
@@ -439,22 +440,23 @@ def where_it_holds(
     and count the answers by verdict, by condition. With `screen`, of a screen run to the end's
     forks instead, arm by arm (`screen_forks`): where none of a broken skill's own runs passed, a
     proposal's passing forks beside its failing ones are the comparison there is. `masking`: a file
-    is matched as an agent is shown it (`FileReader`)."""
+    is matched as an agent is shown it (`Probe.masking`)."""
     from tuningfork.analysis.conditions import conditions
     from tuningfork.ops.inspect import condition_json
     from tuningfork.ops.tally import refuse_hidden_task
 
     probe = make_probe(target_match=target_match, target_rules=target_rules, path=path, contains=contains,
                        at_least=at_least, normalizers=normalizers)
+    probe.masking = masking
     if screen is not None:
-        return where_in_screen(store, screen, probe, hidden=hidden, masking=masking)
+        return where_in_screen(store, screen, probe, hidden=hidden)
     if not task:
         raise OperationError("give a task, or a screen run to the end, to ask of", code="bad_params", field="task")
     refuse_hidden_task(task, hidden)
     runs = [found for found in store.runs(limit=limit, task_id=task) if not found.is_thread and not found.is_fork]
     if not runs:
         raise OperationError(f"no runs of task {task!r}", code="not_found", field="task")
-    reader = FileReader(store, probe, masking) if probe.kind == "file" else None
+    reader = FileReader(store, probe) if probe.kind == "file" else None
     asked: dict[str, RunHeld] = {}
     skipped = []
     for run in runs:
@@ -502,14 +504,12 @@ def screen_forks(store: Store, reference: str, *, hidden: Iterable[str] = ()) ->
     return task_id or "", group_id, arms
 
 
-def where_in_screen(
-    store: Store, reference: str, probe: Probe, *, hidden: Iterable[str] = (), masking: Any = None,
-) -> WhereItHolds:
+def where_in_screen(store: Store, reference: str, probe: Probe, *, hidden: Iterable[str] = ()) -> WhereItHolds:
     """The probe asked of a screen's forks, each arm a group: within an arm the edit and the prefixes
     are shared, so what its passing forks' files or answers have that its failing forks' lack is what
     the check saw — the comparison a task none of whose own runs passed does not offer."""
     task_id, group_id, arms = screen_forks(store, reference, hidden=hidden)
-    reader = FileReader(store, probe, masking) if probe.kind == "file" else None
+    reader = FileReader(store, probe) if probe.kind == "file" else None
     groups, skipped = [], []
     for name, label, runs in arms:
         members = []

@@ -174,8 +174,9 @@ to follow, and the server's instructions say so.
 An agent's model may be a hosted one, so every answer is redacted as it leaves the server, as
 tuningfork redacts what it records — a run's files, its task's check and the skill it was given
 too, which tuningfork keeps as they were. A key in a skill reads `<redacted>` on its line, and
-each line keeps its number: an edit can name that line, but cannot write `<redacted>` into the
-skill.
+each line keeps its number: an edit can name that line, but cannot write `<redacted>` where the
+key was. A whole wording given to `start_ab` as text is set on the skill as it stands: each line it
+keeps as shown is the skill's own, the key with it.
 
 A result carries its text and its structured content, because a client shows the model one of
 them: Claude Code the structured content, OpenJarvis the text. Hermes shows both, so give it

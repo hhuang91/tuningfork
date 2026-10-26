@@ -461,9 +461,13 @@ def add_proposal(
                 f"at most {MAX_EDITS} edits in one proposal: small changes are what a screen can attribute",
                 code="bad_params", field="edits",
             )
-        resolved = resolve_edits(baseline, edits)
+        # The run's skill is kept as it was given, and a proposer was shown it masked: each edit,
+        # and each refusal, quotes it so, a part as the whole shows it (`Masking.quoted`) — masked
+        # alone, a private key's line or a password another line names would read as no key.
+        resolved = resolve_edits(baseline, edits, shown=store.masking.quoted(baseline))
         text = apply_resolved(baseline, resolved)
-        kept = [{key: found[key] for key in ("lines", "old", "new", "given")} for found in resolved]
+        kept = [{"lines": found["lines"], "old": found["shown"], "new": found["new"], "given": found["given"]}
+                for found in resolved]
     else:
         kept = None
     assert text is not None
@@ -760,8 +764,9 @@ def view(store: Store, reference: str, *, held_out: bool = False, masking: Any =
     A validation's held-out verdicts, and the gate they feed, are the person's: shown only
     with `held_out`, for their own views. An agent shown them could fit its edits to them.
     With `masking`, as an agent is shown it: the run's skill is kept as it was given, and it
-    and each proposal are masked whole and alike before the lines between them are read
-    (`Masking.shown`), each line keeping its number."""
+    and each proposal are masked whole and alike before the lines between them are read, each
+    line keeping its number, and each of its lines shown as it shows them wherever a proposal
+    holds them (`Masking.alike`)."""
     from tuningfork.ops.approve import state as approval_state
     from tuningfork.ops.diff import line_diff
     from tuningfork.ops.validate import validation_views
@@ -784,7 +789,7 @@ def view(store: Store, reference: str, *, held_out: bool = False, masking: Any =
     found_proposals = proposals(store, refinement.id)
     texts = [baseline, *(each.text() for each in found_proposals)]
     if masking is not None:
-        texts = masking.shown(texts, lines=True).value
+        texts = masking.alike(texts)
     baseline = texts[0]
     items = []
     for each, text in zip(found_proposals, texts[1:]):

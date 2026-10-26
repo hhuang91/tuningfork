@@ -54,10 +54,16 @@ class BatchPlan:
     #: The harness's own options, as given; what the adapter made of them is in each
     #: launch's settings.
     harness_options: dict[str, Any] = field(default_factory=dict)
+    #: The store's masking: a task's prompt, kept as its file wrote it, is shown in brief cut
+    #: where no key stands (`Masking.part`): cut through one, the part left reads as no key.
+    masking: Any = None
 
     @property
     def task_id(self) -> str:
         return f"{self.spec.skill_name}/{self.item.id}"
+
+    def _brief(self, prompt: str, length: int = 240) -> str:
+        return self.masking.part(prompt, 0, length)[0] if self.masking is not None else prompt[:length]
 
     def to_json(self) -> dict[str, Any]:
         from tuningfork.specs import check_kind, describe_check
@@ -69,7 +75,7 @@ class BatchPlan:
             "eval": self.item.id,
             # Every task the spec holds, so a form can offer them by what each asks — but a
             # held-out task only by its id: a plan is shown to whoever asks for one.
-            "evals": [{"id": item.id, "prompt": item.prompt[:240]} for item in self.spec.evals
+            "evals": [{"id": item.id, "prompt": self._brief(item.prompt)} for item in self.spec.evals
                       if not item.tuningfork.held_out],
             "held_out": [item.id for item in self.spec.held_out_evals()],
             "prompt": self.item.prompt,
@@ -383,6 +389,7 @@ def prepare_batch(
         proxy=proxy, workdir=workdir, concurrency=concurrency, skill_dir=skill_dir,
         skill_file=Path(skill_file) if skill_file else None, parity=parity, notes=notes,
         adapter=adapter, sandbox=sandbox, harness_options=dict(harness_options or {}), check_env=every_check,
+        masking=store.masking,
     )
 
 
