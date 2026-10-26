@@ -177,10 +177,12 @@ function byUpload() {
   const said = h("span", null, "The folder holding the task file, with what it names: its skill folder, its input files, "
     + "what its check reads. A repository's history and caches are left out.");
   // The chosen folder's files, by their paths in it, each read only as it is sent: a plan sends
-  // each one's size, and the task files at its top, which it reads; the scenario made, all of
-  // them (found in review: every plan sent the whole folder again, once a pause in typing).
+  // each one's size, and the task files at its top, which it reads; the scenario made, those the
+  // plan on screen takes (found in review: every plan sent the whole folder again, once a pause in
+  // typing, and Upload it sent what the task file never names).
   let files = null;
   let top = "";
+  let taken = new Set();
   const atTop = (path) => !path.includes("/") && path.endsWith(".json");
   picker.addEventListener("change", () => {
     const chosen = [...(picker.files || [])];
@@ -204,9 +206,15 @@ function byUpload() {
     ...keeping,
     send: async (params, extra) => {
       const chosen = new Map((files || []).map((entry) => [entry.path, entry.file]));
+      const read = (path) => (extra.dry_run ? atTop(path) : taken.has(path));
       const sent = await Promise.all(params.files.filter(({ path }) => chosen.has(path)).map(async ({ path, size }) =>
-        (extra.dry_run && !atTop(path) ? { path, size } : { path, data: await base64(chosen.get(path)) })));
+        (read(path) ? { path, data: await base64(chosen.get(path)) } : { path, size })));
       return keeping.send({ ...params, files: sent }, extra);
+    },
+    // The plan on screen: its files are the ones Upload it sends.
+    render: (plan) => {
+      taken = new Set(plan.taken || []);
+      return importPlan(plan);
     },
     fields: h("div", { class: "form-grid" },
       field("The task file's folder", picker, { wide: true, help: said }),

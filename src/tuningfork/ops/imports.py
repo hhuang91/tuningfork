@@ -616,6 +616,8 @@ def spec_dir_parts(relative: str) -> tuple[str, ...]:
     """A path `SPEC_DIR_PATH` found, in parts, as the shell reads it: inside the task's folder,
     a doubled slash read as one — never from the machine's root."""
     return PurePosixPath(relative.lstrip("/")).parts
+
+
 #: What a scenario's runs do with each step of the conversation from its prompt on: take it as
 #: done (in their context, as the chat had it), make it first or as they go on — each its own
 #: answer, the chat's path only one — or never reach it: past where each run stops, or after the

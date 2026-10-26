@@ -258,6 +258,19 @@ class TestKeepingATaskFile:
         # A scenario of a run of the task copies the same.
         assert _check_files('python3 "$TUNINGFORK_SPEC_DIR//checks/report.py"', source) == ({"checks": source / "checks"}, [])
 
+    def test_an_input_named_from_beside_its_folder_comes_too(self, tmp_path):
+        """Found in review: an input file a task file names from beside its folder, which its runs
+        copy (`specs.materialize_files`), was refused when the task file was kept by its path."""
+        (tmp_path / "shared").mkdir()
+        (tmp_path / "shared" / "rows.csv").write_text("id\n1\n", encoding="utf-8")
+        source = tmp_path / "tasks" / "one"
+        source.mkdir(parents=True)
+        (source / "evals.json").write_text(json.dumps({"skill_name": "t", "evals": [{
+            "id": "1", "prompt": "p", "files": ["../../shared/rows.csv", {"path": "b.csv", "source": "../../shared/rows.csv"}],
+        }]}), encoding="utf-8")
+        plan = scenarios.prepare_import(tmp_path / "home", source / "evals.json", "t")
+        assert plan.inputs == {"rows.csv": b"id\n1\n", "b.csv": b"id\n1\n"}
+
     def test_the_conversation_its_runs_continue_comes_too(self, tmp_path):
         """Found in review: a task file naming the conversation its runs continue
         (`tuningfork.context`) was kept without it — by its path, or its folder uploaded — and
@@ -413,6 +426,19 @@ class TestOverHttp:
         assert planned.status_code == 200 and planned.json()["plan"]["inputs"] == ["rows.csv"], planned.text
         unsent = await proxy_client.post(f"{API}/import", json={"name": "s", "files": sized, "folder": "task"})
         assert unsent.status_code == 400 and unsent.json()["error"]["field"] == "files"
+        # Made of the data of the files it takes, the rest by their sizes (found in review: Upload it
+        # sent the files the task file never names, past what a body may hold).
+        taken = set(planned.json()["plan"]["taken"])
+        assert taken == {"evals.json", "rows.csv", "checks/report.py", "tally/SKILL.md"}
+        lean = [each if each["path"] in taken else {"path": each["path"], "size": len(base64.b64decode(each["data"]))}
+                for each in files]
+        made_lean = await proxy_client.post(f"{API}/import", json={"name": "lean", "files": lean, "folder": "task"})
+        assert made_lean.status_code == 201, made_lean.text
+        assert [found["path"] for found in made_lean.json()["scenario"]["inputs"]] == ["rows.csv"]
+        # A size no file has is refused as one, never a failure of the server's own.
+        huge = await proxy_client.post(f"{API}/import", json={"name": "h", "folder": "task", "dry_run": True,
+                                                              "files": [*lean, {"path": "big.bin", "size": 2**63}]})
+        assert huge.status_code == 400 and huge.json()["error"]["field"] == "files"
         # Asked quietly as a form is filled in: a refusal is the answer.
         quiet = await proxy_client.post(f"{API}/import", json={"name": "u", "files": files, "dry_run": True, "quiet": True})
         assert quiet.status_code == 200 and quiet.json()["refused"]["code"] == "conflict"

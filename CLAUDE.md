@@ -169,7 +169,8 @@ the skill folder it holds copied into the scenario's own (`skill/<name>/`). Eith
 files, the conversation its runs continue, and what its check reads from its folder
 (`$TUNINGFORK_SPEC_DIR/…`, read inside it as the shell reads it, `//` too) come with it; a
 scenario whose check reads what its folder lacks says so before it runs. A form plans an upload by
-its files' sizes, sending their data only to make it (`scenarios.Unsent`). A new scenario's page and
+its files' sizes, and makes it with the data of the files it takes alone (`scenarios.Unsent`, the
+plan's `taken`). A new scenario's page and
 Make a scenario name the skill alike (`ui/static/js/skillpick.js`): the scenario's name, the
 harness (of a run), the skill's name, then its folder — an existing skill the Skills page lists, or
 a path, a relative one shown after the scenario's own folder it is taken from, and of a run a copy

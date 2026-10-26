@@ -60,6 +60,9 @@ async def _capped(request: Request, cap: int) -> bytes:
 
 #: What an import's body may hold: a path, or a folder's files; whether only to plan it.
 IMPORT_FIELDS = {"path", "name", "files", "spec", "folder", "dry_run", "quiet"}
+#: The largest size a file sent by its size alone may say: a browser's own limit (found in review: a
+#: size past what a length can be failed the plan with a 500).
+MOST_SIZE = 2**53
 
 
 def _upload_cap() -> int:
@@ -84,10 +87,12 @@ def _import_plan(home: Any, body: dict[str, Any]) -> scenarios.ImportPlan:
         raise OperationError("files is a list of {path, data}, data in base64", code="bad_params", field="files")
     decoded: dict[str, bytes | scenarios.Unsent] = {}
     for each in files:
-        # A plan only: a file by its size, its data sent when the scenario is made.
+        # A file by its size alone: any but the task file in a plan, any the scenario does not take
+        # when it is made — `execute_import` refuses one it would write.
         size = each.get("size") if isinstance(each, dict) and "data" not in each else None
-        if (isinstance(size, int) and not isinstance(size, bool) and size >= 0 and body.get("dry_run") is True
-                and isinstance(each.get("path"), str)):
+        if isinstance(size, int) and not isinstance(size, bool) and isinstance(each.get("path"), str):
+            if not 0 <= size <= MOST_SIZE:
+                raise OperationError(f"{each['path']}: {size} is not a file's size", code="bad_params", field="files")
             decoded[each["path"]] = scenarios.Unsent(size)
             continue
         if not isinstance(each, dict) or not isinstance(each.get("path"), str) or not isinstance(each.get("data"), str):
@@ -168,10 +173,10 @@ def scenario_routes(*, store: Any, writable: bool) -> list[Route]:
 
     async def import_(request: Request) -> Response:
         """A task file kept as a scenario: one on this machine by its path, `{"path", "name"}`, or
-        a folder uploaded, `{"name", "files": [{"path", "data": <base64>}], "spec"?, "folder"?}` —
-        `dry_run` its plan, writing nothing, each file but the task file there by its size alone
-        if wished (`{"path", "size"}`), and `quiet` a dry run's refusal as `{"refused": …}`, for a
-        form asking as it is filled in."""
+        a folder uploaded, `{"name", "files": [{"path", "data": <base64>}], "spec"?, "folder"?}`,
+        a file the scenario takes nothing from sent by its size alone if wished (`{"path", "size"}`;
+        in a plan, any but the task file) — `dry_run` its plan, writing nothing, and `quiet` a dry
+        run's refusal as `{"refused": …}`, for a form asking as it is filled in."""
         body: Any = {}
         try:
             raw = await _capped(request, _upload_cap())

@@ -456,6 +456,9 @@ class ImportPlan:
     has_skill: bool = False
     warnings: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    #: A folder uploaded: the files of it the scenario takes, by their paths in it — the task file
+    #: and what it names. Only their data is sent to make it; the rest, by their sizes.
+    taken: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         everything = [*self.inputs.values(), *self.skill.values(), *self.beside.values()]
@@ -465,7 +468,7 @@ class ImportPlan:
             "skill_dir": self.skill_dir, "has_skill": self.has_skill, "skill_copied": bool(self.skill),
             "inputs": sorted(self.inputs), "beside": sorted(self.beside),
             "files": len(everything), "bytes": sum(len(data) for data in everything),
-            "warnings": self.warnings, "notes": self.notes,
+            "warnings": self.warnings, "notes": self.notes, "taken": self.taken,
         }
 
 
@@ -489,11 +492,10 @@ class _Beside:
         from tuningfork.ops.addskill import _read_folder
 
         if self.directory is not None:
-            # Inside the folder, always: a path from the root, or climbing out, names nothing here.
-            inside = PurePosixPath(relative.replace("\\", "/")).parts
-            if not inside or inside[0].startswith("/") or ".." in inside:
-                return {}
-            path = self.directory.joinpath(*inside)
+            # As a run reads it (`specs.materialize_files`): an input file can be named from beside
+            # the task file's folder, and a run copies it. What a check reads is kept inside the
+            # folder where it is read (`_check_reads`), and a conversation by `validate_spec`.
+            path = self.directory / relative
             if path.is_file():
                 return {"": path.read_bytes()}
             return _read_folder(path)[0] if path.is_dir() else {}
@@ -651,7 +653,7 @@ def prepare_upload(home: Path | str, name: str, files: dict[str, bytes | Unsent]
     folder uploaded holds it, copied into the scenario's own (`skill/<its name>/`) — the copy an
     approved edit is written to. `spec`: the task file's path in the folder, where its top holds
     no evals.json or several task files. A plan can be made of the files' sizes (`Unsent`), the
-    task file's own bytes apart; it is made only of their data."""
+    task file's own bytes apart; it is made only of the data of the files it takes (`taken`)."""
     from tuningfork.ops.addskill import IGNORED
     from tuningfork.ops.imports import SKILL_FOLDER, _folder_name
     from tuningfork.paths import resolve_path
@@ -713,6 +715,7 @@ def prepare_upload(home: Path | str, name: str, files: dict[str, bytes | Unsent]
     else:
         plan.warnings.append(NO_SKILL)
     _take_files(plan, beside)
+    plan.taken = sorted(beside.used | {spec})
     left = len(set(cleaned) - beside.used - {spec})
     if left:
         plan.notes.append(f"{left} other file(s) in {uploaded} are left out: the task file does not name them")

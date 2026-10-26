@@ -766,8 +766,8 @@ try {
     "the task file kept, its page");
   check(true, "a task file named by its path is planned, then kept as a scenario and opened");
   // Or its folder uploaded: planned by each file's size as the form is filled in, the task file's
-  // own bytes apart, and sent whole only when it is added (found in review: every plan sent the
-  // whole folder again).
+  // own bytes apart; and, added, the data sent of the files it takes only (found in review: every
+  // plan sent the whole folder again, and Upload it what the task file never names).
   {
     const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -778,6 +778,7 @@ try {
     mkdirSync(join(folder, "upload-task"), { recursive: true });
     writeFileSync(join(folder, "upload-task", "SKILL.md"), "---\nname: upload-task\ndescription: says done\n---\n\nSay done.\n");
     writeFileSync(join(folder, "rows.csv"), rows);
+    writeFileSync(join(folder, "NOTES.md"), "# Notes the task file never names\n");
     writeFileSync(join(folder, "evals.json"), JSON.stringify({
       skill_name: "upload-task", tuningfork: { skill_dir: "upload-task" },
       evals: [{ id: "1", prompt: "Say done.", files: ["rows.csv"], tuningfork: { check: { reply_contains: "done" } } }],
@@ -806,11 +807,12 @@ try {
     const of = (body, path) => body.files.find((file) => file.path === path) || {};
     const planned = bodies.filter((body) => body.dry_run);
     const made = bodies.filter((body) => !body.dry_run);
+    const sentAs = (body) => body.files.map((file) => `${file.path}:${"data" in file ? "data" : "size"}`).sort().join(",");
     check(planned.length > 0
-      && planned.every((body) => typeof of(body, "evals.json").data === "string" && of(body, "rows.csv").size === rows.length
-        && !("data" in of(body, "rows.csv")) && !("data" in of(body, "upload-task/SKILL.md")))
-      && made.length === 1 && made[0].files.length === 3 && made[0].files.every((file) => typeof file.data === "string"),
-      `a folder uploaded is planned by its files' sizes, the task file's own bytes apart, and sent whole when added (${planned.length} plan(s))`);
+      && planned.every((body) => sentAs(body) === "NOTES.md:size,evals.json:data,rows.csv:size,upload-task/SKILL.md:size"
+        && of(body, "rows.csv").size === rows.length)
+      && made.length === 1 && sentAs(made[0]) === "NOTES.md:size,evals.json:data,rows.csv:data,upload-task/SKILL.md:data",
+      `a folder uploaded is planned by its files' sizes, the task file's own bytes apart, and added with the data of the files it takes (${planned.length} plan(s); ${made.map(sentAs).join(" ")})`);
     rmSync(root, { recursive: true, force: true });
   }
 
@@ -1405,13 +1407,26 @@ try {
     && wrote[1].marks.length === 6 && wrote[1].marks.every((mark) => mark === "search_files*")
     && wrote[1].texts.every((text) => text.startsWith("tool callsearch_files{pattern:")),
     `each continuation's text from the token forced on, the run's own first, a forced token marked as a change (${JSON.stringify(wrote.map((token) => [token.head, token.marks[0], token.texts[0]]))})`);
-  // The arrow keys move between the groupings, and what was opened by token stays open.
+  // The arrow keys move between the groupings, and what was opened by token stays open: shown again
+  // at once from what it read, nothing asked again (found in review: a fold asked again at every
+  // draw, its text "Loading…" meanwhile).
+  await page.eval(`(() => {
+    window.continuationsAsked = 0;
+    const sent = window.fetch;
+    window.fetch = (url, init) => {
+      if (String(url).includes("/continuations")) window.continuationsAsked += 1;
+      return sent(url, init);
+    };
+    return true;
+  })()`);
   await page.eval(`document.querySelector(".continuations .group-pick.current").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`);
   check((await grouping()).picks === "By token,By behaviour*" && await page.eval(`document.activeElement?.textContent === "By behaviour"`),
     "the arrow keys move between the groupings, the one shown keeping the focus");
   await page.eval(`document.querySelector(".continuations .group-pick.current").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))`);
-  await until(() => page.eval(`${written}.querySelectorAll(".written-text").length === 12`), "the continuations opened, open again");
-  check(true, "grouped by token again, the continuations opened before are still open");
+  const again = await page.eval(`({ texts: ${written}.querySelectorAll(".written-text").length, loading: !!${written}.querySelector(".loading"),
+    asked: window.continuationsAsked })`);
+  check(again.texts === 12 && !again.loading && again.asked === 0,
+    `grouped by token again, the continuations opened before are open, shown at once from what they read (${JSON.stringify(again)})`);
   await page.click("In the answer", `document.querySelector("#fork-pos-${at}")`);
   await until(() => page.eval(`(document.querySelector(".fork-answer .tk-detail")?.textContent || "").includes("Probed here")`), "the token, opened in the answer");
   check(true, "a position opens its token in the answer, with what the probe found there");
