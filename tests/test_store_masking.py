@@ -384,7 +384,7 @@ class TestAFileKeptBesideIt:
 
 
 class TestALinedText:
-    @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r", " "])
+    @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r", chr(0x2028)])
     def test_each_line_keeps_its_number_where_a_mask_took_several(self, store, newline):
         """A private key's lines masked as one, and every line after it kept at its number, however the
         file breaks its lines (`Masking.text`'s `lines`): found in review, a carriage return alone, or
