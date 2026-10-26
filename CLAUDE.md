@@ -725,9 +725,9 @@ idempotent, and a fork matches a call masked once against a step stored masked o
 `tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
 `tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file
 for it, but the files kept as they were (`KEPT_AS_IT_WAS`: a launch's folders, the workspace's
-snapshots, a scenario's inputs, the wordings tried), the copies of a launched run's skill
-(`GIVEN_COPIES`), and what a scenario's spec takes from its run's task as written
-(`GIVEN_TO_A_SCENARIO`). Never report a rate without its interval — see `analysis/stats.py`.
+snapshots, a scenario's inputs, the wordings tried), what a copy of the skill a launched run was
+given holds as given (`GIVEN_COPIES`), and what a scenario's spec takes from its run's task as
+written (`GIVEN_TO_A_SCENARIO`). Never report a rate without its interval — see `analysis/stats.py`.
 
 Server- and harness-specific knowledge lives behind the `backends/`, `harness/` and `wire/`
 seams, never in the core. Supporting another harness or inference server must not require

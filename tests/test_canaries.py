@@ -8,9 +8,8 @@ end.
 
 Only what a run is given, kept as it was given by design, may hold one: a launch's eval and
 variant, and a scenario's context, which a fork runs again as they were written; the files kept
-as they were (`KEPT_AS_IT_WAS`): a launch's own folders, the workspace's snapshots; and a copy of
-the skill a launched run was given (`GIVEN_COPIES`), a chain's second link's holding what its
-first wrote.
+as they were (`KEPT_AS_IT_WAS`): a launch's own folders, the workspace's snapshots; and, in a
+copy of the skill a chain's second link was given (`GIVEN_COPIES`), the line its first wrote.
 """
 
 from __future__ import annotations
@@ -197,7 +196,8 @@ KEPT_AS_IT_WAS = {
 GIVEN_TO_A_SCENARIO = ("check", "expected_output", "expectations")
 #: What the sweep copies of the skill a launched run was given, kept as it was given, as the run's
 #: own copy is (`batches`): a scenario's copy of what the run had (`copy_skill`), and a skill added
-#: from the run — of a chain's second link, its skill holding the line its first wrote (`NOTED`).
+#: from the run — of a chain's second link, its skill holding the line its first wrote (`NOTED`),
+#: and nothing else planted.
 GIVEN_COPIES = ("scenarios/from-link/skill", "skills/from-link")
 
 
@@ -205,9 +205,13 @@ def kept_as_it_was(relative: Path) -> bool:
     top, *rest = relative.parts
     if top.startswith("tuningfork.db"):  # its -wal and -shm with it
         top = "tuningfork.db"
-    return (top in KEPT_AS_IT_WAS
-            or (top == "scenarios" and len(rest) > 1 and f"scenarios/*/{rest[1]}" in KEPT_AS_IT_WAS)
-            or any(relative.as_posix().startswith(f"{copy}/") for copy in GIVEN_COPIES))
+    return top in KEPT_AS_IT_WAS or (top == "scenarios" and len(rest) > 1 and f"scenarios/*/{rest[1]}" in KEPT_AS_IT_WAS)
+
+
+def given_copy(relative: Path, name: str) -> bool:
+    """Whether the key `name` stands in a file by design: the line a chain's first link wrote, in
+    a copy of the skill its second was given (`GIVEN_COPIES`)."""
+    return name == NOTED and any(relative.as_posix().startswith(f"{copy}/") for copy in GIVEN_COPIES)
 
 
 def searched(home: Path, path: Path) -> bytes:
@@ -225,11 +229,13 @@ def searched(home: Path, path: Path) -> bytes:
 
 
 def found_in_files(home: Path, keys: dict[str, str]) -> list[str]:
-    """Each file of the recordings folder a key's start or end stands in, but where kept as it was."""
+    """Each file of the recordings folder a key's start or end stands in, but where kept as it was,
+    or given as it stands there."""
     return [
         f"{name} in {path.relative_to(home).as_posix()}"
         for path in sorted(home.rglob("*")) if path.is_file() and not kept_as_it_was(path.relative_to(home))
-        for name, key in keys.items() if any(piece.encode() in searched(home, path) for piece in pieces(key))
+        for name, key in keys.items()
+        if not given_copy(path.relative_to(home), name) and any(piece.encode() in searched(home, path) for piece in pieces(key))
     ]
 
 
