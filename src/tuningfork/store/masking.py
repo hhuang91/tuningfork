@@ -14,7 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from tuningfork.config import DEFAULT_REDACTIONS, _masking, patterns_digest, redact_json_found
+from tuningfork.config import (
+    _FOUND, DEFAULT_REDACTIONS, REDACTED, _masking, patterns_digest, redact_json_found, text_spans,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,16 +39,51 @@ class Masking:
     def digest(self) -> str:
         return patterns_digest(self.patterns)
 
-    def of(self, value: Any, *, also: Iterable[str] = ()) -> Masked:
+    def of(self, value: Any, *, also: Iterable[str] = (), masked: Iterable[str] = ()) -> Masked:
         """`value` masked — text as text, anything else as the JSON it is written as — and every
-        place a value `also` names stands. A `Masked` is kept as it is."""
+        place a value `also` names stands. A `Masked` is kept as it is, and so are the fields of an
+        object that `masked` names: masked where they were made — a check's output, before it was
+        cut — and masked again, a command's second password would fall too."""
         if isinstance(value, Masked) or value is None:
             return value if isinstance(value, Masked) else Masked(None)
         if isinstance(value, str):
             text, made, taken = _masking(value, self.patterns, tuple(also))
             return Masked(text, made, frozenset(taken))
-        masked, made, found = redact_json_found(value, self.patterns, tuple(also))
-        return Masked(masked, made, found)
+        if isinstance(value, dict) and masked:
+            kept = {key: value[key] for key in masked if key in value}
+            rest = self.of({key: item for key, item in value.items() if key not in kept}, also=also)
+            # In the object's own order; a key masking took apart, or a drop's marker, after it.
+            ordered = {key: kept[key] if key in kept else rest.value[key]
+                       for key in value if key in kept or key in rest.value}
+            return Masked({**ordered, **rest.value, **kept}, rest.made, rest.found)
+        written, made, found = redact_json_found(value, self.patterns, tuple(also))
+        return Masked(written, made, found)
+
+    def text(self, text: str, *, also: Iterable[str] = ()) -> Masked:
+        """`text` masked every way storage reads a text (`config.text_spans`): as it stands and as
+        its escapes read, as JSON writes it, its quotes escaped, and wherever a value `also` names
+        stands, as it is written or as its escapes read. Read as text alone (`of`), a password before
+        a typed declaration's quoted key stands; read as a string in JSON — a run's result — a key
+        three escapes deep does, and a value `also` names written as a number, or a pattern took part
+        of. A check's output is masked so."""
+        return _applied(text, text_spans(text, self.patterns, tuple(also)), 0, len(text))[0]
+
+    def part(
+        self, text: str, start: int = 0, end: int | None = None, *, also: Iterable[str] = (),
+    ) -> tuple[str, int, int]:
+        """`text` masked every way (`text`), and its part from `start` to `end` given: what is given,
+        and where in `text` it runs from and to — each edge moved past a mask that covers it. Read on
+        to either side, a key the edge falls inside is found whole: what is given holds neither its
+        end nor half of its mask. Where a check's output is long, its end is given so."""
+        spans = text_spans(text, self.patterns, tuple(also))
+        end = len(text) if end is None else end
+        for span_start, span_end in spans:
+            if span_start < start < span_end:
+                start = span_end
+            if span_start < end < span_end:
+                end = span_start
+        given, start, end = _applied(text, spans, start, max(start, end))
+        return given.value, start, end
 
     def value(self, value: Any, *, also: Iterable[str] = ()) -> Any:
         """`value` masked, for a write that keeps no count."""
@@ -85,6 +122,19 @@ class Masking:
         return bytes_without_secrets(
             kept, answer, wire, request, self.patterns, masked=masked, streamed=streamed, also=also
         )
+
+
+def _applied(text: str, spans: list[tuple[int, int]], start: int, end: int) -> tuple[Masked, int, int]:
+    """`text` from `start` to `end`, each of `spans` in it a mask — none of which an edge falls inside."""
+    pieces, taken, at, made = [], [], start, 0
+    for span_start, span_end in spans:
+        if span_end <= start or span_start >= end:
+            continue
+        pieces += [text[at:span_start], REDACTED]
+        if _FOUND.fullmatch(text, span_start, span_end):
+            taken.append(text[span_start:span_end])
+        at, made = span_end, made + 1
+    return Masked("".join(pieces) + text[at:end], made, frozenset(taken)), start, end
 
 
 def bytes_without_secrets(

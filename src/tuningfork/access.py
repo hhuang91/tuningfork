@@ -47,6 +47,20 @@ def new_token() -> str:
     return secrets.token_urlsafe(24)
 
 
+def held_secrets(home: Path | str | None = None) -> list[str]:
+    """The keys tuningfork holds here — in this process's environment (`SECRET_ENVS`), and in the
+    recordings folder's files — masked wherever one turns up: in a check's output, say, which
+    may print what the model's code read, though nothing tuningfork runs is given one."""
+    values = [os.environ.get(name, "") for name in SECRET_ENVS]
+    if home is not None:
+        for path in (token_path(home), mcp_token_path(home), Path(home) / PROPOSER_KEY_FILE):
+            try:
+                values.append(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                continue
+    return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+
 def token_path(home: Path | str) -> Path:
     return Path(home) / TOKEN_FILE
 

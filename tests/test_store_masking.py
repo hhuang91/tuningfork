@@ -269,6 +269,21 @@ class TestTheRestOfTheStore:
         run = store.get_run(step.run_id)
         assert KEY not in json.dumps([run.label, run.parity, run.result])
 
+    def test_a_field_masked_where_it_was_made_is_kept_as_it_is(self, store):
+        """A check's output, masked where the check ran, before it was cut: the rest of a run's
+        result, and of its launch's exit, is masked as the store masks."""
+        output = store.masking.value(COMMAND)
+        assert "-pZq8xK3vN5wLp" in output  # masked once, the second password stands
+        step = store.record_step(request=request_with([text_message("hi")]))
+        result = {"check_output": output, "told": {"message": output}, "label": f"api_key={KEY}"}
+        store.annotate_run(step.run_id, result=store.masking.of(result, masked=("check_output", "told")))
+        kept = store.get_run(step.run_id).result
+        assert kept["check_output"] == output and kept["told"] == {"message": output}
+        assert KEY not in kept["label"] and list(kept) == list(result)  # in its own order
+        launch = store.create_launch(kind="batch", eval={})
+        store.end_launch(launch.id, exit=store.masking.of({"told": {"message": output}}, masked=("told",)))
+        assert store.get_launch(launch.id).exit == {"told": {"message": output}}
+
     def test_a_launch_s_eval_and_variant_are_kept_as_given(self, store):
         """A fork runs them again as they were written: masked where they are shown or sent."""
         launch = store.create_launch(
@@ -417,6 +432,65 @@ class TestOnePatternSet:
         assert Masking().of(once) is once and Masking().value(Masked(None)) is None
 
 
+class TestAPartOfAText:
+    def test_an_edge_a_key_falls_inside_moves_past_its_mask(self, store):
+        """Read on to either side, the key an edge falls inside is found whole: what is given holds
+        neither its end nor half of its mask (found in review, where a long output was given from a
+        place inside a key)."""
+        text = f"start {KEY} middle {KEY} end"
+        first, second = text.index(KEY), text.rindex(KEY)
+        given, start, end = store.masking.part(text, first + 5, second + 5)
+        assert given == " middle " and (start, end) == (first + len(KEY), second)
+        assert store.masking.part(text, 0, 5) == ("start", 0, 5)
+        assert store.masking.part(text) == (store.masking.text(text).value, 0, len(text))
+
+
+class TestTheEscapedReading:
+    """A text as a JSON string writes it, read for keys a pattern finds there alone (`redact_spans`):
+    each character of it mapped back to the one it came from."""
+
+    @staticmethod
+    def one_by_one(text: str) -> tuple[str, list[int]]:
+        """How it was read before: a place kept for each character."""
+        short = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+        out, origin = [], []
+        for index, char in enumerate(text):
+            piece = short.get(char) or (f"\\u{ord(char):04x}" if ord(char) < 0x20 else char)
+            out.append(piece)
+            origin.extend([index] * len(piece))
+        return "".join(out), origin
+
+    def test_each_character_maps_back_to_the_one_it_came_from(self):
+        import random
+
+        from tuningfork.config import _json_escaped
+
+        draw = random.Random(7)
+        alphabet = 'ab"\\\n\t\r\x01\x1f\x7f/é  '
+        for _ in range(3000):
+            text = "".join(draw.choices(alphabet, k=draw.randint(0, 24)))
+            escaped, origin = _json_escaped(text)
+            expected, places = self.one_by_one(text)
+            assert escaped == expected and [origin(index) for index in range(len(escaped))] == places, repr(text)
+
+    def test_a_long_text_costs_about_its_own_size(self):
+        """A place for each character took some forty bytes for each byte of a long text (found in
+        review): a check's output of a few hundred MB would have taken GB in the proxy."""
+        import tracemalloc
+
+        from tuningfork.config import _json_escaped
+
+        text = ("collected 12 items\n" + "x" * 60 + "\n") * 15000
+        tracemalloc.start()
+        try:
+            _json_escaped(text)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        # A place for each character, even in a compact array, would take some ten times its size.
+        assert peak < 4 * len(text), peak
+
+
 class TestOneBoundary:
     #: Who masks with the patterns themselves, or writes a blob, and why: everything else hands the
     #: store what it has (or asks the store's own `masking` for a value it must read as stored).
@@ -433,7 +507,7 @@ class TestOneBoundary:
         "breakpoints/engine.py": "a call's place predicted as the store masks, where no store is given",
     }
     MASKERS = {"redact", "redact_json", "redact_json_counted", "redact_json_found", "redact_stream",
-               "redact_spans", "_masking", "Masking", "bytes_without_secrets"}
+               "redact_spans", "text_spans", "_masking", "Masking", "bytes_without_secrets"}
 
     def test_nothing_else_masks_or_writes_a_blob_itself(self):
         """Masking is not idempotent, and a fork matches a call masked once against a step stored
