@@ -1303,13 +1303,67 @@ try {
   await page.eval(`location.hash = "#/experiments/${probeId}"`);
   await until(() => page.eval(`!!document.querySelector('.fork-answer .tk-t.tk-flipped[data-i="${at}"]')`), "the answer it forked from");
   check(true, "the result shows the answer it forked from, the forking token ringed");
+  check(await page.eval(`[...document.querySelectorAll("#fork-pos-${at} thead th")].pop().textContent === "led to"`),
+    "and each token's row says where its continuations went");
+  // Every continuation, in one section under the lead, grouped by token or by behaviour: by token
+  // first, each token's behaviours listed and their continuations folded until opened.
+  const grouping = () => page.eval(`(() => {
+    const titles = [...document.querySelectorAll("main .panel > .panel-head h2")].map((h2) => h2.textContent);
+    const section = document.querySelector(".panel.continuations");
+    if (!section) return {};
+    return {
+      after: titles[titles.indexOf("Every continuation") - 1],
+      sections: titles.filter((title) => ["What each continuation wrote", "Behaviours, across the probe", "Every continuation"].includes(title)).length,
+      picks: [...section.querySelectorAll(".group-pick")].map((pick) => pick.textContent + (pick.getAttribute("aria-pressed") === "true" ? "*" : "")).join(","),
+      tokens: !!section.querySelector(".written-position"),
+      behaviours: !!section.querySelector(".probe-behaviours"),
+      hash: location.hash,
+    };
+  })()`);
+  const byToken = await grouping();
+  check(byToken.after === "Which forced tokens changed what the model did" && byToken.sections === 1 && byToken.picks === "By token*,By behaviour"
+    && byToken.tokens && !byToken.behaviours,
+    `every continuation is in one section under the lead, grouped by token first (${JSON.stringify(byToken)})`);
+  const written = `document.querySelector(".continuations #written-pos-${at}")`;
+  check(await page.eval(`${written}.querySelectorAll(".written-token").length === 2 && !${written}.querySelector(".written-text")
+    && ${written}.querySelectorAll("details.fold:not([open])").length === ${written}.querySelectorAll("details.fold").length`),
+    "each token's behaviours listed there, their continuations folded until asked for");
+  // By behaviour, drawn in its place: each behaviour, whether the target counts it, and the tokens
+  // whose continuations reached it.
+  await page.click("By behaviour", `document.querySelector(".continuations")`);
+  const byBehaviour = await grouping();
+  check(byBehaviour.picks === "By token,By behaviour*" && byBehaviour.behaviours && !byBehaviour.tokens
+    && byBehaviour.hash === `#/experiments/${probeId}?by=behaviour` && await page.eval(`document.activeElement?.textContent === "By behaviour"`),
+    `grouped by behaviour in its place, the address naming it, the focus kept (${JSON.stringify(byBehaviour)})`);
   check(await page.eval(`(() => {
-    const rows = [...document.querySelectorAll(".probe-behaviours tbody tr")];
+    const rows = [...document.querySelectorAll(".continuations .probe-behaviours tbody tr")];
     return rows.length >= 2 && rows.some((row) => row.querySelector(".chip.tone-target")) && rows.some((row) => row.querySelector(".chip.tone-not-target"))
       && rows.every((row) => row.querySelectorAll(".led-by button.chip").length >= 1);
   })()`), "each behaviour says whether the target counts it, and which tokens' continuations reached it");
-  check(await page.eval(`[...document.querySelectorAll("#fork-pos-${at} thead th")].pop().textContent === "led to"`),
-    "and each token's row says where its continuations went");
+  await page.eval(`[...document.querySelectorAll("#fork-pos-${at} button")].find((button) => button.textContent === "What they wrote").click()`);
+  const fromPosition = await grouping();
+  check(fromPosition.picks === "By token*,By behaviour" && fromPosition.hash === `#/experiments/${probeId}`
+    && await page.eval(`(() => { const box = ${written}.getBoundingClientRect(); return box.top >= -1 && box.top < innerHeight; })()`),
+    `a position's table leads to what its continuations wrote, by token again (${JSON.stringify(fromPosition)})`);
+  await page.eval(`${written}.querySelectorAll(".written-token > details.fold > summary").forEach((summary) => summary.click())`);
+  await until(() => page.eval(`${written}.querySelectorAll(".written-text").length === 12`), "what each continuation wrote");
+  const wrote = await page.eval(`[...${written}.querySelectorAll(".written-token")].map((token) => ({
+    head: token.querySelector(".written-head").textContent,
+    marks: [...token.querySelectorAll("mark.forced")].map((mark) => mark.textContent + (mark.classList.contains("changed") ? "*" : "")),
+    texts: [...token.querySelectorAll(".written-text")].map((text) => text.textContent),
+  }))`);
+  check(wrote[0].head.startsWith('the run\'s own "read_file"') && wrote[1].head.startsWith('forced "search_files"')
+    && wrote[0].marks.length === 6 && wrote[0].marks.every((mark) => mark === "read_file")
+    && wrote[1].marks.length === 6 && wrote[1].marks.every((mark) => mark === "search_files*")
+    && wrote[1].texts.every((text) => text.startsWith("tool callsearch_files{pattern:")),
+    `each continuation's text from the token forced on, the run's own first, a forced token marked as a change (${JSON.stringify(wrote.map((token) => [token.head, token.marks[0], token.texts[0]]))})`);
+  // The arrow keys move between the groupings, and what was opened by token stays open.
+  await page.eval(`document.querySelector(".continuations .group-pick.current").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`);
+  check((await grouping()).picks === "By token,By behaviour*" && await page.eval(`document.activeElement?.textContent === "By behaviour"`),
+    "the arrow keys move between the groupings, the one shown keeping the focus");
+  await page.eval(`document.querySelector(".continuations .group-pick.current").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))`);
+  await until(() => page.eval(`${written}.querySelectorAll(".written-text").length === 12`), "the continuations opened, open again");
+  check(true, "grouped by token again, the continuations opened before are still open");
   await page.click("In the answer", `document.querySelector("#fork-pos-${at}")`);
   await until(() => page.eval(`(document.querySelector(".fork-answer .tk-detail")?.textContent || "").includes("Probed here")`), "the token, opened in the answer");
   check(true, "a position opens its token in the answer, with what the probe found there");
@@ -1320,6 +1374,9 @@ try {
   await page.eval(`[...document.querySelectorAll(".tk-host .tk-detail a")].find((a) => a.textContent.startsWith("probe")).click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/${probeId}") && !!document.querySelector("#fork-pos-${at}")`), "the result again");
   check(true, "and the token leads back to the result");
+  await page.eval(`location.hash = "#/experiments/${probeId}?by=behaviour"`);
+  await until(async () => (await grouping()).picks === "By token,By behaviour*", "the address's grouping");
+  check(true, "an address naming a grouping opens the section in it");
 
   console.log("a target described, set against what the step has done");
   await page.eval(`location.hash = "#/runs/${scored.id}/0?start=forking-tokens"`);

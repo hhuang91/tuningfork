@@ -6,6 +6,7 @@ import {
 } from "../dom.js";
 import { costOf } from "../cost.js";
 import { live } from "../live.js";
+import { settle } from "../nav.js";
 import { comparisonView, distributionView, endHeadline, forkingView, formatP, screenView, tallyView, targetLine } from "../results.js";
 import { trashButton, trashedBanner } from "../trash.js";
 import { whereForm } from "../where.js";
@@ -98,6 +99,30 @@ export async function experimentView(root, [id], scope) {
       .catch(() => { tally = null; })
       .then(() => { if (scope.active) draw(); });
   };
+  // Every continuation of a probe, a section of its own, by token or by behaviour: which grouping,
+  // the address's and kept in it as the reader picks one; which of its folds are open, kept across
+  // draws so a probe still drawing closes none under the reader; and what each fold asked for,
+  // kept once the probe has finished — asked again while it draws on.
+  const grouped = (by) => {
+    const [path, search = ""] = location.hash.split("?");
+    const params = new URLSearchParams(search);
+    if (by === "behaviour") params.set("by", by);
+    else params.delete("by");
+    settle(params.toString() ? `${path}?${params}` : path);
+  };
+  const opened = new Set();
+  const asked = new Map();
+  const load = (position, token, behaviour) => {
+    const key = [position, token, behaviour].join("\u0000");
+    if (asked.has(key)) return asked.get(key);
+    const found = api.get(`/experiments/${enc(experiment.id)}/continuations${query({ position, token, behaviour })}`);
+    if (experiment.status !== "running") {
+      asked.set(key, found);
+      found.catch(() => asked.delete(key));
+    }
+    return found;
+  };
+  const written = { load, opened, by: scope.query?.get("by") === "behaviour" ? "behaviour" : "token", onGroup: grouped };
   draw();
   loadTally();
   if (experiment.kind === "forking-tokens" && experiment.run_id && experiment.settings?.base_stream) {
@@ -176,7 +201,7 @@ export async function experimentView(root, [id], scope) {
           : null,
         experiment.wording ? wordingPanel(experiment.wording) : null,
         experiment.comparison ? comparisonView(experiment) : null,
-        experiment.forking ? forkingView(experiment.forking, { experiment, view: base }) : null,
+        experiment.forking ? forkingView(experiment.forking, { experiment, view: base, written }) : null,
         experiment.screen ? screenView(experiment.screen, { arms: experiment.arms }) : null,
         experiment.to_end ? toEndView(experiment) : null,
         tally ? tallyView(tally) : null,

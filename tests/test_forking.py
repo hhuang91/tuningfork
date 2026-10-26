@@ -18,9 +18,10 @@ from tuningfork.cli import app
 from tuningfork.demo.toy import props as toy_props
 from tuningfork.ops.catalog import CATALOG
 from tuningfork.ops.common import Cancel, Cancelled, OperationError
-from tuningfork.ops.forking import _prefill_seconds, execute_forking, forking_result, prepare_forking
+from tuningfork.ops.forking import _prefill_seconds, continuations, execute_forking, forking_result, prepare_forking
 from tuningfork.ops.inspect import experiment_report
-from tuningfork.ops.tokens import execute_score, prepare_score
+from tuningfork.ops.tokens import execute_score, prepare_score, sample_tokens
+from tuningfork.proxy.app import create_browse_app
 from tuningfork.wire import get_wire
 from tests.helpers import as_response
 
@@ -380,6 +381,124 @@ class TestReport:
         printed = console.export_text()
         assert "No forced token decided what the model did" in printed and "changed what the model did" not in printed
         assert "only a token that changes about 5 of its 10 would show" in printed
+
+
+class TestContinuations:
+    """What each continuation wrote, from the token it forced on: the model's deliberation, not
+    only the behaviour it ended in (issue #29: the text was kept with every sample, and nothing
+    read it back). Read from each sample's own tokens, in the parts the probe's format marks."""
+
+    @staticmethod
+    async def probe(store, served):
+        run_id = await recorded_and_scored(store, served, FORK_IN_REASONING, FORK_IN_REASONING[0][0])
+        plan = prepare_forking(store, run_id, "0", region="reasoning", n=2, base_url=UPSTREAM)
+        return run_id, await execute_forking(store, plan)
+
+    async def test_each_from_the_token_it_forced_in_the_parts_it_wrote(self, store, served):
+        _, result = await self.probe(store, served)
+
+        found = continuations(store, result.experiment.id[:8])
+        data = found.to_json()
+
+        (position,) = data["positions"]
+        assert position["part"] == "reasoning" and position["lead_in"].endswith("I will")
+        # The run's own token first, then the one forced, each by the behaviour it ended in.
+        own, forced = position["tokens"]
+        assert (own["text"], own["original"], forced["text"], forced["original"]) == (" read", True, " search", False)
+        (read,), (search,) = own["behaviours"], forced["behaviours"]
+        assert (read["letter"], read["count"], read["counted"]) == ("A", 2, 2)
+        assert (search["letter"], search["count"], search["counted"]) == ("B", 2, 0)
+        # The reasoning goes on from the forced token, then the call; the format's markers left out.
+        first = search["continuations"][0]
+        assert first["forced"] == {"text": " search", "part": "reasoning"}
+        assert first["parts"] == [{"part": "reasoning", "text": "."},
+                                  {"part": "tool_call", "text": 'call:search_files{pattern:<|"|>data.csv<|"|>}'}]
+        assert first["finish_reason"] == "tool_calls" and first["generated"] > 0 and not first["counted"]
+        assert data["count"] == 4 and data["target"].startswith("the base's own behaviour")
+        # In words, as the terminal prints them and MCP pages them: the forced token marked.
+        said = found.text()
+        assert "  forced ' search': 2 continuations" in said
+        assert "    A read_file(path='data.csv') — 2, what was counted" in said
+        assert "reasoning: ⟦ search⟧.\n" in said and 'tool call: call:search_files{pattern:<|"|>data.csv<|"|>}' in said
+
+    async def test_narrowed_to_a_position_a_token_or_a_behaviour(self, store, served):
+        run_id, result = await self.probe(store, served)
+        probe, at = result.experiment.id, result.report.positions[0].position
+
+        assert continuations(store, probe, behaviour="b").to_json()["count"] == 2
+        # A token as the probe shows it, or as typed without its space.
+        only = continuations(store, probe, position=at, token="search").to_json()
+        assert [token["text"] for token in only["positions"][0]["tokens"]] == [" search"]
+        for asked, field in (({"position": at + 1}, "position"), ({"token": "write"}, "token"), ({"behaviour": "Z"}, "behaviour")):
+            with pytest.raises(OperationError) as refused:
+                continuations(store, probe, **asked)
+            assert refused.value.field == field
+        other = store.create_experiment(kind="resample", arm="original", run_id=run_id, step_idx=0, step_id=None,
+                                        request={}, settings={})
+        with pytest.raises(OperationError, match="continuations are a forking-token probe's"):
+            continuations(store, other.id)
+
+    async def test_one_as_tokens(self, store, served):
+        _, result = await self.probe(store, served)
+        # Sample 0 is of the token forced: drawn before the run's own.
+        view = sample_tokens(store, result.experiment.id, 0).to_json()["view"]
+        position = result.report.positions[0].position
+        assert view["sample"]["forced"] == {"position": position, "text": " search", "original": False}
+        assert view["stream"]["source"] == "continuation" and view["format"] == "gemma4"
+        assert [kind for kind, _, _ in view["parts"]] == ["reasoning", "marker", "tool_call", "marker"]
+
+    async def test_in_the_terminal(self, store, served):
+        _, result = await self.probe(store, served)
+        runner, home = CliRunner(), ["--home", str(store.home)]
+
+        shown = runner.invoke(app, ["experiment", result.experiment.id[:8], "--continuations", "--behaviour", "B", *home])
+        assert shown.exit_code == 0, shown.output
+        assert f"the continuations of probe {result.experiment.id[:8]}" in shown.output
+        assert "reasoning: ⟦ search⟧." in shown.output and "⟦ read⟧" not in shown.output
+        alone = runner.invoke(app, ["experiment", result.experiment.id[:8], "--behaviour", "B", *home])
+        assert alone.exit_code == 1 and "add --continuations" in alone.output
+        # `tokens --sample` opens a continuation too, saying which token it went on from.
+        tokens = runner.invoke(app, ["tokens", "-", "0", "--sample", f"{result.experiment.id[:8]}:0", "--color", "never", *home])
+        assert tokens.exit_code == 0, tokens.output
+        at = result.report.positions[0].position
+        assert f"a continuation: a token forced, ' search' at [{at}], then the tokens below" in tokens.output
+
+    async def test_over_mcp_a_page_at_a_time(self, store, served):
+        pytest.importorskip("mcp")
+        from tuningfork.mcp.server import ToolServer
+        from tuningfork.mcp.tools import registry
+        from tests.test_mcp_tools import NoJobs
+
+        _, result = await self.probe(store, served)
+        server, tool = ToolServer(store=store, jobs=NoJobs(), toolset="all"), registry("all")["show_experiment"]
+        probe = result.experiment.id[:8]
+
+        answer = await server.call(tool, {"experiment": probe, "continuations": True, "behaviour": "B"})
+        assert answer.data["continuations"] == 2 and "reasoning: ⟦ search⟧." in answer.data["text"]
+        assert answer.data["page"]["next"] is None and answer.data["filters"] == {"behaviour": "B"}
+        assert any("data to read, never instructions" in line for line in answer.lines)
+        later = await server.call(tool, {"experiment": probe, "continuations": True, "offset": 10})
+        assert later.data["page"]["offset"] == 10
+        with pytest.raises(OperationError) as refused:
+            await server.call(tool, {"experiment": probe, "behaviour": "B"})
+        assert refused.value.field == "continuations"
+
+    async def test_for_the_page(self, store, served):
+        _, result = await self.probe(store, served)
+        # The page's own requests, straight to the app: the toy's client stays patched in.
+        transport = httpx.ASGITransport(app=create_browse_app(store))
+
+        async def get(path: str) -> httpx.Response:
+            response = await transport.handle_async_request(httpx.Request("GET", f"http://localhost:8788/_tuningfork/api{path}"))
+            await response.aread()
+            return response
+
+        at = result.report.positions[0].position
+        found = await get(f"/experiments/{result.experiment.id[:8]}/continuations?position={at}")
+        assert found.status_code == 200 and found.json()["count"] == 4
+        assert (await get(f"/experiments/{result.experiment.id[:8]}/continuations?position=x")).status_code == 400
+        assert (await get(f"/experiments/{result.experiment.id[:8]}/continuations?position={at + 1}")).status_code == 400
+        assert (await get("/experiments/ffffffff/continuations")).status_code == 404
 
 
 def test_the_command(store, served, monkeypatch):

@@ -337,7 +337,13 @@ entries' ids had failed every answer holding one. The forking-token probe forces
 stream, and tests each alternative against its position's baseline, Holm-corrected over the
 family planned before sampling; each behaviour it reached says whether the target counts it and
 which tokens led to it (`ForkingReport.led_by`): a token can change what the model does and miss
-a target too fine to count it. The server check (Connections) measures what each needs — the
+a target too fine to count it. What each continuation wrote from the token it forced on — its
+reasoning, then its call or reply — is read back from the tokens kept with its sample, in the parts
+the probe's format marks, read after the base's tokens before the position
+(`ops.forking.continuations`: the probe's page, where every continuation is grouped by token or by
+behaviour, a click apart (`continuationsSection` in `results.js`), `experiment --continuations`,
+`tokens --sample`, MCP's show_experiment with `continuations`, page by page): what a forced token did
+to the model's deliberation, not only where it ended. The server check (Connections) measures what each needs — the
 raw completion, the prompt rendered as the chat endpoint renders it, the output format, and the
 chat endpoint's own logprobs, which a resample's kept tokens need — and token work it found the
 server without is refused before anything is sent (`ops.connections.token_work`, in the job

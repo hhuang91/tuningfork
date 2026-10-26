@@ -342,7 +342,10 @@ breakpoints apply from there: a restart from any step of a recorded run.
 result again, drawing no new samples: `--normalizer` analyses its samples again under another
 normalizer, `--alpha` judges an A/B at another level than the one it was declared with, and says
 so. An A/B's starts with the edit it tested, as a line diff of the two texts its arms sent the
-model.
+model. `--continuations` shows a [forking-token probe](#forking-tokens)'s continuations: what the
+model wrote after each forced token — its reasoning, then its call or reply — grouped by token
+and by the behaviour it ended in; `--at`, `--token` and `--behaviour` (a letter) keep only
+some.
 
 ## Which token decided it?
 
@@ -358,8 +361,9 @@ sampler could most easily have drawn another.
 - `--score` — score the answer the run gave first: its exact context sent once more with the
   answer forced, reading the model's distribution at each token (`--top-k` alternatives kept,
   default 8).
-- `--sample EXPERIMENT:INDEX` — a sample's tokens, from a resample run with `--logprobs`;
-  `--stream <id>` — a stream by its id.
+- `--sample EXPERIMENT:INDEX` — a sample's tokens, from a resample run with `--logprobs`, or one
+  continuation of a forking-token probe, from the token it forced on; `--stream <id>` — a stream
+  by its id.
 - `--hotspots N` (default 10), `--color auto|always|never`, `--json`.
 
 ### `forking-tokens`
@@ -378,6 +382,10 @@ before sampling.
 - `--target`, `--target-match` — the behaviour to test for; by default, what the run did.
 - `--score` — score the answer first, if it has no tokens yet. `--dry-run` — show the plan; draw
   nothing.
+
+What each continuation wrote, and not only where it ended, is kept: `experiment <id>
+--continuations` shows it, and so does the probe's page, in its Every continuation section,
+grouped by token or by behaviour.
 
 ## What is the model doing right now?
 

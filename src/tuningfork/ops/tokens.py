@@ -325,6 +325,9 @@ def sample_tokens(store: Store, experiment: str, idx: int) -> StepTokens:
     if sample is None:
         raise OperationError(f"experiment {found.id[:8]} has no sample {idx}")
     records = store.token_streams(sample_ids=[sample.id])
+    if not records and found.kind == "forking-tokens":
+        raise OperationError(f"continuation {idx} of probe {found.id[:8]} kept no tokens"
+                             + (f": its call failed ({sample.error})" if sample.error else ""))
     if not records:
         raise OperationError(
             f"sample {idx} of experiment {found.id[:8]} kept no tokens",
@@ -332,4 +335,9 @@ def sample_tokens(store: Store, experiment: str, idx: int) -> StepTokens:
         )
     if found.run_id is None:
         raise OperationError("the sample is of a held call that was never recorded as a step")
+    if found.kind == "forking-tokens":
+        # A probe's continuation: the tokens the model wrote after the one it was forced.
+        from tuningfork.ops.forking import continuation_tokens
+
+        return continuation_tokens(store, found, sample, records[0])
     return step_tokens(store, found.run_id, str(found.step_idx), stream=records[0].id)

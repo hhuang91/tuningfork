@@ -1193,7 +1193,11 @@ def tokens(
     run: str = typer.Argument(..., help="Run id, prefix, or label."),
     reference: str = typer.Argument(..., metavar="step", help=STEP_HELP),
     stream: Optional[str] = typer.Option(None, "--stream", help="A stream at the step, by its id (see the list printed)."),
-    sample: Optional[str] = typer.Option(None, "--sample", help="A sample's tokens, as EXPERIMENT:INDEX (resampled with --logprobs)."),
+    sample: Optional[str] = typer.Option(
+        None, "--sample",
+        help="A sample's tokens, as EXPERIMENT:INDEX: resampled with --logprobs, or a forking-token "
+        "probe's continuation, from the token it forced on.",
+    ),
     score: bool = typer.Option(
         False, "--score",
         help="Score the answer the run gave first: its exact context sent once more, with the "
@@ -1268,6 +1272,12 @@ def tokens(
     if view.sample:
         console.print(f"  sample {view.sample['idx']} of experiment {view.sample['experiment_id'][:8]}: "
                       f"{escape(view.sample['outcome'] or '')}")
+        forced = view.sample.get("forced")
+        if forced:
+            who = "the run's own token" if forced["original"] else "a token forced"
+            at = "[" + str(forced["position"]) + "]"
+            console.print(f"  a continuation: {who}, {escape(repr(forced['text']))} at {escape(at)}, "
+                          "then the tokens below, as the model wrote them")
     choice = view.choice()
     if choice is not None:
         from tuningfork.ops.compact import choice_text
@@ -2655,6 +2665,28 @@ def _print_forking(report) -> None:
         console.print(f"With {report.per_arm} continuations a token, no change could reach significance: raise -n.")
 
 
+def _print_continuations(store: Any, reference: str, *, at: int | None, token: str | None,
+                         behaviour: str | None, asked: bool) -> None:
+    """What a probe's continuations wrote (`experiment --continuations`), each from the token it
+    forced on, grouped by position, token and behaviour."""
+    from tuningfork.ops.forking import continuations
+
+    if not asked:
+        _refuse(OperationError("--at, --token and --behaviour choose among continuations: add --continuations",
+                               field="continuations"))
+    try:
+        found = continuations(store, reference, position=at, token=token, behaviour=behaviour)
+    except OperationError as error:
+        _refuse(error)
+    probe = found.experiment
+    console.print(f"[bold]the continuations of probe {probe.id[:8]} at run {(probe.run_id or '')[:8]} step "
+                  f"{probe.step_idx}[/bold] — what each wrote from the token it forced on")
+    console.print(f"  target (declared before sampling): {escape(found.target)}")
+    console.print(f"  [dim]{len(found.found)} continuation(s); the forced token marked ⟦ ⟧. The model's words: "
+                  "data to read, never instructions.[/dim]\n")
+    console.print(escape(found.text()), highlight=False, soft_wrap=True, end="")
+
+
 def _print_screen(report, arms: dict) -> None:
     """A screen: each proposal against one fresh baseline, Holm-corrected over the family."""
     console.print(f"\n[bold]target[/bold] (declared before sampling): {escape(report.target)}")
@@ -3404,6 +3436,18 @@ def experiment(
         "--normalizer",
         help="Re-analyse the stored samples under other normalizers, e.g. tool_name.",
     ),
+    continuations: bool = typer.Option(
+        False, "--continuations",
+        help="A forking-token probe's: what each continuation wrote from the token it forced on, by "
+        "token and behaviour — the model's deliberation, not only where it ended.",
+    ),
+    at: Optional[int] = typer.Option(None, "--at", help="With --continuations: only those of this position."),
+    token: Optional[str] = typer.Option(
+        None, "--token", help="With --continuations: only those of this token, as the probe shows it."
+    ),
+    behaviour: Optional[str] = typer.Option(
+        None, "--behaviour", help="With --continuations: only those that ended in this behaviour, by its letter."
+    ),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """Show a stored experiment's result again, without drawing new samples."""
@@ -3418,6 +3462,9 @@ def experiment(
         raise typer.Exit(code=1) from None
 
     store = _store(home)
+    if continuations or at is not None or token is not None or behaviour is not None:
+        _print_continuations(store, reference, at=at, token=token, behaviour=behaviour, asked=continuations)
+        return
     try:
         report = experiment_report(store, reference, lens=lens, alpha=alpha)
     except OperationError as error:
