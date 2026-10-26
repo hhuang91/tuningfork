@@ -12,8 +12,8 @@ three ways, each arm against the original and drawn fresh:
   does it break a task it was not made for?
 
 Every run is set up as the checkpoint's run was, as its forks are (`ops.launch.Setup`): its
-harness and model, the harness options its launch recorded but an MCP server, which a launch
-records by name only, its layout, its sandbox and its clock.
+harness and model, the harness options its launch recorded (but an MCP server, which a launch
+records by name only), its layout, its sandbox and its clock.
 
 n is fixed in the plan, and a validation stands alone: it is never topped up or pooled with
 another. Its record is kept in the refinement's folder, `validations/<id>.json`: every
@@ -79,6 +79,14 @@ class ValidatePlan:
     def total(self) -> int:
         return 2 * self.n + 2 * self.runs * (1 + len(self.held_out))
 
+    def setup_json(self) -> dict[str, Any] | None:
+        """How every run is set up, as the plan shows it and the record keeps it — its clock as
+        the runs will read it: the checkpoint's where this machine can pin it, else none."""
+        if self.setup is None:
+            return None
+        sandbox = self.forward.original.sandbox
+        return {**self.setup.to_json(), "clock": sandbox.clock if sandbox is not None else None}
+
     def to_json(self) -> dict[str, Any]:
         """The plan as anyone may see it: held-out tasks by their ids, nothing else of them."""
         return {
@@ -94,7 +102,7 @@ class ValidatePlan:
             "minimum": MINIMUM,
             "harness": self.harness,
             "model": self.model,
-            "setup": self.setup.to_json() if self.setup is not None else None,
+            "setup": self.setup_json(),
             "screen": self.screen,
             "private": {
                 "under": str(self.private_base) if self.private_base else None,
@@ -272,9 +280,11 @@ def prepare_validate(
         )
         for arm, path in (("original", baseline), ("edit", variant))
     }
-    # The forks' warning that the run's MCP servers are left out, said once for every part.
+    # What the forks and the training runs each say of the run's MCP servers left out, and of a
+    # clock this machine cannot pin, said once for every part.
     dropped = setup.dropped_servers
     left_out = servers_warning(run.id, dropped) if dropped else None
+    unpinned = forward.original.sandbox.clock_problem if forward.original.sandbox is not None else None
     parts = "its forks, the training runs and the held-out runs" if held else "its forks and the training runs"
     for found in [*forward.original.warnings, *(note.message for note in training_plans["edit"].notes
                                                 if note.level == "warning")]:
@@ -282,6 +292,9 @@ def prepare_validate(
             found = servers_warning(
                 run.id, dropped, f"{parts} go without them, and the forks may depart from the recording"
             )
+        elif unpinned and found.startswith(unpinned):
+            found = (f"{unpinned}: run {run.id[:8]}'s {parts.removeprefix('its ')} read today's date where the "
+                     f"recording read {setup.clock}")
         if found not in warnings:
             warnings.append(found)
     return ValidatePlan(
@@ -367,7 +380,7 @@ def execute_validate(
         "created_at": time.time(), "task": plan.task_id, "harness": plan.harness, "model": plan.model,
         # How every part's runs were set up, the held-out ones among them, whose launches go with
         # their private folders: the run's harness options, the MCP servers they went without.
-        "setup": plan.setup.to_json() if plan.setup is not None else None,
+        "setup": plan.setup_json(),
         # The process running it: a record still "running" after that process died was cut off.
         "pid": os.getpid(),
         "alpha": plan.alpha, "minimum": MINIMUM,

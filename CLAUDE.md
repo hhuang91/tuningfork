@@ -400,9 +400,9 @@ its scripts and keys belong. `TUNINGFORK_SANDBOX=off` turns it off — the suite
 HH:MM:SS` starts every launch's clock at that instant (libfaketime under `LD_PRELOAD`, monotonic
 clocks left real): the harness reads the same date whichever day a run is made — the model
 reads it, and at a knife edge it decides — a fork reads its source's, as does every run of a
-validation, the launch records it,
-and a plan warns where the library is missing (`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere). The normalizer masks the
-sandbox's paths as it masks a launch's own (`NORMALIZER_VERSION` 3).
+validation, the launch records it, and a plan warns where the library is missing
+(`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere). The normalizer masks the sandbox's paths as it
+masks a launch's own (`NORMALIZER_VERSION` 3).
 
 Live breakpoints talk to a running proxy (`--proxy`, or `TUNINGFORK_PROXY`, default :8787):
 

@@ -485,7 +485,7 @@ def choose_checkpoints(
     there: a tool, a file's first change, a finding's making (`ops.experiments.find_step`),
     or a list of tools — the step is each run's own such step; else the same index.
 
-    A run serves when it was set up as the refinement's was (`ops.launch.Setup`: its harness,
+    A run serves when it was set up as the refinement's run was (`ops.launch.Setup`: its harness,
     model, harness options, layout, sandbox and clock, each forked as it was), when its step
     exists and is the same kind of answer as the refinement's (a call, or a reply), has the
     skill's text in its context — so the proposals' wording can be swapped in there — and can
@@ -743,7 +743,7 @@ def prepare_screen_to_end(
                 warnings.extend(f"{name}: {warning}" for warning in plans[name].warnings)
     if wanted > 1 and len(kept) < wanted:
         warnings.append(f"{len(kept)} checkpoint(s) of the {wanted} asked for: the task's other recorded runs "
-                        "serve only if set up as the refinement's was, and where the same step exists, has the "
+                        "serve only if set up as the refinement's run was, and where the same step exists, has the "
                         "skill in its context and replays"
                         + (" (" + "; ".join(notes[:3]) + ")" if notes else ""))
     replayed = [warning for warning in (replay_warning(store, found.run, found.step.idx) for found in kept) if warning]

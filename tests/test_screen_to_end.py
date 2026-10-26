@@ -275,7 +275,7 @@ def test_a_screen_pools_the_forks_of_runs_set_up_alike(stack):
     assert [each["run"] for each in again["checkpoints"]] == [anchor.id, others[2].id]
     assert again["notes"][0] == (f"the latest screen drew from run(s) {others[0].id[:8]}, {others[1].id[:8]}, set up "
                                  f"otherwise than run {anchor.id[:8]}: the checkpoints are chosen again")
-    assert any("2 checkpoint(s) of the 4 asked for" in warning and "set up as the refinement's" in warning
+    assert any("2 checkpoint(s) of the 4 asked for" in warning and "set up as the refinement's run was" in warning
                for warning in again["warnings"])
 
 

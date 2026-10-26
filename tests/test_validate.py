@@ -289,7 +289,7 @@ def test_the_fresh_runs_run_where_the_checkpoints_run_ran_and_read_its_date(stac
     plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
     assert plan.forward.original.sandbox is None and [batch.sandbox for batch in plan.training_plans.values()] == [None] * 2
     assert asked == [] and plan.to_json()["setup"]["sandboxed"] is False
-    assert any(f"run {made.run_id[:8]} ran without it, and these are set up as it was" in warning
+    assert any(f"run {made.run_id[:8]} ran without it, and so does every run set up as it was" in warning
                for warning in plan.warnings), plan.warnings
 
     # It ran in the sandbox, its clock pinned, a folder kept from it: every part runs there,
@@ -304,15 +304,37 @@ def test_the_fresh_runs_run_where_the_checkpoints_run_ran_and_read_its_date(stac
     assert [sandbox.clock for sandbox in sandboxes] == ["2026-10-08 09:00:00"] * 4 and FROM_ENV not in asked
     assert all(kept_from in sandbox.hide for sandbox in sandboxes)
     assert plan.to_json()["setup"]["clock"] == "2026-10-08 09:00:00"
+    assert not any("cannot be pinned" in warning for warning in plan.warnings)
+
+    # Where the clock cannot be pinned here, every run reads today's date: the plan says the
+    # clock as the runs will read it, and why, once.
+    problem = "the clock cannot be pinned at 2026-10-08 09:00:00: libfaketime is not installed; runs keep the real clock"
+    monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, *, own=(), clock=FROM_ENV: (
+        Sandbox("/usr/bin/bwrap", "0.11.1", hide=tuple(hide), own=tuple(own), clock_problem=problem), None))
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    assert plan.to_json()["setup"]["clock"] is None
+    assert [warning for warning in plan.warnings if "cannot be pinned" in warning] == [
+        f"{problem}: run {made.run_id[:8]}'s forks, the training runs and the held-out runs read today's date where "
+        "the recording read 2026-10-08 09:00:00"]
 
     # Where the sandbox cannot run, runs set up as a sandboxed run are refused, as its forks are.
     monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (None, "bubblewrap is not installed"))
     with pytest.raises(OperationError) as refused:
         prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
                       model="m", harness="fake", n=1, setup=plan.setup)
-    assert refused.value.code == "no_sandbox"
+    assert refused.value.code == "no_sandbox" and refused.value.hint == "install bubblewrap"
     assert refused.value.message == (f"run {made.run_id[:8]} ran in the sandbox, so the runs set up as it was must: "
                                      "bubblewrap is not installed")
+    # Turned off, the hint says how to turn it on, as a fork's does.
+    monkeypatch.setenv(SWITCH, "off")
+    with pytest.raises(OperationError) as refused:
+        prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                      model="m", harness="fake", n=1, setup=plan.setup)
+    assert refused.value.hint == f"turn it on again (unset {SWITCH})"
+    with pytest.raises(OperationError) as forked:
+        validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    assert forked.value.code == "no_sandbox" and forked.value.hint == (
+        f"turn it on again (unset {SWITCH}), or fork a run launched without it")
 
 
 def test_cancelled_it_keeps_what_finished_and_gives_no_verdict(stack, monkeypatch):
