@@ -59,14 +59,15 @@ class Masking:
         written, made, found = redact_json_found(value, self.patterns, tuple(also))
         return Masked(written, made, found)
 
-    def text(self, text: str, *, also: Iterable[str] = ()) -> Masked:
+    def text(self, text: str, *, also: Iterable[str] = (), lines: bool = False) -> Masked:
         """`text` masked every way storage reads a text (`config.text_spans`): as it stands and as
         its escapes read, as JSON writes it, its quotes escaped, and wherever a value `also` names
         stands, as it is written or as its escapes read. Read as text alone (`of`), a password before
         a typed declaration's quoted key stands; read as a string in JSON — a run's result — a key
         three escapes deep does, and a value `also` names written as a number, or a pattern took part
-        of. A check's output is masked so."""
-        return _applied(text, text_spans(text, self.patterns, tuple(also)), 0, len(text))[0]
+        of. A check's output is masked so. `lines`: each mask followed by the line breaks it took, so
+        that every line keeps its number — a private key's lines masked whole, say, in a diff."""
+        return _applied(text, text_spans(text, self.patterns, tuple(also)), 0, len(text), lines=lines)[0]
 
     def part(
         self, text: str, start: int = 0, end: int | None = None, *, also: Iterable[str] = (),
@@ -124,13 +125,18 @@ class Masking:
         )
 
 
-def _applied(text: str, spans: list[tuple[int, int]], start: int, end: int) -> tuple[Masked, int, int]:
-    """`text` from `start` to `end`, each of `spans` in it a mask — none of which an edge falls inside."""
+def _applied(
+    text: str, spans: list[tuple[int, int]], start: int, end: int, *, lines: bool = False,
+) -> tuple[Masked, int, int]:
+    """`text` from `start` to `end`, each of `spans` in it a mask — none of which an edge falls inside;
+    `lines`, each mask followed by as many line breaks as it took, each as a line is split
+    (`str.splitlines`: a carriage return alone, U+2028 and the rest too)."""
     pieces, taken, at, made = [], [], start, 0
     for span_start, span_end in spans:
         if span_end <= start or span_start >= end:
             continue
-        pieces += [text[at:span_start], REDACTED]
+        breaks = len(f"x{text[span_start:span_end]}x".splitlines()) - 1 if lines else 0
+        pieces += [text[at:span_start], REDACTED + "\n" * breaks]
         if _FOUND.fullmatch(text, span_start, span_end):
             taken.append(text[span_start:span_end])
         at, made = span_end, made + 1

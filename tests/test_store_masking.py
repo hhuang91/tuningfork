@@ -345,6 +345,61 @@ class TestTheRestOfTheStore:
         assert "Plan(env={'TOKEN': " in plan and REDACTED in plan and KEY not in plan  # read, as it is written
 
 
+class TestAFileKeptBesideIt:
+    """A file made from what was recorded — a chain's record, an imported chat and its skills — is
+    masked as the store masks what it keeps (`Store.keep_file`)."""
+
+    def test_it_is_masked_as_the_store_masks(self, store, tmp_path):
+        record = {"said": f"config.json holds api_key={KEY}", "n": 3}
+        path = store.keep_file(tmp_path / "kept" / "record.json", record, indent=1)
+        assert json.loads(path.read_text(encoding="utf-8")) == store.masking.value(record)
+        text = store.keep_file(tmp_path / "kept" / "SKILL.md", f"Use api_key={KEY}\n")
+        assert text.read_text(encoding="utf-8") == f"Use api_key={REDACTED}\n"
+        assert KEY not in path.read_text(encoding="utf-8") + text.read_text(encoding="utf-8")
+
+    def test_a_value_masked_already_is_kept_as_it_is(self, store, tmp_path):
+        once = store.masking.of({"told": COMMAND})
+        path = store.keep_file(tmp_path / "record.json", once)
+        assert json.loads(path.read_text(encoding="utf-8")) == once.value
+        assert "-pZq8xK3vN5wLp" in path.read_text(encoding="utf-8")  # masked again, it would fall too
+
+    def test_it_is_written_whole_or_not_at_all(self, store, tmp_path, monkeypatch):
+        import os
+        from pathlib import Path
+
+        path = store.keep_file(tmp_path / "kept" / "record.json", {"links": 1})
+        replace = os.replace
+
+        def interrupted(source, target, **options):
+            # The disk full only for this file: whatever else replaces a file meanwhile goes on.
+            if Path(target) == path:
+                raise OSError("the disk is full")
+            return replace(source, target, **options)
+
+        monkeypatch.setattr(os, "replace", interrupted)
+        with pytest.raises(OSError):
+            store.keep_file(path, {"links": 2})
+        assert json.loads(path.read_text(encoding="utf-8")) == {"links": 1}
+        assert [found.name for found in path.parent.iterdir()] == ["record.json"]
+
+
+class TestALinedText:
+    @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r", chr(0x2028)])
+    def test_each_line_keeps_its_number_where_a_mask_took_several(self, store, newline):
+        """A private key's lines masked as one, and every line after it kept at its number, however the
+        file breaks its lines (`Masking.text`'s `lines`): found in review, a carriage return alone, or
+        U+2028, still moved them."""
+        body = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW"
+        lines = ["# Deploy", "-----BEGIN OPENSSH PRIVATE KEY-----", body, "QyNTUxOQAAACDx2Jx7dGgHJ1s0kpk8q9fG1hX",
+                 "-----END OPENSSH PRIVATE KEY-----", "Then run the tests."]
+        text = newline.join(lines) + newline
+        masked = store.masking.text(text, lines=True).value
+        assert body not in masked and REDACTED in masked
+        assert len(masked.splitlines()) == len(text.splitlines())
+        assert masked.splitlines()[-1] == "Then run the tests."
+        assert len(store.masking.text(text).value.splitlines()) < len(lines)  # without, they move
+
+
 class TestAnAddressKeptAndShown:
     @pytest.mark.parametrize("url, kept", [
         (f"http://tuningfork:{KEY}@127.0.0.1:8081", f"http://{REDACTED}@127.0.0.1:8081"),

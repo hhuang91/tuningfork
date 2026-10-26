@@ -15,6 +15,7 @@ import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
+from tuningfork.config import REDACTED
 from tuningfork.control import ControlClient
 from tuningfork.demo.mock import MockTurn
 from tuningfork.ops import Cancel, Cancelled, OperationError
@@ -214,6 +215,74 @@ class TestChain:
         assert "-pZq8xK3vN5wLp" in link.told["message"]
         assert stack.store.get_run(link.run_id).result["told"] == link.told
         assert stack.store.get_launch(link.launch_id).exit["told"] == link.told
+
+    def test_the_chains_record_is_masked_but_what_was_masked_where_it_was_made(self, stack):
+        """The lines a link wrote into its skill are masked in the chain's record, of each text
+        masked whole: found in review, masked line by line, a private key's lines and a block's
+        stood, and so did a password the skill named, said bare in a line added. The copy it left,
+        the next link's start, keeps them. What its harness was told, masked where the check ran,
+        and its skill-editing calls, read from the store, are kept as they were masked: masked
+        again, a command's second password would fall too."""
+        from tuningfork.demo.task import CHECK
+
+        key = "sk-" "tfchainkey7Hq2Lm9Xw3Rv5Pz8B"
+        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        body = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW"
+        private = f"-----BEGIN OPENSSH PRIVATE KEY-----\n{body}\nQyNTUxOQAAACDx2Jx7dGgHJ1s0kpk8q9fG1hX\n-----END OPENSSH PRIVATE KEY-----"
+        blocked, named = "Hq8xK3vN5wLpQ7Tr", "Zq8xK3vN5wLpQ7Tq"
+        given = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+        given.write_text(given.read_text(encoding="utf-8") + f"\nThe database: password={named}\nUse {named} for "
+                         "staging only.\n", encoding="utf-8")
+        added = (f"\nThe key is {key}.\n\n{private}\n\ndb:\n  password: |\n    {blocked}\n\nRemember: it is {named}.\n"
+                 f"\nConnect with {command}.\n")
+
+        def noting(payload: dict) -> MockTurn:
+            messages = payload["messages"]
+            if messages[1]["content"].startswith("I ran my check"):
+                return MockTurn(content="Noted.")
+            if any(message["role"] == "tool" for message in messages):
+                return MockTurn(content="The report is written, and the skill noted.")
+            system = messages[0]["content"]
+            workdir = re.search(r"Working directory: (\S+)", system).group(1)
+            skill = re.search(r"\[Skill tally-report preloaded\]\n\n(.*)", system, re.S).group(1)
+            return MockTurn(tool_calls=[
+                {"name": "write_file", "arguments": {
+                    "path": f"{workdir}/report.json", "content": json.dumps({"row_count": 4, "amount_total": 61.5})}},
+                {"name": "write_file", "arguments": {
+                    "path": str(Path(workdir).parent / "home" / "skills" / "tally-report" / "SKILL.md"),
+                    "file_path": command, "content": skill.rstrip("\n") + added}},
+                # A file of its own in the skill, named with the key: every field of the record is masked.
+                {"name": "write_file", "arguments": {
+                    "path": str(Path(workdir).parent / "home" / "skills" / "tally-report" / f"{key}.md"),
+                    "content": "Notes.\n"}},
+            ])
+
+        stack.mock.responder = noting
+        data = stack.spec.to_dict()
+        data["evals"][0]["tuningfork"]["check"] = f"echo '{command}'; {CHECK}"
+        stack.spec.path.write_text(json.dumps(data), encoding="utf-8")
+        report = execute_chain(stack.store, prepare(stack, n=1, tell=True))
+
+        (link,) = report.links
+        kept = get_chain(stack.store, report.plan.id)
+        secrets = (key, body, blocked, named)
+        left = (Path(link.left) / "SKILL.md").read_text(encoding="utf-8")
+        assert all(secret in left for secret in secrets)  # the next link's start, as the link left it
+        assert (Path(link.left) / f"{key}.md").is_file() and any(key in name for name in link.changed)
+        shown = json.dumps([link.diff, kept])
+        assert not [secret for secret in secrets if secret in shown]
+        assert REDACTED in json.dumps(kept["links"][0]["diff"]) and kept["links"][0]["diff"] == link.diff
+        assert "-pZq8xK3vN5wLp" in json.dumps(link.diff)  # masked once: masked again, it would fall too
+        # Only the lines the link added, each by its number in the file: found in review, a line it
+        # never changed, holding a value the masks took bare, was masked on one side alone; and a
+        # private key masked to one line moved every line after it.
+        added_lines = [line for hunk in link.diff["hunks"] for line in hunk["lines"] if line["op"] == "+"]
+        assert link.diff["removed"] == 0 and len(added_lines) == link.diff["added"]
+        (remember,) = [line for line in added_lines if line["text"].startswith("Remember:")]
+        assert left.splitlines()[remember["new"] - 1] == f"Remember: it is {named}."
+        assert "-pZq8xK3vN5wLp" in link.told["message"] and kept["links"][0]["told"] == link.told
+        assert any(edit["file"] and "-pZq8xK3vN5wLp" in edit["file"] for edit in link.edits)
+        assert kept["links"][0]["edits"] == link.edits
 
     def test_telling_needs_a_harness_that_resumes_and_a_check(self, stack, monkeypatch):
         resumes = FakeAgent.continue_launch

@@ -280,6 +280,187 @@ class TestTheRun:
         assert not any("names no tools" in warning for warning in plan.warnings)
 
 
+#: A key in each part of a chat a scenario or a skill is made of: said before the task, and in the
+#: skill the model read; and a command whose second password only a second masking takes.
+CHAT_KEY = "sk-" "tfchatkey4Hq2Lm7Xw3Rv5Pz8Bq"
+COMMAND = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+
+
+def chat_with_keys() -> str:
+    earlier = [{**EARLIER[0], "content": f"{EARLIER[0]['content']} My key is {CHAT_KEY}."}, EARLIER[1]]
+    rows = conversation(("tally-report", SKILL + f"\nThe key is {CHAT_KEY}.\n"))
+    rows[0] = {**rows[0], "content": f"{rows[0]['content']} Connect with {COMMAND}."}
+    return export(earlier + rows)
+
+
+def made_of(store, run_id: str, name: str) -> dict[str, str]:
+    """Every file of a scenario made of the run, by its place in the scenario's folder, and the
+    skill a copy of it would add."""
+    from tuningfork.ops import addskill, scenarios
+
+    imports.make_scenario(store, imports.prepare_scenario(store, run_id, name))
+    folder = scenarios.folder(store.home, name)
+    added = addskill.prepare_from_run(store, run_id, name=name)
+    made = {path.relative_to(folder).as_posix(): path.read_text(encoding="utf-8")
+            for path in sorted(folder.rglob("*")) if path.is_file()}
+    return {**made, "added/SKILL.md": added.files["SKILL.md"].decode("utf-8")}
+
+
+def imported_before(store, data: str):
+    """An import as one made before imports were masked kept it: its chat and the SKILL.md it
+    extracted whole, and its run saying nothing of masking."""
+    plan = imports.prepare_import(store, data)
+    result = imports.execute_import(store, plan)
+    (result.folder / "chat.json").write_text(json.dumps(plan.chat.to_json()), encoding="utf-8")
+    (result.folder / "skills" / "tally-report" / "SKILL.md").write_text(plan.skills[0].text, encoding="utf-8")
+    run = store.get_run(result.run_id)
+    imported = {key: value for key, value in run.parity["imported"].items() if key != "masked"}
+    store.annotate_run(run.id, parity={**run.parity, "imported": imported})
+    return store.get_run(run.id)
+
+
+class TestWhatItKeepsBesideTheRun:
+    def test_its_chat_and_skills_are_masked_as_its_steps_are(self, store):
+        """Found in the redaction audit: its steps were masked, and the chat and the SKILL.md kept
+        beside them, which a scenario and a skill added are made of, were not."""
+        from tuningfork.config import REDACTED
+        from tuningfork.experiment.skill import locate
+
+        result = imports.execute_import(store, imports.prepare_import(store, chat_with_keys()))
+        chat, skill = result.folder / "chat.json", result.folder / "skills" / "tally-report" / "SKILL.md"
+        assert CHAT_KEY not in chat.read_text(encoding="utf-8") + skill.read_text(encoding="utf-8")
+        run = store.get_run(result.run_id)
+        assert run.parity["imported"]["masked"] == store.masking.digest  # the patterns that masked them
+        # The SKILL.md as the step that read it holds it: an A/B and a refinement find it there.
+        kept = skill.read_text(encoding="utf-8")
+        assert REDACTED in kept and locate(store.rebuild_request(store.steps(run.id)[2]), kept)
+        # Read back as it was kept, masked once: masked again, a command's second password would fall too.
+        assert "-pZq8xK3vN5wLp" in json.dumps(imports.chat_of(store, run).messages)
+        made = "".join(made_of(store, run.id, "from-the-chat").values())
+        assert CHAT_KEY not in made and REDACTED in made and "-pZq8xK3vN5wLp" in made
+
+    def test_an_answer_is_masked_of_what_the_masks_before_it_took(self, store, tmp_path):
+        """As a step's answer is masked of what its request's masks took. Found in review: masked
+        whole by the patterns alone, a password the person gave by its name stood in the chat where
+        the model said it bare — in its reasoning, never sent back, and in its last answer, in no
+        later request — beside a store that held it nowhere; and in a scenario's conversation, cut
+        at the person's turn after it."""
+        from tuningfork.ops import scenarios
+
+        password = "Zq8xK3vN5wLpQ7Tr"
+        rows = [{"id": 1, "role": "user", "content": f"Log in with password={password}.", "timestamp": 0.5},
+                {"id": 2, "role": "assistant", "content": "Logged in.", "reasoning_content": f"The password is {password}.",
+                 "finish_reason": "stop", "timestamp": 0.6},
+                {"id": 3, "role": "user", "content": "Which did you use?", "timestamp": 0.7},
+                {"id": 4, "role": "assistant", "content": f"I used {password}.", "finish_reason": "stop", "timestamp": 0.8},
+                {"id": 5, "role": "user", "content": "Thanks.", "timestamp": 0.9}]
+        result = imports.execute_import(store, imports.prepare_import(store, export(rows)))
+        run = store.get_run(result.run_id)
+        held = [[store.rebuild_request(step), store.response(step)] for step in store.steps(run.id)]
+        assert password not in json.dumps(held)
+        assert password not in (result.folder / "chat.json").read_text(encoding="utf-8")
+        folder = tmp_path / "tally-report"
+        folder.mkdir()
+        (folder / "SKILL.md").write_text(SKILL, encoding="utf-8")
+        imports.make_scenario(store, imports.prepare_scenario(store, run.id, "after-it", cut=5, skill_dir=folder))
+        assert password not in (scenarios.folder(store.home, "after-it") / "context.json").read_text(encoding="utf-8")
+
+    def test_two_skills_whose_names_make_one_folder_each_keep_their_own(self, store):
+        """Found in review: "tally report" and "tally-report" made one folder, the second's SKILL.md
+        over the first's, each skill's record leading to it."""
+        from pathlib import Path
+
+        other = SKILL.replace("name: tally-report", "name: tally report").replace("Write the totals", "Count the rows")
+        # And one whose name differs only in case: one folder where a file system ignores case.
+        third = SKILL.replace("name: tally-report", "name: Tally-Report").replace("Write the totals", "Sum the rows")
+        data = export(conversation(("tally-report", SKILL), ("tally report", other), ("Tally-Report", third)))
+        result = imports.execute_import(store, imports.prepare_import(store, data))
+        kept = store.get_run(result.run_id).parity["skill_dirs"]
+        assert {name: (Path(place) / "SKILL.md").read_text(encoding="utf-8") for name, place in kept.items()} == {
+            "tally-report": SKILL, "tally report": other, "Tally-Report": third}
+        assert len({Path(place).name.casefold() for place in kept.values()}) == 3
+
+    def test_one_kept_before_it_was_masked_is_masked_as_it_is_read(self, store):
+        """An import made before kept its chat and the SKILL.md extracted from it whole: what is made
+        of them is masked as they are read, once, and is what an import made now makes. The files
+        themselves are as they were."""
+        run = imported_before(store, chat_with_keys())
+        said = json.dumps(imports.chat_of(store, run).messages)
+        assert CHAT_KEY not in said and "-pZq8xK3vN5wLp" in said
+        made = made_of(store, run.id, "from-before")
+        assert CHAT_KEY not in "".join(made.values()) and "-pZq8xK3vN5wLp" in "".join(made.values())
+        now = imports.execute_import(store, imports.prepare_import(store, chat_with_keys()))
+        made_now = made_of(store, now.run_id, "from-now")
+        for place in ("context.json", "skill/tally-report/SKILL.md", "added/SKILL.md"):
+            assert made[place] == made_now[place], place
+        assert CHAT_KEY in (store.home / "imports" / run.id / "chat.json").read_text(encoding="utf-8")
+
+    def test_one_kept_before_and_changed_since_is_taken_as_it_now_is(self, store):
+        """Its SKILL.md changed since the import — an approved edit written to it, say — is what a
+        scenario and a skill added take, masked as text: found in review, they took the chat's."""
+        run = imported_before(store, chat_with_keys())
+        kept = store.home / "imports" / run.id / "skills" / "tally-report" / "SKILL.md"
+        kept.write_text(kept.read_text(encoding="utf-8") + "\nCheck the totals twice.\n", encoding="utf-8")
+        made = made_of(store, run.id, "changed-since")
+        for place in ("skill/tally-report/SKILL.md", "added/SKILL.md"):
+            assert "Check the totals twice." in made[place] and CHAT_KEY not in made[place], place
+
+    def test_a_copy_of_one_kept_before_asked_for_is_masked_as_it_is_read(self, store):
+        """A copy of what the run had, asked for (`copy_skill`, which the form offers where a folder
+        changed since the run), is the SKILL.md a scenario that finds no folder takes: masked as it is
+        read, and said to be the copy the run kept. The kept file is as it was."""
+        from tuningfork.ops import scenarios
+
+        run = imported_before(store, chat_with_keys())
+        kept = store.home / "imports" / run.id / "skills" / "tally-report" / "SKILL.md"
+        was = kept.read_text(encoding="utf-8")
+        made = {}
+        for name, copy in (("found-none", False), ("asked-for", True)):
+            plan = imports.prepare_scenario(store, run.id, name, copy_skill=copy)
+            assert any(f"the copy run {run.id[:8]} kept" in line for line in plan.notes + plan.warnings), name
+            imports.make_scenario(store, plan)
+            made[copy] = (scenarios.folder(store.home, name) / "skill" / "tally-report" / "SKILL.md").read_text(
+                encoding="utf-8")
+        assert made[True] == made[False] and CHAT_KEY not in made[True]
+        assert kept.read_text(encoding="utf-8") == was and CHAT_KEY in was
+
+    def test_one_kept_before_is_masked_once_for_each_version_of_its_chat(self, store, monkeypatch):
+        """A scenario's form asks at every change: found in review, each read masked a chat of 5 MB
+        again, in more than a second."""
+        run = imported_before(store, chat_with_keys())
+        masked = []
+        masking = imports.kept_chat
+        monkeypatch.setattr(imports, "kept_chat", lambda *given: masked.append(1) or masking(*given))
+        assert imports.chat_of(store, run).messages == imports.chat_of(store, run).messages
+        assert len(masked) == 1
+        path = store.home / "imports" / run.id / "chat.json"
+        changed = json.loads(path.read_text(encoding="utf-8"))
+        changed["messages"][1]["content"] += " And one more thing."
+        path.write_text(json.dumps(changed), encoding="utf-8")
+        assert imports.chat_of(store, run).messages[1]["content"].endswith("And one more thing.")
+        assert len(masked) == 2
+
+    @pytest.mark.parametrize("imported, skill, unmasked", [
+        ({"skills": [{"name": "tally-report", "source": "extracted"}]}, "tally-report", True),
+        # Its mark names the patterns that masked it; one that names none is read masked.
+        ({"skills": [{"name": "tally-report", "source": "extracted"}], "masked": "5f0c9a2e41d7"}, "tally-report", False),
+        ({"skills": [{"name": "tally-report", "source": "extracted"}], "masked": True}, "tally-report", True),
+        # A folder its person named is kept as it was given.
+        ({"skills": [{"name": "tally-report", "source": "folder"}]}, "tally-report", False),
+        ({"skills": [{"name": "tally-report", "source": "extracted"}]}, "csv-tidy", False),
+        ({"skills": [{"name": "tally-report", "source": "extracted"}]}, None, False),
+        # One skill, kept before an import kept several.
+        ({"skill": "tally-report", "skill_source": "extracted"}, "tally-report", True),
+        ({"skill": "tally-report", "skill_source": "folder"}, "tally-report", False),
+        (None, "tally-report", False),
+    ])
+    def test_what_is_masked_as_it_is_read(self, imported, skill, unmasked):
+        from types import SimpleNamespace
+
+        run = SimpleNamespace(parity={"imported": imported} if imported is not None else {})
+        assert imports.extracted_unmasked(run, skill) is unmasked
+
+
 def test_a_person_imports_from_the_terminal(store, tmp_path):
     from tuningfork.cli import app
 
