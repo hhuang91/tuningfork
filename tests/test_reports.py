@@ -25,8 +25,8 @@ from tests.test_store_masking import PRIVATE
 UPSTREAM = "http://upstream.test"
 
 
-def ab_home(tmp_path, monkeypatch, mock_server, variant: str = VARIANT):
-    """The pilot run, A/B-tested at its write step against `variant`."""
+def ab_home(tmp_path, monkeypatch, mock_server, variant: str = VARIANT, original: str = SKILL):
+    """The pilot run, given `original`, A/B-tested at its write step against `variant`."""
     monkeypatch.setattr("tuningfork.cli.console", Console(width=220))
     mock_server.props = PROPS
     mock_server.responder = lambda payload: MockTurn(
@@ -39,11 +39,11 @@ def ab_home(tmp_path, monkeypatch, mock_server, variant: str = VARIANT):
     )
     path = tmp_path / "store"
     store = Store(path)
-    record_pilot(store)
+    record_pilot(store, skill=original)
     store.close()
     folder = tmp_path / "skill"
     folder.mkdir()
-    (folder / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    (folder / "SKILL.md").write_text(original, encoding="utf-8")
     (folder / "SKILL.v2.md").write_text(variant, encoding="utf-8")
     result = CliRunner().invoke(app, [
         "ab", "pilot", "1", "--variant", str(folder / "SKILL.v2.md"), "-n", "4",
@@ -148,6 +148,27 @@ class TestWording:
         assert any(PRIVATE[1] in text for *_, text in lines(raw)) and any(KEY in text for *_, text in lines(raw))
         assert not any(PRIVATE[1] in text or PRIVATE[2] in text or KEY in text for *_, text in lines(shown))
         assert [new for _, new, _ in lines(shown)] == [new for _, new, _ in lines(raw)]  # each at its number
+
+    def test_a_key_the_original_holds_is_shown_as_the_original_shows_it(self, tmp_path, monkeypatch, mock_server):
+        """A variant can take away what a key's pattern needs — a private key's first line — and leave
+        its body to read as no key: each line the original holds is shown as the original shows it,
+        wherever the variant holds it (`Masking.alike`; found in review)."""
+        original = SKILL + "\n" + "\n".join(PRIVATE) + "\n"
+        variant = VARIANT + "\n" + "\n".join(PRIVATE[1:]) + "\n"
+        home = ab_home(tmp_path, monkeypatch, mock_server, variant, original=original)
+        arms = ab_ids(home)
+        store = Store(home)
+        with store._lock:
+            store._conn.execute("DELETE FROM samples WHERE experiment_id = ?", (arms["variant"],))
+            store._conn.execute("DELETE FROM experiments WHERE id = ?", (arms["variant"],))
+            store._conn.commit()
+        try:
+            shown = experiment_report(store, arms["original"], masking=store.masking).wording
+        finally:
+            store.close()
+        texts = [line["text"] for hunk in shown.diff["hunks"] for line in hunk["lines"]]
+        assert shown.source == "files" and any("row_count and amount_total" in text for text in texts)
+        assert not any(PRIVATE[1] in text or PRIVATE[2] in text for text in texts)
 
 
 class TestAlpha:

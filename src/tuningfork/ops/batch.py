@@ -63,7 +63,11 @@ class BatchPlan:
         return f"{self.spec.skill_name}/{self.item.id}"
 
     def _brief(self, prompt: str, length: int = 240) -> str:
-        return self.masking.part(prompt, 0, length)[0] if self.masking is not None else prompt[:length]
+        """The prompt's start, cut where no key stands, masked of what its own masks took: a
+        password said bare before the prompt names it (found in review)."""
+        if self.masking is None:
+            return prompt[:length]
+        return self.masking.part(prompt, 0, length, also=self.masking.text(prompt).found)[0]
 
     def to_json(self) -> dict[str, Any]:
         from tuningfork.specs import check_kind, describe_check

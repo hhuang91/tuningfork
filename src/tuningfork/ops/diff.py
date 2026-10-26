@@ -10,18 +10,19 @@ number is read off show_skill's output rather than counted. What changed is then
 line diff: the same JSON for the CLI, the web UI and an agent.
 
 What an agent or a proposing model reads of a skill is masked (`Masking.shown`), its lines
-keeping their numbers, while the skill's file keeps what it holds: an edit is resolved against
-the file, and quoted as the reader was shown it (`resolve_edits`' `shown`). One that would write
-the mask where the text it replaces held what was shown masked is refused: a key the skill holds
-would be lost to `<redacted>` in its file. A whole text written from the skill as shown is set on
-the file as it stands (`onto`).
+keeping their numbers, each line a mask covers reading `<redacted>`, while the skill's file keeps
+what it holds: an edit is resolved against the file, and quoted as the reader was shown it
+(`resolve_edits`' `shown`). One that would write the mask is refused — a key the skill holds would
+be lost to `<redacted>` in its file — and so is one that changes part of what was shown masked
+(`masks`): a key is changed whole or not at all. A whole text written from the skill as shown is
+set on the file as it stands (`onto`).
 """
 
 from __future__ import annotations
 
 import difflib
 from bisect import bisect_right
-from typing import Any, Callable, Sequence
+from typing import Any, Sequence
 
 from tuningfork.config import REDACTED
 from tuningfork.ops.common import OperationError
@@ -34,29 +35,34 @@ SHAPES = (
     '{"old": <text copied exactly from the skill>, "new": <its replacement>}'
 )
 SHORT_SHAPES = "{line, new}, {line, through, new}, {after, insert} or {old, new}"
-#: A part of the text, from its start to its end, as a reader was shown it.
-Quote = Callable[[int, int], str]
 _KEYS = {"old", "new", "line", "through", "after", "insert"}
 
 
-def onto(original: str, shown: str, text: str) -> str:
+def onto(original: str, shown: str, text: str) -> tuple[str, set[int]]:
     """`text`, written from `shown` — `original` as a reader was shown it, masked, each line at its
-    number — set on `original` as it stands: each run of lines it kept from `shown` is taken from
-    `original`, a key with it, and each line it changed is as it wrote it. A text written from the
-    original itself comes back as it was."""
+    number, each line a mask covers reading `<redacted>` — set on `original` as it stands: each run
+    of lines it kept from `shown` is taken from `original`, a key with it, and each line it changed
+    is as it wrote it, in `original`'s line breaks. With the indexes of `original`'s lines it took."""
     kept, read = original.splitlines(keepends=True), shown.splitlines(keepends=True)
     if len(kept) != len(read):  # each mask keeps its line breaks: never
-        return text
+        return text, set()
     written = text.splitlines(keepends=True)
+    if "\r\n" in original:
+        written = [line[:-1] + "\r\n" if line.endswith("\n") and not line.endswith("\r\n") else line for line in written]
 
     def bodies(lines: list[str]) -> list[str]:  # matched whatever breaks each line
         return [(line.splitlines() or [""])[0] for line in lines]
 
     out: list[str] = []
+    taken: set[int] = set()
     matcher = difflib.SequenceMatcher(None, bodies(read), bodies(written), autojunk=False)
     for tag, first, last, start, end in matcher.get_opcodes():
-        out.extend(kept[first:last] if tag == "equal" else written[start:end])
-    return "".join(out)
+        if tag == "equal":
+            out.extend(kept[first:last])
+            taken.update(range(first, last))
+        else:
+            out.extend(written[start:end])
+    return "".join(out), taken
 
 
 def line_diff(before: str, after: str, *, context: int = 2) -> dict[str, Any]:
@@ -99,7 +105,9 @@ def apply_resolved(text: str, resolved: Sequence[dict[str, Any]]) -> str:
     return text
 
 
-def resolve_edits(text: str, edits: Sequence[Any], *, shown: Quote | None = None) -> list[dict[str, Any]]:
+def resolve_edits(
+    text: str, edits: Sequence[Any], *, shown: str | None = None, masks: Sequence[tuple[int, int]] = (),
+) -> list[dict[str, Any]]:
     """Each edit as an exact replacement of `text`: `old`, the text it changes (empty for
     lines added), `new`, what takes its place, `lines`, the lines it names, `given`, the edit
     as it was sent — and `start`, `end` and `replacement`, the exact splice.
@@ -108,18 +116,21 @@ def resolve_edits(text: str, edits: Sequence[Any], *, shown: Quote | None = None
     as show_skill printed it; two that touch the same lines are refused. A text written with
     Windows line endings takes edits written with plain ones.
 
-    `shown` quotes a part of the text as the reader was shown it — masked whole, where it was
-    (`Masking.quoted`) — wherever an edit or a refusal quotes the text: each edit's `shown`,
-    the text it changes so. An edit that would write the mask where the text it replaces
-    holds what the reader was shown masked is refused: the key would be lost to it.
+    `shown` is the text as the reader was shown it, each line at its number (`Masking.shown`'s
+    `lines`): an edit and a refusal quote its lines — each edit's `shown`, the lines it changes as
+    they were shown. An edit that would write the mask is refused: what is shown reads `<redacted>`
+    where the file holds a key. So is one that changes part of what was shown masked (`masks`,
+    where the text was: `Masking.spans`): a key is changed whole or not at all.
     """
     if not isinstance(edits, (list, tuple)) or not edits:
         raise OperationError(
             f"give at least one edit: {SHORT_SHAPES}", hint=f"each edit is {SHAPES}", code="bad_params", field="edits",
         )
-    quote = shown or (lambda start, end: text[start:end])
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines(keepends=True)
+    said = shown.splitlines(keepends=True) if shown is not None else lines
+    if len(said) != len(lines):  # each mask keeps its line breaks: never
+        said = lines
     starts: list[int] = []
     offset = 0
     for line in lines:
@@ -129,19 +140,29 @@ def resolve_edits(text: str, edits: Sequence[Any], *, shown: Quote | None = None
     for number, edit in enumerate(edits, 1):
         keys = set(edit) if isinstance(edit, dict) else set()
         if keys and "old" in keys and keys <= {"old", "new"}:
-            found = _by_text(text, starts, number, edit, newline, quote)
+            found = _by_text(text, starts, number, edit, newline, said)
         elif keys and "line" in keys and keys <= {"line", "through", "new"}:
-            found = _by_line(text, lines, starts, number, edit, newline, quote)
+            found = _by_line(text, lines, starts, number, edit, newline, said)
         elif keys and "after" in keys and keys <= {"after", "insert"}:
             found = _after_line(lines, starts, number, edit, newline)
         else:
-            raise _not_an_edit(text, number, edit, quote)
-        held = found["old"].count(REDACTED)
-        if found["shown"].count(REDACTED) > held and found["new"].count(REDACTED) > held:
+            raise _not_an_edit(text, number, edit, said)
+        if found["new"].count(REDACTED) > found["old"].count(REDACTED):
             raise OperationError(
                 f"edit {number} would write {REDACTED} into the skill: what is shown of a skill reads {REDACTED} "
                 "where it masks a key the skill holds, and the skill's file keeps the key",
-                hint="leave that text as it is: change the lines around it, or only the words you mean with {old, new}",
+                hint=f"leave the text that reads {REDACTED} as it is, with the words that make it a key: change the "
+                "lines around it, or other words of its line with {old, new}. A skill that should say it is a "
+                "person's to write",
+                code="bad_params", field="edits",
+            )
+        start, end = found["start"], found["end"]
+        # One it overlaps without covering whole — an insert strictly inside one among them.
+        if any(start < high and low < end and not (start <= low and high <= end) for low, high in masks):
+            raise OperationError(
+                f"edit {number} changes part of what is shown as {REDACTED}: a key the skill holds, changed whole "
+                "or not at all",
+                hint=f"name every line that reads {REDACTED} there, or none of them",
                 code="bad_params", field="edits",
             )
         resolved.append(found)
@@ -158,12 +179,12 @@ def resolve_edits(text: str, edits: Sequence[Any], *, shown: Quote | None = None
 
 
 def _by_text(text: str, starts: list[int], number: int, edit: dict[str, Any], newline: str,
-             quote: Quote) -> dict[str, Any]:
+             said: list[str]) -> dict[str, Any]:
     """`{old, new}`: `old` found exactly once — the way an editor that replaces by text
     refuses an ambiguous edit."""
     old, new = edit.get("old"), edit.get("new")
     if not isinstance(old, str):
-        raise _not_an_edit(text, number, edit, quote)
+        raise _not_an_edit(text, number, edit, said)
     if not isinstance(new, str):
         raise OperationError(
             f"edit {number} has no new: `old` is the text as it is, `new` the same lines as they should read "
@@ -199,7 +220,7 @@ def _by_text(text: str, starts: list[int], number: int, edit: dict[str, Any], ne
                 f"edit {number}: its old text is not in the skill",
                 hint=(f"what you read of the skill shows {REDACTED} where it masks a key the skill holds: copy "
                       "the text beside it, or name the line by its number"
-                      if REDACTED in old and REDACTED not in text else _closest(text, old, quote)),
+                      if REDACTED in old and REDACTED not in text else _closest(said, old)),
                 code="bad_params", field="edits",
             )
         if len(matched) > 1:
@@ -218,12 +239,13 @@ def _by_text(text: str, starts: list[int], number: int, edit: dict[str, Any], ne
     start = text.index(old)
     end = start + len(old)
     first, last = bisect_right(starts, start), bisect_right(starts, max(start, end - 1))
-    return {"given": edit, "lines": _span(first, last), "old": old, "shown": quote(start, end), "new": new,
+    # What it replaces is the text it gave, found in the file: no more of it than it knew.
+    return {"given": edit, "lines": _span(first, last), "old": old, "shown": old, "new": new,
             "start": start, "end": end, "replacement": new}
 
 
 def _by_line(text: str, lines: list[str], starts: list[int], number: int, edit: dict[str, Any],
-             newline: str, quote: Quote) -> dict[str, Any]:
+             newline: str, said: list[str]) -> dict[str, Any]:
     """`{line, new}` or `{line, through, new}`: those lines replaced by `new`, which may hold
     more lines or fewer; an empty `new` removes them."""
     first = _line_number(number, edit, "line", len(lines))
@@ -244,14 +266,16 @@ def _by_line(text: str, lines: list[str], starts: list[int], number: int, edit: 
     old = text[start:end]
     ending = _ending(old)
     body = old[:len(old) - len(ending)]
+    shown = "".join(said[first - 1:last])
+    shown = shown[:len(shown) - len(_ending(shown))]
     wanted = _plain(new, newline)
     if new != "" and wanted == body:
         raise OperationError(
             f"edit {number} changes nothing: {_span(first, last)} already read{'' if several else 's'} "
-            f"{_clip(quote(start, start + len(body)))!r}. `new` is the line as it should read after the change",
+            f"{_clip(shown)!r}. `new` is the line as it should read after the change",
             code="bad_params", field="edits",
         )
-    return {"given": edit, "lines": _span(first, last), "old": body, "shown": quote(start, start + len(body)),
+    return {"given": edit, "lines": _span(first, last), "old": body, "shown": shown,
             "new": wanted, "start": start, "end": end, "replacement": "" if new == "" else wanted + ending}
 
 
@@ -292,7 +316,7 @@ def _line_number(number: int, edit: dict[str, Any], key: str, count: int, *, top
     return value
 
 
-def _not_an_edit(text: str, number: int, edit: Any, quote: Quote) -> OperationError:
+def _not_an_edit(text: str, number: int, edit: Any, said: list[str]) -> OperationError:
     hint = f"each edit is {SHAPES}"
     if not isinstance(edit, dict):
         return OperationError(
@@ -304,7 +328,7 @@ def _not_an_edit(text: str, number: int, edit: Any, quote: Quote) -> OperationEr
     elif not set(edit) & {"old", "line", "after"}:
         what = f"edit {number} names nothing to change (no line, after or old): it must be {SHORT_SHAPES}"
         if isinstance(edit.get("new"), str) and edit["new"].strip():
-            hint += f"; for this new text, {_closest(text, edit['new'], quote)}"
+            hint += f"; for this new text, {_closest(said, edit['new'])}"
     else:
         what = f"edit {number} mixes shapes: it must be {SHORT_SHAPES}"
     return OperationError(what, hint=hint, code="bad_params", field="edits")
@@ -373,19 +397,17 @@ def _reindented(new: str, indent: str) -> str:
     return "\n".join((indent + line[common:]) if line.strip() else line for line in lines)
 
 
-def _closest(text: str, old: str, quote: Quote) -> str:
-    """The lines closest to `old`, as the reader was shown them (`quote`), found among those:
-    quoted as it stands, a line would show the reader a key it was never shown."""
+def _closest(said: list[str], old: str) -> str:
+    """The lines closest to `old`, found among the lines as the reader was shown them (`said`), and
+    quoted so: as the file holds it, a line would show the reader a key it was never shown."""
     wanted = next((line for line in old.splitlines() if line.strip()), old).strip()
     by_stripped: dict[str, str] = {}
-    at = 0
-    for line in text.split("\n"):
-        said = quote(at, at + len(line.rstrip("\r")))
-        if said.strip():
-            by_stripped.setdefault(said.strip(), said)
-        at += len(line) + 1
+    for line in said:
+        body = (line.splitlines() or [""])[0]
+        if body.strip():
+            by_stripped.setdefault(body.strip(), body)
     close = difflib.get_close_matches(wanted, list(by_stripped), n=2, cutoff=0.5)
     if not close:
         return "copy `old` from the skill exactly, whitespace and punctuation included"
-    return ("the closest lines in the skill, as they stand: " + " | ".join(repr(by_stripped[found]) for found in close)
+    return ("the closest lines in the skill, as shown: " + " | ".join(repr(by_stripped[found]) for found in close)
             + " — copy one exactly; leading spaces alone do not matter")

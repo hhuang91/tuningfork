@@ -440,6 +440,7 @@ def add_proposal(
     be screened at the checkpoint.
 
     `strict` holds a proposal to a few small edits; a person's own text only warns."""
+    from tuningfork.config import REDACTED
     from tuningfork.experiment.skill import NothingToCompare, split_frontmatter, substitute, text_sha256
     from tuningfork.ops.diff import apply_resolved, line_diff, resolve_edits
     from tuningfork.ops.experiments import load
@@ -461,11 +462,22 @@ def add_proposal(
                 f"at most {MAX_EDITS} edits in one proposal: small changes are what a screen can attribute",
                 code="bad_params", field="edits",
             )
-        # The run's skill is kept as it was given, and a proposer was shown it masked: each edit,
-        # and each refusal, quotes it so, a part as the whole shows it (`Masking.quoted`) — masked
-        # alone, a private key's line or a password another line names would read as no key.
-        resolved = resolve_edits(baseline, edits, shown=store.masking.quoted(baseline))
+        # The run's skill is kept as it was given, and a proposer was shown it masked whole, each
+        # line at its number: each edit, and each refusal, quotes its lines as they were shown —
+        # masked alone, a private key's line or a password another line names would read as no
+        # key — and none may change part of what was shown masked.
+        resolved = resolve_edits(baseline, edits, shown=store.masking.shown(baseline, lines=True).value,
+                                 masks=store.masking.spans(baseline))
         text = apply_resolved(baseline, resolved)
+        if store.masking.bared(baseline, text):
+            # Every run given the proposal would be recorded with the key bare, and shown so.
+            raise OperationError(
+                f"the edits leave a key the skill holds to read as no key: a key's pattern reads the words beside "
+                f"it — `password=`, the `-u` before a password, a private key's first line — and the runs of this "
+                f"proposal would be recorded with the key where you are shown {REDACTED}",
+                hint=f"leave the words beside {REDACTED} as they are, or change its line whole, without it",
+                code="bad_params", field="edits",
+            )
         kept = [{"lines": found["lines"], "old": found["shown"], "new": found["new"], "given": found["given"]}
                 for found in resolved]
     else:

@@ -10,10 +10,11 @@ criteria, and what was proposed and screened before.
 Built only from the refinement's own task's records: a held-out task never reaches a proposer.
 What the store keeps of them is masked as it was kept; the run's skill, kept as it was given,
 and the task's criteria, as its file wrote them, are masked here: the skill whole, each line
-keeping its number, the task's criteria whole before they are clipped, earlier proposals beside
-the skill as it shows them (`Masking.alike`), and all of it of what the skill's masks took
-(`Masking.shown`). A proposer's model may be hosted. Kept by its digest in the refinement's folder (`packets/<sha>.json`), so
-every proposal says exactly what its proposer saw. Where there is no evidence of a kind, the
+keeping its number, the task's criteria whole before they are clipped, earlier proposals and the
+skill masked alike (`Masking.alike`), and all of it of what the skill's masks took
+(`Masking.shown`). A proposer's model may be hosted. Kept by its digest in the refinement's
+folder (`packets/<sha>.json`), a digest of the packet as it was shown, so every proposal says
+exactly what its proposer saw. Where there is no evidence of a kind, the
 packet says so rather than leaving it out: "no answer sampled here reached the target" is
 itself what a proposer must know.
 """

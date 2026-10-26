@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import re
 from typing import Any
 
 import anyio
@@ -195,7 +196,7 @@ class ToolServer:
         unmasked (`Masking.shown`). Its sentences and its JSON are masked as one, so a value a mask
         took in one is masked in the other."""
         data, lines = self.context.store.masking.shown([answer.data, answer.lines]).value
-        return Answer(data, lines)
+        return Answer(_without_digests(data), lines)
 
     def shown_error(self, error: OperationError) -> OperationError:
         """A refusal masked as an answer is (`shown`): it can quote what it refused."""
@@ -369,6 +370,21 @@ class ToolServer:
 #: content side by side in the tool message, every answer twice, and a 64k context is spent
 #: in twenty calls.
 RESULTS = ("both", "text")
+
+
+#: What an agent is never given of a text kept as given: its digest, against which a short key
+#: the text holds, shown masked, could be guessed (found in review: a 4-character password, in
+#: seconds, from a skill's digest).
+_DIGEST = re.compile(r"(?:^|_)sha256$")
+
+
+def _without_digests(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _without_digests(each) for key, each in value.items()
+                if not (isinstance(key, str) and _DIGEST.search(key))}
+    if isinstance(value, list):
+        return [_without_digests(each) for each in value]
+    return value
 
 
 def answered(answer: Answer, results: str = "both") -> Any:

@@ -6,6 +6,7 @@ own, so the two cannot disagree about one.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from dataclasses import dataclass, field
@@ -859,26 +860,36 @@ def workspace_patch(store: Store, view: WorkspaceView, path: str | None = None, 
     diff. With `masking`, as an agent is shown it: each file's two texts masked whole and alike
     (`Masking.alike`) before the lines between them are read — git's patch masked as a text puts
     a `-` before each line it removed, where a key's pattern no longer reads it."""
+    from tuningfork.snapshots import Snapshots
+
+    if masking is None:
+        return Snapshots(store.home).patch(view.before, view.commit, path)
+    return _shown_patch(str(store.home), view.before, view.commit, path, tuple(view.changes), masking)
+
+
+@functools.lru_cache(maxsize=16)
+def _shown_patch(home: str, before: str | None, commit: str, path: str | None,
+                 changes: tuple[tuple[str, str], ...], masking: Any) -> str:
+    """`workspace_patch` as an agent is shown it, made once for the pages read of it: two commits'
+    files never change (found in review: 2,111 files were read and masked again for each page)."""
     import difflib
 
     from tuningfork.snapshots import Snapshots
 
-    snapshots = Snapshots(store.home)
-    if masking is None:
-        return snapshots.patch(view.before, view.commit, path)
+    snapshots = Snapshots(home)
     pieces = []
-    for status, changed in view.changes:
+    for status, changed in changes:
         if path and changed != path and not changed.startswith(path.rstrip("/") + "/"):
             continue
-        before = snapshots.read(view.before, changed) if view.before and status != "A" else b""
-        after = snapshots.read(view.commit, changed) if status != "D" else b""
+        was = snapshots.read(before, changed) if before and status != "A" else b""
+        now = snapshots.read(commit, changed) if status != "D" else b""
         pieces.append(f"diff --git a/{changed} b/{changed}\n")
-        if b"\0" in before or b"\0" in after:
+        if b"\0" in was or b"\0" in now:
             pieces.append(f"Binary files a/{changed} and b/{changed} differ\n")
             continue
-        was, now = masking.alike([before.decode("utf-8", "replace"), after.decode("utf-8", "replace")])
+        old, new = masking.alike([was.decode("utf-8", "replace"), now.decode("utf-8", "replace")])
         pieces.extend(line if line.endswith("\n") else line + "\n" for line in difflib.unified_diff(
-            was.splitlines(keepends=True), now.splitlines(keepends=True),
+            old.splitlines(keepends=True), new.splitlines(keepends=True),
             "/dev/null" if status == "A" else f"a/{changed}", "/dev/null" if status == "D" else f"b/{changed}"))
     return "".join(pieces)
 

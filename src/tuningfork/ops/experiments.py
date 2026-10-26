@@ -187,20 +187,46 @@ def kept_text(store: Store, run: Run, path: Path, text: str) -> str:
 
 
 def variant_onto(store: Store, original: str, text: str) -> str:
-    """A variant given as text — an agent's, written from the skill as it is shown, masked, each
-    line at its number — set on the skill as it stands (`ops.diff.onto`): each line it kept is the
-    file's, a key with it, and each it changed is as written. Refused where it reads the mask more
-    often than the file does: the runs would read `<redacted>` for a key. A text written from the
-    file itself comes back as it was."""
+    """A variant given as text. One written from the skill as an agent is shown it — masked, each
+    line at its number, each line a mask covers reading `<redacted>`, so that it reads the mask more
+    often than the file does — is set on the skill as it stands (`ops.diff.onto`): each line it kept
+    is the file's, a key with it, and each it changed is as written. Refused where it keeps part of
+    what was shown masked — a key kept whole or not at all — or still reads the mask: the runs would
+    read `<redacted>` for a key. Any other — a person's, written from the file — is as given (found
+    in review: matched against the file as shown, one leaving a key out had it put back)."""
+    from bisect import bisect_right
+
     from tuningfork.config import REDACTED
     from tuningfork.ops.diff import onto
 
-    set_on = onto(original, store.masking.shown(original, lines=True).value, text)
+    if text.count(REDACTED) <= original.count(REDACTED):
+        return text
+    set_on, taken = onto(original, store.masking.shown(original, lines=True).value, text)
+    starts = [0]
+    for line in original.splitlines(keepends=True):
+        starts.append(starts[-1] + len(line))
+    for low, high in store.masking.spans(original):
+        touched = set(range(bisect_right(starts, low) - 1, bisect_right(starts, high - 1)))
+        if touched & taken and not touched <= taken:
+            raise OperationError(
+                f"the variant keeps part of what reads {REDACTED} over several lines: a key the skill holds, "
+                "kept whole or not at all",
+                hint=f"keep every line of it that reads {REDACTED} as show_skill shows it, or none of them",
+                code="bad_params", field="variant_text",
+            )
     if set_on.count(REDACTED) > original.count(REDACTED):
         raise OperationError(
             f"the variant reads {REDACTED} where the skill holds a key: what is shown of a skill is masked, and "
             "the runs would read the mask, not the key",
             hint=f"keep each line that reads {REDACTED} as show_skill shows it, or rewrite the line without it",
+            code="bad_params", field="variant_text",
+        )
+    if store.masking.bared(original, set_on):
+        raise OperationError(
+            f"the variant leaves a key the skill holds to read as no key: a key's pattern reads the words beside "
+            f"it — `password=`, the `-u` before a password, a private key's first line — and its runs would be "
+            f"recorded with the key where show_skill shows {REDACTED}",
+            hint=f"keep the words beside each {REDACTED} as show_skill shows them, or leave its line out",
             code="bad_params", field="variant_text",
         )
     return set_on

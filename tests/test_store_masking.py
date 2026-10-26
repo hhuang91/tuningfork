@@ -445,10 +445,11 @@ class TestWhatIsShown:
         shown = store.masking.shown({"path": PurePosixPath(f"/keys/{KEY}.txt"), "count": 3, "done": True}).value
         assert shown == {"path": f"/keys/{REDACTED}.txt", "count": 3, "done": True}
 
-    def test_texts_side_by_side_show_the_first_s_lines_as_it_shows_them(self, store):
+    def test_texts_side_by_side_show_what_they_share_as_either_shows_it(self, store):
         """An edit can take away what a key's pattern needs — a private key's first line — and leave
-        its body to read as no key (found in review): each line the first holds is shown as the
-        first shows it, wherever it stands; each keeps its number."""
+        its body to read as no key (found in review): each line one text holds is shown as the other
+        shows it, wherever it stands, the first's and the later's alike — a run can give a block its
+        first line as well as take it (found in review); each keeps its number."""
         original = "\n".join(["# Deploy", *PRIVATE, "Then run the tests."]) + "\n"
         edited = original.replace(PRIVATE[0], "The deploy key is kept in the vault.")
         inserted = original.replace(PRIVATE[0] + "\n", PRIVATE[0] + "\n(the deploy key)\n")
@@ -457,19 +458,56 @@ class TestWhatIsShown:
             was, now = store.masking.alike([original, other])
             assert PRIVATE[1] not in now and PRIVATE[2] not in now and "the deploy key" in now.lower()
             assert len(now.splitlines()) == len(other.splitlines()) and len(was.splitlines()) == len(original.splitlines())
+            was, now = store.masking.alike([other, original])
+            assert PRIVATE[1] not in was + now and PRIVATE[2] not in was + now
         named = f"{NAMED}\nThen: it was {PASSWORD}.\n"
         assert PASSWORD not in store.masking.alike([named, f"Then: it was {PASSWORD}.\n"])[1]
+        assert PASSWORD not in store.masking.alike([f"Then: it was {PASSWORD}.\n", named])[0]
 
-    def test_a_part_is_quoted_as_the_whole_shows_it(self, store):
-        """A line of a private key, or a line saying bare a password another line names: masked
-        alone, each reads as no key (found in review)."""
-        text = f"{NAMED}\nit was {PASSWORD}\n" + "\n".join(PRIVATE) + "\n"
-        quote = store.masking.quoted(text)
-        repeated = text.index(f"it was {PASSWORD}")
-        assert quote(repeated, repeated + len(f"it was {PASSWORD}")) == f"it was {REDACTED}"
-        body = text.index(PRIVATE[1])
-        assert quote(body, body + len(PRIVATE[1])) == ""
-        assert store.masking.text(PRIVATE[1]).value == PRIVATE[1]  # what masking it alone gives
+    def test_a_line_that_keeps_a_value_and_loses_what_made_it_one_is_masked_there(self, store):
+        """A password's pattern reads the command before it: an edit of that command alone leaves the
+        password to read as no key on its own line (found in review). What the two texts share is
+        masked as either masks it."""
+        original = "Call it: curl -u admin:Xy7pQ2 https://api.test\n"
+        edited = original.replace("curl -u admin:", "http -a admin:")
+        assert "Xy7pQ2" in store.masking.shown(edited).value  # alone, the value reads as no key
+        was, now = store.masking.alike([original, edited])
+        assert "Xy7pQ2" not in was + now and now.startswith("Call it: http -a admin:")
+
+    def test_letters_a_changed_line_shares_with_a_key_by_chance_are_shown(self, store):
+        """Found in review: a key's line rewritten as a word read `rot<redacted>t<redacted>d`, the
+        letters the two happened to share masked. A run of shared characters carries a mask it holds
+        whole, or eight characters of one."""
+        was, now = store.masking.alike([f"# Deploy\n{KEY}\n", "# Deploy\nrotated\n"])
+        assert KEY not in was and now == "# Deploy\nrotated\n"
+        # A private key's first line taken, a character of its body changed: what it shares is the key.
+        original = "\n".join(["# Deploy", *PRIVATE, "Then run the tests."]) + "\n"
+        edited = original.replace(PRIVATE[0] + "\n", "").replace(PRIVATE[1], PRIVATE[1][:-1] + "!")
+        assert PRIVATE[1][:-1] not in store.masking.alike([original, edited])[1]
+
+    def test_each_line_a_mask_covers_reads_it(self, store):
+        """A private key's lines, masked, each read `<redacted>`: shown blank, they read as lines with
+        nothing on them, which an edit could take (found in review)."""
+        text = "\n".join(["# Deploy", *PRIVATE, "Then run the tests."]) + "\n"
+        lines = store.masking.shown(text, lines=True).value.splitlines()
+        assert lines == ["# Deploy", PRIVATE[0] + REDACTED, REDACTED, REDACTED, PRIVATE[-1], "Then run the tests."]
+
+    def test_a_value_an_edit_leaves_to_read_as_no_key_is_found(self, store):
+        """An edit can take away what a key's pattern reads — the `-u` before a password, `password=`,
+        a private key's first line — and leave the key bare wherever the text is next kept or shown on
+        its own (`Masking.bared`); one taken out with its line, or left as it was, is not."""
+        before = f"Call it: curl -u admin:Xy7pQ2 https://api.test\n{NAMED}\n" + "\n".join(PRIVATE) + "\n"
+        assert store.masking.bared(before, before.replace("Call it", "Fetch it")) == []
+        assert store.masking.bared(before, before.replace("curl -u admin:", "http -a admin:")) == ["Xy7pQ2"]
+        assert store.masking.bared(before, before.replace("password=", "the password ")) == [PASSWORD]
+        assert len(store.masking.bared(before, before.replace(PRIVATE[0], PRIVATE[0] + " (rotated)"))) == 1
+        assert store.masking.bared(before, before.replace(f"{NAMED}\n", "")) == []
+        bare = f"Say Xy7pQ2 if asked.\nCall it: curl -u admin:Xy7pQ2 https://api.test\n"  # said bare already
+        assert store.masking.bared(bare, bare.replace("Say", "Answer")) == []
+
+    def test_where_a_text_is_masked_is_found_of_what_its_own_masks_took(self, store):
+        text = f"{NAMED}\nit was {PASSWORD}\n"
+        assert [text[start:end] for start, end in store.masking.spans(text)] == [PASSWORD, PASSWORD]
 
 
 class TestAnAddressKeptAndShown:

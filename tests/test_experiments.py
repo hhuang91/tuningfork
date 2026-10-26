@@ -348,6 +348,51 @@ class TestAMaskedContext:
                        base_url=UPSTREAM)
         assert refused.value.field == "variant_text" and REDACTED in refused.value.message
 
+    def test_a_variant_keeps_a_key_whole_or_not_at_all_and_a_person_s_text_is_as_given(self, store, tmp_path):
+        """A private key's lines each read `<redacted>` as show_skill shows them: a variant written
+        from it that keeps some of them would test a broken key, and is refused; one that leaves them
+        all out leaves the key out. A person's text, written from the file, reads the mask no more
+        often than the file does, and is tested as given (found in review: set on the file as shown,
+        the key a person had taken out was put back)."""
+        from tuningfork.ops.common import OperationError
+        from tuningfork.ops.experiments import prepare_ab
+        from tests.test_store_masking import PASSWORD, PRIVATE
+
+        skill = (SKILL + f"\nLog in with {KEY}.\nUse password={PASSWORD} first.\nIf asked again, answer {PASSWORD}.\n\n"
+                 + "\n".join(PRIVATE) + "\n\nThen send it.\n")
+        (tmp_path / "SKILL.md").write_text(skill, encoding="utf-8")
+        run = record_pilot(store, skill=skill)
+        shown = store.masking.shown(skill, lines=True).value.splitlines(keepends=True)
+        body = shown.index(f"{REDACTED}\n")  # the key's first line shown, then its body, a line apiece
+
+        def tested(text: str) -> str:
+            return prepare_ab(store, run, "1", variant=tmp_path / "variant.md", variant_text=text,
+                              original=tmp_path / "SKILL.md", base_url=UPSTREAM).variant_text
+
+        with pytest.raises(OperationError) as refused:
+            tested("".join(shown[:body] + shown[body + 1:]))
+        assert refused.value.field == "variant_text" and "kept whole or not at all" in refused.value.message
+        out = tested("".join(shown[:body - 1] + shown[body + 3:]))
+        assert PRIVATE[1] not in out and PRIVATE[2] not in out and f"Log in with {KEY}." in out
+        written = skill.replace("\n".join(PRIVATE) + "\n", "")
+        assert tested(written) == written
+        # A password named on one line and said bare on another: the line that names it rewritten, the
+        # other kept as shown, its runs would be recorded with the password bare.
+        with pytest.raises(OperationError) as bared:
+            tested("".join(shown).replace(f"Use password={REDACTED} first.", "Use the stored password first."))
+        assert bared.value.field == "variant_text" and "to read as no key" in bared.value.message
+
+    def test_a_person_s_variant_is_tested_as_given(self, store):
+        """A text that reads the mask no more often than the skill's file was written from the file: a
+        person's. It is tested as given, never matched against the skill as shown nor given the file's
+        line breaks (found in review: matched so, a key the person took out was put back)."""
+        from tuningfork.ops.experiments import variant_onto
+        from tests.test_store_masking import PRIVATE
+
+        original = (SKILL + f"\nLog in with {KEY}.\n\n" + "\n".join(PRIVATE) + "\n").replace("\n", "\r\n")
+        written = SKILL + f"\nLog in with {KEY}, once.\n"
+        assert variant_onto(store, original, written) == written
+
     def test_an_edit_inside_masked_text_is_said_to_be_one(self, store, tmp_path):
         from tuningfork.experiment.skill import NothingToCompare
 

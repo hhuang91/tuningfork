@@ -12,10 +12,10 @@ sample's answer, so a report recomputing it from the store agrees — asks for i
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from tuningfork.config import (
-    _FOUND, DEFAULT_REDACTIONS, REDACTED, _masking, patterns_digest, redact_json_found, text_spans,
+    _FOUND, DEFAULT_REDACTIONS, REDACTED, _masking, _merged, patterns_digest, redact_json_found, text_spans,
 )
 
 
@@ -90,54 +90,43 @@ class Masking:
         given, start, end = _applied(text, spans, start, max(start, end))
         return given.value, start, end
 
-    def quoted(self, text: str, *, also: Iterable[str] = ()) -> Callable[[int, int], str]:
-        """`text` as it is shown — masked whole, of what its own masks took too — quoted a part at a
-        time, from `start` to `end`: each part as `part` gives it, an edge moved past a mask that
-        covers it. Masked alone, a part can read as no key: a line of a private key, or a line saying
-        bare a password another line names."""
+    def spans(self, text: str, *, also: Iterable[str] = ()) -> list[tuple[int, int]]:
+        """Where `text` is masked as it is shown (`shown`): every way storage reads a text, and of
+        what its own masks took too. An edit that cuts into one would change part of a key its
+        reader was shown masked (`ops.diff.resolve_edits`)."""
         also = tuple(also)
-        spans = text_spans(text, self.patterns, (*also, *self.text(text, also=also).found))
-
-        def quote(start: int, end: int) -> str:
-            for span_start, span_end in spans:
-                if span_start < start < span_end:
-                    start = span_end
-                if span_start < end < span_end:
-                    end = span_start
-            return _applied(text, spans, start, max(start, end))[0].value
-
-        return quote
+        return text_spans(text, self.patterns, (*also, *self.text(text, also=also).found))
 
     def alike(self, texts: Sequence[str]) -> list[str]:
         """Texts shown side by side — a text and what was made of it, the two sides of a diff — each
-        masked whole and alike (`shown`, each line at its number), and each line the first holds
-        shown as the first shows it, wherever it stands in the others: an edit can take away what a
-        key's pattern needs, a private key's first line, and leave its body to read as no key."""
+        masked whole, each line at its number, of what the masks took in any of them; and each
+        masked wherever it holds, unchanged, text another masks. A key's pattern reads its context,
+        which an edit can take away — a private key's first line, the `-u` before a password —
+        leaving what it masked to read as no key on its own."""
         texts = list(texts)
-        shown = self.shown(texts, lines=True).value
-        if not texts:
-            return shown
+        found = tuple(frozenset().union(*(self.text(text).found for text in texts)))
+        spans = [text_spans(text, self.patterns, found) for text in texts]
+        if len(texts) > 1:
+            shared = [_shared(texts[0], other) for other in texts[1:]]
+            back = [span for k, blocks in enumerate(shared, 1)
+                    for span in _carried(spans[k], [(theirs, ours, size, lines) for ours, theirs, size, lines in blocks])]
+            spans[0] = _merged(spans[0] + back)
+            for k, blocks in enumerate(shared, 1):
+                spans[k] = _merged(spans[k] + _carried(spans[0], blocks))
+        return [_applied(text, masks, 0, len(text), lines=True)[0].value for text, masks in zip(texts, spans)]
 
-        def lines_of(text: str) -> list[tuple[str, str]]:
-            """Each line, and the break after it."""
-            found = []
-            for line in text.splitlines(keepends=True):
-                body = (line.splitlines() or [""])[0]
-                found.append((body, line[len(body):]))
-            return found
-
-        first, first_shown = lines_of(texts[0]), lines_of(shown[0])
-        held = {raw: said for (raw, _), (said, _) in zip(first, first_shown) if raw != said}
-        if not held or len(first) != len(first_shown):
-            return shown
-        result = [shown[0]]
-        for text, said in zip(texts[1:], shown[1:]):
-            raw_lines, said_lines = lines_of(text), lines_of(said)
-            if len(raw_lines) != len(said_lines):  # each mask keeps its breaks: never
-                result.append(said)
-                continue
-            result.append("".join(held.get(raw, body) + end for (raw, _), (body, end) in zip(raw_lines, said_lines)))
-        return result
+    def bared(self, before: str, after: str) -> list[str]:
+        """Each value `before` is shown masked that `after` holds unmasked more often than `before`
+        does: an edit can take away what a key's pattern reads — `password=`, the `-u` before a
+        password, a private key's first line — and leave the key to read as none wherever the
+        edited text is kept or shown on its own, the steps of every run given it among them."""
+        masks_before, masks_after = self.spans(before), self.spans(after)
+        bare: list[str] = []
+        for start, end in masks_before:
+            value = before[start:end]
+            if value not in bare and _bare(after, value, masks_after) > _bare(before, value, masks_before):
+                bare.append(value)
+        return bare
 
     def value(self, value: Any, *, also: Iterable[str] = ()) -> Any:
         """`value` masked, for a write that keeps no count."""
@@ -233,12 +222,81 @@ def _applied(
     for span_start, span_end in spans:
         if span_end <= start or span_start >= end:
             continue
-        breaks = len(f"x{text[span_start:span_end]}x".splitlines()) - 1 if lines else 0
-        pieces += [text[at:span_start], REDACTED + "\n" * breaks]
+        pieces += [text[at:span_start], _marked(text[span_start:span_end]) if lines else REDACTED]
         if _FOUND.fullmatch(text, span_start, span_end):
             taken.append(text[span_start:span_end])
         at, made = span_end, made + 1
     return Masked("".join(pieces) + text[at:end], made, frozenset(taken)), start, end
+
+
+def _marked(taken: str) -> str:
+    """A mask over `taken`, in a text whose lines keep their numbers: `<redacted>` on each line it
+    covers, each followed by the break it took (a carriage return alone, U+2028 and the rest too,
+    as `str.splitlines` splits them). Shown blank, a private key's lines read as lines with
+    nothing on them, which an edit could take."""
+    pieces = []
+    for piece in taken.splitlines(keepends=True):
+        body = (piece.splitlines() or [""])[0]
+        pieces.append(REDACTED + piece[len(body):])
+    return "".join(pieces) or REDACTED
+
+
+#: The most characters of two runs of changed lines compared one by one (their lengths
+#: multiplied): beyond it, only their lines are matched.
+CHARS_COMPARED = 2_000_000
+
+
+def _shared(first: str, other: str) -> list[tuple[int, int, int, bool]]:
+    """What two texts share, as (where in the first, where in the other, how long, whether whole
+    lines): their lines matched, then the characters of each run of lines that changed — a line
+    can keep a password and lose the `-u` before it."""
+    import difflib
+
+    def offsets(lines: list[str]) -> list[int]:
+        at = [0]
+        for line in lines:
+            at.append(at[-1] + len(line))
+        return at
+
+    ours, theirs = first.splitlines(keepends=True), other.splitlines(keepends=True)
+    at_ours, at_theirs = offsets(ours), offsets(theirs)
+    blocks = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, ours, theirs).get_opcodes():
+        start, begin = at_ours[i1], at_theirs[j1]
+        if tag == "equal":
+            blocks.append((start, begin, at_ours[i2] - start, True))
+        elif tag == "replace" and (at_ours[i2] - start) * (at_theirs[j2] - begin) <= CHARS_COMPARED:
+            matcher = difflib.SequenceMatcher(None, first[start:at_ours[i2]], other[begin:at_theirs[j2]], autojunk=False)
+            blocks += [(start + i, begin + j, size, False) for i, j, size in matcher.get_matching_blocks() if size]
+    return blocks
+
+
+#: The fewest characters of a mask a run of shared characters carries into another text, but for a
+#: mask it holds whole: fewer are as likely chance — the letters a word shares with a key.
+CARRIED_LEAST = 8
+
+
+def _carried(spans: list[tuple[int, int]], blocks: list[tuple[int, int, int, bool]]) -> list[tuple[int, int]]:
+    """`spans` of one text, carried into another through what they share (`blocks`, as `_shared`
+    gives them): each part of a span inside a run of shared lines, where it stands in the other;
+    inside a run of shared characters, a span it holds whole, or `CARRIED_LEAST` characters of one
+    (found in review: a key's line rewritten as `rotated` read `rot<redacted>t<redacted>d`)."""
+    carried = []
+    for start, end in spans:
+        for ours, theirs, size, lines in blocks:
+            low, high = max(start, ours), min(end, ours + size)
+            if low < high and (lines or (low, high) == (start, end) or high - low >= CARRIED_LEAST):
+                carried.append((low - ours + theirs, high - ours + theirs))
+    return carried
+
+
+def _bare(text: str, value: str, spans: list[tuple[int, int]]) -> int:
+    """How often `value` stands in `text` outside every span."""
+    count, at = 0, text.find(value)
+    while at >= 0:
+        count += not any(low <= at and at + len(value) <= high for low, high in spans)
+        at = text.find(value, at + 1)
+    return count
 
 
 def bytes_without_secrets(

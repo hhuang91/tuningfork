@@ -727,17 +727,23 @@ MCP (`ToolServer.shown`), its model maybe hosted, and what a proposing model is 
 masked as it is built and kept so (`Packet.keep`), and the skill beside it, its exchange kept as the
 store keeps a file (`Store.keep_file`). A text a view splits or cuts short — show_skill's numbered
 lines, show_files' pages, a task's prompt in a plan or the packet — is masked whole first, each line
-at its number: line by line, a private key's lines pass, and a cut through a key leaves a part no
-pattern reads. Texts set side by side — a diff: show_files', an A/B's wording, a refinement's
-proposals — are masked alike, each line the first holds shown as the first shows it
-(`Masking.alike`): an edit can take away a private key's first line. A part quoted — an edit's old
-text, the lines a refusal finds closest — is quoted as the whole shows it (`Masking.quoted`). A file
-where_it_holds asks of for an agent is matched as the agent is shown it. A run's views show its
-task's check masked (`timeline.launch_json`, `inspect.task_summaries`); the form that makes a
-scenario of the run takes it as written, as the scenario copies and tries it. An edit is resolved
-against the skill's file, never what was shown of it: one that would write the mask where the text
-it replaces held what was shown masked is refused (`ops.diff`), and a variant given as text is set
-on the file as it stands (`experiments.variant_onto`), each line it kept the file's. Masking is not
+at its number, each line a mask covers reading `<redacted>` (`Masking.shown`'s `lines`): line by
+line, a private key's lines pass, and a cut through a key leaves a part no pattern reads. Texts set
+side by side — a diff: show_files', an A/B's wording, a refinement's proposals — are masked alike,
+what they share masked as either masks it (`Masking.alike`): an edit can take away a private key's
+first line, or the command a password's pattern reads. An edit's quotes — the text it replaced, the
+lines a refusal finds closest — are the skill as show_skill shows it. A file where_it_holds asks of
+for an agent is matched as the agent is shown it. A run's views show its task's check masked
+(`timeline.launch_json`, `inspect.task_summaries`); the form that makes a scenario of the run takes
+it as written, as the scenario copies and tries it. An edit is resolved against the skill's file,
+never what was shown of it (`ops.diff.resolve_edits`' `shown` and `masks`): it never writes the mask
+where the text it replaces held none, and changes a key whole or not at all; and a proposal that
+leaves a key to read as none — the words its pattern reads changed beside it, `password=` — is
+refused (`Masking.bared`): every run given it would record the key bare. A variant given as text that
+reads the mask more often than the file does — written from the skill as shown — is set on the file
+as it stands (`experiments.variant_onto`), each line it kept the file's, a key whole or not at all
+and still masked; any other, a person's, is tested as given. No answer gives a digest (`*sha256`) of what
+it shows masked (`mcp.server._without_digests`): against one, a short key is guessed. Masking is not
 idempotent, and a fork matches a call masked once against a step stored masked once;
 `tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
 `tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file

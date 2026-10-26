@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from tuningfork.analysis.stats import p_short
+from tuningfork.config import REDACTED
 from tuningfork.ops import compact
 from tuningfork.ops.catalog import RULE_LIST, Kind
 from tuningfork.ops.common import OperationError, params_schema, parse_params
@@ -911,6 +912,10 @@ def show_skill(context: Context, args: RunArgs) -> Answer:
                      "the only way to read the skill: it is not a file on your machine")
     else:
         lines.append("to test an edit: start_ab with variant_text (the whole edited file) and variant_name")
+    if REDACTED in (recorded.get("text") or ""):
+        lines.append(f"a key the skill holds reads {REDACTED} on each line it stands on: leave those lines, and the "
+                     f"words that make it a key (`password=` before it), as they are, or take its lines out whole; "
+                     f"an edit never writes {REDACTED}")
     return Answer(view, lines)
 
 
@@ -1267,7 +1272,8 @@ def propose_edit(context: Context, args: ProposeEditArgs, who: dict[str, Any]) -
     ]
     # What each edit resolved to, so a model that named a line sees the line it changed.
     for k, each in enumerate((made.data.get("proposers") or [{}])[-1].get("edits") or [], 1):
-        old, new = (compact.clip(context.store.masking.shown(each.get(side)).value, 120) for side in ("old", "new"))
+        # The text it replaced is kept as a proposer was shown it (`refine.add_proposal`): masked whole.
+        old, new = compact.clip(each.get("old"), 120), compact.clip(each.get("new"), 120)
         lines.append(f"edit {k}, {each.get('lines')}: " + (f"adds {new!r}" if not old else f"{old!r} → {new!r}"))
     lines.append(f"a hypothesis until screened: start_screen(refinement, proposals=[\"{made.id[:8]}\", …])")
     return Answer({"proposal": made.id[:8], "changed": data["changed"], "duplicate": made.duplicate,

@@ -943,7 +943,9 @@ class TestWhatAnAgentIsShown:
         server = ToolServer(store, NoJobs(), toolset="refine")
         lines = KEYED.splitlines()
         keyed, after = lines.index(f"Log in with {KEY}.") + 1, lines.index("Then write the report.") + 1
-        shown = (await call(server, "show_skill", {"run": run_id})).structured_content["lines"]
+        answer = await call(server, "show_skill", {"run": run_id})
+        shown = answer.structured_content["lines"]
+        assert f"a key the skill holds reads {REDACTED} on each line it stands on" in text(answer)
         assert shown[keyed - 1] == f"{keyed}: Log in with {REDACTED}."
         assert shown[after - 1] == f"{after}: Then write the report."
         assert not any(PRIVATE[1] in line or PRIVATE[2] in line for line in shown)
@@ -964,12 +966,20 @@ class TestWhatAnAgentIsShown:
         removed = await call(server, "propose_edit", {"refinement": made.id, "rationale": "r", "edits": [
             {"line": first, "through": last, "new": "Keep keys out of the skill."}]})
         assert not refusal(removed) and PRIVATE[1] not in text(removed), text(removed)
-        # The private key's first line taken away, or a line put after it: what is left of it reads as
-        # no key on its own, and is shown as the skill shows it (found in review).
+        # The private key's first line taken away, or a line put after it: a broken key in the file,
+        # and what is left of it would read as no key (found in review). A key changes whole, or not.
         for edit in ({"line": first, "new": "The deploy key is kept in the vault."},
-                     {"after": first, "insert": "(the deploy key)"}):
-            assert not refusal(await call(server, "propose_edit", {"refinement": made.id, "rationale": "r",
-                                                                   "edits": [edit]}))
+                     {"after": first, "insert": "(the deploy key)"}, {"line": first + 1, "through": first + 2, "new": ""}):
+            cut = await call(server, "propose_edit", {"refinement": made.id, "rationale": "r", "edits": [edit]})
+            assert refusal(cut) and f"changes part of what is shown as {REDACTED}" in text(cut), edit
+        # The words a key's pattern reads, changed beside it, or the line naming a password another line
+        # says bare: every run given the proposal would be recorded with the key bare, and an agent
+        # shown it there.
+        named = lines.index(f"Use password={PASSWORD} first.") + 1
+        for edit in ({"old": "password=", "new": "the password "}, {"old": PRIVATE[0], "new": PRIVATE[0] + " (rotated)"},
+                     {"line": named, "new": "Use the stored password first."}):
+            bared = await call(server, "propose_edit", {"refinement": made.id, "rationale": "r", "edits": [edit]})
+            assert refusal(bared) and "leave a key the skill holds to read as no key" in text(bared), edit
         # A line saying bare a password another line names is quoted as the skill shows it, and so are
         # the lines a refusal finds closest (found in review).
         bare = lines.index(f"If asked again, answer {PASSWORD}.") + 1
@@ -979,6 +989,10 @@ class TestWhatAnAgentIsShown:
         missed = await call(server, "propose_edit", {"refinement": made.id, "rationale": "r", "edits": [
             {"old": "If asked again, answer it.", "new": "x"}]})
         assert refusal(missed) and f"answer {REDACTED}." in text(missed)
+        # A person's whole text, as given, can leave a key its pattern no longer reads — a private key's
+        # body without its first line: shown beside the skill, it is masked as the skill masks it.
+        refine.add_proposal(store, made.id, text=KEYED.replace(PRIVATE[0] + "\n", ""), rationale="r",
+                            proposer={"via": "person"})
         refined = await call(server, "show_refinement", {"refinement": made.id, "evidence": True})
         said = text(refined) + json.dumps(refined.structured_content)
         assert "Keep keys out of the skill." in said and "tried_before" in said
@@ -1027,7 +1041,8 @@ class TestWhatAnAgentIsShown:
 
         notes = "Totals checked by hand.\n" * 3 + f"Log in with {KEY}.\n" + "\n".join(PRIVATE) + "\nDone.\n"
         # A file the run started with and rewrote: in a diff, each of its lines removed reads after a
-        # `-`, where a key's pattern no longer reads it (found in review).
+        # `-`, where a key's pattern no longer reads it, and the key's body the run kept, its first
+        # line gone, reads as no key in the file as it ends (found in review).
         deploy = "\n".join(PRIVATE) + f"\n{KEY}\n"
 
         def writes(payload: dict) -> MockTurn:
@@ -1036,7 +1051,8 @@ class TestWhatAnAgentIsShown:
             if not any(message["role"] == "tool" for message in messages):
                 return MockTurn(tool_calls=[
                     {"name": "write_file", "arguments": {"path": f"{workdir}/notes.txt", "content": notes}},
-                    {"name": "write_file", "arguments": {"path": f"{workdir}/deploy.pem", "content": "rotated\n"}}])
+                    {"name": "write_file", "arguments": {"path": f"{workdir}/deploy.pem",
+                                                         "content": "\n".join(PRIVATE[1:]) + "\nrotated\n"}}])
             return MockTurn(content="Noted.")
 
         with task_stack(tmp_path, mock_server, monkeypatch) as stack:
@@ -1092,6 +1108,24 @@ class TestWhatAnAgentIsShown:
         result = await call(server, "start_count", {"steps": 3, "dry_run": True})
         said = text(result) + json.dumps(result.structured_content)
         assert "count would make 3" in said and "x" * 389 in said and KEY[:10] not in said
+
+    async def test_no_answer_gives_a_digest_of_what_it_shows_masked(self, store, tmp_path):
+        """A short password a skill holds is shown masked, every other character as it is: the skill's
+        digest beside it gave the password back in seconds (found in review). An answer leaves out
+        each field named for a digest."""
+        skill = SKILL + "\nLoad it with: mysql -u root -pZ9q4 tally < dump.sql\n"
+        run_id = record_pilot(store, skill=skill)
+        frozen = tmp_path / "frozen" / "tally-report"
+        frozen.mkdir(parents=True)
+        (frozen / "SKILL.md").write_text(skill, encoding="utf-8")
+        store.annotate_run(run_id, parity={**store.get_run(run_id).parity, "skill_snapshot_dir": str(frozen)})
+        server = ToolServer(store, NoJobs(), toolset="all")
+        shown = (await call(server, "show_skill", {"run": run_id})).structured_content
+        assert shown["lines"][-1].endswith(f"-p{REDACTED} tally < dump.sql") and "sha256" not in json.dumps(shown)
+        server.tools["list_tasks"] = dataclasses.replace(server.tools["list_tasks"], read=lambda context, args: Answer(
+            {"sha256": "a" * 64, "runs": [{"original_sha256": "b" * 64, "sha": "c" * 16, "sha256s": 2}]}, ["tasks"]))
+        listed = (await call(server, "list_tasks")).structured_content
+        assert listed["runs"] == [{"sha": "c" * 16, "sha256s": 2}] and "sha256" not in listed
 
     async def test_a_proposal_s_rationale_is_masked_whole_before_it_is_clipped(self, store, tmp_path):
         from tuningfork.ops import refine
