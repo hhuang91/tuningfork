@@ -512,6 +512,20 @@ class _Beside:
             self.used.update(f"{prefix}{sub}" for sub in found)
         return found
 
+    def file(self, relative: str) -> bytes | Unsent | None:
+        """The file at `relative`, taken — None where there is none: a folder there is never read
+        (found in review: an input's `source` naming the machine's root read every file on it,
+        only to be refused, as a run refuses it)."""
+        if self.directory is not None:
+            path = self.directory / relative
+            return path.read_bytes() if path.is_file() else None
+        parts = PurePosixPath(self.base, relative.replace("\\", "/")).parts
+        at = PurePosixPath(*parts).as_posix() if parts and ".." not in parts else None
+        if at not in self.files:
+            return None
+        self.used.add(at)
+        return self.files[at]
+
 
 def _placed(name: str, sub: str) -> str:
     return f"{name}/{sub}" if sub else name
@@ -537,7 +551,8 @@ def _take_files(plan: ImportPlan, beside: _Beside) -> None:
         entries = []
         for entry in item.get("files") or []:
             if isinstance(entry, str):
-                # A file or a folder beside the spec, put in the workspace under its own name.
+                # A file or a folder beside the spec, put in the workspace under its own name (one with
+                # none, the machine's root say, `validate_spec` refused).
                 found = beside.tree(entry)
                 if not found:
                     raise OperationError(f"{entry} is not {beside.where}: the task file names it as an input file",
@@ -547,7 +562,7 @@ def _take_files(plan: ImportPlan, beside: _Beside) -> None:
                     plan.inputs[_placed(own, sub)] = data
                     entries.append({"path": _placed(own, sub), "source": f"{INPUTS}/{_placed(own, sub)}"})
             elif isinstance(entry, dict) and "source" in entry:
-                data = beside.tree(entry["source"]).get("")
+                data = beside.file(entry["source"])
                 if data is None:
                     raise OperationError(f"{entry['source']} is not {beside.where}: the task file names it as an "
                                          "input file", field="path")
@@ -565,7 +580,7 @@ def _take_files(plan: ImportPlan, beside: _Beside) -> None:
         context = (item.get("tuningfork") or {}).get("context")
         if not isinstance(context, str) or not context:
             continue
-        data = beside.tree(context).get("")
+        data = beside.file(context)
         if data is None:
             raise OperationError(f"{context} is not {beside.where}: the task file names it as the conversation its runs "
                                  "continue", field="path")

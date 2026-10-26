@@ -271,6 +271,25 @@ class TestKeepingATaskFile:
         plan = scenarios.prepare_import(tmp_path / "home", source / "evals.json", "t")
         assert plan.inputs == {"rows.csv": b"id\n1\n", "b.csv": b"id\n1\n"}
 
+    @pytest.mark.parametrize("entry", ["/", "..", {"path": "x.csv", "source": "/"}, {"path": "x.csv", "source": ".."}])
+    def test_an_input_naming_no_file_of_its_own_is_refused_unread(self, tmp_path, monkeypatch, entry):
+        """Found in review: an input naming the machine's root — as a folder, or as the `source` of
+        an entry, which is a file — had the import read every file on the machine, only to refuse
+        it, as a run refuses it."""
+        from tuningfork.ops import addskill
+
+        def never(folder):
+            raise AssertionError(f"read {folder}")
+
+        monkeypatch.setattr(addskill, "_read_folder", never)
+        source = tmp_path / "task"
+        source.mkdir()
+        (source / "evals.json").write_text(json.dumps({"skill_name": "t", "evals": [{"id": "1", "prompt": "p", "files": [entry]}]}),
+                                           encoding="utf-8")
+        with pytest.raises(OperationError) as refused:
+            scenarios.prepare_import(tmp_path / "home", source / "evals.json", "t")
+        assert refused.value.field == "path"
+
     def test_the_conversation_its_runs_continue_comes_too(self, tmp_path):
         """Found in review: a task file naming the conversation its runs continue
         (`tuningfork.context`) was kept without it — by its path, or its folder uploaded — and
