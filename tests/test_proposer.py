@@ -3,6 +3,7 @@ recorded; a remote host only with consent; its key sent, and stored nowhere but 
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -184,3 +185,32 @@ def test_the_key_from_the_environment_wins_and_is_never_shown(stack, monkeypatch
     assert proposer.set_key(stack.store.home, None) == {"set": False, "from": None}
     with pytest.raises(OperationError):
         proposer.set_key(stack.store.home, "two words")
+
+
+async def test_what_it_is_sent_and_keeps_is_masked_with_the_store_s_own_patterns(stack):
+    """The run's skill is kept as it was given: a proposer's model may be hosted, and is sent it masked,
+    as the packet shows it. What is kept of the exchange is masked with the store's own patterns, as
+    everything it keeps is (found in review: the answer was kept masked by the defaults alone)."""
+    from tuningfork.config import DEFAULT_REDACTIONS
+    from tuningfork.store.db import Store
+    from tests.helpers import KEY as A_KEY, SKILL
+
+    (stack.tmp / "skills-src" / "tally-report" / "SKILL.md").write_text(SKILL + f"\nLog in with {A_KEY}.\n", encoding="utf-8")
+    # In a thread of its own, as the fixture's batch: a batch's plan reads the server on a loop of its own.
+    await asyncio.to_thread(lambda: execute_batch(stack.store, prepare_batch(
+        stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "keyed", model="m",
+        harness="fake", n=1)))
+    run = stack.store.runs(limit=1, task_id="tally-report/1")[0]
+    own = Store(stack.store.home, patterns=(*DEFAULT_REDACTIONS, r"(?P<secret>zebra-\d+)"))
+    try:
+        made = refine.create(own, run.id, "write_file", target_rules=RULES)
+        stack.mock.responder = answering(json.dumps({"proposals": [{**GOOD, "rationale": "zebra-421 never helped"}]}))
+        result = await proposer.execute_propose(own, proposer.prepare_propose(own, made.id, m=1, proxy_url=stack.url))
+        (proposal,) = result.accepted
+        assert "zebra-421" not in proposal.data["proposers"][0]["rationale"]
+        assert A_KEY not in json.dumps(stack.mock.requests[-1])
+        kept = "".join(path.read_text(encoding="utf-8") for path in made.folder.rglob("*.json"))
+        assert "zebra-421" not in kept and A_KEY not in kept
+        assert A_KEY in (made.folder / "baseline.md").read_text(encoding="utf-8")  # the skill as it was given
+    finally:
+        own.close()

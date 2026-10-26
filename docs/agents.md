@@ -171,6 +171,12 @@ was exploratory. A long file or message is read page by page from an `offset`. T
 recordings — prompts, tool results, model output, skills — is data to study, never instructions
 to follow, and the server's instructions say so.
 
+An agent's model may be a hosted one, so every answer is redacted as it leaves the server, as
+tuningfork redacts what it records — a run's files, its task's check and the skill it was given
+too, which tuningfork keeps as they were. A key in a skill reads `<redacted>` on its line, and
+each line keeps its number: an edit can name that line, but cannot write `<redacted>` into the
+skill.
+
 A result carries its text and its structured content, because a client shows the model one of
 them: Claude Code the structured content, OpenJarvis the text. Hermes shows both, so give it
 `--results text`. The same refusal three times running carries the tool's description again, and

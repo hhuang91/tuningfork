@@ -90,6 +90,53 @@ class Masking:
         """`value` masked, for a write that keeps no count."""
         return self.of(value, also=also).value
 
+    def shown(self, value: Any, *, also: Iterable[str] = (), lines: bool = False) -> Masked:
+        """`value` as it is shown outside tuningfork — to an agent over MCP, whose model may be
+        hosted, or to a proposing model: every text in it, a key's too, masked as text is (`text`),
+        and wherever a value any of those masks took stands, in that text or another — a password
+        named in one field and bare in another. What the store keeps is masked once already, and
+        masked again it loses no more than a second command's password; what it keeps as given — a
+        launch's eval, a workspace's files, a skill — is masked here. Its numbers and its shape are
+        kept. A text a view splits — into numbered lines, pages, a diff — is shown so whole first,
+        with `lines` where its line numbers must hold: masked line by line, a private key's lines
+        each read as no key."""
+        also = tuple(also)
+        strings: dict[str, Masked] = {}
+
+        def read(item: Any) -> None:
+            if isinstance(item, str):
+                if item not in strings:
+                    strings[item] = self.text(item, also=also, lines=lines)
+            elif isinstance(item, dict):
+                for key, each in item.items():
+                    read(key)
+                    read(each)
+            elif isinstance(item, (list, tuple)):
+                for each in item:
+                    read(each)
+
+        read(value)
+        found = frozenset().union(*(masked.found for masked in strings.values()))
+        if found - set(also):
+            strings = {text: self.text(text, also=(*also, *found), lines=lines) for text in strings}
+
+        def written(item: Any) -> Any:
+            if isinstance(item, str):
+                return strings[item].value
+            if isinstance(item, dict):
+                kept: dict[Any, Any] = {}
+                for key, each in item.items():
+                    name = written(key)
+                    while name in kept:  # two keys a mask made one: each kept
+                        name = f"{name} "
+                    kept[name] = written(each)
+                return kept
+            if isinstance(item, (list, tuple)):
+                return [written(each) for each in item]
+            return item
+
+        return Masked(written(value), sum(masked.made for masked in strings.values()), found)
+
     def stream(self, stream: Any, *, also: Iterable[str] = ()) -> Any:
         """A token stream, a `TokenStream` or its JSON form, masked token-aware (`redact_stream`);
         anything else that is not one, masked as JSON."""

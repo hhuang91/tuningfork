@@ -170,7 +170,7 @@ def run_detail(store: Store, reference: str) -> dict[str, Any]:
         "run": run_json(found),
         "steps": steps,
         "threads": [run_json(thread) for thread in threads],
-        "launch": launch_json(launch),
+        "launch": launch_json(launch, store.masking),
     }
 
 
@@ -206,17 +206,26 @@ def condition_json(condition: Any) -> dict[str, Any]:
     }
 
 
-def task_summaries(runs: Sequence[Run], checks: dict[str, list[Any]] | None = None) -> list[dict[str, Any]]:
+def task_summaries(
+    runs: Sequence[Run], checks: dict[str, list[Any]] | None = None, *, masking: Any = None,
+) -> list[dict[str, Any]]:
     """Runs grouped by task, with a check pass rate per condition.
 
     A task run under two wordings, models or harnesses has one rate for each: `passed` is
     given for the task as a whole only when all its runs share one condition. `checks` are
-    each task's checks, the latest first (`Store.task_checks`): how its runs pass.
+    each task's checks, the latest first (`Store.task_checks`): how its runs pass — each kept
+    as its task file wrote it, and shown masked as the store masks text (`masking`).
     """
     from tuningfork.analysis.conditions import conditions
     from tuningfork.specs import check_kind, describe_check
 
     checks = checks or {}
+    if checks and masking is None:
+        raise ValueError("a task's check is shown masked: pass the store's masking")
+
+    def shown(described: str | None) -> str | None:
+        return masking.text(described).value if described is not None else None
+
     groups: dict[str | None, list[Run]] = {}
     for found in runs:
         groups.setdefault(found.task_id, []).append(found)
@@ -233,7 +242,7 @@ def task_summaries(runs: Sequence[Run], checks: dict[str, list[Any]] | None = No
                 "uncounted": sum(found["uncounted"] for found in found_conditions),
                 "conditions": found_conditions,
                 "check": (
-                    {"kind": check_kind(checks[task_id][0]), "text": describe_check(checks[task_id][0])}
+                    {"kind": check_kind(checks[task_id][0]), "text": shown(describe_check(checks[task_id][0]))}
                     if checks.get(task_id) else None
                 ),
                 "checks": len(checks.get(task_id) or []),
@@ -244,7 +253,7 @@ def task_summaries(runs: Sequence[Run], checks: dict[str, list[Any]] | None = No
 
 def tasks(store: Store) -> list[dict[str, Any]]:
     """Every task recorded, newest first, with its pass rate under each condition."""
-    return task_summaries(store.runs(limit=100_000), store.task_checks())
+    return task_summaries(store.runs(limit=100_000), store.task_checks(), masking=store.masking)
 
 
 # --- divergence -----------------------------------------------------------------------------
@@ -550,11 +559,13 @@ def declared_alpha(store: Store, experiment: Any) -> float | None:
 
 
 def experiment_report(
-    store: Store, reference: str, *, lens: Sequence[str] | None = None, alpha: float | None = None
+    store: Store, reference: str, *, lens: Sequence[str] | None = None, alpha: float | None = None,
+    masking: Any = None,
 ) -> ExperimentReport:
     """A stored experiment's result, as it reads again. An A/B is judged at the significance
     level it was declared with, unless `alpha` names another (found in review: one declared at
-    0.01 was judged at 0.05 on its own page, while its job's page said 0.01)."""
+    0.01 was judged at 0.05 on its own page, while its job's page said 0.01). `masking`: an A/B's
+    wording as an agent is shown it (`ab_wording`)."""
     from tuningfork.analysis.distribution import compare_arms
     from tuningfork.experiment import (
         CheckpointError,
@@ -622,7 +633,7 @@ def experiment_report(
     if found.kind == "ab":
         from tuningfork.ops.experiments import ab_wording
 
-        report.wording = ab_wording(store, arms)
+        report.wording = ab_wording(store, arms, masking=masking)
     if found.kind != "ab" or not found.group_id:
         if to_end:
             report.kind, report.to_end = "to_end", arm_summary(store, found)

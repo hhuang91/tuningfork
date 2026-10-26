@@ -179,13 +179,29 @@ class ToolServer:
                 raise OperationError(f"no tool called {params.name!r}", hint="tools/list names them", code="not_found")
             answer = await self.call(tool, params.arguments or {}, context)
         except OperationError as error:
-            return refused(self._repeated(params.name, error, tool), self.results)
+            return refused(self.shown_error(self._repeated(params.name, error, tool)), self.results)
         except Exception as error:  # noqa: BLE001 - a bug in one tool must not end the session
             logger.exception("tool %s failed", params.name)
-            return refused(OperationError(f"tuningfork failed: {type(error).__name__}: {error}", code="internal"),
-                           self.results)
+            return refused(self.shown_error(OperationError(f"tuningfork failed: {type(error).__name__}: {error}",
+                                                           code="internal")), self.results)
         self._last, self._streak = None, 0
-        return answered(answer, self.results)
+        return answered(self.shown(answer), self.results)
+
+    # --- what an agent is shown -------------------------------------------------------------
+
+    def shown(self, answer: Answer) -> Answer:
+        """An answer as the agent is shown it: an agent's model may be hosted, and what the store
+        keeps as given — a task's check, a workspace's files, a skill — goes no further than this
+        unmasked (`Masking.shown`). Its sentences and its JSON are masked as one, so a value a mask
+        took in one is masked in the other."""
+        data, lines = self.context.store.masking.shown([answer.data, answer.lines]).value
+        return Answer(data, lines)
+
+    def shown_error(self, error: OperationError) -> OperationError:
+        """A refusal masked as an answer is (`shown`): it can quote what it refused."""
+        said = self.context.store.masking.shown(error.to_json()).value
+        return OperationError(said["message"], hint=said["hint"], detail=said["detail"], code=error.code,
+                              field=error.field)
 
     def _repeated(self, name: str, error: OperationError, tool: Tool | None) -> OperationError:
         """The same refusal again and again — a 26B sent an edit without its old text
@@ -257,7 +273,8 @@ class ToolServer:
                 code="over_limit", field="n" if "n" in names else None,
             )
         if call.dry_run:
-            return plan_answer(kind, planned)
+            # A plan is not kept: masked here, before it is fitted (`Masking.shown`).
+            return plan_answer(kind, self.context.store.masking.shown(planned).value)
         wanted = same_params(kind, call.params, self.context.store.masking)
 
         def under_way() -> list[dict[str, Any]]:

@@ -35,7 +35,10 @@ does to keep that local:
   its task's text and check, and its skill. A scenario made of it copies its task's check, expected
   output and expectations as they were, and its skill too where it keeps a copy of it; a skill
   added from it copies its skill. What a task's check prints is redacted as it ends, before it is
-  kept or told to a harness.
+  kept or told to a harness. What leaves tuningfork is redacted as it leaves, whatever it keeps:
+  everything an agent is given over MCP, whose model may be hosted — a run's files and the skill
+  it was given among them — and everything the built-in proposer is sent. A run's page and the
+  task list show its task's check redacted too.
   Wherever it stands there, the value of a variable the check gets whose name is a secret's is
   masked too, and so is each of tuningfork's own keys, when it is eight characters or more,
   without a space or a quote. That is a net, not a promise. Recordings hold what your harness

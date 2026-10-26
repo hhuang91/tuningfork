@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from tuningfork.config import REDACTED
 from tuningfork.ops.common import OperationError
 from tuningfork.ops.diff import apply_edits, line_diff
 
@@ -233,3 +234,31 @@ def test_line_breaks_escaped_twice_are_line_breaks():
     kept = apply_edits(SKILL, [{"line": 11, "new": "3. Write report.json with lines joined by \\\\n.\nDone."}])
     assert "joined by \\\\n.\nDone." in kept
 
+
+
+class TestAMaskedLine:
+    """What an agent or a proposing model reads of a skill is masked, each line at its number, while
+    the skill's file keeps what it holds: an edit is resolved against the file."""
+
+    KEYED = SKILL + "4. Log in with sk-a1B2c3D4e5F6g7H8i9J0.\n"
+
+    def test_an_edit_that_would_write_the_mask_into_the_skill_is_refused(self):
+        """Line 12 is shown as `4. Log in with <redacted>.`: rewritten as it was shown, the key the
+        skill holds would be lost to the mask in its file."""
+        for edit in ({"line": 12, "new": f"4. Log in with {REDACTED}, then check."},
+                     {"after": 12, "insert": f"5. Never print {REDACTED}."},
+                     {"old": "4. Log in with", "new": f"4. Use {REDACTED} to log in with"}):
+            with pytest.raises(OperationError) as refused:
+                apply_edits(self.KEYED, [edit])
+            assert refused.value.field == "edits" and f"would write {REDACTED} into the skill" in refused.value.message
+        assert "sk-a1B2c3D4e5F6g7H8i9J0" in apply_edits(self.KEYED, [{"line": 11, "new": "3. Write report.json, checked."}])
+
+    def test_a_mask_the_skill_itself_holds_may_stay(self):
+        held = SKILL + f"4. Logs show {REDACTED} where a key was.\n"
+        edited = apply_edits(held, [{"line": 12, "new": f"4. Logs show {REDACTED} where a key was masked."}])
+        assert edited.endswith("where a key was masked.\n")
+
+    def test_an_old_text_copied_with_the_mask_is_told_to_name_its_line(self):
+        with pytest.raises(OperationError) as refused:
+            apply_edits(self.KEYED, [{"old": f"4. Log in with {REDACTED}.", "new": "4. Log in."}])
+        assert "not in the skill" in refused.value.message and "name the line by its number" in refused.value.hint

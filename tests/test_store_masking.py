@@ -400,6 +400,44 @@ class TestALinedText:
         assert len(store.masking.text(text).value.splitlines()) < len(lines)  # without, they move
 
 
+#: A private key in a skill: its lines read as no key one at a time.
+PRIVATE = ["-----BEGIN OPENSSH PRIVATE KEY-----", "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW",
+           "QyNTUxOQAAACDx2Jx7dGgHJ1s0kpk8q9fG1hX", "-----END OPENSSH PRIVATE KEY-----"]
+
+
+class TestWhatIsShown:
+    """What is shown outside tuningfork — to an agent over MCP, to a proposing model — of a value,
+    whatever the store keeps of it (`Masking.shown`)."""
+
+    def test_every_text_is_masked_a_key_s_too_and_its_numbers_and_shape_kept(self, store):
+        shown = store.masking.shown({"said": f"use {KEY}", KEY: [3, f"again {KEY}", None], "count": 3})
+        assert shown.value == {"said": f"use {REDACTED}", REDACTED: [3, f"again {REDACTED}", None], "count": 3}
+        assert shown.made == 3
+
+    def test_a_value_one_text_names_is_masked_where_another_says_it_bare(self, store):
+        """A password named in one field, and said bare in another: as a step's answer is masked of
+        what its request's masks took."""
+        shown = store.masking.shown({"check": NAMED, "lines": [f"it was {PASSWORD}"]}).value
+        assert PASSWORD not in json.dumps(shown) and shown["lines"] == [f"it was {REDACTED}"]
+        assert store.masking.shown(f"{NAMED}; it was {PASSWORD}").value.count(REDACTED) == 2
+
+    def test_two_keys_a_mask_makes_one_are_both_kept(self, store):
+        assert len(store.masking.shown({KEY: 1, "sk-z9Y8x7W6v5U4t3S2r1Q0": 2}).value) == 2
+
+    def test_a_text_shown_whole_keeps_its_lines_where_line_by_line_a_private_key_passes(self, store):
+        """A text a view splits — numbered lines, pages, a diff — is shown whole first: line by line,
+        each of a private key's lines reads as no key."""
+        text = "\n".join(["# Deploy", *PRIVATE, "Then run the tests."]) + "\n"
+        whole = store.masking.shown(text, lines=True).value
+        assert PRIVATE[1] not in whole and PRIVATE[2] not in whole
+        assert len(whole.splitlines()) == len(text.splitlines()) and whole.splitlines()[-1] == "Then run the tests."
+        assert PRIVATE[1] in store.masking.shown(text.splitlines()).value  # what masking line by line misses
+
+    def test_what_the_store_kept_masked_is_shown_as_it_is(self, store):
+        kept = store.masking.value(f"{NAMED}, then {KEY}")
+        assert store.masking.shown(kept).value == kept
+
+
 class TestAnAddressKeptAndShown:
     @pytest.mark.parametrize("url, kept", [
         (f"http://tuningfork:{KEY}@127.0.0.1:8081", f"http://{REDACTED}@127.0.0.1:8081"),
@@ -557,7 +595,6 @@ class TestOneBoundary:
         "analysis/tokens.py": "a token stream masked token-aware, which the store's masking calls",
         "replay.py": "a fork's call keyed as the store masked its step",
         "experiment/skill.py": "a skill found as storage masked it, and a wording sent masked alike",
-        "ops/proposer.py": "the proposer's exchange kept beside its refinement, a file",
         "launches.py": "a call's path predicted as the store masks, where no store is given",
         "breakpoints/engine.py": "a call's place predicted as the store masks, where no store is given",
     }

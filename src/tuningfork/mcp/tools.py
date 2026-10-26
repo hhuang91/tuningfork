@@ -576,8 +576,11 @@ def show_files(context: Context, args: FilesArgs) -> Answer:
         lines.append(f"since {view.since}: " + (", ".join(
             f"{path} {statuses.get(status, status)}" for status, path in view.changes[:12]
         ) if view.changes else "nothing changed"))
+    # The workspace is kept as the run left it. What an agent reads of it is masked whole before
+    # it is paged (`Masking.shown`): a page's edge, or a diff's lines, would cut a key apart.
+    masking = context.store.masking
     if args.diff:
-        patch = workspace_patch(context.store, view, args.path) if view.before else ""
+        patch = masking.shown(workspace_patch(context.store, view, args.path), lines=True).value if view.before else ""
         shown, where, words = page(patch, min(args.offset, len(patch)), data)
         data["diff"] = shown
         if patch:
@@ -594,7 +597,7 @@ def show_files(context: Context, args: FilesArgs) -> Answer:
                 f"no file {args.path!r} in run {found.id[:8]}'s workspace {view.where}",
                 hint="show_files without a path lists them", code="no_such_file", field="path",
             ) from None
-        text = raw.decode("utf-8", errors="replace")
+        text = masking.shown(raw.decode("utf-8", errors="replace"), lines=True).value
         data.update({"path": args.path, "bytes": len(raw)})
         shown, where, words = page(text, args.offset, data)
         data.update({"text": shown, "page": where})
@@ -826,7 +829,7 @@ def where_holds(context: Context, args: WhereArgs) -> Answer:
     found = where_it_holds(
         context.store, args.task, target_match=args.target_match, target_rules=args.target_rules or None,
         path=args.path, contains=args.contains, at_least=args.at_least, hidden=hidden_tasks(context),
-        screen=args.screen,
+        screen=args.screen, masking=context.store.masking,
     )
     view = compact.where(found.to_json())
     lines = compact.where_lines(view)
@@ -892,6 +895,10 @@ def show_skill(context: Context, args: RunArgs) -> Answer:
 
     visible_run(context, args.run)
     recorded = recorded_skill(context.store, args.run).to_json()
+    if isinstance(recorded.get("text"), str):
+        # Kept as the run was given it, and shown masked whole before its lines are numbered,
+        # each keeping its number (`Masking.shown`): line by line, a private key's lines pass.
+        recorded["text"] = context.store.masking.shown(recorded["text"], lines=True).value
     variants = [variant.to_json() for variant in list_variants(context.store.home, recorded.get("skill"))]
     view = compact.skill(recorded, variants)
     lines = [f"skill {recorded.get('skill')!r} as run {view['run']} was given it: {recorded.get('path') or 'no file kept'}"]
@@ -928,7 +935,7 @@ def show_experiment(context: Context, args: ExperimentArgs) -> Answer:
     if (chosen or args.offset) and not args.continuations:
         raise OperationError(f"{', '.join(chosen) or 'offset'} reads a probe's continuations: add continuations=true",
                              code="bad_params", field="continuations")
-    report = experiment_report(context.store, args.experiment).to_json()
+    report = experiment_report(context.store, args.experiment, masking=context.store.masking).to_json()
     if report.get("run_id"):
         refuse_hidden(context, context.store.get_run(report["run_id"]))
     if args.continuations:
@@ -1031,7 +1038,9 @@ def show_scenarios(context: Context, args: ScenariosArgs) -> Answer:
         return {**found, "spec": without_held_out_evals(found.get("spec"))} if "spec" in found else found
 
     if args.name:
-        found = shown(read_scenario(context.store.home, args.name).to_json())
+        # Its spec and its conversation are kept as given: masked whole before they are fitted,
+        # which can cut a key apart (`Masking.shown`).
+        found = context.store.masking.shown(shown(read_scenario(context.store.home, args.name).to_json())).value
         return Answer(compact.fit(found, 16_000), [f"scenario {args.name!r}: a task spec start_batch can run"])
     hidden = hidden_tasks(context)
 
@@ -1162,7 +1171,7 @@ def show_refinement(context: Context, args: RefinementRef) -> Answer:
     from tuningfork.ops import refine
     from tuningfork.ops.packet import build_packet
 
-    shown = refine.view(context.store, args.refinement)
+    shown = refine.view(context.store, args.refinement, masking=context.store.masking)
     found = shown["refinement"]
     data: dict[str, Any] = {
         "refinement": compact.short(found["id"]),
@@ -1251,7 +1260,7 @@ def propose_edit(context: Context, args: ProposeEditArgs, who: dict[str, Any]) -
     ]
     # What each edit resolved to, so a model that named a line sees the line it changed.
     for k, each in enumerate((made.data.get("proposers") or [{}])[-1].get("edits") or [], 1):
-        old, new = compact.clip(each.get("old"), 120), compact.clip(each.get("new"), 120)
+        old, new = (compact.clip(context.store.masking.shown(each.get(side)).value, 120) for side in ("old", "new"))
         lines.append(f"edit {k}, {each.get('lines')}: " + (f"adds {new!r}" if not old else f"{old!r} → {new!r}"))
     lines.append(f"a hypothesis until screened: start_screen(refinement, proposals=[\"{made.id[:8]}\", …])")
     return Answer({"proposal": made.id[:8], "changed": data["changed"], "duplicate": made.duplicate,
@@ -1353,7 +1362,8 @@ def job_answer(context: Context, job: dict[str, Any]) -> Answer:
     if experiments and status in ("done", "cancelled", "interrupted"):
         from tuningfork.ops.inspect import experiment_report
 
-        view = compact.experiment(experiment_report(context.store, experiments[0]).to_json())
+        report = experiment_report(context.store, experiments[0], masking=context.store.masking)
+        view = compact.experiment(report.to_json())
         data["result"] = view
         lines += [line for line in compact.experiment_lines(view)[1:] if line not in lines]
     elif job.get("kind") == "tokens" and isinstance(result, dict):

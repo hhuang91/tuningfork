@@ -8,6 +8,11 @@ skill, `{old, new}`. Line numbers do not drift here: a refinement's copy of the 
 changes under an edit, every edit in a proposal names the text as it was shown, and a
 number is read off show_skill's output rather than counted. What changed is then shown as a
 line diff: the same JSON for the CLI, the web UI and an agent.
+
+What an agent or a proposing model reads of a skill is masked (`Masking.shown`), its lines
+keeping their numbers, while the skill's file keeps what it holds: an edit is resolved against
+the file, and one whose new text holds the mask more often than the text it replaces is
+refused: a key the skill holds would be lost to `<redacted>` in its file.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ import difflib
 from bisect import bisect_right
 from typing import Any, Sequence
 
+from tuningfork.config import REDACTED
 from tuningfork.ops.common import OperationError
 
 #: The shapes an edit takes, as a refusal names them.
@@ -100,6 +106,13 @@ def resolve_edits(text: str, edits: Sequence[Any]) -> list[dict[str, Any]]:
             found = _after_line(lines, starts, number, edit, newline)
         else:
             raise _not_an_edit(text, number, edit)
+        if found["new"].count(REDACTED) > found["old"].count(REDACTED):
+            raise OperationError(
+                f"edit {number} would write {REDACTED} into the skill: what is shown of a skill reads {REDACTED} "
+                "where it masks a key the skill holds, and the skill's file keeps the key",
+                hint="leave that text as it is: change the lines around it, or only the words you mean with {old, new}",
+                code="bad_params", field="edits",
+            )
         resolved.append(found)
     ordered = sorted(range(len(resolved)), key=lambda i: (resolved[i]["start"], resolved[i]["end"]))
     for a, b in zip(ordered, ordered[1:]):
@@ -152,7 +165,9 @@ def _by_text(text: str, starts: list[int], number: int, edit: dict[str, Any], ne
         if not matched:
             raise OperationError(
                 f"edit {number}: its old text is not in the skill",
-                hint=_closest(text, old),
+                hint=(f"what you read of the skill shows {REDACTED} where it masks a key the skill holds: copy "
+                      "the text beside it, or name the line by its number"
+                      if REDACTED in old and REDACTED not in text else _closest(text, old)),
                 code="bad_params", field="edits",
             )
         if len(matched) > 1:

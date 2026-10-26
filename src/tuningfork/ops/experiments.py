@@ -176,6 +176,16 @@ def kept_skills(run: Run) -> dict[str, Path]:
     return kept
 
 
+def kept_text(store: Store, run: Run, path: Path, text: str) -> str:
+    """The text of a SKILL.md `run` kept (`path`), as it is read: the one an imported chat's
+    extract made before an import's files were masked is masked as it is read, as what is made of
+    it is (`imports.extracted_unmasked`); any other is kept as it was given, or as it was masked."""
+    from tuningfork.ops.imports import extracted_unmasked
+
+    name = next((name for name, kept in kept_skills(run).items() if kept == path), None)
+    return store.masking.text(text).value if extracted_unmasked(run, name) else text
+
+
 def study_skill(run: Run, skill: str | None = None) -> tuple[str, Path] | None:
     """The skill to study in `run`, by name, and its SKILL.md: the one named, else the run's own —
     a batch run's, the one an import was told to study, or the only one it kept. None where it
@@ -483,7 +493,7 @@ def recorded_skill(store: Store, run: str, skill: str | None = None) -> Recorded
         run_id=found.id,
         skill=skill_name(found, path),
         path=path,
-        text=path.read_text(encoding="utf-8") if path else None,
+        text=kept_text(store, found, path, path.read_text(encoding="utf-8")) if path else None,
         kept=list(kept_skills(found)),
     )
 
@@ -773,12 +783,14 @@ class Wording:
         }
 
 
-def ab_wording(store: Store, arms: dict[str, Any]) -> Wording | None:
+def ab_wording(store: Store, arms: dict[str, Any], *, masking: Any = None) -> Wording | None:
     """What an A/B changed, read back from what it recorded rather than from files that can
     have changed since: a fork's launch keeps both texts whole, and a checkpoint A/B's arms
     the requests they sent, the variant where the original was (`experiment.skill.swapped`).
     Else the files the A/B names, each only while it still holds the text it tested. None for
-    an experiment that swapped no wording."""
+    an experiment that swapped no wording. With `masking`, as an agent is shown it: a fork's
+    launch and the files keep the texts as given, and both are masked whole and alike before
+    the lines between them are read (`Masking.shown`), each line keeping its number."""
     from tuningfork.experiment.skill import swapped
     from tuningfork.ops.diff import line_diff
 
@@ -811,6 +823,8 @@ def ab_wording(store: Store, arms: dict[str, Any]) -> Wording | None:
     if texts is None:
         found.missing = "neither what its arms recorded nor the files it names hold the texts it tested"
         return found
+    if masking is not None:
+        texts = tuple(masking.shown(list(texts), lines=True).value)
     found.diff = _renumbered(line_diff(*texts), offset)
     return found
 

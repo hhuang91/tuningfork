@@ -295,7 +295,7 @@ def create(
     from tuningfork.experiment import resolve_target
     from tuningfork.experiment.sampling import CheckpointError
     from tuningfork.experiment.skill import diagnose, locate, text_sha256
-    from tuningfork.ops.experiments import load
+    from tuningfork.ops.experiments import kept_text, load
     from tuningfork.ops.trash import refuse_trashed
     from tuningfork.ops.variants import skill_name
 
@@ -323,7 +323,7 @@ def create(
             hint="refine from a run tuningfork launched: a batch's, or a fork of one",
             field="run",
         )
-    baseline = _text(found)
+    baseline = kept_text(store, checkpoint.run, found, _text(found))
     if not locate(checkpoint.request, baseline):
         first = _first_step_with(store, checkpoint.run, baseline)
         raise OperationError(
@@ -753,12 +753,15 @@ def made_by(store: Store, refinement: Refinement) -> Made:
     return Made(experiments=sorted(experiments), runs=sorted(runs), variants=sorted(variants))
 
 
-def view(store: Store, reference: str, *, held_out: bool = False) -> dict[str, Any]:
+def view(store: Store, reference: str, *, held_out: bool = False, masking: Any = None) -> dict[str, Any]:
     """A refinement with everything it holds: its proposals with their line diffs, its
     screens with their verdicts, and its validations.
 
     A validation's held-out verdicts, and the gate they feed, are the person's: shown only
-    with `held_out`, for their own views. An agent shown them could fit its edits to them."""
+    with `held_out`, for their own views. An agent shown them could fit its edits to them.
+    With `masking`, as an agent is shown it: the run's skill is kept as it was given, and it
+    and each proposal are masked whole and alike before the lines between them are read
+    (`Masking.shown`), each line keeping its number."""
     from tuningfork.ops.approve import state as approval_state
     from tuningfork.ops.diff import line_diff
     from tuningfork.ops.validate import validation_views
@@ -778,9 +781,15 @@ def view(store: Store, reference: str, *, held_out: bool = False) -> dict[str, A
                     "baseline": report["baseline"]["target"], "adjusted_p": arm.get("adjusted_p"),
                     "survives": arm.get("survives"), "worse": arm.get("worse"), "complete": report["complete"],
                 })
+    found_proposals = proposals(store, refinement.id)
+    texts = [baseline, *(each.text() for each in found_proposals)]
+    if masking is not None:
+        texts = masking.shown(texts, lines=True).value
+    baseline = texts[0]
     items = []
-    for each in proposals(store, refinement.id):
-        items.append({**each.to_json(), "diff": line_diff(baseline, each.text())["hunks"],
+    for each, text in zip(found_proposals, texts[1:]):
+        proposed = masking.shown(each.to_json()).value if masking is not None else each.to_json()
+        items.append({**proposed, "diff": line_diff(baseline, text)["hunks"],
                       "screens": verdicts.get(each.id, [])})
     packets = sorted(path.stem for path in (refinement.folder / "packets").glob("*.json")) \
         if (refinement.folder / "packets").is_dir() else []
