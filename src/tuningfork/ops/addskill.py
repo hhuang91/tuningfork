@@ -215,7 +215,7 @@ def prepare_from_run(store: Store, reference: str, *, skill: str | None = None, 
     """The skill a run had, kept as tuningfork's own copy: the copy the run kept of it — its
     folder whole — else the SKILL.md its model read, given the frontmatter its harness did not
     show. `skill` where the run kept or showed several."""
-    from tuningfork.ops.imports import _skill_file, _studied, chat_of
+    from tuningfork.ops.imports import _skill_file, _studied, chat_of, extracted_unmasked
     from tuningfork.ops.skills import _clean
 
     run = store.get_run(reference)
@@ -233,7 +233,12 @@ def prepare_from_run(store: Store, reference: str, *, skill: str | None = None, 
             raise OperationError(f"run {run.id[:8]} kept no skill, and its conversation shows none", field="run") from None
         raise
     name = _check_name(store.home, name if name is not None else (_clean(studied.name) or ""))
-    if studied.kept is not None:
+    if studied.kept is not None and extracted_unmasked(run, studied.kept_name):
+        # Taken from its chat before an import was masked: masked as it is read, as the chat is.
+        text = store.masking.text(studied.kept.read_text(encoding="utf-8", errors="replace")).value
+        files, left_out = {"SKILL.md": text.encode("utf-8")}, []
+        how = "the copy it kept"
+    elif studied.kept is not None:
         files, left_out = _read_folder(studied.kept.parent)
         how = "the copy it kept"
     elif studied.found is not None:

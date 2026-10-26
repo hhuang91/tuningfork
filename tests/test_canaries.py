@@ -1,11 +1,13 @@
 """The canary sweep: a key planted in each input of the loop, run as a person runs it — batches
 through the proxy with the fake agent, a scenario's among them, a chain told what its check
-printed, jobs, a held call edited and asked about, a label queued, an import, a server's errors —
-and every row and blob the recordings folder's store holds, and a chain's record beside it,
-searched for each key's start and end.
+printed whose link changes its skill, jobs, a held call edited and asked about, a label queued,
+an import, a server's errors, a scenario made of a run and of the chat, the chat's skill added —
+and every row and blob the recordings folder's store holds, and every file beside it, searched
+for each key's start and end.
 
 Only what a run is given, kept as it was given by design, may hold one: a launch's eval and
-variant, and a scenario's context, which a fork runs again as they were written.
+variant, and a scenario's context, which a fork runs again as they were written; and the files
+kept as they were (`KEPT_AS_IT_WAS`): a launch's own folders, the workspace's snapshots.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ PLANTED = (
     "question at a held call", "scenario's context", "password a server's error quotes",
     "check output its cut falls inside", "variable named as a secret", "key of tuningfork's own",
     "reply cut to its quote", "reply cut to what a trial shows", "check output given from inside it",
+    "skill a chain's link edited", "skill an imported chat shows", "turn a scenario starts from",
 )
 #: Keys no pattern reads alone: masked by a password's name in a call, then quoted bare by the
 #: server's error — masked there only as a value the call's own mask took.
@@ -50,6 +53,8 @@ NAMED_ONLY = ("password a server's error quotes",)
 #: Keys no pattern reads at all: masked by where they stand — a check's variable whose name is a
 #: secret's, printed bare; a key tuningfork holds, which a check found in its file.
 BY_PLACE = ("variable named as a secret", "key of tuningfork's own")
+#: A line a chain's link wrote into its skill: what the chain's record shows of each link.
+NOTED = "skill a chain's link edited"
 #: What of a key the sweep looks for: its first characters and its last, each enough to name it.
 #: Where a cut fell inside a key, its start or its end is what stands.
 STARTS, ENDS = 16, 20
@@ -116,6 +121,11 @@ def model(keys: dict[str, str]):
             return MockTurn(tool_calls=[{"name": "write_file", "arguments": {
                 "path": f"{workdir}/config.json",
                 "content": json.dumps({"api_key": keys["written by the model"], "row_count": 4})}}])
+        # A chain's link asked to: its skill, in its home beside its workspace, given a line with a key.
+        if len(results) == 2 and "note it in your skill" in str(messages[1].get("content") or ""):
+            return MockTurn(tool_calls=[{"name": "write_file", "arguments": {
+                "path": f"{workdir}/../home/skills/tally-report/SKILL.md",
+                "content": SKILL + f"\nThe key is {keys[NOTED]}.\n"}}])
         return MockTurn(content=f"Done. I used the key {keys['final reply']}.")
 
     return answer
@@ -158,12 +168,33 @@ def found_in_blobs(home: Path, keys: dict[str, str]) -> list[str]:
     ]
 
 
+#: What the recordings folder keeps beside its rows and blobs as it was, by design, and why: each
+#: folder by its place in the recordings folder, a scenario's by its place in the scenario's.
+KEPT_AS_IT_WAS = {
+    "tuningfork.db": "the store's rows, searched row by row",
+    "blobs": "the store's blobs, searched blob by blob",
+    "snapshots.git": "the workspace at every call",
+    "batches": "each launch's own folders, its workspace and its harness's home, and the skill each was "
+               "given or left, the next link's start",
+    "forks": "each fork's own folders, as a launch's",
+    "variants": "each wording tried, as it was given",
+    ".proposer-key": "tuningfork's own key",
+    "scenarios/*/inputs": "a scenario's input files: a run's workspace where the scenario starts",
+}
+
+
+def kept_as_it_was(relative: Path) -> bool:
+    top, *rest = relative.parts
+    if top.startswith("tuningfork.db"):  # its -wal and -shm with it
+        top = "tuningfork.db"
+    return top in KEPT_AS_IT_WAS or (top == "scenarios" and len(rest) > 1 and f"scenarios/*/{rest[1]}" in KEPT_AS_IT_WAS)
+
+
 def found_in_files(home: Path, keys: dict[str, str]) -> list[str]:
-    """Each file tuningfork writes beside its store from what was recorded that a key's start or end
-    stands in: a chain's record."""
+    """Each file of the recordings folder a key's start or end stands in, but where kept as it was."""
     return [
         f"{name} in {path.relative_to(home).as_posix()}"
-        for path in sorted((home / "chains").glob("*.json"))
+        for path in sorted(home.rglob("*")) if path.is_file() and not kept_as_it_was(path.relative_to(home))
         for name, key in keys.items() if any(piece.encode() in path.read_bytes() for piece in pieces(key))
     ]
 
@@ -230,6 +261,11 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
             max_turns=6, timeout=60, context="context.json"))],
     )
     scenario.path.write_text(json.dumps(scenario.to_dict()), encoding="utf-8")
+    # A chain's task: the same, its link asked to note it in the skill it hands on.
+    chained = TaskSpec(skill_name="tally-report", path=tmp_path / "spec" / "chain.json", skill_dir="skills-src/tally-report",
+                       evals=[Eval(id="3", prompt=f"{item.prompt} Then note it in your skill.", files=item.files,
+                                   tuningfork=item.tuningfork)])
+    chained.path.write_text(json.dumps(chained.to_dict()), encoding="utf-8")
     upstream = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_server.app), timeout=30)
     settings = Settings(upstream_base_url=f"http://tuningfork:{keys['upstream password']}@upstream.test", home=home,
                         max_inflight=4)
@@ -250,8 +286,8 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
             # A batch run through the proxy: the ordinary recording, and its check; and a scenario's.
             (run_id,) = job("batch", {"spec": str(spec.path), "n": 1, "harness": "fake", "model": "m"})["links"]["runs"]
             job("batch", {"spec": str(scenario.path), "n": 1, "harness": "fake", "model": "m"})
-            # A chain whose harness is told what the check printed.
-            job("chain", {"spec": str(spec.path), "n": 1, "harness": "fake", "model": "m", "tell": True})
+            # A chain whose harness is told what the check printed, its link changing the skill.
+            job("chain", {"spec": str(chained.path), "n": 1, "harness": "fake", "model": "m", "tell": True})
             # Jobs on it: a resample, an A/B of a wording, a fork to the end, the check tried and run along it.
             job("resample", {"run": run_id, "step": "1", "n": 2})
             job("ab", {"run": run_id, "step": "1", "n": 1, "exploratory": True, "variant_name": "canary",
@@ -290,13 +326,20 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
             client.decide(held["id"], "continue", request=edited)
             caller.join(60)
             assert sent["answer"].status_code == 200
-        # A chat had elsewhere, imported.
+        # A chat had elsewhere, imported: a key said before it, one in the turn the skill came in
+        # after, and one in the skill the model read.
         from tests.test_chat_import import SKILL as CHAT_SKILL, conversation, export
-        from tuningfork.ops import imports
+        from tuningfork.ops import addskill, imports
 
         rows = [{"id": 1001, "role": "user", "content": f"Remember my key {keys['imported chat']}.", "timestamp": 0.5},
                 {"id": 1002, "role": "assistant", "content": "Noted.", "finish_reason": "stop", "timestamp": 0.7}]
-        imports.execute_import(store, imports.prepare_import(store, export(rows + conversation(("tally-report", CHAT_SKILL)))))
+        chat = conversation(("tally-report", CHAT_SKILL + f"\nThe key is {keys['skill an imported chat shows']}.\n"))
+        chat[0] = {**chat[0], "content": f"{chat[0]['content']} My key is {keys['turn a scenario starts from']}."}
+        imported = imports.execute_import(store, imports.prepare_import(store, export(rows + chat)))
+        # What is made of recordings: a scenario of the chat, and of the batch's run; the chat's skill added.
+        imports.make_scenario(store, imports.prepare_scenario(store, imported.run_id, "from-import"))
+        imports.make_scenario(store, imports.prepare_scenario(store, run_id, "from-run", task_check=False))
+        addskill.execute_add(store, addskill.prepare_from_run(store, imported.run_id, name="from-import"))
     finally:
         store.close()
         asyncio.run(upstream.aclose())
@@ -320,6 +363,20 @@ def test_every_key_planted_reaches_the_store_where_nothing_masks_it(tmp_path, mo
     keys = canaries()
     found = swept(tmp_path, mock_server, monkeypatch, keys, patterns=())
     assert {place.split(" in ")[0] for place in found} == set(PLANTED) - {"upstream password"}
+    # Each file made of what was recorded holds what it was made of: the chain's record the line
+    # its link wrote, the imported chat and its skill each its keys, and so does what was made of them.
+    made = {re.sub(r"/[0-9a-f]{8,}", "/<id>", place) for place in found}
+    assert {
+        f"{NOTED} in chains/<id>.json",
+        *(f"{name} in imports/<id>/chat.json"
+          for name in ("imported chat", "skill an imported chat shows", "turn a scenario starts from")),
+        "skill an imported chat shows in imports/<id>/skills/tally-report/SKILL.md",
+        "imported chat in scenarios/from-import/context.json",
+        "turn a scenario starts from in scenarios/from-import/evals.json",
+        "skill an imported chat shows in scenarios/from-import/skill/tally-report/SKILL.md",
+        "skill an imported chat shows in skills/from-import/SKILL.md",
+        "prompt in scenarios/from-run/evals.json",
+    } <= made, sorted(made)
     # And each reply's cut does fall inside its key: where a trial keeps the cut part, its start
     # stands and its end does not.
     connection = sqlite3.connect(f"file:{tmp_path / 'home' / 'tuningfork.db'}?mode=ro", uri=True)

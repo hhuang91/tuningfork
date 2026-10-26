@@ -15,6 +15,7 @@ import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
+from tuningfork.config import REDACTED
 from tuningfork.control import ControlClient
 from tuningfork.demo.mock import MockTurn
 from tuningfork.ops import Cancel, Cancelled, OperationError
@@ -214,6 +215,47 @@ class TestChain:
         assert "-pZq8xK3vN5wLp" in link.told["message"]
         assert stack.store.get_run(link.run_id).result["told"] == link.told
         assert stack.store.get_launch(link.launch_id).exit["told"] == link.told
+
+    def test_the_chains_record_is_masked_but_what_was_masked_where_it_was_made(self, stack):
+        """The lines a link wrote into its skill are masked in the chain's record; the copy it left,
+        the next link's start, keeps them. What its harness was told, masked where the check ran,
+        and its skill-editing calls, read from the store, are kept as they were masked: masked
+        again, a command's second password would fall too."""
+        from tuningfork.demo.task import CHECK
+
+        key = "sk-" "tfchainkey7Hq2Lm9Xw3Rv5Pz8B"
+        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+
+        def noting(payload: dict) -> MockTurn:
+            messages = payload["messages"]
+            if messages[1]["content"].startswith("I ran my check"):
+                return MockTurn(content="Noted.")
+            if any(message["role"] == "tool" for message in messages):
+                return MockTurn(content="The report is written, and the skill noted.")
+            system = messages[0]["content"]
+            workdir = re.search(r"Working directory: (\S+)", system).group(1)
+            skill = re.search(r"\[Skill tally-report preloaded\]\n\n(.*)", system, re.S).group(1)
+            return MockTurn(tool_calls=[
+                {"name": "write_file", "arguments": {
+                    "path": f"{workdir}/report.json", "content": json.dumps({"row_count": 4, "amount_total": 61.5})}},
+                {"name": "write_file", "arguments": {
+                    "path": str(Path(workdir).parent / "home" / "skills" / "tally-report" / "SKILL.md"),
+                    "file_path": command, "content": skill.rstrip("\n") + f"\nThe key is {key}.\n"}},
+            ])
+
+        stack.mock.responder = noting
+        data = stack.spec.to_dict()
+        data["evals"][0]["tuningfork"]["check"] = f"echo '{command}'; {CHECK}"
+        stack.spec.path.write_text(json.dumps(data), encoding="utf-8")
+        report = execute_chain(stack.store, prepare(stack, n=1, tell=True))
+
+        (link,) = report.links
+        kept = get_chain(stack.store, report.plan.id)
+        assert key in json.dumps(link.diff) and key in (Path(link.left) / "SKILL.md").read_text(encoding="utf-8")
+        assert key not in json.dumps(kept) and REDACTED in json.dumps(kept["links"][0]["diff"])
+        assert "-pZq8xK3vN5wLp" in link.told["message"] and kept["links"][0]["told"] == link.told
+        assert any(edit["file"] and "-pZq8xK3vN5wLp" in edit["file"] for edit in link.edits)
+        assert kept["links"][0]["edits"] == link.edits
 
     def test_telling_needs_a_harness_that_resumes_and_a_check(self, stack, monkeypatch):
         resumes = FakeAgent.continue_launch

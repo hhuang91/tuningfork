@@ -28,12 +28,16 @@ does to keep that local:
 - **Strings shaped like secrets are redacted before they are stored**: keys by their shape
   (`sk-…`, GitHub's, GitLab's, AWS's, Google's, Slack's, Stripe's, Hugging Face's and more),
   private keys, bearer tokens, passwords in URLs and on command lines, and a value under a
-  secret's name (`api_key=…`) where it reads as a key rather than as code. What a task's check
-  prints is redacted as it ends, before it is kept or told to a harness. Wherever it stands
-  there, the value of a variable the check gets whose name is a secret's is masked too, and so
-  is each of tuningfork's own keys, when it is eight characters or more, without a space or a
-  quote. That is a net, not a promise. Recordings hold what your harness sent and received —
-  prompts, tool output, file contents — so read a recordings folder before you share one.
+  secret's name (`api_key=…`) where it reads as a key rather than as code. So are the files
+  tuningfork writes beside them from what was recorded — a chain's record, an imported chat and
+  the skills taken from it — and what a scenario or a skill added takes from a recording. A
+  run's workspace, its harness's own files and the skill it was given are kept as they were.
+  What a task's check prints is redacted as it ends, before it is kept or told to a harness.
+  Wherever it stands there, the value of a variable the check gets whose name is a secret's is
+  masked too, and so is each of tuningfork's own keys, when it is eight characters or more,
+  without a space or a quote. That is a net, not a promise. Recordings hold what your harness
+  sent and received — prompts, tool output, file contents — so read a recordings folder before
+  you share one.
 
 What it does **not** do:
 

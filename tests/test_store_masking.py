@@ -345,6 +345,37 @@ class TestTheRestOfTheStore:
         assert "Plan(env={'TOKEN': " in plan and REDACTED in plan and KEY not in plan  # read, as it is written
 
 
+class TestAFileKeptBesideIt:
+    """A file made from what was recorded — a chain's record, an imported chat and its skills — is
+    masked as the store masks what it keeps (`Store.keep_file`)."""
+
+    def test_it_is_masked_as_the_store_masks(self, store, tmp_path):
+        record = {"said": f"config.json holds api_key={KEY}", "n": 3}
+        path = store.keep_file(tmp_path / "kept" / "record.json", record, indent=1)
+        assert json.loads(path.read_text(encoding="utf-8")) == store.masking.value(record)
+        text = store.keep_file(tmp_path / "kept" / "SKILL.md", f"Use api_key={KEY}\n")
+        assert text.read_text(encoding="utf-8") == f"Use api_key={REDACTED}\n"
+        assert KEY not in path.read_text(encoding="utf-8") + text.read_text(encoding="utf-8")
+
+    def test_a_value_masked_already_is_kept_as_it_is(self, store, tmp_path):
+        once = store.masking.of({"told": COMMAND})
+        path = store.keep_file(tmp_path / "record.json", once)
+        assert json.loads(path.read_text(encoding="utf-8")) == once.value
+        assert "-pZq8xK3vN5wLp" in path.read_text(encoding="utf-8")  # masked again, it would fall too
+
+    def test_it_is_written_whole_or_not_at_all(self, store, tmp_path, monkeypatch):
+        path = store.keep_file(tmp_path / "kept" / "record.json", {"links": 1})
+
+        def interrupted(source, target):
+            raise OSError("the disk is full")
+
+        monkeypatch.setattr("tuningfork.store.db.os.replace", interrupted)
+        with pytest.raises(OSError):
+            store.keep_file(path, {"links": 2})
+        assert json.loads(path.read_text(encoding="utf-8")) == {"links": 1}
+        assert [found.name for found in path.parent.iterdir()] == ["record.json"]
+
+
 class TestAnAddressKeptAndShown:
     @pytest.mark.parametrize("url, kept", [
         (f"http://tuningfork:{KEY}@127.0.0.1:8081", f"http://{REDACTED}@127.0.0.1:8081"),

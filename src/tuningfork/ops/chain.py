@@ -17,7 +17,6 @@ still says how far it got; its links' launches are a batch's, under one group fo
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import time
 import uuid
@@ -299,7 +298,7 @@ def execute_chain(
             plan=plan, links=list(links), final_skill=current,
             elapsed=time.monotonic() - started, status=status, started_at=started_at, stopped=stopped,
         )
-        _write(store.home, found)
+        _write(store, found)
         return found
 
     report("running")
@@ -470,13 +469,20 @@ def _last_user(request: dict[str, Any]) -> str:
 # --- the chains kept ---------------------------------------------------------------------------
 
 
-def _write(home: Path, report: ChainReport) -> None:
-    folder = root(home)
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{report.plan.id}.json"
-    staging = path.with_suffix(".json.tmp")
-    staging.write_text(json.dumps(report.to_json(), indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(staging, path)
+#: What a chain's record keeps of each link as it was masked where it was made: what its harness
+#: was told, masked where its check ran (`runner.MASKED_WHERE_MADE`), and its skill-editing calls,
+#: read from the store as it keeps them. Masked again, a command's second password would fall too.
+LINK_MASKED = ("told", "edits")
+
+
+def _write(store: Store, report: ChainReport) -> None:
+    """The chain's record, masked as the store masks what it keeps (`Store.keep_file`), once: the
+    lines each link changed in the skill with the rest. The copy of the skill a link left, the next
+    link's start, is kept as it was left."""
+    data = report.to_json()
+    links = [store.masking.of(link, masked=LINK_MASKED).value for link in data["links"]]
+    store.keep_file(root(store.home) / f"{report.plan.id}.json",
+                    store.masking.of({**data, "links": links}, masked=("links",)), indent=2)
 
 
 def list_chains(store: Store, limit: int = 20) -> list[dict[str, Any]]:

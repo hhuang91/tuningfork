@@ -114,6 +114,15 @@ class Chat:
             "messages": self.messages, "finish": {str(index): reason for index, reason in self.finish.items()},
         }
 
+    @classmethod
+    def from_json(cls, kept: dict[str, Any], *, harness: str | None = None) -> Chat:
+        """The conversation as an import kept it (`to_json`); `harness`, the one that had it, where
+        the person says."""
+        return cls(format=kept["format"], messages=kept["messages"], session_id=kept.get("session_id"),
+                   title=kept.get("title"), model=kept.get("model"), tools=kept.get("tools"),
+                   harness=harness or kept.get("harness"), started_at=kept.get("started_at"),
+                   finish={int(index): reason for index, reason in (kept.get("finish") or {}).items()})
+
 
 def sent(message: dict[str, Any]) -> dict[str, Any]:
     """A message as a later request carries it: without the turn's reasoning."""
@@ -548,6 +557,8 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
     from tuningfork.launches import Assignment
     from tuningfork.specs import hash_tree
 
+    from tuningfork.store.masking import Masked
+
     chat = plan.chat
     run_id = uuid.uuid4().hex
     folder = root(store.home) / run_id
@@ -555,15 +566,18 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
     shown = {skill.name: skill for skill in plan.skills}
     kept: dict[str, Path] = {}
     try:
-        (folder / "chat.json").write_text(json.dumps(chat.to_json(), ensure_ascii=False, indent=1), encoding="utf-8")
+        # Kept beside the run masked, as the store masks the steps it records (`Store.keep_file`):
+        # the conversation, and the SKILL.md of each skill the model read, as the masked chat shows it.
+        conversation = store.masking.of(chat.to_json())
+        store.keep_file(folder / "chat.json", conversation, indent=1)
+        read = {found.name: found.text for found in find_skills(Chat.from_json(conversation.value), plan.harness)}
         skills = folder / "skills"
         for name in plan.names:
             place = skills / _folder_name(name)
             if name in plan.folders:
                 shutil.copytree(plan.folders[name], place, ignore=shutil.ignore_patterns(".git", "__pycache__"))
             else:
-                place.mkdir(parents=True)
-                (place / "SKILL.md").write_text(shown[name].text, encoding="utf-8")
+                store.keep_file(place / "SKILL.md", Masked(read[name]) if name in read else shown[name].text)
             kept[name] = place
         for number, index in enumerate(chat.steps):
             store.record_step(
@@ -587,6 +601,9 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
         "skill_source": ("folder" if study in plan.folders else "extracted") if study else None,
         "skill_dir": str(plan.folders[study]) if study in plan.folders else None,
         "warnings": plan.warnings,
+        # What it kept beside the run, its chat and each SKILL.md extracted from it, was masked as it
+        # was written (`extracted_unmasked`: one kept before is masked as it is read).
+        "masked": True,
     }
     parity: dict[str, Any] = {"imported": imported, "skill_dirs": {name: str(place) for name, place in kept.items()}}
     if study:
@@ -618,23 +635,23 @@ STEP_PARTS = ("done", "first", "live", "past", "later")
 
 
 def chat_of(store: Store, run: Any, harness: str | None = None) -> Chat:
-    """A run's conversation: an imported run's as the import kept it beside the run; any other's
-    as its recording holds it — its last step's request as the model was sent it (where a
-    scenario's run holds the conversation it continued, which its harness never sent) and that
-    step's answer as the harness was given it. `harness`: the one that had it, where the run does
-    not say."""
+    """A run's conversation: an imported run's as the import kept it beside the run, masked (one
+    kept before an import was masked is masked as it is read); any other's as its recording holds
+    it — its last step's request as the model was sent it (where a scenario's run holds the
+    conversation it continued, which its harness never sent) and that step's answer as the
+    harness was given it. `harness`: the one that had it, where the run does not say."""
     from tuningfork.harness import ADAPTERS
     from tuningfork.wire import get_wire
 
     if harness is not None and harness not in ADAPTERS:
         raise OperationError(f"no harness called {harness!r}", hint=f"one of {', '.join(ADAPTERS)}", field="harness")
     path = root(store.home) / run.id / "chat.json"
-    if (run.parity or {}).get("imported") and path.is_file():
+    imported = (run.parity or {}).get("imported")
+    if imported and path.is_file():
         kept = json.loads(path.read_text(encoding="utf-8"))
-        return Chat(format=kept["format"], messages=kept["messages"], session_id=kept.get("session_id"),
-                    title=kept.get("title"), model=kept.get("model"), tools=kept.get("tools"),
-                    harness=harness or kept.get("harness"), started_at=kept.get("started_at"),
-                    finish={int(index): reason for index, reason in (kept.get("finish") or {}).items()})
+        if not imported.get("masked"):
+            kept = store.masking.value(kept)  # kept whole, before an import was masked: masked as it is read
+        return Chat.from_json(kept, harness=harness)
     steps = store.steps(run.id)
     if not steps:
         raise OperationError(f"run {run.id[:8]} has no step: no conversation to start from", field="run")
@@ -1182,8 +1199,11 @@ def prepare_scenario(
     elif studied.kept is not None or studied.found is not None:
         skill_folder = own
         if studied.kept is not None:
-            copy_from = studied.kept.parent
             text = studied.kept.read_text(encoding="utf-8", errors="replace")
+            if extracted_unmasked(run, studied.kept_name):
+                text = store.masking.text(text).value  # taken from its chat before an import was masked
+            else:
+                copy_from = studied.kept.parent
         else:
             text = studied.found.text if studied.found is not None else ""
         written, made_up = _skill_file(text, studied.name, chat)
@@ -1278,6 +1298,20 @@ def named_steps(numbers: list[int]) -> str:
     if numbers == list(range(numbers[0], numbers[-1] + 1)):
         return f"steps {numbers[0]}–{numbers[-1]}"
     return f"steps {', '.join(map(str, numbers[:-1]))} and {numbers[-1]}"
+
+
+def extracted_unmasked(run: Any, skill: str | None) -> bool:
+    """Whether the SKILL.md a run kept of `skill` was extracted from an imported chat before an
+    import's files were masked: what is made of it — a scenario's own skill, a skill added — is
+    masked as it is read, as its chat is (`chat_of`)."""
+    imported = (run.parity or {}).get("imported") or {}
+    if not imported or imported.get("masked") or skill is None:
+        return False
+    listed = imported.get("skills")
+    if not isinstance(listed, list):  # it kept one skill, before an import kept several
+        return imported.get("skill_source") == "extracted"
+    return any(isinstance(entry, dict) and entry.get("name") == skill and entry.get("source") == "extracted"
+               for entry in listed)
 
 
 def imported_source(run: Any, skill: str) -> Path | None:
