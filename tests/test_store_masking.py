@@ -383,6 +383,23 @@ class TestAFileKeptBesideIt:
         assert [found.name for found in path.parent.iterdir()] == ["record.json"]
 
 
+class TestALinedText:
+    @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r", " "])
+    def test_each_line_keeps_its_number_where_a_mask_took_several(self, store, newline):
+        """A private key's lines masked as one, and every line after it kept at its number, however the
+        file breaks its lines (`Masking.text`'s `lines`): found in review, a carriage return alone, or
+        U+2028, still moved them."""
+        body = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW"
+        lines = ["# Deploy", "-----BEGIN OPENSSH PRIVATE KEY-----", body, "QyNTUxOQAAACDx2Jx7dGgHJ1s0kpk8q9fG1hX",
+                 "-----END OPENSSH PRIVATE KEY-----", "Then run the tests."]
+        text = newline.join(lines) + newline
+        masked = store.masking.text(text, lines=True).value
+        assert body not in masked and REDACTED in masked
+        assert len(masked.splitlines()) == len(text.splitlines())
+        assert masked.splitlines()[-1] == "Then run the tests."
+        assert len(store.masking.text(text).value.splitlines()) < len(lines)  # without, they move
+
+
 class TestAnAddressKeptAndShown:
     @pytest.mark.parametrize("url, kept", [
         (f"http://tuningfork:{KEY}@127.0.0.1:8081", f"http://{REDACTED}@127.0.0.1:8081"),

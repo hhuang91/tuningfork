@@ -710,8 +710,8 @@ def chat_of(store: Store, run: Any, harness: str | None = None) -> Chat:
 #: The chats of imports kept whole, before an import was masked, as each was last read masked
 #: (`_read_masked`): by its file, the file's size and time, and the patterns. A scenario's form
 #: asks at every change, and found in review, masking a chat of 5 MB took more than a second.
-_MASKED_CHATS: dict[tuple[str, int, int, str], str] = {}
-#: How much of them is kept, at most: the chats read last.
+_MASKED_CHATS: dict[tuple[str, int, int, str], bytes] = {}
+#: How many bytes of them are kept, at most: the chats read last.
 _MASKED_HELD = 64 * 1024 * 1024
 _MASKED_LOCK = threading.Lock()
 
@@ -722,15 +722,15 @@ def _read_masked(store: Store, path: Path) -> dict[str, Any]:
     stat = path.stat()
     key = (str(path), stat.st_size, stat.st_mtime_ns, store.masking.digest)
     with _MASKED_LOCK:
-        text = _MASKED_CHATS.pop(key, None)
-    if text is None:
-        text = json.dumps(kept_chat(store, Chat.from_json(json.loads(path.read_text(encoding="utf-8")))).value,
-                          ensure_ascii=False)
+        data = _MASKED_CHATS.pop(key, None)
+    if data is None:
+        chat = Chat.from_json(json.loads(path.read_text(encoding="utf-8")))
+        data = json.dumps(kept_chat(store, chat).value, ensure_ascii=False).encode("utf-8")
     with _MASKED_LOCK:
-        _MASKED_CHATS[key] = text
+        _MASKED_CHATS[key] = data
         while len(_MASKED_CHATS) > 1 and sum(len(held) for held in _MASKED_CHATS.values()) > _MASKED_HELD:
             del _MASKED_CHATS[next(iter(_MASKED_CHATS))]
-    return json.loads(text)
+    return json.loads(data)
 
 
 def _guessed_harness(chat: Chat, wire: str) -> str:

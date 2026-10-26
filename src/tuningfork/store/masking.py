@@ -129,12 +129,14 @@ def _applied(
     text: str, spans: list[tuple[int, int]], start: int, end: int, *, lines: bool = False,
 ) -> tuple[Masked, int, int]:
     """`text` from `start` to `end`, each of `spans` in it a mask — none of which an edge falls inside;
-    `lines`, each mask followed by the line breaks it took."""
+    `lines`, each mask followed by as many line breaks as it took, each as a line is split
+    (`str.splitlines`: a carriage return alone, U+2028 and the rest too)."""
     pieces, taken, at, made = [], [], start, 0
     for span_start, span_end in spans:
         if span_end <= start or span_start >= end:
             continue
-        pieces += [text[at:span_start], REDACTED + ("\n" * text.count("\n", span_start, span_end) if lines else "")]
+        breaks = len(f"x{text[span_start:span_end]}x".splitlines()) - 1 if lines else 0
+        pieces += [text[at:span_start], REDACTED + "\n" * breaks]
         if _FOUND.fullmatch(text, span_start, span_end):
             taken.append(text[span_start:span_end])
         at, made = span_end, made + 1
