@@ -405,6 +405,25 @@ class TestWhatItKeepsBesideTheRun:
         for place in ("skill/tally-report/SKILL.md", "added/SKILL.md"):
             assert "Check the totals twice." in made[place] and CHAT_KEY not in made[place], place
 
+    def test_a_copy_of_one_kept_before_asked_for_is_masked_as_it_is_read(self, store):
+        """A copy of what the run had, asked for (`copy_skill`, which the form offers where a folder
+        changed since the run), is the SKILL.md a scenario that finds no folder takes: masked as it is
+        read, and said to be the copy the run kept. The kept file is as it was."""
+        from tuningfork.ops import scenarios
+
+        run = imported_before(store, chat_with_keys())
+        kept = store.home / "imports" / run.id / "skills" / "tally-report" / "SKILL.md"
+        was = kept.read_text(encoding="utf-8")
+        made = {}
+        for name, copy in (("found-none", False), ("asked-for", True)):
+            plan = imports.prepare_scenario(store, run.id, name, copy_skill=copy)
+            assert any(f"the copy run {run.id[:8]} kept" in line for line in plan.notes + plan.warnings), name
+            imports.make_scenario(store, plan)
+            made[copy] = (scenarios.folder(store.home, name) / "skill" / "tally-report" / "SKILL.md").read_text(
+                encoding="utf-8")
+        assert made[True] == made[False] and CHAT_KEY not in made[True]
+        assert kept.read_text(encoding="utf-8") == was and CHAT_KEY in was
+
     def test_one_kept_before_is_masked_once_for_each_version_of_its_chat(self, store, monkeypatch):
         """A scenario's form asks at every change: found in review, each read masked a chat of 5 MB
         again, in more than a second."""

@@ -1,13 +1,16 @@
 """The canary sweep: a key planted in each input of the loop, run as a person runs it — batches
 through the proxy with the fake agent, a scenario's among them, a chain told what its check
-printed whose link changes its skill, jobs, a held call edited and asked about, a label queued,
-an import, a server's errors, a scenario made of a run and of the chat, the chat's skill added —
-and every row and blob the recordings folder's store holds, and every file beside it, searched
-for each key's start and end.
+printed whose first link changes the skill its second is given, jobs, a held call edited and
+asked about, a label queued, an import, a server's errors, a scenario made of a run, of the chat
+and of the chain's second link, the chat's skill added and the link's — and every row and blob
+the recordings folder's store holds, and every file beside it, searched for each key's start and
+end.
 
 Only what a run is given, kept as it was given by design, may hold one: a launch's eval and
-variant, and a scenario's context, which a fork runs again as they were written; and the files
-kept as they were (`KEPT_AS_IT_WAS`): a launch's own folders, the workspace's snapshots.
+variant, and a scenario's context, which a fork runs again as they were written; the files kept
+as they were (`KEPT_AS_IT_WAS`): a launch's own folders, the workspace's snapshots; and a copy of
+the skill a launched run was given (`GIVEN_COPIES`), a chain's second link's holding what its
+first wrote.
 """
 
 from __future__ import annotations
@@ -192,13 +195,19 @@ KEPT_AS_IT_WAS = {
 #: (`launches.eval`, kept as given): its check, and the output and expectations it names. The rest
 #: of the spec is searched.
 GIVEN_TO_A_SCENARIO = ("check", "expected_output", "expectations")
+#: What the sweep copies of the skill a launched run was given, kept as it was given, as the run's
+#: own copy is (`batches`): a scenario's copy of what the run had (`copy_skill`), and a skill added
+#: from the run — of a chain's second link, its skill holding the line its first wrote (`NOTED`).
+GIVEN_COPIES = ("scenarios/from-link/skill", "skills/from-link")
 
 
 def kept_as_it_was(relative: Path) -> bool:
     top, *rest = relative.parts
     if top.startswith("tuningfork.db"):  # its -wal and -shm with it
         top = "tuningfork.db"
-    return top in KEPT_AS_IT_WAS or (top == "scenarios" and len(rest) > 1 and f"scenarios/*/{rest[1]}" in KEPT_AS_IT_WAS)
+    return (top in KEPT_AS_IT_WAS
+            or (top == "scenarios" and len(rest) > 1 and f"scenarios/*/{rest[1]}" in KEPT_AS_IT_WAS)
+            or any(relative.as_posix().startswith(f"{copy}/") for copy in GIVEN_COPIES))
 
 
 def searched(home: Path, path: Path) -> bytes:
@@ -311,8 +320,10 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
             # A batch run through the proxy: the ordinary recording, and its check; and a scenario's.
             (run_id,) = job("batch", {"spec": str(spec.path), "n": 1, "harness": "fake", "model": "m"})["links"]["runs"]
             job("batch", {"spec": str(scenario.path), "n": 1, "harness": "fake", "model": "m"})
-            # A chain whose harness is told what the check printed, its link changing the skill.
-            job("chain", {"spec": str(chained.path), "n": 1, "harness": "fake", "model": "m", "tell": True})
+            # A chain whose harness is told what the check printed: its first link changes the skill
+            # its second is given.
+            chain = job("chain", {"spec": str(chained.path), "n": 2, "harness": "fake", "model": "m", "tell": True})
+            linked = chain["result"]["links"][1]["run_id"]
             # Jobs on it: a resample, an A/B of a wording, a fork to the end, the check tried and run along it.
             job("resample", {"run": run_id, "step": "1", "n": 2})
             job("ab", {"run": run_id, "step": "1", "n": 1, "exploratory": True, "variant_name": "canary",
@@ -368,6 +379,9 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
         imports.make_scenario(store, imports.prepare_scenario(store, imported.run_id, "from-import"))
         imports.make_scenario(store, imports.prepare_scenario(store, run_id, "from-run"))
         addskill.execute_add(store, addskill.prepare_from_run(store, imported.run_id, name="from-import"))
+        # And of the chain's second link: a copy of what it had, and its skill added.
+        imports.make_scenario(store, imports.prepare_scenario(store, linked, "from-link", copy_skill=True))
+        addskill.execute_add(store, addskill.prepare_from_run(store, linked, name="from-link"))
     finally:
         store.close()
         asyncio.run(upstream.aclose())
@@ -376,8 +390,14 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
 
 
 def test_no_key_planted_in_a_run_is_kept_by_the_store(tmp_path, mock_server, monkeypatch):
-    found = swept(tmp_path, mock_server, monkeypatch, canaries())
+    keys = canaries()
+    found = swept(tmp_path, mock_server, monkeypatch, keys)
     assert found == [], "\n".join(found)
+    # A copy of the skill a launched run was given holds it as the run was given it: the chain's
+    # second link's, the line its first wrote in it. Found in review: the sweep made no such copy.
+    for copy in GIVEN_COPIES:
+        held = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "home" / copy).rglob("*") if path.is_file())
+        assert keys[NOTED] in held, copy
 
 
 def test_every_key_planted_reaches_the_store_where_nothing_masks_it(tmp_path, mock_server, monkeypatch):

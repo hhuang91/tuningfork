@@ -3,7 +3,8 @@
 A scenario is `<home>/scenarios/<name>/evals.json` — the same evals.json convention as any
 spec — with its input files in `inputs/` beside it. Its skill folder is a reference to a
 folder elsewhere, never copied in — but for one made from a run whose skill has no folder of
-its own to be found (`ops.imports.prepare_scenario`), and a task file's folder uploaded with
+its own to be found, or whose person asks for a copy of what the run had
+(`ops.imports.prepare_scenario`, `copy_skill`), and a task file's folder uploaded with
 its skill inside (`prepare_upload`), which keep a copy in `skill/`. A task file kept as a
 scenario brings what its check reads from its folder (`$TUNINGFORK_SPEC_DIR`), beside its spec.
 Everything a scenario can be told to write stays inside

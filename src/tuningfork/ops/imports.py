@@ -651,7 +651,7 @@ def execute_import(store: Store, plan: ImportPlan) -> ImportResult:
 # --- a scenario from a run -------------------------------------------------------------------------
 
 #: Where a scenario keeps a skill of its own, beside its spec — the copy a run kept, or the text
-#: its model read — when no folder of the skill's own was found.
+#: its model read — when no folder of the skill's own was found, or a copy was asked for.
 SKILL_FOLDER = "skill"
 #: What a scenario decides itself, never taken from the task a launched run was of.
 OWN_OPTIONS = ("check", "context", "stop_at_next_skill", "held_out")
@@ -831,10 +831,11 @@ class ScenarioPlan:
     #: where the scenario starts, from its snapshots.
     files: dict[str, bytes] = field(default_factory=dict)
     #: A folder copied in as the scenario's own skill (`skill/<name>/`), where no folder of the
-    #: skill's own was found: the copy the run kept.
+    #: skill's own was found or a copy was asked for (`copy_skill`): the copy the run kept.
     copy_from: Path | None = None
     #: The SKILL.md written into the scenario's own skill folder: the text the model read, where
-    #: the run kept no copy, or a copy's, given the frontmatter its harness had not shown.
+    #: the run kept no copy; the copy an import kept before imports were masked, masked as text;
+    #: or a copy's, given the frontmatter its harness had not shown.
     extract: str | None = None
     #: The harness that had the conversation: the one its runs are launched with.
     harness: str | None = None
@@ -1285,7 +1286,7 @@ def prepare_scenario(
         written, made_up = _skill_file(text, studied.name, chat)
         if made_up or copy_from is None:
             extract = written
-        what = (f"the copy run {run.id[:8]} kept" if copy_from is not None
+        what = (f"the copy run {run.id[:8]} kept" if studied.kept is not None
                 else "the SKILL.md the model read — the rest of its folder, scripts and references, the chat never showed")
         if copy_skill:
             notes.append(f"the scenario keeps {what}, in its own folder ({own}), where an approved edit is written")

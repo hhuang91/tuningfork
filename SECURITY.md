@@ -31,9 +31,10 @@ does to keep that local:
   secret's name (`api_key=…`) where it reads as a key rather than as code. So are the files
   tuningfork writes beside them from what was recorded — a chain's record, an imported chat and
   the skills taken from it — and what a scenario or a skill added takes from a conversation. A
-  run's workspace and its harness's own files are kept as they were, and so is what it was given:
-  its skill, and its task's text and check, which a scenario made of it copies. What a task's
-  check prints is redacted as it ends, before it is kept or told to a harness.
+  run's workspace and its harness's own files are kept as they were, and so is what it was given —
+  its skill, and its task's text and check — which a scenario made of it, or a skill added from
+  it, copies as it was. What a task's check prints is redacted as it ends, before it is kept or
+  told to a harness.
   Wherever it stands there, the value of a variable the check gets whose name is a secret's is
   masked too, and so is each of tuningfork's own keys, when it is eight characters or more,
   without a space or a quote. That is a net, not a promise. Recordings hold what your harness

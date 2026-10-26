@@ -718,13 +718,15 @@ skill the model read, as the masked chat shows it; the import names the patterns
 (`parity.imported.masked`). The chat of an import made before that is masked as it is read
 (`imports.chat_of`), and so is its SKILL.md extracted, wherever a scenario or a skill added is
 made of it (`imports.extracted_unmasked`). What a run is given is kept as it was given, since a fork runs
-it again — a launch's eval and variant, a scenario's context (`Store.put_given`) — and so is an
-experiment's settings, the test it declared. Masking is not idempotent, and a fork matches a call
-masked once against a step stored masked once; `tests/test_store_masking.py` fails on code
-elsewhere that masks or writes a blob itself, and `tests/test_canaries.py` plants a key in the
-loop's inputs and searches every row, blob and file for it, but the files kept as they were
-(`KEPT_AS_IT_WAS`: a launch's folders, the workspace's snapshots, a scenario's inputs, the
-wordings tried) and what a scenario's spec takes from its run's task as written
+it again — a launch's eval and variant, a scenario's context (`Store.put_given`) — and so is what a
+scenario or a skill added copies of it, the skill a launched run was given (a chain's link's, which
+the link before wrote, too), and an experiment's settings, the test it declared. Masking is not
+idempotent, and a fork matches a call masked once against a step stored masked once;
+`tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
+`tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file
+for it, but the files kept as they were (`KEPT_AS_IT_WAS`: a launch's folders, the workspace's
+snapshots, a scenario's inputs, the wordings tried), the copies of a launched run's skill
+(`GIVEN_COPIES`), and what a scenario's spec takes from its run's task as written
 (`GIVEN_TO_A_SCENARIO`). Never report a rate without its interval — see `analysis/stats.py`.
 
 Server- and harness-specific knowledge lives behind the `backends/`, `harness/` and `wire/`
