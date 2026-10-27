@@ -99,8 +99,9 @@ token streams, launches and their folders), then what nothing left refers to —
 blobs, snapshot objects, the folder a batch or a set of forks was laid out in with the skill
 copy its runs were given (`trash._remove_groups`) — with a two-minute grace for a recording in
 flight, swept once it has passed (`trash.sweep_if_due`: a running proxy looks every half
-minute, and a later deletion sweeps everything). A folder holding a path a skill added, a
-scenario or a remaining launch's task file names stays (`trash._named`). A launch's folder
+minute, and a later deletion sweeps everything). A path a skill added, a scenario or a
+remaining launch's task file names stays where it is, the rest of its folder going
+(`trash._named`, `_clear`), and a batch's folder holding one stays. A launch's folder
 outside the recordings folder goes only where tuningfork marked its group as made for this
 recordings folder (`runner.GROUP_MARK`, `made_for`, `make_group`: 0700): a copy of the
 recordings folder, whose launches name the original's folders, removes none of them, nor its

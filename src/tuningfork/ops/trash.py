@@ -11,8 +11,9 @@ a batch or of a set of forks, with the skill copy its runs were given, once none
 left and nothing else names it. A launch's folder outside the recordings folder goes only where
 tuningfork marked its group as made for this recordings folder (`runner.GROUP_MARK`): a copy of
 the recordings folder, whose launches name the original's folders, removes none of them, nor its
-own copies of them. A folder holding a path a person keeps a name of (`_named`) stays. What a
-deleted row held is overwritten, and the database's log emptied once no other process reads it
+own copies of them. A path in a folder it removes that something a person keeps names
+(`_named`) stays where it is, and the rest goes (`_clear`). What a deleted row held is
+overwritten, and the database's log emptied once no other process reads it
 (`Store.checkpoint`). What was written in the last two minutes, which a recording in flight may
 still need, is swept once they have passed (`sweep_if_due`: a running proxy, or the next
 deletion).
@@ -35,6 +36,7 @@ import json
 import os
 import shutil
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
@@ -269,14 +271,25 @@ def _goes(store: Store, plan: Purge, excluding: Sequence[str] = ()) -> dict[str,
 
 def _outside(store: Store, plan: Purge) -> list[str]:
     """That deleting `plan` reaches outside the recordings folder, and where: the folders
-    tuningfork made there for its launches, marked as made for this recordings folder."""
+    tuningfork made there for its launches, marked as made for this recordings folder. And what
+    stays in the folders it removes: a path something a person keeps names (`_named`)."""
+    from tuningfork.ops.imports import root as imports
+
+    if not plan.launches and not plan.runs:
+        return []
     home = store.home.resolve()
-    named = _named(store, home) if plan.launches else []
-    groups = sorted({str(folder.parent) for workspace, harness_home in plan.launches.values()
-                     if (folder := _launch_folder(home, workspace, harness_home, named)) is not None
-                     and not _inside(home, folder, 1)})
-    return [f"the folders tuningfork made for its launches outside the recordings folder go too, in "
-            f"{', '.join(groups)}"] if groups else []
+    launched = [folder for workspace, harness_home in plan.launches.values()
+                if (folder := _launch_folder(home, workspace, harness_home)) is not None]
+    groups = sorted({str(folder.parent) for folder in launched if not _inside(home, folder, 1)})
+    notes = [f"the folders tuningfork made for its launches outside the recordings folder go too, in "
+             f"{', '.join(groups)}"] if groups else []
+    named = _named(store, home)
+    folders = launched + [imports(home) / run for run in plan.runs]
+    kept = sorted({str(path) for folder in folders for path in named if path == folder or folder in path.parents})
+    if kept:
+        notes.append(f"what a skill added, a scenario or a task file names in them stays, and the rest goes: "
+                     f"{', '.join(kept)}")
+    return notes
 
 
 def _refinement_goes(store: Store, refinement: Any) -> dict[str, Any]:
@@ -338,7 +351,7 @@ def purge(store: Store, kind: str, reference: str) -> Removal:
         removal.items.append({"kind": kind, "id": found.id, "label": found.skill})
         removal.cited_by = _goes(store, plan, [found.id])["cited_by"]
         _remove(store, plan, removal)
-        _remove_refinement(found, made.variants, removal)
+        _remove_refinement(store, found, made.variants, removal)
         _sweep(store, removal)
         return removal
     if kind == "run":
@@ -393,7 +406,7 @@ def empty(store: Store) -> Removal:
         removal.cited_by = _goes(store, plan, list(made))["cited_by"]
         _remove(store, plan, removal)
     for refinement in refinements:
-        _remove_refinement(refinement, made[refinement.id].variants, removal)
+        _remove_refinement(store, refinement, made[refinement.id].variants, removal)
     for job in found["jobs"]:
         store.purge_job(job.id)
     removal.add({"jobs": len(found["jobs"])})
@@ -455,9 +468,9 @@ def _remove(store: Store, plan: Purge, removal: Removal) -> None:
             snapshots.drop(launch_id)
         except SnapshotError:
             pass  # a store git cannot read keeps what it holds; the rows are gone either way
-        folder = _launch_folder(home, workspace, harness_home, named)
+        folder = _launch_folder(home, workspace, harness_home)
         if folder is not None:
-            shutil.rmtree(folder, ignore_errors=True)
+            _clear(folder, named)
             removal.folders += 1
     # An imported run's conversation and skill, kept beside it (`ops.imports`).
     from tuningfork.ops.imports import root as imports
@@ -465,9 +478,34 @@ def _remove(store: Store, plan: Purge, removal: Removal) -> None:
     for run_id in plan.runs:
         kept = imports(home) / run_id
         if kept.is_dir():
-            shutil.rmtree(kept, ignore_errors=True)
+            _clear(kept, named)
             removal.folders += 1
     _remove_groups(store, home, groups, removal, named)
+
+
+def _clear(folder: Path, named: Sequence[Path]) -> None:
+    """Remove `folder`, but any path `named` inside it, and the folders leading to one: what a
+    person keeps a name of stays where it is, and the rest of the run goes. One named itself stays
+    whole. What cannot be read is left."""
+    if folder in named:
+        return
+    kept = [path for path in named if folder in path.parents]
+    try:
+        if not kept:
+            shutil.rmtree(folder, ignore_errors=True)
+            return
+        for entry in folder.iterdir():
+            if entry in kept:
+                continue
+            if entry.is_dir() and not entry.is_symlink():
+                if any(entry in path.parents for path in kept):
+                    _clear(entry, kept)
+                else:
+                    shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _groups(store: Store, plan: Purge) -> dict[Path, bool]:
@@ -544,14 +582,19 @@ def _named(store: Store, home: Path) -> list[Path]:
     from tuningfork.paths import resolve_path
 
     found = [each.path.resolve() for each in added(home) if each.kind == "folder"]
-    specs = [*scenarios(home).glob(f"*/{SPEC}"), *scenarios(home).glob(f".trash/*/{SPEC}"),
-             *(Path(path) for path in store.spec_paths())]
-    for spec in specs:
+    # Each task file, with the folder its skill folder is read against: a scenario in the trash
+    # comes back to its own name, which a relative skill folder was written from.
+    specs = [*((spec, spec.parent) for spec in scenarios(home).glob(f"*/{SPEC}")),
+             *((entry["path"] / SPEC, scenarios(home) / entry["name"]) for entry in _trashed_scenarios(home)),
+             *((Path(path), Path(path).parent) for path in store.spec_paths())]
+    for spec, base in specs:
         try:
+            if not spec.is_file():  # a regular file only: never a pipe, which would hold every deletion
+                continue
             skill = json.loads(spec.read_text(encoding="utf-8")).get("tuningfork", {}).get("skill_dir")
             if isinstance(skill, str) and skill:
-                found.append(resolve_path(skill, spec.parent).path.resolve())
-        except (OSError, ValueError, AttributeError, OperationError):
+                found.append(resolve_path(skill, base).path.resolve())
+        except Exception:  # noqa: BLE001 - a task file it cannot read names nothing; it stops no deletion
             continue
     return found
 
@@ -561,22 +604,21 @@ def _holds(folder: Path, named: Sequence[Path]) -> bool:
     return any(path == folder or folder in path.parents for path in named)
 
 
-def _remove_refinement(refinement: Any, variants: Sequence[Path], removal: Removal) -> None:
+def _remove_refinement(store: Store, refinement: Any, variants: Sequence[Path], removal: Removal) -> None:
     """A refinement's own files, once what it made is gone from the store: its proposals'
-    saved texts, then its folder."""
+    saved texts, then its folder, but a path in it something a person keeps names."""
     for path in variants:
         path.unlink(missing_ok=True)
-    shutil.rmtree(refinement.folder, ignore_errors=True)
+    _clear(Path(refinement.folder).resolve(), _named(store, store.home.resolve()))
     removal.add({"refinements": 1, "variants": len(variants)})
 
 
-def _launch_folder(home: Path, workspace: str | None, harness_home: str | None,
-                   named: Sequence[Path] = ()) -> Path | None:
+def _launch_folder(home: Path, workspace: str | None, harness_home: str | None) -> Path | None:
     """The folder a launch ran in — its workspace's and harness home's parent — if tuningfork
     made it for this recordings folder: inside it, two levels down or more, or numbered in a folder
     marked as made for it (`runner.made_for`), wherever that is. Anything else is left alone — a
-    copy of the recordings folder's launches name the original's folders — and so is one holding
-    a path something a person keeps names (`_named`), and what cannot be read."""
+    copy of the recordings folder's launches name the original's folders — and so is what cannot
+    be read."""
     from tuningfork.runner import made_for
 
     if not workspace:
@@ -585,8 +627,8 @@ def _launch_folder(home: Path, workspace: str | None, harness_home: str | None,
     if harness_home and Path(harness_home).resolve().parent != folder:
         return None
     try:
-        if (folder.is_dir() and not _holds(folder, named)
-                and (_inside(home, folder, 2) or (folder.name.isdigit() and made_for(folder.parent, home)))):
+        if folder.is_dir() and (_inside(home, folder, 2)
+                                or (folder.name.isdigit() and made_for(folder.parent, home))):
             return folder
     except OSError:
         pass
@@ -644,7 +686,7 @@ def _read_due(path: Path) -> tuple[float, bool, str] | None:
 
 def _put_due(path: Path, when: float, only_the_log: bool) -> None:
     """Write a mark whole, its time exactly as it is: rounded, a time due now read as the future."""
-    temporary = path.with_name(f"{SWEEP_DUE}.{os.getpid()}.tmp")
+    temporary = path.with_name(f"{SWEEP_DUE}.{os.getpid()}.{uuid.uuid4().hex}.tmp")  # threads of one process too
     try:
         temporary.write_text(f"{when!r}\n" + (f"{LOG_ONLY}\n" if only_the_log else ""), encoding="utf-8")
         os.replace(temporary, path)

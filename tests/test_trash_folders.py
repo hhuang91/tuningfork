@@ -367,6 +367,39 @@ class TestSaidBeforeAndAfter:
         assert (group / "0").is_dir()
 
 
+def test_a_folder_named_itself_stays_whole_and_one_it_cannot_list_is_left(tmp_path, monkeypatch):
+    folder = tmp_path / "run"
+    (folder / "workspace").mkdir(parents=True)
+    trash._clear(folder, [folder])
+    assert (folder / "workspace").is_dir()
+
+    def refused(self):
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr(Path, "iterdir", refused)
+    trash._clear(folder, [folder / "workspace" / "kept"])  # raises nothing
+    assert (folder / "workspace").is_dir()
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="named pipes are POSIX")
+def test_a_task_file_that_is_a_pipe_holds_no_deletion(stack):
+    # A pipe at a task file's path, opened, waits for a writer that never comes.
+    import threading
+
+    store = stack.store
+    (run,) = batch(stack, store.home / "batches", n=1)
+    pipe = stack.tmp / "piped.json"
+    os.mkfifo(pipe)
+    with store._lock:
+        store._conn.execute("UPDATE launches SET spec_path = ?", (str(pipe),))
+        store._conn.commit()
+    trash.trash(store, "run", run)
+    previewed = threading.Thread(target=trash.preview, args=(store, "run", run), daemon=True)
+    previewed.start()
+    previewed.join(10)
+    assert not previewed.is_alive()
+
+
 def test_a_launch_folder_it_cannot_read_is_left(tmp_path, monkeypatch):
     # Python 3.12 and 3.13 raise from `is_dir` where a folder cannot be searched; 3.14 says False.
     home = tmp_path / "home"
@@ -469,14 +502,19 @@ class TestTheLogAndTheMark:
 
 class TestNamedElsewhere:
     def test_a_skill_copy_a_scenario_in_the_trash_names_stays(self, stack):
+        # Its skill folder written relative to its own folder, where it comes back (found in
+        # review: read against the trash's, the copy went, and the scenario came back without it).
+        from tuningfork.ops.scenarios import delete_scenario
+
         store = stack.store
         (run,) = batch(stack, store.home / "batches", n=1)
         copy = group_of(store, run) / "skill-snapshot" / "tally-report"
-        trashed = store.home / "scenarios" / ".trash" / "named-1"
-        trashed.mkdir(parents=True)
-        (trashed / "evals.json").write_text(json.dumps({
-            "skill_name": "tally-report", "tuningfork": {"skill_dir": os.path.relpath(copy, trashed)}, "evals": [],
+        scenario = store.home / "scenarios" / "named"
+        scenario.mkdir(parents=True)
+        (scenario / "evals.json").write_text(json.dumps({
+            "skill_name": "tally-report", "tuningfork": {"skill_dir": os.path.relpath(copy, scenario)}, "evals": [],
         }), encoding="utf-8")
+        delete_scenario(store.home, "named")
 
         deleted(store, run)
 
@@ -497,19 +535,78 @@ class TestNamedElsewhere:
 
         assert (copy / "SKILL.md").is_file()
 
-    def test_a_runs_own_folder_holding_a_skill_added_from_it_stays(self, stack):
+    def test_a_skill_added_from_a_runs_own_folder_stays_and_the_rest_of_it_goes(self, stack):
+        # Found in review: the whole folder stayed, the run's conversation and reply with it.
         from tuningfork.ops import addskill
 
         store = stack.store
         (run,) = batch(stack, stack.tmp / "elsewhere", n=1)
-        kept = group_of(store, run) / "0" / "kept-skill"
-        kept.mkdir()
+        folder = group_of(store, run) / "0"
+        kept = folder / "kept" / "kept-skill"
+        kept.mkdir(parents=True)
         (kept / "SKILL.md").write_text("---\nname: kept-skill\ndescription: a person's own\n---\n", encoding="utf-8")
+        (folder / "kept" / "beside.txt").write_text("not named\n", encoding="utf-8")
+        addskill.execute_add(store, addskill.prepare_folder(store, kept))
+        trash.trash(store, "run", run)
+        assert any(str(kept) in note for note in trash.preview(store, "run", run)["notes"])
+
+        trash.purge(store, "run", run)
+
+        assert (kept / "SKILL.md").is_file()
+        assert sorted(path.relative_to(folder).as_posix() for path in folder.rglob("*")) == [
+            "kept", "kept/kept-skill", "kept/kept-skill/SKILL.md",
+        ]
+
+    def test_a_skill_added_from_an_imports_folder_stays_and_the_rest_of_it_goes(self, stack):
+        from tuningfork.ops import addskill
+        from tuningfork.ops.imports import root as imports
+
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        folder = imports(store.home) / run
+        kept = folder / "skills" / "kept-skill"
+        kept.mkdir(parents=True)
+        (kept / "SKILL.md").write_text("---\nname: kept-skill\ndescription: a person's own\n---\n", encoding="utf-8")
+        (folder / "chat.json").write_text("[]\n", encoding="utf-8")
         addskill.execute_add(store, addskill.prepare_folder(store, kept))
 
         deleted(store, run)
 
-        assert (kept / "SKILL.md").is_file()
+        assert (kept / "SKILL.md").is_file() and not (folder / "chat.json").exists()
+
+    def test_a_skill_added_from_a_refinements_folder_stays_and_the_rest_of_it_goes(self, stack):
+        from tuningfork.ops import addskill, refine
+        from tests.test_approve import RULES
+
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        made = refine.create(store, run, "write_file", target_rules=RULES)
+        kept = made.folder / "kept-skill"
+        kept.mkdir()
+        (kept / "SKILL.md").write_text("---\nname: kept-skill\ndescription: a person's own\n---\n", encoding="utf-8")
+        addskill.execute_add(store, addskill.prepare_folder(store, kept))
+        trash.trash(store, "refinement", made.id)
+
+        trash.purge(store, "refinement", made.id)
+
+        assert (kept / "SKILL.md").is_file() and not (made.folder / "refinement.json").exists()
+
+    def test_a_task_file_it_cannot_read_stops_no_deletion(self, stack):
+        # Found in review: JSON nested too deep raised past every reader, and the trash could
+        # neither list nor delete anything with a launch.
+        store = stack.store
+        (first,) = batch(stack, store.home / "batches", n=1)
+        other = stack.tmp / "other.json"
+        other.write_text(stack.spec.path.read_text(encoding="utf-8"), encoding="utf-8")
+        execute_batch(store, prepare_batch(store, other, base_url=f"{stack.url}/v1",
+                                           workdir=store.home / "batches", model="m", harness="fake", n=1))
+        other.write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+
+        trash.trash(store, "run", first)
+        trash.preview(store, "run", first)
+        trash.purge(store, "run", first)
+
+        assert store.get_run(first) is None
 
     def test_a_chains_first_link_never_takes_a_folder_that_was_there(self, stack):
         store = stack.store

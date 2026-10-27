@@ -20,10 +20,11 @@ does to keep that local:
   drive under WSL may not). `serve` and `ui` say when a recordings folder made before can be opened
   by others, and how to make it yours alone; tuningfork never changes it by itself.
 - **Deleting from the trash is for good.** A run goes with what is tied to it, the folders
-  tuningfork made for its launches, whatever they hold, and what nothing left refers to: its
+  tuningfork made for its launches, whatever else they hold, and what nothing left refers to: its
   messages, blobs and workspace snapshots, and its batch's folder with the skill copy the batch
-  was given, once none of the batch's runs is left, nothing else is in it, and no skill added,
-  scenario or task file names the copy. Outside the recordings folder, a folder goes only where
+  was given, once none of the batch's runs is left and nothing else is in it. A path in any of
+  them that a skill added, a scenario, or the task file of a run still recorded names stays where
+  it is, and the deletion's preview says so. Outside the recordings folder, a folder goes only where
   tuningfork marked it as made for this recordings folder, which earlier versions did not. What its
   database rows held is overwritten. What was written in the last two minutes, which a recording
   in flight may still need, goes once those have passed, while a proxy serves the recordings
