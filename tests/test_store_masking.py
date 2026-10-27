@@ -475,6 +475,11 @@ class TestWhatIsShown:
         assert "Xy7pQ2" not in was + now and now.startswith("Call it: http -a admin:")
         short = "Call it: curl -u admin:a1b https://api.test\n"  # too short to be found by its value
         assert "a1b" not in "".join(store.masking.alike([short, short.replace("curl -u admin:", "http -a admin:")]))
+        # Carried through the characters a rewritten line shares, a short value lands as a word of its own,
+        # never inside another (found in review: `port 5<redacted>`, beside `port 51234` read alone).
+        numbered = "Run: mysql -p1234 tally\n"
+        assert store.masking.alike([numbered, "Run: port 1234 tally\n"])[1] == f"Run: port {REDACTED} tally\n"
+        assert store.masking.alike([numbered, "Run: port 51234 tally\n"])[1] == "Run: port 51234 tally\n"
 
     def test_a_short_value_on_a_changed_line_is_masked_where_the_other_holds_it_changed(self, store):
         """Found in review: a four-character password whose `mysql -p` was rewritten, among eighty
@@ -500,14 +505,18 @@ class TestWhatIsShown:
         assert REDACTED in store.masking.shown(short).value
         assert store.masking.alike([short, short.replace("check it", "build for x86")])[1].endswith("Then build for x86.\n")
 
-    def test_a_value_is_found_as_a_word_of_its_own_and_never_as_digits_alone(self, store):
+    def test_a_value_is_found_as_a_word_of_its_own_and_never_without_a_letter(self, store):
         """Found in review: `1234`, a password, was masked in `51234`, `12345` and `run_1234.csv` on
         the other side's changed lines — and, beside the file shown alone, said which number was the
-        key. Digits alone stand for any number: never found by their value. Any other value is found
-        only as a word of its own."""
+        key; so were `####` in a heading and `1,234` in a count. A value without a letter stands for
+        any number or rule: never found by its value. Any other is found only as a word of its own."""
         numbers = "Load: mysql -p1234 tally\nWrite out.csv\n"
         written = "Write run_1234.csv, rows 51234 and 12345, then 1234\n"
         assert store.masking.alike([numbers, numbers.replace("Write out.csv\n", written)])[1].endswith(written)
+        for password, written in (("####", "#### Steps\n"), ("1,234", "Rows: 1,234 of 5,000\n")):
+            rule = f"Load: mysql -p{password} tally\nWrite out.csv\n"
+            assert REDACTED in store.masking.shown(rule).value
+            assert store.masking.alike([rule, rule.replace("Write out.csv\n", written)])[1].endswith(written)
         word = "Load: mysql -pZ9q4 tally\nWrite out.csv\n"
         shown = store.masking.alike([word, word.replace("out.csv", "xZ9q4.csv, Z9q4x, then Z9q4-note")])[1]
         assert shown.endswith(f"Write xZ9q4.csv, Z9q4x, then {REDACTED}-note\n")

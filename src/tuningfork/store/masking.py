@@ -116,11 +116,12 @@ class Masking:
             shared = [_shared(texts[0], other) for other in texts[1:]]
             values = _values(texts, spans, found)
             back = [span for k, (blocks, _, _) in enumerate(shared, 1)
-                    for span in _carried(spans[k], [(theirs, ours, size, lines) for ours, theirs, size, lines in blocks])]
+                    for span in _carried(spans[k], [(theirs, ours, size, lines) for ours, theirs, size, lines in blocks],
+                                         texts[0])]
             changed = _merged([span for _, ours, _ in shared for span in ours])
             spans[0] = _merged(spans[0] + back + _found_in(texts[0], values, changed))
             for k, (blocks, _, theirs) in enumerate(shared, 1):
-                spans[k] = _merged(spans[k] + _carried(spans[0], blocks) + _found_in(texts[k], values, theirs))
+                spans[k] = _merged(spans[k] + _carried(spans[0], blocks, texts[k]) + _found_in(texts[k], values, theirs))
         return [_applied(text, masks, 0, len(text), lines=True)[0].value for text, masks in zip(texts, spans)]
 
     def bared(self, before: str, after: str) -> list[str]:
@@ -293,13 +294,15 @@ def _shared(first: str, other: str) -> tuple[list[tuple[int, int, int, bool]], l
 CARRIED_LEAST = 8
 
 
-def _carried(spans: list[Span], blocks: list[tuple[int, int, int, bool]]) -> list[Span]:
+def _carried(spans: list[Span], blocks: list[tuple[int, int, int, bool]], into: str) -> list[Span]:
     """`spans` of one text — sorted and apart, as `text_spans` and `_merged` give them — carried into
-    another through what they share (`blocks`, as `_shared` gives them): each part of a span inside a
-    run of shared lines, where it stands in the other; inside a run of shared characters, a span it
-    holds whole, or `CARRIED_LEAST` characters of one (found in review: a key's line rewritten as
-    `rotated` read `rot<redacted>t<redacted>d`). Each run reads only the spans that reach it (found
-    in review: every span against every run took seconds for a few thousand lines)."""
+    another, `into`, through what they share (`blocks`, as `_shared` gives them): each part of a span
+    inside a run of shared lines, where it stands in the other; inside a run of shared characters,
+    `CARRIED_LEAST` characters of one, or a shorter span it holds whole where it stands there as a
+    word of its own (found in review: a key's line rewritten as `rotated` read
+    `rot<redacted>t<redacted>d`, and `mysql -p1234` rewritten as `port 51234`, `port 5<redacted>`).
+    Each run reads only the spans that reach it (found in review: every span against every run took
+    seconds for a few thousand lines)."""
     starts = [start for start, _ in spans]
     carried = []
     for ours, theirs, size, lines in blocks:
@@ -307,8 +310,10 @@ def _carried(spans: list[Span], blocks: list[tuple[int, int, int, bool]]) -> lis
         while k < len(spans) and spans[k][0] < ours + size:
             start, end = spans[k]
             low, high = max(start, ours), min(end, ours + size)
-            if low < high and (lines or (low, high) == (start, end) or high - low >= CARRIED_LEAST):
-                carried.append((low - ours + theirs, high - ours + theirs))
+            there = (low - ours + theirs, high - ours + theirs)
+            if low < high and (lines or high - low >= CARRIED_LEAST
+                               or ((low, high) == (start, end) and _apart(into, *there))):
+                carried.append(there)
             k += 1
     return carried
 
@@ -316,14 +321,15 @@ def _carried(spans: list[Span], blocks: list[tuple[int, int, int, bool]]) -> lis
 def _values(texts: Sequence[str], spans: Sequence[list[Span]], found: frozenset[str]) -> list[str]:
     """What the masks of `texts` took that is found by its value on changed lines (`_found_in`):
     each value once, `VALUE_LEAST` characters or more, and never one `found` masks wherever it
-    stands already, nor digits alone — a PIN or a year stands for any number in a text, and masking
-    those that read the same would say, beside the text shown alone, which number is the key (found
-    in review: `1234` masked in `51234`)."""
+    stands already, nor one without a letter — digits, a PIN or a year, or punctuation, `####`, stand
+    for any number or rule in a text, and masking those that read the same would say, beside the
+    text shown alone, which of them is the key (found in review: `1234` masked in `51234`, `1,234` in
+    a count, `####` in a heading)."""
     values: dict[str, None] = {}
     for text, masks in zip(texts, spans):
         for start, end in masks:
             value = text[start:end]
-            if len(value) >= VALUE_LEAST and not value.isdigit() and value not in found:
+            if len(value) >= VALUE_LEAST and any(char.isalpha() for char in value) and value not in found:
                 values.setdefault(value)
     return list(values)
 
