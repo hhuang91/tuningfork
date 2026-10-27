@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -523,6 +524,27 @@ class TestToEnd:
 
         plain = stack.record()  # recorded with no options: forked with none
         assert prepare_fork(stack.store, plain.run_id, "1", base_url=f"{stack.url}/v1").adapter.options == {}
+
+    @pytest.mark.skipif(os.name != "posix", reason="the stand-in harness is a shell script")
+    def test_an_openclaw_fork_is_told_its_sources_context_window(self, stack, monkeypatch):
+        """OpenClaw is told the server's window when a batch plans its runs (`for_server`), and
+        its launch records it: a fork is told its source's, though the server now says another,
+        so it compacts where its source did."""
+        bin_dir = stack.tmp / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "openclaw").write_text("#!/bin/sh\n", encoding="utf-8")
+        (bin_dir / "openclaw").chmod(0o755)
+        monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+        source = stack.record()
+        run = stack.store.get_run(source.run_id)
+        # The recorded run as an OpenClaw launch told a 40,000-token window would be.
+        stack.store.note_launch(run.launch_id, harness={"context_window": 40000})
+        stack.store._conn.execute("UPDATE launches SET harness = 'openclaw' WHERE id = ?", (run.launch_id,))
+        stack.store._conn.execute("UPDATE runs SET harness = 'openclaw' WHERE id = ?", (run.id,))
+        stack.store._conn.commit()
+        stack.app.state.server = {"id": "s", "models": ["m"], "n_ctx": 131072}
+        plan = prepare_fork(stack.store, source.run_id, "1", base_url=f"{stack.url}/v1")
+        assert plan.adapter.name == "openclaw" and plan.adapter.options.context_window == 40000
 
     def test_a_caller_inside_the_proxy_plans_a_fork_without_asking_it_over_http(self, stack, monkeypatch):
         from tuningfork.ops import launch

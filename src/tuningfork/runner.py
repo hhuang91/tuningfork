@@ -218,12 +218,15 @@ def final_reply(store: Store, run_id: str) -> str:
 def named_side_call(store: Store, adapter: Any, run: Any) -> bool:
     """Whether a thread is a side call its harness names (`side_call`): its own work, beside
     the task's conversation and never fed back into it. Its failure says nothing of the run —
-    Hermes's background review is cut off whenever Hermes exits after its answer."""
+    Hermes's background review is cut off whenever Hermes exits after its answer. One whose
+    answer the conversation goes on from (the adapter's `fed_back_side_calls`: OpenClaw's
+    compaction summary) is not: failed or edited, it changed what the model saw after it."""
     side_call = getattr(adapter, "side_call", None)
     if run.role != "side" or side_call is None:
         return False
     first = store.steps(run.id)[:1]
-    return bool(first) and bool(side_call(store.harness_request(first[0])))
+    said = side_call(store.harness_request(first[0])) if first else None
+    return bool(said) and said not in getattr(adapter, "fed_back_side_calls", ())
 
 
 def lookalike_skill_files(skill_dir: Path) -> list[str]:

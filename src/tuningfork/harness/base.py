@@ -98,6 +98,11 @@ class HarnessAdapter(Protocol):
       the task's conversation without being its next step — Hermes's background review —
       or None. Such a call starts a side thread of its launch instead of extending the task's
       run, and a run's final reply is never one (see `tuningfork.launches`).
+    - `fed_back_side_calls`: the side calls, by that name, whose answer the task's
+      conversation goes on from — OpenClaw's compaction summary. A failed or edited one
+      leaves the run out, as a task call does (`runner.named_side_call`). Any other side call
+      is the harness's review of its answer, beside the conversation: its failure says
+      nothing of the run, and a chain reports it as the review (`ops.chain.skill_edits`).
     - `wire`: the wire format its calls take (`tuningfork.wire`), where tuningfork must know
       it before a call arrives: whether a scenario's context can be carried (`with_context`).
     - `continue_launch(prompt, *, home, workspace, max_turns)`: the command that gives the
@@ -116,6 +121,16 @@ class HarnessAdapter(Protocol):
       Hermes's nudge to go on after a cut reply, Claude Code's reminders — or None for a
       person's turn, which a run's page shows as a new exchange (`ops.timeline`). Without
       one, every user message is a person's.
+    - `for_server(server)`: the adapter set up for the server it will talk to, from the
+      server's identity (`n_ctx`, …) — for a harness that does not ask the server itself:
+      OpenClaw is told its context window. A batch calls it (`ops.batch`); what it sets is
+      the adapter's `settings`, so a fork, set up from its source's, needs none, nor does a
+      batch set up as a recorded run was (its `setup`: a validation's fresh runs).
+    - `version_problem(output)`: why a harness that answers `--version` still cannot launch,
+      read from what that printed (OpenClaw on a Node it does not run on), or None — the
+      harness's `problem` (`ops.connections`): the Connections page says it cannot run here,
+      and why, `connections show` prints why beside its version, and a batch or a fork is
+      refused in those words before anything launches (`ops.launch.check_launchable`).
     """
 
     name: str

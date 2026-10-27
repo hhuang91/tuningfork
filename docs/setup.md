@@ -230,17 +230,17 @@ is a model you run yourself: nothing is said, and everything works.
 
 ## The harnesses
 
-tuningfork launches two harnesses itself, for batches, forks and validations: each run in a
-fresh workspace and a fresh home, against your local model only. Neither sees your own settings
-or memory files, and neither needs an API key.
+tuningfork launches three harnesses itself, for batches, forks and validations: each run in a
+fresh workspace and a fresh home, against your local model only. None sees your own settings
+or memory files, and none needs an API key.
 
-| | Hermes Agent | Claude Code |
-|---|---|---|
-| Install (the versions the guides use) | `uv tool install hermes-agent==0.18.2` | `npm install -g @anthropic-ai/claude-code@2.1.281` (Node 18 or later) |
-| `--harness` | `hermes` (the default) | `claude-code` |
-| Speaks | OpenAI chat completions | Anthropic Messages |
-| The skill arrives | preloaded into the system prompt, whole file | through the `Skill` tool, body only |
-| What it needs of the server | tool calls in a stream, and a context of 64,000 tokens or more | the Messages API, which llama.cpp serves itself |
+| | Hermes Agent | Claude Code | OpenClaw |
+|---|---|---|---|
+| Install (the versions the guides use) | `uv tool install hermes-agent==0.18.2` | `npm install -g @anthropic-ai/claude-code@2.1.281` (Node 18 or later) | `npm install -g openclaw@2026.10.7 --allow-scripts=openclaw` (Node 24.22.1 or later in 24, or 26.12.1 or later; without `--allow-scripts` on npm 11.15 or older) |
+| `--harness` | `hermes` (the default) | `claude-code` | `openclaw` |
+| Speaks | OpenAI chat completions | Anthropic Messages | OpenAI chat completions |
+| The skill arrives | preloaded into the system prompt, whole file | through the `Skill` tool, body only | through `read` or `skills_read` when the model chooses it, whole file |
+| What it needs of the server | tool calls in a stream, and a context of 64,000 tokens or more | the Messages API, which llama.cpp serves itself | tool calls in a stream, and a context of 16,384 tokens or more (32,768 with Tool Search off) |
 
 tuningfork finds each on your `PATH`; `tuningfork connections harness <name> --executable <path>`
 names another copy. A batch or a fork refuses to start a harness against a server that lacks

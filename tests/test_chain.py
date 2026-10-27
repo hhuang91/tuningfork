@@ -395,6 +395,34 @@ class TestWhoEdited:
         finally:
             store.close()
 
+    def test_openclaws_compaction_summary_is_no_review(self, tmp_path):
+        """Found in review: OpenClaw's side call summarizes the conversation during the task, and
+        a chain took it for a review of the answer — one that failed read "its review was cut
+        off"."""
+        from tuningfork.harness.openclaw import SUMMARIZER, OpenClawAdapter
+        from tuningfork.ops.chain import skill_edits
+        from tuningfork.store.db import Store
+        from tests.helpers import as_response, record_launched, text_message
+
+        store = Store(tmp_path / "store")
+        try:
+            launch = store.create_launch(
+                kind="batch", label="t#g.0", harness="openclaw", model="m", task_id="t/1", eval={},
+                spec_path=None, skill_dir=None, workspace=str(tmp_path / "w"), home=str(tmp_path / "h"),
+                settings={},
+            )
+            record_launched(store, launch.id, {"model": "m", "messages": [{"role": "user", "content": "do the task"}]},
+                            response=as_response(text_message("Reading the log.")))
+            record_launched(store, launch.id, {"model": "m", "messages": [
+                {"role": "system", "content": f"{SUMMARIZER} Summarize the conversation."},
+                {"role": "user", "content": "do the task / Reading the log."},
+            ]}, response=as_response(text_message("A summary.")), status=500, error="the server refused it")
+            store.finalize_threads(launch.id, OpenClawAdapter.subagent_tools)
+
+            assert skill_edits(store, OpenClawAdapter(), launch.id) == ([], None)
+        finally:
+            store.close()
+
     def test_a_told_turn_kept_masked_again_is_still_the_told_turn(self, tmp_path):
         """The harness is told the check's output masked once, where the check ran; the request that
         carried it is kept masked again, which can mask more: a command's second password."""

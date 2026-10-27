@@ -2106,7 +2106,8 @@ def label_next(
 HARNESS_OPTION_HELP = (
     "An option the harness takes, as key=value (a JSON value where it is one: true, 3, {...}), "
     "recorded with each run. Hermes: self_improvement, await_review, review_every_turn, "
-    "mcp_servers. Repeatable."
+    "mcp_servers. OpenClaw: tool_search, skill_workshop, memory_flush, mcp_servers, context_window. "
+    "Repeatable."
 )
 
 
@@ -4818,7 +4819,12 @@ def connections_show(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)
     console.print("\n[bold]harnesses[/bold]")
     for harness in found["harnesses"]:
         where = harness["path"] or "[red]not found[/red]"
-        version = harness["version"] or (f"[red]{escape(harness['error'])}[/red]" if harness["error"] else "")
+        version = escape(harness["version"] or "")
+        # What went wrong reading its version, or a version and a problem both: it answers
+        # --version and still cannot launch.
+        said = harness["error"] or harness.get("problem")
+        if said:
+            version = f"{version} [red]{escape(said)}[/red]".strip()
         console.print(f"  {harness['name']:<12} {where} ({harness['source']}) {version}")
     sandbox = found.get("sandbox") or {}
     if sandbox.get("available"):
@@ -4866,7 +4872,7 @@ def connections_switch(
 
 @connections_app.command("harness")
 def connections_harness(
-    name: str = typer.Argument(..., help="The harness: hermes, claude-code."),
+    name: str = typer.Argument(..., help="The harness: hermes, claude-code, openclaw."),
     executable: Optional[str] = typer.Option(None, help="The program to run for it, by its absolute path."),
     reset: bool = typer.Option(False, "--reset", help="Go back to the one on PATH."),
     proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP),

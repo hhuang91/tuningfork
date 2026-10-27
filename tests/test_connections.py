@@ -193,6 +193,43 @@ class TestHarnesses:
         assert not any(Path(home).exists() for home in homes)  # thrown away after
         assert found["hermes"].requirements[0]["what"] == "n_ctx"
 
+    def test_an_openclaw_that_answers_but_cannot_launch_says_why(self, tmp_path, monkeypatch):
+        """Found installing it: on Ubuntu's Node 22, OpenClaw answers --version with a warning
+        on stderr, and `agent exec` exits before its first call."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        node = tmp_path / "node-version"  # the Node it finds, which can change under it
+        node.write_text("22.22.1", encoding="utf-8")
+        program = bin_dir / "openclaw"
+        program.write_text(
+            "#!/bin/sh\n"
+            "echo 'OpenClaw 2026.10.7 (157d8c2)'\n"
+            f"v=$(cat '{node}')\n"
+            'case "$v" in 22.*) echo "Running on an unsupported Node ($v); diagnostics may show truncated text" >&2;; esac\n',
+            encoding="utf-8",
+        )
+        program.chmod(program.stat().st_mode | stat.S_IXUSR)
+        monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+        (openclaw,) = [info for info in detect_harnesses(tmp_path / "store") if info.name == "openclaw"]
+        assert openclaw.version == "OpenClaw 2026.10.7 (157d8c2)" and openclaw.error is None
+        assert "22.22.1" in openclaw.problem and "launch" in openclaw.problem
+        assert openclaw.to_json()["problem"] == openclaw.problem  # what the Connections page reads
+        # Found in review: a batch launched its runs anyway, each ending before its first call.
+        # A batch or a fork is refused first, in the same words, as often as it is asked.
+        from tuningfork.harness import OpenClawAdapter
+        from tuningfork.ops.launch import check_launchable
+
+        for _ in range(2):
+            with pytest.raises(OperationError) as refused:
+                check_launchable(OpenClawAdapter())
+            assert refused.value.field == "harness" and "22.22.1" in refused.value.message
+        # Put right where it stands — a newer Node in the old one's place, OpenClaw and PATH as
+        # they were: launched at once, since the problem was never kept.
+        node.write_text("26.12.1", encoding="utf-8")
+        (openclaw,) = [info for info in detect_harnesses(tmp_path / "store") if info.name == "openclaw"]
+        assert openclaw.problem is None and openclaw.error is None
+        check_launchable(OpenClawAdapter())
+
     def test_a_missing_harness_is_reported_not_raised(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PATH", str(tmp_path / "empty"))
         found = {info.name: info for info in detect_harnesses(tmp_path / "store")}

@@ -8,6 +8,7 @@ and the mock server plays the model (see `tests/helpers.task_stack`).
 from __future__ import annotations
 
 import json
+import os
 import threading
 
 import pytest
@@ -36,6 +37,15 @@ def prepare(stack, **options):
 
 def launches(store) -> int:
     return store._conn.execute("SELECT count(*) FROM launches").fetchone()[0]
+
+
+def openclaw_on_path(stack, monkeypatch) -> None:
+    """A stand-in `openclaw` first on PATH: enough to plan a batch of it."""
+    bin_dir = stack.tmp / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "openclaw").write_text("#!/bin/sh\n", encoding="utf-8")
+    (bin_dir / "openclaw").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
 
 
 class TestPrepare:
@@ -261,6 +271,37 @@ class TestHarnessOptionsAndSkillFolder:
             prepare(stack, harness_options={"await_review": True})
         assert refused.value.field == "harness_options" and "takes no harness options" in refused.value.message
         assert launches(stack.store) == 0
+
+    @pytest.mark.skipif(os.name != "posix", reason="the stand-in harness is a shell script")
+    def test_openclaw_is_told_the_servers_context_window_and_its_runs_record_it(self, stack, monkeypatch):
+        """OpenClaw never asks the server: of a model its config does not size it assumes
+        200,000 tokens, and would not compact before a smaller server refused the prompt."""
+        openclaw_on_path(stack, monkeypatch)
+        stack.app.state.server = {"id": "s", "models": ["m"], "n_ctx": 65536}
+        plan = prepare(stack, harness="openclaw")
+        assert plan.adapter.options.context_window == 65536
+        assert plan.parity["harness_options"] == {"context_window": 65536}
+        given = prepare(stack, harness="openclaw", harness_options={"context_window": 40000, "tool_search": False})
+        assert given.adapter.options.context_window == 40000
+        assert given.parity["harness_options"] == {"tool_search": False, "context_window": 40000}
+
+    @pytest.mark.skipif(os.name != "posix", reason="the stand-in harness is a shell script")
+    def test_openclaw_set_up_as_a_recorded_run_is_told_the_window_it_was(self, stack, monkeypatch):
+        """A validation's fresh runs are set up as the checkpoint's run was (`setup`), beside its
+        forks, which are told the window that run recorded: never the server's again. One planned
+        before the proxy read the server's window recorded none, and its forks are told none."""
+        from tuningfork.ops.launch import Setup
+
+        openclaw_on_path(stack, monkeypatch)
+        stack.app.state.server = {"id": "s", "models": ["m"], "n_ctx": 131072}
+        assert prepare(stack, harness="openclaw").adapter.options.context_window == 131072
+        recorded = Setup(harness="openclaw", model="m", run="a" * 32, layout="install")
+        none = prepare(stack, harness="openclaw", setup=recorded)
+        assert none.adapter.options.context_window is None and "harness_options" not in none.parity
+        told = prepare(stack, harness="openclaw", setup=Setup(
+            harness="openclaw", model="m", run="a" * 32, recorded={"context_window": 40000}, layout="install"))
+        assert told.adapter.options.context_window == 40000
+        assert told.parity["harness_options"] == {"context_window": 40000}
 
     def test_a_servers_headers_and_environment_are_shown_masked(self):
         from tuningfork.ops.batch import shown_options

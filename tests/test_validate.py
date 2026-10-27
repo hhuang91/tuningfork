@@ -31,7 +31,7 @@ KEYS = {"old": "Write the totals to report.json.",
 
 class SetUp(FakeAgent):
     """The fake agent, set up as Hermes is: laid out one of two ways, and taking options, each
-    kept in its launch's settings."""
+    kept in its launch's settings; and told the server's window, as OpenClaw is (`for_server`)."""
 
     layouts = ("install", "flat")
 
@@ -41,6 +41,12 @@ class SetUp(FakeAgent):
     @property
     def settings(self):
         return {"harness": dict(self.options)} if self.options else {}
+
+    def for_server(self, server):
+        window = server.get("n_ctx")
+        if window is None or "window" in self.options:
+            return self
+        return type(self)(layout=self.layout, options={**self.options, "window": window})
 
 
 @pytest.fixture
@@ -222,7 +228,8 @@ def test_every_run_is_set_up_as_the_checkpoints_run_was(stack, monkeypatch):
     reads; a launch records both. The forks take them from the checkpoint's launch, and so do
     the training and held-out runs: found in review, they were launched with the harness's
     defaults, laid out as installed. An MCP server, which a launch records by name only,
-    reaches none of them, and the plan says so once."""
+    reaches none of them, and the plan says so once. Nor are they told the server's window, as
+    a batch tells OpenClaw: the forks are told the one the checkpoint's run was told."""
     from tuningfork.harness import ADAPTERS
     from tuningfork.store.db import Store
 
@@ -231,6 +238,10 @@ def test_every_run_is_set_up_as_the_checkpoints_run_was(stack, monkeypatch):
     made, proposal = screened(stack, harness_options={"self_improvement": False, "mcp_servers": {"tf": "http://127.0.0.1:1/mcp"}})
     # The checkpoint's run as one recorded before layouts were would be laid out: flat.
     stack.store.note_launch(stack.store.get_run(made.run_id).launch_id, layout="flat")
+    # Planned before the proxy read the server's window, it was told none. The server says one now,
+    # to the proxy and to the held-out runs' private proxy, which reads it as it starts.
+    stack.app.state.server = {"id": "s", "models": ["m"], "n_ctx": 131072}
+    stack.mock.props = {"default_generation_settings": {"n_ctx": 131072}}
     keep = stack.tmp / "kept"
     plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url, keep_private=keep)
     quiet = {"self_improvement": False}
