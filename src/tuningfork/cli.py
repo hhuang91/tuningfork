@@ -207,7 +207,7 @@ def serve(
         check_endpoint(upstream, home=settings.home, purpose="the proxy")
     except OperationError as error:
         _refuse(error)
-    settings.home.mkdir(parents=True, exist_ok=True)
+    settings.home.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
         proxy = create_app(settings)
     except ValueError as error:
@@ -222,6 +222,7 @@ def serve(
     # Asked before the proxy starts, and only of a server on the internet: no wait for one nearby.
     _print_reminder(asyncio.run(read_reminder(upstream)), indent="                ")
     console.print(f"  recording to  {settings.home}")
+    _print_open_to_others(settings.home, indent="                ")
     console.print(f"  max in flight {max_inflight}")
     if max_output is not None:
         console.print(f"  output cap    {max_output} tokens a call (what a harness asks above it is recorded)")
@@ -4794,6 +4795,15 @@ def _print_checks(checks: dict, read: dict | None = None) -> None:
         console.print(f"  [yellow]{escape(reason)}[/yellow]")
 
 
+def _print_open_to_others(home: Path, *, indent: str = "  ") -> None:
+    """That users other than this one can open the recordings folder, and how to stop it."""
+    from tuningfork.access import open_to_others
+
+    said = open_to_others(home)
+    if said:
+        console.print(f"{indent}[yellow]{escape(said)}[/yellow]", soft_wrap=True)
+
+
 def _print_reminder(noted: dict | None, *, indent: str = "  ") -> None:
     """That tuningfork is built for a model you run yourself, where the server says otherwise."""
     if noted:
@@ -5025,6 +5035,7 @@ def ui(
 
     store = Store(home or default_home())
     console.print(f"[bold]tuningfork[/bold] {__version__} — browsing {store.home}")
+    _print_open_to_others(store.home)
     console.print(f"  open http://{host}:{port}/_tuningfork/ui/")
     uvicorn.run(create_browse_app(store, host=host), host=host, port=port, log_level="warning")
 
@@ -5284,8 +5295,13 @@ def _print_removal(removed: dict[str, Any]) -> None:
     freed = removed["bytes"]
     console.print(
         f"[dim]and what nothing else referred to: {removed['message_nodes']} message(s), "
-        f"{removed['blobs']} blob(s) ({freed / 1_048_576:.1f} MiB), {removed['folders']} run folder(s)[/dim]"
+        f"{removed['blobs']} blob(s) ({freed / 1_048_576:.1f} MiB), {removed['folders']} folder(s)[/dim]"
     )
+    if removed.get("held"):
+        console.print(
+            f"[dim]{removed['held']} blob(s) written in the last two minutes stay for a recording in flight: a "
+            "running proxy deletes them once those have passed, or the next deletion for good does[/dim]"
+        )
 
 
 if __name__ == "__main__":

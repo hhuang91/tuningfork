@@ -64,9 +64,10 @@ class BlobStore:
     def __contains__(self, digest: object) -> bool:
         return isinstance(digest, str) and self._path(digest).exists()
 
-    def sweep(self, live: set[str], *, grace: float = GRACE) -> tuple[int, int]:
+    def sweep(self, live: set[str], *, grace: float = GRACE, held: list[str] | None = None) -> tuple[int, int]:
         """Delete every blob not in `live` that was not written or seen within `grace`
-        seconds, and any write left half-done that long. Returns (blobs deleted, bytes)."""
+        seconds, and any write left half-done that long. Returns (blobs deleted, bytes); each
+        kept only for the grace is added to `held`."""
         cutoff = time.time() - grace
         deleted = freed = 0
         for directory in self.root.iterdir() if self.root.is_dir() else ():
@@ -79,6 +80,8 @@ class BlobStore:
                 try:
                     found = path.stat()
                     if found.st_mtime > cutoff:
+                        if held is not None:
+                            held.append(digest)
                         continue
                     path.unlink()
                 except FileNotFoundError:

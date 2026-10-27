@@ -364,6 +364,8 @@ def test_the_trash_from_the_command_line(store, monkeypatch):
 
     gone = runner.invoke(app, ["trash", "purge", "named", "--yes", "--home", home])
     assert "deleted for good: 1 run" in gone.output and store.get_run(run) is None
+    # Just recorded: what it wrote waits out the grace, and the person is told until when.
+    assert "blob(s) written in the last two minutes stay for a recording in flight" in gone.output
     assert json.loads(runner.invoke(app, ["trash", "list", "--json", "--home", home]).output)["runs"] == []
 
 

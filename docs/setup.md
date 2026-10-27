@@ -262,7 +262,8 @@ It listens on `http://127.0.0.1:8787/v1`, forwards each call to the model server
 names, records it, and prints the web UI's address. That address carries the proxy's *access
 token*: new each time it starts, and what lets a page change anything; reading needs none.
 `tuningfork token` prints the address again. One proxy per recordings folder: two would overwrite
-each other's tokens.
+each other's tokens. A recordings folder tuningfork makes is yours alone (mode 0700); for one made
+before that others on the machine can open, `serve` says so, with the `chmod` that makes it yours.
 
 Then, in another terminal, check the server before anything runs:
 

@@ -96,7 +96,14 @@ is, and no new work starts on a run there (`ops.trash.refuse_trashed`). Deleting
 trash is permanent: the item goes with what is tied to it (`Store.purge_closure`: a run's
 threads, the experiments at its steps and their samples, forks tuningfork launched from it,
 token streams, launches and their folders), then what nothing left refers to — message nodes,
-blobs, snapshot objects — with a two-minute grace for a recording in flight. A refinement goes
+blobs, snapshot objects, the folder a batch or a set of forks was laid out in with the skill
+copy its runs were given (`trash._remove_groups`) — with a two-minute grace for a recording in
+flight, swept once it has passed (`trash.sweep_if_due`: the proxy looks every half minute, and
+a later deletion sweeps everything). A launch's folder outside the recordings folder goes only
+where tuningfork marked its group as its own (`runner.GROUP_MARK`, `make_group`: 0700). What a
+deleted row held is overwritten (`secure_delete`) and the database's log emptied
+(`Store.checkpoint`). A job keeps its record of the work, and a chain its record and the skill
+each link left: each goes only as itself, a chain by hand. A refinement goes
 with what it made (`refine.made_by`): its screens, its validations' forks and fresh training
 runs, its proposals' saved texts and its folder — never the run it studies, nor the changelog
 and old versions an approval wrote beside the skill's folder. One in the trash is shown as it
@@ -579,10 +586,13 @@ deleted, and not while a scenario runs from it.
 Every state change under `/_tuningfork/` needs the proxy's access token
 (`x-tuningfork-token`, or `Authorization: Bearer`): minted each `serve`, written to
 `<home>/.access-token` (0600), and checked in `api/guard.LocalOnly`, never in a route. Reads
-stay open, except the MCP endpoint, which takes its own MCP token on every method
-(`<home>/.mcp-token`, pinned by `TUNINGFORK_MCP_TOKEN`) and nothing else: the access token is
-refused there, and the MCP token everywhere else, so an MCP client never holds a key to what
-its tools leave out. The CLI finds both itself; tests send them
+stay open, to anything that can reach the port. The recordings folder is this user's alone when
+tuningfork makes it (0700), and `serve` and `ui` say when one made before is not
+(`access.open_to_others`), never changing it. The MCP endpoint is the exception to open reads:
+it takes its own MCP token on every method (`<home>/.mcp-token`, pinned by
+`TUNINGFORK_MCP_TOKEN`) and nothing else: the access token is refused there, and the MCP token
+everywhere else, so an MCP client never holds a key to what its tools leave out. The CLI finds
+both itself; tests send them
 (`tests/helpers.control_headers`, `mcp_headers`). One proxy per home: two would overwrite
 each other's tokens.
 

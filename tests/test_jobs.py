@@ -541,3 +541,20 @@ class TestWhatAJobKeeps:
         again = saying.submit("said", {"said": said, "delay": 30}, dedupe=True)
         assert again["deduplicated"] and again["id"] == first["id"]
         saying.cancel(first["id"])
+
+
+class TestDeletedForGood:
+    def test_a_job_in_the_trash_or_deleted_for_good_is_shown_as_the_store_has_it(self, runner, store):
+        """Found mapping the trash (2026-10-27): a finished job stayed in memory as it ended, so it
+        read as never trashed, and was still served once deleted for good — by the page that
+        deleted it, or by another process."""
+        from tuningfork.ops import trash
+
+        job = runner.submit("count", {"steps": 1})
+        settled(runner, job["id"])
+
+        trash.trash(store, "job", job["id"])
+        assert runner.get(job["id"])["trashed_at"] is not None
+        trash.purge(store, "job", job["id"])
+        assert runner.get(job["id"]) is None and runner.get(job["id"][:8]) is None
+        assert (store.home / "tuningfork.db-wal").stat().st_size == 0  # its row, overwritten and out of the log

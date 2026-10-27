@@ -366,6 +366,18 @@ def create_app(
             except Exception:  # noqa: BLE001 - a diagnostic; the next round tries again
                 logger.warning("tuningfork could not read the server's identity", exc_info=True)
 
+    async def sweep_when_due() -> None:
+        """What a deletion for good kept for its grace, swept once that has passed, whichever
+        process deleted it (`ops.trash.sweep_if_due`)."""
+        from tuningfork.ops import trash
+
+        while True:
+            try:
+                await asyncio.to_thread(trash.sweep_if_due, recorder.store)
+            except Exception:  # noqa: BLE001 - the next round, or the next deletion, tries again
+                logger.warning("tuningfork could not sweep what a deletion left", exc_info=True)
+            await asyncio.sleep(trash.SWEEP_EVERY)
+
     @asynccontextmanager
     async def lifespan(app: Starlette):
         owned = None
@@ -383,10 +395,13 @@ def create_app(
         except Exception:  # noqa: BLE001 - never block startup on a diagnostic
             recorder.server_defaults = {}
         keeper = asyncio.ensure_future(keep_server_current(app))
+        sweeper = asyncio.ensure_future(sweep_when_due()) if api else None
         try:
             yield
         finally:
             keeper.cancel()
+            if sweeper is not None:
+                sweeper.cancel()
             if mcp is not None:
                 mcp.stop()
             # Jobs were asked to stop by `stop_live_work`; they write to the store, so it

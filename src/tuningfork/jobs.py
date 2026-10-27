@@ -295,9 +295,18 @@ class JobRunner:
     def get(self, reference: str, *, after: int | None = None) -> dict[str, Any] | None:
         with self._lock:
             job = self._find(reference)
-            if job is not None:
+            if job is not None and job.record.status in ("queued", "running"):
                 return job.to_json(after=after, position=self._position(job))
-        stored = self.store.get_job(reference)
+        stored = self.store.get_job(job.id if job is not None else reference)
+        if job is not None:
+            with self._lock:
+                if stored is None:
+                    # Deleted for good from the trash, here or by another process: gone here too.
+                    self._jobs.pop(job.id, None)
+                    return None
+                # Its events live here alone; the trash marks it in the store.
+                job.record.trashed_at = stored.trashed_at
+                return job.to_json(after=after, position=self._position(job))
         return job_json(stored, events=[] if after is not None else None) if stored else None
 
     def list(self, limit: int = 50) -> list[dict[str, Any]]:

@@ -663,7 +663,9 @@ class Store:
         from tuningfork.store.masking import Masking
 
         self.home = Path(home)
-        self.home.mkdir(parents=True, exist_ok=True)
+        # A recordings folder made here is this user's alone; one that exists keeps its mode,
+        # which `serve` reports when others can read it (`access.open_to_others`).
+        self.home.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.blobs = BlobStore(self.home / "blobs")
         #: How everything written here is masked: the one set of patterns every write takes.
         self.masking = Masking(tuple(patterns) if patterns is not None else DEFAULT_REDACTIONS)
@@ -674,6 +676,9 @@ class Store:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
+            # What a row held is overwritten when it goes, not left in a free page: deleting for
+            # good means the database file too, whatever SQLite this Python was built with.
+            self._conn.execute("PRAGMA secure_delete=ON")
             self._conn.executescript(SCHEMA)
             self._migrate()
             self._conn.commit()
@@ -1670,6 +1675,27 @@ class Store:
     def purge_job(self, job_id: str) -> None:
         with self._transaction():
             self._conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+
+    def checkpoint(self) -> None:
+        """Write the log's pages into the database and empty the log (`-wal`), so what a
+        deletion overwrote is not still read there. Another process reading at that moment
+        keeps the log as it is, until a later checkpoint."""
+        with self._lock:
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+
+    def refers_into(self, folder: Path | str) -> bool:
+        """Whether a launch left in the store names a path inside `folder`: its workspace (its
+        harness home is laid out beside it), or the skill copy it was given — which a batch's runs
+        also name as their frozen skill (`parity.skill_snapshot_dir`), and its forks are given
+        too. What nothing refers to can go with what was deleted."""
+        prefix = str(folder).rstrip(os.sep) + os.sep
+        size = len(prefix)
+        with self._lock:
+            found = self._conn.execute(
+                "SELECT 1 FROM launches WHERE substr(skill_dir, 1, ?) = ? OR substr(workspace, 1, ?) = ? LIMIT 1",
+                (size, prefix) * 2,
+            ).fetchone()
+        return found is not None
 
     def collect_garbage(self) -> int:
         """Remove the message-tree nodes no remaining step or run reaches; return how many.

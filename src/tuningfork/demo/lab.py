@@ -83,7 +83,7 @@ def demo_home(home: Path | None, mode: str) -> Path:
                     raise OperationError(f"{home} is not empty, and not a folder the demo made", hint=again)
             if mode == "seed" and (home / SEEDED).is_dir():
                 raise OperationError(f"{home} is seeded already: seeding it again would add its runs twice", hint=again)
-        home.mkdir(parents=True, exist_ok=True)
+        home.mkdir(mode=0o700, parents=True, exist_ok=True)
         (home / MARK).write_text("Made-up recordings, made by `tuningfork demo`.\n", encoding="utf-8")
     except OSError as error:  # a folder it may not read, or cannot make
         if not named:  # a new one, in the temporary folder

@@ -624,9 +624,14 @@ it ends, printing its progress, and exits 1 unless it finished.
 `trash run <id>…` sets runs aside — and `trash experiment`, `trash job`, `trash scenario` and
 `trash refinement` the others — out of every list and every rate, with what is tied to them left
 in place, and no new work started on them. `trash list` shows what is there and what deleting
-each for good would remove; `trash restore <id>` brings items back. `trash purge <id>` deletes items for good with everything tied to them — a run's
-experiments and their samples, forks that replayed it — and `trash empty` deletes everything
-there. Neither can be undone.
+each for good would remove; `trash restore <id>` brings items back. `trash purge <id>` deletes
+items for good with everything tied to them — a run's experiments and their samples, forks that
+replayed it, the folders its harness ran in, and its batch's folder with the skill copy it was
+given once none of the batch's runs is left — and `trash empty` deletes everything there.
+Neither can be undone. What was written in the last two minutes goes once those have passed,
+swept by a running proxy or the next deletion. A job keeps its record of the work it did, and a
+chain its record and the skill each link left (`chains/` in the recordings folder, and the
+chain's own folder, removed by hand).
 
 ### `glossary`, `version`
 

@@ -6,7 +6,16 @@ statistic, and whatever is tied to it stays where it is — experiments at a run
 samples, the forks that replayed it — so it comes back as it went. No new work starts on a run
 or a refinement in the trash. Deleting from the trash is permanent: the item goes with
 everything tied to it (`Store.purge_closure`), and then whatever nothing left refers to —
-message content, blobs, workspace snapshots, and the folders its launches ran in.
+message content, blobs, workspace snapshots, the folders its launches ran in, and the folder of
+a batch or of a set of forks, with the skill copy its runs were given, once none of its runs is
+left. A launch's folder outside the recordings folder goes only where tuningfork marked its
+group as its own (`runner.GROUP_MARK`). What a deleted row held is overwritten and the
+database's log emptied (`Store.checkpoint`). What was written in the last two minutes, which a
+recording in flight may still need, is swept once they have passed (`sweep_if_due`: the proxy,
+or the next deletion).
+
+A job keeps its record of work deleted since, and a chain its record and the skill each link
+left: each is a record of its own, deleted only as itself.
 
 A refinement goes with what it made (`ops.refine.made_by`): its screens, its validations'
 forks and fresh training runs, its proposals' saved texts, and its own folder. Never the run
@@ -16,6 +25,7 @@ skill's old versions stay.
 
 from __future__ import annotations
 
+import os
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -23,6 +33,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from tuningfork.ops.common import OperationError
+from tuningfork.store.blobs import GRACE
 from tuningfork.store.db import Purge, Store
 
 KINDS = ("run", "experiment", "job", "scenario", "refinement")
@@ -221,6 +232,9 @@ class Removal:
     blobs: int = 0
     bytes: int = 0
     folders: int = 0
+    #: Blobs nothing refers to that were written in the last two minutes: swept once those have
+    #: passed (`sweep_if_due`).
+    held: int = 0
     #: The refinements that cited what was removed (`ops.refine.citations`).
     cited_by: list[dict[str, Any]] = field(default_factory=list)
 
@@ -231,7 +245,8 @@ class Removal:
     def to_json(self) -> dict[str, Any]:
         return {
             "items": self.items, "removed": self.counts, "message_nodes": self.nodes,
-            "blobs": self.blobs, "bytes": self.bytes, "folders": self.folders, "cited_by": self.cited_by,
+            "blobs": self.blobs, "bytes": self.bytes, "folders": self.folders, "held": self.held,
+            "cited_by": self.cited_by,
         }
 
 
@@ -286,6 +301,7 @@ def purge(store: Store, kind: str, reference: str) -> Removal:
         if job.trashed_at is None:
             raise _not_in_trash(kind, job.id)
         store.purge_job(job.id)
+        store.checkpoint()
         removal.items.append({"kind": kind, "id": job.id})
         removal.add({"jobs": 1})
         return removal
@@ -407,6 +423,7 @@ def _remove(store: Store, plan: Purge, removal: Removal) -> None:
     from tuningfork.snapshots import SnapshotError, Snapshots
 
     _refuse_running(store, plan)
+    groups = _groups(store, plan)  # read from the launches, before their rows go
     store.purge(plan)
     removal.add(plan.to_json())
     snapshots = Snapshots(store.home)
@@ -428,6 +445,57 @@ def _remove(store: Store, plan: Purge, removal: Removal) -> None:
         if kept.is_dir():
             shutil.rmtree(kept, ignore_errors=True)
             removal.folders += 1
+    _remove_groups(store, home, groups, removal)
+
+
+def _groups(store: Store, plan: Purge) -> dict[Path, bool]:
+    """The folders the launches going were laid out in (`<group>/<i>/`), and those holding the
+    skill copy they were given (`<group>/skill-snapshot*/<skill>`), each said to be a chain's or
+    not. A chain's folder holds the skill each link left, which the chain keeps."""
+    from tuningfork.runner import SNAPSHOT
+
+    groups: dict[Path, bool] = {}
+    for launch_id in plan.launches:
+        launch = store.get_launch(launch_id)
+        if launch is None:
+            continue
+        chain = bool((launch.settings or {}).get("chain"))
+        found = []
+        workspace = Path(launch.workspace).resolve() if launch.workspace else None
+        if workspace is not None and workspace.name == "workspace" and workspace.parent.name.isdigit():
+            found.append(workspace.parent.parent)
+        if launch.skill_dir:
+            copy = Path(launch.skill_dir).resolve().parent
+            if copy.name.startswith(SNAPSHOT):
+                found.append(copy.parent)
+        for group in found:
+            groups[group] = groups.get(group, False) or chain
+    return groups
+
+
+def _remove_groups(store: Store, home: Path, groups: dict[Path, bool], removal: Removal) -> None:
+    """A batch's folder, or a set of forks', once none of its launches is left: the skill copy
+    its runs were given goes with it. Only one tuningfork made — inside the recordings folder two
+    levels down or more, or marked as its own — holding nothing but its skill copies, and to
+    which nothing left refers. A chain's stays, with the skill each link left."""
+    from tuningfork.runner import GROUP_MARK, SNAPSHOT
+
+    for group, chain in groups.items():
+        if chain or not group.is_dir() or group.is_symlink():
+            continue
+        try:
+            depth = len(group.relative_to(home).parts)
+        except ValueError:
+            depth = 0
+        if depth < 2 and not (group / GROUP_MARK).is_file():
+            continue
+        if any(entry.name != GROUP_MARK and not (entry.is_dir() and entry.name.startswith(SNAPSHOT))
+               for entry in group.iterdir()):
+            continue
+        if store.refers_into(group):
+            continue
+        shutil.rmtree(group, ignore_errors=True)
+        removal.folders += 1
 
 
 def _remove_refinement(refinement: Any, variants: Sequence[Path], removal: Removal) -> None:
@@ -440,32 +508,85 @@ def _remove_refinement(refinement: Any, variants: Sequence[Path], removal: Remov
 
 
 def _launch_folder(home: Path, workspace: str | None, harness_home: str | None) -> Path | None:
-    """The folder a launch ran in — its workspace's and harness home's parent — if it lies
-    inside the recordings folder, two levels down or more. Anything else is left alone."""
+    """The folder a launch ran in — its workspace's and harness home's parent — if tuningfork
+    made it: inside the recordings folder, two levels down or more, or numbered in a folder it
+    marked as its own (`runner.GROUP_MARK`), wherever that is. Anything else is left alone."""
+    from tuningfork.runner import GROUP_MARK
+
     if not workspace:
         return None
     folder = Path(workspace).resolve().parent
     if harness_home and Path(harness_home).resolve().parent != folder:
         return None
+    if not folder.is_dir():
+        return None
     try:
         depth = len(folder.relative_to(home).parts)
     except ValueError:
-        return None
-    return folder if depth >= 2 and folder.is_dir() else None
+        depth = 0
+    if depth >= 2 or (folder.name.isdigit() and (folder.parent / GROUP_MARK).is_file()):
+        return folder
+    return None
 
 
-def _sweep(store: Store, removal: Removal) -> None:
-    """What nothing left refers to: message-tree nodes, then blobs, then snapshot objects."""
+def _sweep(store: Store, removal: Removal, *, again: bool = True) -> None:
+    """What nothing left refers to: message-tree nodes, then blobs, then snapshot objects; then
+    the database's log emptied. What the grace kept is swept again once it has passed, `again`
+    — unless this is that sweep."""
     from tuningfork.snapshots import SnapshotError, Snapshots
 
     removal.nodes += store.collect_garbage()
-    deleted, freed = store.blobs.sweep(store.live_blobs())
+    held: list[str] = []
+    deleted, freed = store.blobs.sweep(store.live_blobs(), held=held)
     removal.blobs += deleted
     removal.bytes += freed
+    removal.held += len(held)
     try:
         Snapshots(store.home).prune()
     except SnapshotError:
         pass
+    store.checkpoint()
+    if again:
+        # Written whatever the blobs held: snapshot objects that young are kept too, uncounted.
+        _write_due(store.home, time.time() + GRACE)
+
+
+#: Beside the database, when a sweep is due: the time, after a deletion for good, at which what
+#: the grace kept may go. The proxy looks every `SWEEP_EVERY` seconds; a later deletion for good
+#: sweeps everything nothing refers to anyway.
+SWEEP_DUE = ".sweep-due"
+SWEEP_EVERY = 30.0
+
+
+def _write_due(home: Path, when: float) -> None:
+    path = home / SWEEP_DUE
+    temporary = path.with_name(f"{SWEEP_DUE}.{os.getpid()}.tmp")
+    temporary.write_text(f"{when:.3f}\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def sweep_if_due(store: Store, *, now: float | None = None) -> Removal | None:
+    """Sweep what a deletion for good left for the grace, once the grace has passed: its blobs
+    and snapshot objects. None where nothing is due yet."""
+    path = store.home / SWEEP_DUE
+    try:
+        written = path.read_text(encoding="utf-8")
+        due = float(written)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        written, due = None, 0.0  # unreadable: swept now, and the mark replaced
+    if (time.time() if now is None else now) < due:
+        return None
+    removal = Removal()
+    _sweep(store, removal, again=False)
+    try:
+        # Unless a deletion since set another time, which its own sweep will meet.
+        if written is None or path.read_text(encoding="utf-8") == written:
+            path.unlink()
+    except OSError:
+        pass
+    return removal
 
 
 # --- what is in it ----------------------------------------------------------------------------
