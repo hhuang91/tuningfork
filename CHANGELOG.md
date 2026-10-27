@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.2 — OpenClaw, and what an agent is given, masked
+## 0.7.0 — OpenClaw, and what an agent is given, masked
 
 tuningfork launches OpenClaw now, beside Hermes Agent and Claude Code. Every answer an agent gets
 over MCP, and what a proposing model is sent, is masked as it leaves. A check's output is masked
