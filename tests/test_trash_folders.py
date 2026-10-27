@@ -51,6 +51,21 @@ def deleted(store, run_id: str) -> dict:
     return trash.purge(store, "run", run_id).to_json()
 
 
+def in_snapshots(home: Path, text: str) -> list[str]:
+    """The workspace snapshots' objects holding `text`: git keeps each one compressed, out of a
+    search of the bytes (found in review)."""
+    import zlib
+
+    found = []
+    for path in (home / "snapshots.git" / "objects").glob("??/*"):
+        try:
+            if text.encode() in zlib.decompress(path.read_bytes()):
+                found.append(str(path))
+        except zlib.error:
+            continue
+    return found
+
+
 def aged(home: Path) -> None:
     """Every blob and snapshot object as though written long ago: past the grace."""
     for root in (home / "blobs", home / "snapshots.git" / "objects"):
@@ -201,13 +216,15 @@ class TestNothingLeft:
         found = mentions(store.home, MARKER)
         assert any(name.endswith("SKILL.md") for name in found)
         assert any("tuningfork.db" in name for name in found)  # the launch's row: its task as given
+        assert in_snapshots(store.home, MARKER)  # the skill each launch was given, committed
         aged(store.home)
 
         for run in runs:
             deleted(store, run)
 
-        # Not in a file, a blob, the database or its log: rows went overwritten, the log emptied.
-        assert mentions(store.home, MARKER) == []
+        # Not in a file, a blob, a snapshot, the database or its log: rows went overwritten, the
+        # log emptied.
+        assert mentions(store.home, MARKER) == [] and in_snapshots(store.home, MARKER) == []
         assert store._conn.execute("PRAGMA secure_delete").fetchone()[0] == 1
 
     def test_what_the_grace_kept_goes_once_it_has_passed(self, stack):
@@ -262,3 +279,242 @@ class TestNothingLeft:
 def test_a_folder_made_for_launches_is_this_users_alone(stack):
     (run,) = batch(stack, stack.tmp / "batches", n=1)
     assert stat.S_IMODE(group_of(stack.store, run).stat().st_mode) == 0o700
+
+
+class TestWhatIsNotItsOwn:
+    def test_deleting_in_a_copy_of_the_recordings_folder_leaves_the_originals_folders(self, stack):
+        # Found in review: a copy's launches name the original's folders, whose mark said only
+        # "tuningfork's"; deleting a run in the copy removed them from under the original.
+        import shutil
+
+        from tuningfork.store.db import Store
+
+        store = stack.store
+        runs = batch(stack, store.home / "batches", n=1) + batch(stack, stack.tmp / "elsewhere", n=1)
+        groups = [group_of(store, run) for run in runs]
+        copied = Store(Path(shutil.copytree(store.home, stack.tmp / "copy")))
+        try:
+            assert trash.preview(copied, "run", runs[1])["notes"] == []
+            removed = [deleted(copied, run)["folders"] for run in runs]
+        finally:
+            copied.close()
+
+        assert removed == [0, 0]
+        assert all((group / "0").is_dir() and (group / "skill-snapshot").is_dir() for group in groups)
+        assert all(store.get_run(run) is not None for run in runs)
+
+    def test_a_skill_copy_added_as_a_skill_stays(self, stack):
+        # Found in review: a person can add a batch's skill copy as a skill remembered where it
+        # is, and an approval then writes there.
+        from tuningfork.ops import addskill
+
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        copy = group_of(store, run) / "skill-snapshot" / "tally-report"
+        addskill.execute_add(store, addskill.prepare_folder(store, copy))
+
+        deleted(store, run)
+
+        assert (copy / "SKILL.md").is_file()
+
+    def test_a_skill_copy_a_scenario_names_stays(self, stack):
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        copy = group_of(store, run) / "skill-snapshot" / "tally-report"
+        scenario = store.home / "scenarios" / "named"
+        scenario.mkdir(parents=True)
+        (scenario / "evals.json").write_text(
+            json.dumps({"skill_name": "tally-report", "tuningfork": {"skill_dir": str(copy)}, "evals": []}),
+            encoding="utf-8")
+
+        deleted(store, run)
+
+        assert (copy / "SKILL.md").is_file()
+
+    def test_a_new_group_is_never_a_folder_that_was_there(self, tmp_path):
+        runner.make_group(tmp_path, "one", tmp_path / "home")
+        with pytest.raises(FileExistsError):
+            runner.make_group(tmp_path, "one", tmp_path / "home")
+        (tmp_path / "theirs").mkdir()
+        runner.make_group(tmp_path, "theirs", tmp_path / "home", fresh=False)  # a chain's later link
+        assert runner.made_for(tmp_path / "theirs", tmp_path / "home")
+        assert not runner.made_for(tmp_path / "theirs", tmp_path / "elsewhere")
+
+
+class TestSaidBeforeAndAfter:
+    def test_its_preview_says_where_it_reaches_outside_the_recordings_folder(self, stack):
+        store = stack.store
+        (run,) = batch(stack, stack.tmp / "elsewhere", n=1)
+        trash.trash(store, "run", run)
+
+        (note,) = trash.preview(store, "run", run)["notes"]
+
+        assert "outside the recordings folder" in note and str(group_of(store, run)) in note
+
+    @pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="file modes, as a user they bind")
+    def test_a_folder_it_cannot_read_stays_and_the_sweep_still_runs(self, stack):
+        # Found in review: a folder it could not read stopped the deletion after the rows went,
+        # so nothing was swept and the log stayed.
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        group = group_of(store, run)
+        group.chmod(0)
+        try:
+            deleted(store, run)
+            assert (store.home / trash.SWEEP_DUE).is_file()
+        finally:
+            group.chmod(0o700)
+        assert (group / "0").is_dir()
+
+
+def test_a_launch_folder_it_cannot_read_is_left(tmp_path, monkeypatch):
+    # Python 3.12 and 3.13 raise from `is_dir` where a folder cannot be searched; 3.14 says False.
+    home = tmp_path / "home"
+    folder = home / "batches" / "g" / "0"
+    (folder / "workspace").mkdir(parents=True)
+
+    def refused(self):
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr(Path, "is_dir", refused)
+    assert trash._launch_folder(home.resolve(), str(folder / "workspace"), str(folder / "home")) is None
+
+
+class TestTheLogAndTheMark:
+    def test_a_checkpoint_another_reader_holds_is_tried_again(self, stack):
+        import sqlite3
+
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        reader = sqlite3.connect(store.home / "tuningfork.db")
+        try:
+            reader.execute("BEGIN")
+            reader.execute("SELECT count(*) FROM runs").fetchone()
+            started = time.monotonic()
+            assert store.checkpoint() is False and time.monotonic() - started < 2
+            (store.home / trash.SWEEP_DUE).unlink(missing_ok=True)
+            aged(store.home)
+            trash._write_due(store.home, time.time() - 1)
+            trash.sweep_if_due(store, now=time.time() + 1)
+            assert (store.home / trash.SWEEP_DUE).is_file()  # due again, for the log
+        finally:
+            reader.close()
+        assert store.checkpoint() is True
+        trash.sweep_if_due(store, now=time.time() + 1)
+        assert not (store.home / trash.SWEEP_DUE).exists()
+
+    def test_a_mark_it_cannot_read_sweeps_nothing(self, stack):
+        (stack.store.home / trash.SWEEP_DUE).mkdir()
+        assert trash.sweep_if_due(stack.store, now=time.time() + 1000) is None
+
+    def test_a_sweep_due_later_is_never_made_earlier(self, tmp_path):
+        later = time.time() + trash.GRACE / 2  # later, within the grace
+        trash._write_due(tmp_path, later)
+        trash._write_due(tmp_path, time.time())
+        assert float((tmp_path / trash.SWEEP_DUE).read_text(encoding="utf-8")) == pytest.approx(later, abs=0.01)
+
+    def test_a_time_due_now_is_never_read_as_the_future(self, tmp_path):
+        # Found in review: written to the millisecond, it rounded up, and a sweep asked at once
+        # found it not due yet, one run in seven.
+        for _ in range(200):
+            now = time.time()
+            trash._write_due(tmp_path, now)
+            assert trash._read_due(tmp_path / trash.SWEEP_DUE)[0] <= now
+            (tmp_path / trash.SWEEP_DUE).unlink()
+
+    def test_a_busy_log_is_tried_again_without_sweeping_again(self, stack, monkeypatch):
+        import sqlite3
+
+        store = stack.store
+        batch(stack, store.home / "batches", n=1)
+        sweeps = []
+        sweep = trash._sweep
+        monkeypatch.setattr(trash, "_sweep", lambda *args, **kwargs: sweeps.append(1) or sweep(*args, **kwargs))
+        reader = sqlite3.connect(store.home / "tuningfork.db")
+        try:
+            reader.execute("BEGIN")
+            reader.execute("SELECT count(*) FROM runs").fetchone()
+            trash._put_due(store.home / trash.SWEEP_DUE, time.time() - 1, False)
+            trash.sweep_if_due(store, now=time.time() + 1)
+            trash.sweep_if_due(store, now=time.time() + 1)
+            assert len(sweeps) == 1 and trash._read_due(store.home / trash.SWEEP_DUE)[1]  # the log alone
+        finally:
+            reader.close()
+        trash.sweep_if_due(store, now=time.time() + 1)
+        assert len(sweeps) == 1 and not (store.home / trash.SWEEP_DUE).exists()
+
+    def test_a_whole_sweep_asked_for_stays_asked_for(self, tmp_path):
+        trash._write_due(tmp_path, time.time())
+        trash._write_due(tmp_path, time.time(), only_the_log=True)  # a job's purge, the log busy
+        assert trash._read_due(tmp_path / trash.SWEEP_DUE)[1] is False
+        (tmp_path / trash.SWEEP_DUE).unlink()
+        trash._write_due(tmp_path, time.time(), only_the_log=True)
+        assert trash._read_due(tmp_path / trash.SWEEP_DUE)[1] is True
+
+    def test_a_mark_set_far_ahead_is_kept_no_later_than_the_grace(self, tmp_path):
+        trash._put_due(tmp_path / trash.SWEEP_DUE, float("inf"), False)
+        now = time.time()
+        trash._write_due(tmp_path, now)
+        assert trash._read_due(tmp_path / trash.SWEEP_DUE)[0] <= now + trash.GRACE + 1
+
+    def test_a_mark_that_cannot_be_written_fails_no_deletion(self, stack):
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        (store.home / trash.SWEEP_DUE).mkdir()
+
+        deleted(store, run)
+
+        assert store.get_run(run) is None and not list(store.home.glob(f"{trash.SWEEP_DUE}.*.tmp"))
+
+
+class TestNamedElsewhere:
+    def test_a_skill_copy_a_scenario_in_the_trash_names_stays(self, stack):
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        copy = group_of(store, run) / "skill-snapshot" / "tally-report"
+        trashed = store.home / "scenarios" / ".trash" / "named-1"
+        trashed.mkdir(parents=True)
+        (trashed / "evals.json").write_text(json.dumps({
+            "skill_name": "tally-report", "tuningfork": {"skill_dir": os.path.relpath(copy, trashed)}, "evals": [],
+        }), encoding="utf-8")
+
+        deleted(store, run)
+
+        assert (copy / "SKILL.md").is_file()
+
+    def test_a_skill_copy_a_task_file_names_stays_while_a_run_of_it_is_left(self, stack):
+        store = stack.store
+        (first,) = batch(stack, store.home / "batches", n=1)
+        copy = group_of(store, first) / "skill-snapshot" / "tally-report"
+        data = json.loads(stack.spec.path.read_text(encoding="utf-8"))
+        data["tuningfork"]["skill_dir"] = str(copy)
+        other = stack.tmp / "other.json"
+        other.write_text(json.dumps(data), encoding="utf-8")
+        execute_batch(store, prepare_batch(store, other, base_url=f"{stack.url}/v1",
+                                           workdir=store.home / "batches", model="m", harness="fake", n=1))
+
+        deleted(store, first)
+
+        assert (copy / "SKILL.md").is_file()
+
+    def test_a_runs_own_folder_holding_a_skill_added_from_it_stays(self, stack):
+        from tuningfork.ops import addskill
+
+        store = stack.store
+        (run,) = batch(stack, stack.tmp / "elsewhere", n=1)
+        kept = group_of(store, run) / "0" / "kept-skill"
+        kept.mkdir()
+        (kept / "SKILL.md").write_text("---\nname: kept-skill\ndescription: a person's own\n---\n", encoding="utf-8")
+        addskill.execute_add(store, addskill.prepare_folder(store, kept))
+
+        deleted(store, run)
+
+        assert (kept / "SKILL.md").is_file()
+
+    def test_a_chains_first_link_never_takes_a_folder_that_was_there(self, stack):
+        store = stack.store
+        (stack.tmp / "chained" / "taken").mkdir(parents=True)
+        plan = prepare_batch(store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "chained",
+                             model="m", harness="fake", n=1)
+        with pytest.raises(FileExistsError):
+            execute_batch(store, plan, group="taken", start=0)

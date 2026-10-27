@@ -98,17 +98,21 @@ threads, the experiments at its steps and their samples, forks tuningfork launch
 token streams, launches and their folders), then what nothing left refers to — message nodes,
 blobs, snapshot objects, the folder a batch or a set of forks was laid out in with the skill
 copy its runs were given (`trash._remove_groups`) — with a two-minute grace for a recording in
-flight, swept once it has passed (`trash.sweep_if_due`: the proxy looks every half minute, and
-a later deletion sweeps everything). A launch's folder outside the recordings folder goes only
-where tuningfork marked its group as its own (`runner.GROUP_MARK`, `make_group`: 0700). What a
-deleted row held is overwritten (`secure_delete`) and the database's log emptied
-(`Store.checkpoint`). A job keeps its record of the work, and a chain its record and the skill
-each link left: each goes only as itself, a chain by hand. A refinement goes
-with what it made (`refine.made_by`): its screens, its validations' forks and fresh training
-runs, its proposals' saved texts and its folder — never the run it studies, nor the changelog
-and old versions an approval wrote beside the skill's folder. One in the trash is shown as it
-was and takes no new work (`refine.refuse_closed`). A fork an experiment drew goes to the
-trash, and is deleted, only with its experiment, as a thread goes with its run
+flight, swept once it has passed (`trash.sweep_if_due`: a running proxy looks every half
+minute, and a later deletion sweeps everything). A folder holding a path a skill added, a
+scenario or a remaining launch's task file names stays (`trash._named`). A launch's folder
+outside the recordings folder goes only where tuningfork marked its group as made for this
+recordings folder (`runner.GROUP_MARK`, `made_for`, `make_group`: 0700): a copy of the
+recordings folder, whose launches name the original's folders, removes none of them, nor its
+own copies of them. What a deleted row held is overwritten (`secure_delete`), and the
+database's log emptied once no other process reads it (`Store.checkpoint`). A job keeps its
+record of the work, a chain its record and the skill each link left, and what was made of a run
+— a scenario, a skill added — what it took: each goes only as itself, a chain by hand. A
+refinement goes with what it made (`refine.made_by`): its screens, its validations' forks and
+fresh training runs, its proposals' saved texts and its folder — never the run it studies, nor
+the changelog and old versions an approval wrote beside the skill's folder. One in the trash is
+shown as it was and takes no new work (`refine.refuse_closed`). A fork an experiment drew goes
+to the trash, and is deleted, only with its experiment, as a thread goes with its run
 (`trash.experiment_of_fork`): its verdict is the experiment's, kept in its sample, and taking
 single forks out of a finished screen would choose which of them count.
 

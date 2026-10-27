@@ -8,14 +8,19 @@ or a refinement in the trash. Deleting from the trash is permanent: the item goe
 everything tied to it (`Store.purge_closure`), and then whatever nothing left refers to —
 message content, blobs, workspace snapshots, the folders its launches ran in, and the folder of
 a batch or of a set of forks, with the skill copy its runs were given, once none of its runs is
-left. A launch's folder outside the recordings folder goes only where tuningfork marked its
-group as its own (`runner.GROUP_MARK`). What a deleted row held is overwritten and the
-database's log emptied (`Store.checkpoint`). What was written in the last two minutes, which a
-recording in flight may still need, is swept once they have passed (`sweep_if_due`: the proxy,
-or the next deletion).
+left and nothing else names it. A launch's folder outside the recordings folder goes only where
+tuningfork marked its group as made for this recordings folder (`runner.GROUP_MARK`): a copy of
+the recordings folder, whose launches name the original's folders, removes none of them, nor its
+own copies of them. A folder holding a path a person keeps a name of (`_named`) stays. What a
+deleted row held is overwritten, and the database's log emptied once no other process reads it
+(`Store.checkpoint`). What was written in the last two minutes, which a recording in flight may
+still need, is swept once they have passed (`sweep_if_due`: a running proxy, or the next
+deletion).
 
 A job keeps its record of work deleted since, and a chain its record and the skill each link
-left: each is a record of its own, deleted only as itself.
+left: each is a record of its own, deleted only as itself. What was made of a run stays too — a
+scenario's conversation and input files, a skill added from it — and so do the quotes a
+refinement that cites it keeps.
 
 A refinement goes with what it made (`ops.refine.made_by`): its screens, its validations'
 forks and fresh training runs, its proposals' saved texts, and its own folder. Never the run
@@ -25,6 +30,8 @@ skill's old versions stay.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 import shutil
 import time
@@ -256,7 +263,20 @@ def _goes(store: Store, plan: Purge, excluding: Sequence[str] = ()) -> dict[str,
     from tuningfork.ops.refine import citations
 
     return {**plan.to_json(), "cited_by": citations(store, runs=plan.runs, experiments=plan.experiments,
-                                                    excluding=excluding)}
+                                                    excluding=excluding),
+            "notes": _outside(store, plan)}
+
+
+def _outside(store: Store, plan: Purge) -> list[str]:
+    """That deleting `plan` reaches outside the recordings folder, and where: the folders
+    tuningfork made there for its launches, marked as made for this recordings folder."""
+    home = store.home.resolve()
+    named = _named(store, home) if plan.launches else []
+    groups = sorted({str(folder.parent) for workspace, harness_home in plan.launches.values()
+                     if (folder := _launch_folder(home, workspace, harness_home, named)) is not None
+                     and not _inside(home, folder, 1)})
+    return [f"the folders tuningfork made for its launches outside the recordings folder go too, in "
+            f"{', '.join(groups)}"] if groups else []
 
 
 def _refinement_goes(store: Store, refinement: Any) -> dict[str, Any]:
@@ -265,7 +285,7 @@ def _refinement_goes(store: Store, refinement: Any) -> dict[str, Any]:
 
     made = made_by(store, refinement)
     goes = _goes(store, store.purge_closure(runs=made.runs, experiments=made.experiments), [refinement.id])
-    notes = []
+    notes = list(goes["notes"])
     if refinement.status == "approved":
         notes.append(f"refinement {refinement.id[:8]} is approved: its approval and the evidence kept in it go "
                      "too; the skill's changelog and its old versions, beside the skill's folder, stay")
@@ -281,10 +301,10 @@ def preview(store: Store, kind: str, reference: str) -> dict[str, Any]:
     if kind == "experiment":
         return _goes(store, store.purge_closure(experiments=[arm.id for arm in _experiments(store, reference)[1]]))
     if kind == "job":
-        return {"jobs": 1 if _job(store, reference) else 0}
+        return {"jobs": 1 if _job(store, reference) else 0, "notes": []}
     if kind == "refinement":
         return _refinement_goes(store, _refinement(store, reference))
-    return {"scenarios": 1 if _trashed_scenario(store.home, reference) else 0}
+    return {"scenarios": 1 if _trashed_scenario(store.home, reference) else 0, "notes": []}
 
 
 def purge(store: Store, kind: str, reference: str) -> Removal:
@@ -301,7 +321,8 @@ def purge(store: Store, kind: str, reference: str) -> Removal:
         if job.trashed_at is None:
             raise _not_in_trash(kind, job.id)
         store.purge_job(job.id)
-        store.checkpoint()
+        if not store.checkpoint():
+            _write_due(store.home, time.time(), only_the_log=True)  # emptied when the proxy next looks
         removal.items.append({"kind": kind, "id": job.id})
         removal.add({"jobs": 1})
         return removal
@@ -428,12 +449,13 @@ def _remove(store: Store, plan: Purge, removal: Removal) -> None:
     removal.add(plan.to_json())
     snapshots = Snapshots(store.home)
     home = store.home.resolve()
+    named = _named(store, home)  # by what is left
     for launch_id, (workspace, harness_home) in plan.launches.items():
         try:
             snapshots.drop(launch_id)
         except SnapshotError:
             pass  # a store git cannot read keeps what it holds; the rows are gone either way
-        folder = _launch_folder(home, workspace, harness_home)
+        folder = _launch_folder(home, workspace, harness_home, named)
         if folder is not None:
             shutil.rmtree(folder, ignore_errors=True)
             removal.folders += 1
@@ -445,7 +467,7 @@ def _remove(store: Store, plan: Purge, removal: Removal) -> None:
         if kept.is_dir():
             shutil.rmtree(kept, ignore_errors=True)
             removal.folders += 1
-    _remove_groups(store, home, groups, removal)
+    _remove_groups(store, home, groups, removal, named)
 
 
 def _groups(store: Store, plan: Purge) -> dict[Path, bool]:
@@ -461,41 +483,82 @@ def _groups(store: Store, plan: Purge) -> dict[Path, bool]:
             continue
         chain = bool((launch.settings or {}).get("chain"))
         found = []
-        workspace = Path(launch.workspace).resolve() if launch.workspace else None
-        if workspace is not None and workspace.name == "workspace" and workspace.parent.name.isdigit():
-            found.append(workspace.parent.parent)
-        if launch.skill_dir:
-            copy = Path(launch.skill_dir).resolve().parent
-            if copy.name.startswith(SNAPSHOT):
-                found.append(copy.parent)
+        try:
+            workspace = Path(launch.workspace).resolve() if launch.workspace else None
+            if workspace is not None and workspace.name == "workspace" and workspace.parent.name.isdigit():
+                found.append(workspace.parent.parent)
+            if launch.skill_dir:
+                copy = Path(launch.skill_dir).resolve().parent
+                if copy.name.startswith(SNAPSHOT):
+                    found.append(copy.parent)
+        except OSError:
+            continue  # a path it cannot read: its folders stay
         for group in found:
             groups[group] = groups.get(group, False) or chain
     return groups
 
 
-def _remove_groups(store: Store, home: Path, groups: dict[Path, bool], removal: Removal) -> None:
+def _remove_groups(store: Store, home: Path, groups: dict[Path, bool], removal: Removal,
+                   named: Sequence[Path] = ()) -> None:
     """A batch's folder, or a set of forks', once none of its launches is left: the skill copy
-    its runs were given goes with it. Only one tuningfork made — inside the recordings folder two
-    levels down or more, or marked as its own — holding nothing but its skill copies, and to
-    which nothing left refers. A chain's stays, with the skill each link left."""
-    from tuningfork.runner import GROUP_MARK, SNAPSHOT
+    its runs were given goes with it. Only one tuningfork made for this recordings folder — inside
+    it two levels down or more, or marked as made for it, wherever that is — holding nothing but
+    its skill copies, to which no launch left refers, and inside which nothing a person keeps
+    names a path (`_named`). A chain's stays, with the skill each link left; so does one that
+    cannot be read."""
+    from tuningfork.runner import GROUP_MARK, SNAPSHOT, made_for
 
     for group, chain in groups.items():
-        if chain or not group.is_dir() or group.is_symlink():
-            continue
         try:
-            depth = len(group.relative_to(home).parts)
-        except ValueError:
-            depth = 0
-        if depth < 2 and not (group / GROUP_MARK).is_file():
-            continue
-        if any(entry.name != GROUP_MARK and not (entry.is_dir() and entry.name.startswith(SNAPSHOT))
-               for entry in group.iterdir()):
-            continue
-        if store.refers_into(group):
+            if chain or group.is_symlink() or not group.is_dir():
+                continue
+            if not _inside(home, group, 2) and not made_for(group, home):
+                continue
+            if any(entry.name != GROUP_MARK and not (entry.is_dir() and entry.name.startswith(SNAPSHOT))
+                   for entry in group.iterdir()):
+                continue
+            if store.refers_into(group) or _holds(group, named):
+                continue
+        except OSError:
             continue
         shutil.rmtree(group, ignore_errors=True)
         removal.folders += 1
+
+
+def _inside(home: Path, folder: Path, depth: int) -> bool:
+    """Whether `folder` lies inside the recordings folder, `depth` levels down or more."""
+    try:
+        return len(folder.relative_to(home).parts) >= depth
+    except ValueError:
+        return False
+
+
+def _named(store: Store, home: Path) -> list[Path]:
+    """The skill folders something a person keeps names, as a run would open them: a skill added
+    and remembered where it is, a scenario's (one in the trash too), and the task file's of each
+    launch left in the store. A person can name a batch's skill copy, or a skill as a run's
+    harness left it, as any of them, and an approval then writes there: what holds one stays."""
+    from tuningfork.ops.addskill import added
+    from tuningfork.ops.scenarios import SPEC
+    from tuningfork.ops.scenarios import root as scenarios
+    from tuningfork.paths import resolve_path
+
+    found = [each.path.resolve() for each in added(home) if each.kind == "folder"]
+    specs = [*scenarios(home).glob(f"*/{SPEC}"), *scenarios(home).glob(f".trash/*/{SPEC}"),
+             *(Path(path) for path in store.spec_paths())]
+    for spec in specs:
+        try:
+            skill = json.loads(spec.read_text(encoding="utf-8")).get("tuningfork", {}).get("skill_dir")
+            if isinstance(skill, str) and skill:
+                found.append(resolve_path(skill, spec.parent).path.resolve())
+        except (OSError, ValueError, AttributeError, OperationError):
+            continue
+    return found
+
+
+def _holds(folder: Path, named: Sequence[Path]) -> bool:
+    """Whether `folder` is, or holds, one of the paths `named`."""
+    return any(path == folder or folder in path.parents for path in named)
 
 
 def _remove_refinement(refinement: Any, variants: Sequence[Path], removal: Removal) -> None:
@@ -507,32 +570,34 @@ def _remove_refinement(refinement: Any, variants: Sequence[Path], removal: Remov
     removal.add({"refinements": 1, "variants": len(variants)})
 
 
-def _launch_folder(home: Path, workspace: str | None, harness_home: str | None) -> Path | None:
+def _launch_folder(home: Path, workspace: str | None, harness_home: str | None,
+                   named: Sequence[Path] = ()) -> Path | None:
     """The folder a launch ran in — its workspace's and harness home's parent — if tuningfork
-    made it: inside the recordings folder, two levels down or more, or numbered in a folder it
-    marked as its own (`runner.GROUP_MARK`), wherever that is. Anything else is left alone."""
-    from tuningfork.runner import GROUP_MARK
+    made it for this recordings folder: inside it, two levels down or more, or numbered in a folder
+    marked as made for it (`runner.made_for`), wherever that is. Anything else is left alone — a
+    copy of the recordings folder's launches name the original's folders — and so is one holding
+    a path something a person keeps names (`_named`), and what cannot be read."""
+    from tuningfork.runner import made_for
 
     if not workspace:
         return None
     folder = Path(workspace).resolve().parent
     if harness_home and Path(harness_home).resolve().parent != folder:
         return None
-    if not folder.is_dir():
-        return None
     try:
-        depth = len(folder.relative_to(home).parts)
-    except ValueError:
-        depth = 0
-    if depth >= 2 or (folder.name.isdigit() and (folder.parent / GROUP_MARK).is_file()):
-        return folder
+        if (folder.is_dir() and not _holds(folder, named)
+                and (_inside(home, folder, 2) or (folder.name.isdigit() and made_for(folder.parent, home)))):
+            return folder
+    except OSError:
+        pass
     return None
 
 
-def _sweep(store: Store, removal: Removal, *, again: bool = True) -> None:
+def _sweep(store: Store, removal: Removal, *, again: bool = True) -> bool:
     """What nothing left refers to: message-tree nodes, then blobs, then snapshot objects; then
-    the database's log emptied. What the grace kept is swept again once it has passed, `again`
-    — unless this is that sweep."""
+    the database's log emptied, which another process reading at that moment keeps — whether it
+    was is returned. What the grace kept is swept again once it has passed, `again`, unless this
+    is that sweep."""
     from tuningfork.snapshots import SnapshotError, Snapshots
 
     removal.nodes += store.collect_garbage()
@@ -545,45 +610,81 @@ def _sweep(store: Store, removal: Removal, *, again: bool = True) -> None:
         Snapshots(store.home).prune()
     except SnapshotError:
         pass
-    store.checkpoint()
+    emptied = store.checkpoint()
     if again:
         # Written whatever the blobs held: snapshot objects that young are kept too, uncounted.
+        # That sweep empties the log too, where this one could not.
         _write_due(store.home, time.time() + GRACE)
+    return emptied
 
 
 #: Beside the database, when a sweep is due: the time, after a deletion for good, at which what
-#: the grace kept may go. The proxy looks every `SWEEP_EVERY` seconds; a later deletion for good
-#: sweeps everything nothing refers to anyway.
+#: the grace kept may go — and, on a second line `LOG_ONLY`, that only the database's log is left
+#: to empty. The proxy looks every `SWEEP_EVERY` seconds. A later deletion for good sweeps
+#: everything nothing refers to anyway, so a mark that cannot be written fails nothing.
 SWEEP_DUE = ".sweep-due"
 SWEEP_EVERY = 30.0
+LOG_ONLY = "log"
 
 
-def _write_due(home: Path, when: float) -> None:
-    path = home / SWEEP_DUE
+def _read_due(path: Path) -> tuple[float, bool, str] | None:
+    """A mark's time, whether it asks only for the log, and its text; None where there is no
+    mark, or it cannot be read. A time that is not one is due now."""
+    try:
+        written = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    lines = written.splitlines()
+    try:
+        when = float(lines[0])
+    except (IndexError, ValueError):
+        when = 0.0
+    return (0.0 if when != when else when), lines[1:2] == [LOG_ONLY], written
+
+
+def _put_due(path: Path, when: float, only_the_log: bool) -> None:
+    """Write a mark whole, its time exactly as it is: rounded, a time due now read as the future."""
     temporary = path.with_name(f"{SWEEP_DUE}.{os.getpid()}.tmp")
-    temporary.write_text(f"{when:.3f}\n", encoding="utf-8")
-    os.replace(temporary, path)
+    try:
+        temporary.write_text(f"{when!r}\n" + (f"{LOG_ONLY}\n" if only_the_log else ""), encoding="utf-8")
+        os.replace(temporary, path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            temporary.unlink(missing_ok=True)
+
+
+def _write_due(home: Path, when: float, *, only_the_log: bool = False) -> None:
+    """Set when a sweep is due: `when`, or the later time written already — but never later than
+    the grace from now, which a clock set wrong once would otherwise keep. A whole sweep asked for
+    before stays asked for."""
+    path = home / SWEEP_DUE
+    found = _read_due(path)
+    if found is not None:
+        when = max(when, min(found[0], time.time() + GRACE))
+        only_the_log = only_the_log and found[1]
+    _put_due(path, when, only_the_log)
 
 
 def sweep_if_due(store: Store, *, now: float | None = None) -> Removal | None:
     """Sweep what a deletion for good left for the grace, once the grace has passed: its blobs
-    and snapshot objects. None where nothing is due yet."""
+    and snapshot objects, and the database's log — or only the log, where that is all the mark
+    asks for. None where nothing is due yet, or the mark cannot be read."""
     path = store.home / SWEEP_DUE
-    try:
-        written = path.read_text(encoding="utf-8")
-        due = float(written)
-    except FileNotFoundError:
+    found = _read_due(path)
+    if found is None or (time.time() if now is None else now) < found[0]:
         return None
-    except (OSError, ValueError):
-        written, due = None, 0.0  # unreadable: swept now, and the mark replaced
-    if (time.time() if now is None else now) < due:
-        return None
+    when, only_the_log, written = found
     removal = Removal()
-    _sweep(store, removal, again=False)
+    emptied = store.checkpoint() if only_the_log else _sweep(store, removal, again=False)
     try:
-        # Unless a deletion since set another time, which its own sweep will meet.
-        if written is None or path.read_text(encoding="utf-8") == written:
-            path.unlink()
+        # Unless a deletion since wrote another mark, which its own sweep meets: taken away, or
+        # left asking only for the log another process still reads. In the moment between reading
+        # it and this, a mark written is lost: its leftovers wait for the next deletion.
+        if path.read_text(encoding="utf-8") == written:
+            if emptied:
+                path.unlink()
+            elif not only_the_log:
+                _put_due(path, time.time(), True)
     except OSError:
         pass
     return removal

@@ -5299,8 +5299,9 @@ def _print_removal(removed: dict[str, Any]) -> None:
     )
     if removed.get("held"):
         console.print(
-            f"[dim]{removed['held']} blob(s) written in the last two minutes stay for a recording in flight: a "
-            "running proxy deletes them once those have passed, or the next deletion for good does[/dim]"
+            f"[dim]{removed['held']} blob(s) nothing refers to were written in the last two minutes, which a "
+            "recording in flight may still need: those it does not are deleted once two minutes have passed, "
+            "by a running proxy or the next deletion for good[/dim]"
         )
 
 

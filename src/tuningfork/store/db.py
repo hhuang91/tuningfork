@@ -1676,12 +1676,28 @@ class Store:
         with self._transaction():
             self._conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
 
-    def checkpoint(self) -> None:
+    #: How long a checkpoint waits for another process's reading to end, in milliseconds: not the
+    #: connection's five seconds, which would hold the store for every thread meanwhile.
+    CHECKPOINT_WAIT = 250
+
+    def checkpoint(self) -> bool:
         """Write the log's pages into the database and empty the log (`-wal`), so what a
-        deletion overwrote is not still read there. Another process reading at that moment
-        keeps the log as it is, until a later checkpoint."""
+        deletion overwrote is not still read there. Whether it was emptied: another process
+        reading at that moment keeps it as it is, for a later checkpoint."""
         with self._lock:
-            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+            (waited,) = self._conn.execute("PRAGMA busy_timeout").fetchone()
+            self._conn.execute(f"PRAGMA busy_timeout = {self.CHECKPOINT_WAIT}")
+            try:
+                busy, _, _ = self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            finally:
+                self._conn.execute(f"PRAGMA busy_timeout = {int(waited)}")
+        return not busy
+
+    def spec_paths(self) -> list[str]:
+        """The task files the launches in the store were launched from, each once."""
+        with self._lock:
+            rows = self._conn.execute("SELECT DISTINCT spec_path FROM launches WHERE spec_path IS NOT NULL")
+            return [row[0] for row in rows.fetchall()]
 
     def refers_into(self, folder: Path | str) -> bool:
         """Whether a launch left in the store names a path inside `folder`: its workspace (its

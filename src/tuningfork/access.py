@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import re
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,6 +82,10 @@ def open_to_others(folder: Path | str) -> str | None:
     """Who besides this user can open a recordings folder, in words, with how to make it this
     user's alone — or None where no one else can. A folder tuningfork makes is 0700; one made
     before, or by a person, keeps its mode, which tuningfork never changes by itself."""
+    import shlex
+
+    from tuningfork.paths import drive_root, under_wsl
+
     if os.name != "posix":
         return None
     try:
@@ -91,7 +96,12 @@ def open_to_others(folder: Path | str) -> str | None:
         return None
     who = ("its group and other users" if mode & 0o070 and mode & 0o007
            else "its group" if mode & 0o070 else "other users")
-    return f"{who} on this machine can open it (mode {mode:o}): `chmod 700 {folder}` makes it yours alone"
+    if under_wsl() and re.match(re.escape(drive_root()) + r"[A-Za-z](/|$)", str(Path(folder).resolve())):
+        # A Windows drive, which keeps no file modes unless mounted with `metadata`.
+        return (f"{who} on this machine can open it (mode {mode:o}): it is on a Windows drive, where "
+                "chmod may not hold; keep recordings on the Linux file system")
+    return (f"{who} on this machine can open it (mode {mode:o}): `chmod 700 {shlex.quote(str(folder))}` "
+            "makes it yours alone")
 
 
 def write_secret(path: Path | str, text: str) -> Path:

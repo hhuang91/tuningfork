@@ -626,12 +626,14 @@ it ends, printing its progress, and exits 1 unless it finished.
 in place, and no new work started on them. `trash list` shows what is there and what deleting
 each for good would remove; `trash restore <id>` brings items back. `trash purge <id>` deletes
 items for good with everything tied to them — a run's experiments and their samples, forks that
-replayed it, the folders its harness ran in, and its batch's folder with the skill copy it was
-given once none of the batch's runs is left — and `trash empty` deletes everything there.
-Neither can be undone. What was written in the last two minutes goes once those have passed,
-swept by a running proxy or the next deletion. A job keeps its record of the work it did, and a
-chain its record and the skill each link left (`chains/` in the recordings folder, and the
-chain's own folder, removed by hand).
+replayed it, the folders tuningfork made for its launches, and its batch's folder with the skill
+copy it was given once none of the batch's runs is left — and `trash empty` deletes everything
+there. Neither can be undone. Outside the recordings folder, only folders tuningfork marked as
+made for it go, which earlier versions did not mark. What was written in the last two minutes
+goes once those have passed, swept by a running proxy or the next deletion. A job keeps its
+record of the work it did, a chain its record and the skill each link left (`chains/` in the
+recordings folder, and the chain's own folder, removed by hand), and a scenario or a skill made
+from a run what it took.
 
 ### `glossary`, `version`
 

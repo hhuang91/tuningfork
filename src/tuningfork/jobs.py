@@ -269,7 +269,7 @@ class JobRunner:
                     raise OperationError("request_id must be text", code="bad_params", field="request_id")
                 with self._lock:
                     known = next((job for job in self._jobs.values() if job.record.request_id == request_id), None)
-                if known is not None:
+                if known is not None and (known.record.status in ("queued", "running") or self._still_stored(known)):
                     return self._summary(known)
                 stored = self.store.job_for_request(request_id)
                 if stored is not None:
@@ -297,17 +297,25 @@ class JobRunner:
             job = self._find(reference)
             if job is not None and job.record.status in ("queued", "running"):
                 return job.to_json(after=after, position=self._position(job))
-        stored = self.store.get_job(job.id if job is not None else reference)
         if job is not None:
+            if not self._still_stored(job):
+                return None
             with self._lock:
-                if stored is None:
-                    # Deleted for good from the trash, here or by another process: gone here too.
-                    self._jobs.pop(job.id, None)
-                    return None
-                # Its events live here alone; the trash marks it in the store.
-                job.record.trashed_at = stored.trashed_at
                 return job.to_json(after=after, position=self._position(job))
+        stored = self.store.get_job(reference)
         return job_json(stored, events=[] if after is not None else None) if stored else None
+
+    def _still_stored(self, job: Job) -> bool:
+        """An ended job held here, as the store has it now: its trash mark read again (its events
+        live here alone). False, and forgotten here, once deleted for good — by this process or
+        another."""
+        stored = self.store.get_job(job.id)
+        with self._lock:
+            if stored is None:
+                self._jobs.pop(job.id, None)
+                return False
+            job.record.trashed_at = stored.trashed_at
+        return True
 
     def list(self, limit: int = 50) -> list[dict[str, Any]]:
         """Recent jobs, newest first: the ones held here as they are now, the rest as stored —
@@ -506,11 +514,15 @@ class JobRunner:
         never judged. Cancelling a finished job changes nothing."""
         with self._lock:
             job = self._find(reference)
-            if job is None:
-                stored = self.store.get_job(reference)
-                if stored is None:
-                    raise OperationError(f"no job matching {reference!r}", code="not_found")
-                return job_json(stored)
+            ended = job is None or job.record.status not in ("queued", "running")
+        if ended:
+            if job is not None and self._still_stored(job):
+                return self._summary(job)
+            stored = None if job is not None else self.store.get_job(reference)
+            if stored is None:
+                raise OperationError(f"no job matching {reference!r}", code="not_found")
+            return job_json(stored)
+        with self._lock:
             queued = job.record.status == "queued"
             if queued:
                 self._queues[job.record.lane].remove(job)

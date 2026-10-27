@@ -230,3 +230,19 @@ class TestTheRecordingsFolder:
         lab.demo_home(tmp_path / "demo", "lab")
         for made in ("configured", "keyed", "demo"):
             assert stat.S_IMODE((tmp_path / made).stat().st_mode) == 0o700, made
+
+    def test_its_advice_quotes_the_folder_and_holds_on_a_windows_drive(self, tmp_path, monkeypatch):
+        from tuningfork import access
+
+        spaced = tmp_path / "my recordings"
+        spaced.mkdir()
+        spaced.chmod(0o755)
+        assert f"`chmod 700 '{spaced}'`" in access.open_to_others(spaced)
+
+        monkeypatch.setattr("tuningfork.paths.under_wsl", lambda: True)
+        monkeypatch.setattr("tuningfork.paths.drive_root", lambda: str(tmp_path) + "/")
+        drive = tmp_path / "c"
+        drive.mkdir()
+        drive.chmod(0o777)
+        said = access.open_to_others(drive)
+        assert "on a Windows drive" in said and "chmod 700" not in said

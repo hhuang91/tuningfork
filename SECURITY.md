@@ -16,16 +16,18 @@ does to keep that local:
   `<recordings>/.access-token` (mode 0600). Reads need no token: anything that can reach the
   port can read the recordings, another user's process on this machine included.
 - **The recordings folder is yours alone when tuningfork makes it** (mode 0700), and so is each
-  folder it lays launches out in, wherever that is. `serve` and `ui` say when a recordings folder
-  made before can be opened by others, and how to make it yours alone; tuningfork never changes
-  it by itself.
-- **Deleting from the trash is for good.** A run goes with what is tied to it, the folders its
-  harness ran in, and what nothing left refers to: its messages, blobs and workspace snapshots,
-  and its batch's folder with the skill copy the batch was given. What its database rows held is
-  overwritten. What was written in the last two minutes goes once those have passed, since a
-  recording in flight may still need it. A job keeps its record of the work it did, a chain its
-  record and the skill each link left, and a refinement that cites the run what it quoted: each
-  goes only as itself, a chain's by hand. Files go as your file system deletes them.
+  folder it lays launches out in, wherever that is, on a file system that keeps modes (a Windows
+  drive under WSL may not). `serve` and `ui` say when a recordings folder made before can be opened
+  by others, and how to make it yours alone; tuningfork never changes it by itself.
+- **Deleting from the trash is for good.** A run goes with what is tied to it, the folders
+  tuningfork made for its launches, whatever they hold, and what nothing left refers to: its
+  messages, blobs and workspace snapshots, and its batch's folder with the skill copy the batch
+  was given, once none of the batch's runs is left, nothing else is in it, and no skill added,
+  scenario or task file names the copy. Outside the recordings folder, a folder goes only where
+  tuningfork marked it as made for this recordings folder, which earlier versions did not. What its
+  database rows held is overwritten. What was written in the last two minutes, which a recording
+  in flight may still need, goes once those have passed, while a proxy serves the recordings
+  folder, or at the next deletion. Files go as your file system deletes them.
 - **An agent's MCP client holds no key to the rest.** The MCP endpoint takes a token of its
   own, and no other; the access token is refused there. No MCP tool approves an edit to a
   skill, and none offers the held-out results an edit is judged by.
@@ -68,3 +70,7 @@ What it does **not** do:
   by its task, by this machine's config, or by the recordings folder's. Where bubblewrap runs,
   it runs in its run's sandbox, and can read what a launch can, and its task's folder. Run
   harnesses, tasks and specs you trust.
+- **Deleting a run does not take what records it, or what was made of it.** A job keeps its
+  record of the work it did; a chain its record and the skill each link left, which you remove by
+  hand; a refinement that cites the run what it quoted; a scenario made from the run its
+  conversation and input files; and a skill added from it its copy. Each goes only as itself.

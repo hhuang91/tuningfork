@@ -558,3 +558,48 @@ class TestDeletedForGood:
         trash.purge(store, "job", job["id"])
         assert runner.get(job["id"]) is None and runner.get(job["id"][:8]) is None
         assert (store.home / "tuningfork.db-wal").stat().st_size == 0  # its row, overwritten and out of the log
+
+    def test_cancelling_a_job_deleted_for_good_finds_none(self, runner, store):
+        # Found in review: cancel read the job from memory as it ended, before anything asked
+        # the store.
+        from tuningfork.ops import trash
+
+        job = runner.submit("count", {"steps": 1})
+        settled(runner, job["id"])
+        trash.trash(store, "job", job["id"])
+        trash.purge(store, "job", job["id"])
+
+        with pytest.raises(OperationError) as refused:
+            runner.cancel(job["id"])
+        assert refused.value.code == "not_found"
+
+    def test_a_request_id_a_deleted_job_had_starts_a_new_one(self, runner, store):
+        from tuningfork.ops import trash
+
+        first = runner.submit("count", {"steps": 1}, request_id="form-9")
+        settled(runner, first["id"])
+        trash.trash(store, "job", first["id"])
+        trash.purge(store, "job", first["id"])
+
+        again = runner.submit("count", {"steps": 1}, request_id="form-9")
+        assert again["id"] != first["id"]
+        settled(runner, again["id"])
+
+    def test_a_job_deleted_while_another_process_reads_is_out_of_the_log_later(self, runner, store):
+        import sqlite3
+
+        from tuningfork.ops import trash
+
+        job = runner.submit("count", {"steps": 1})
+        settled(runner, job["id"])
+        trash.trash(store, "job", job["id"])
+        reader = sqlite3.connect(store.home / "tuningfork.db")
+        try:
+            reader.execute("BEGIN")
+            reader.execute("SELECT count(*) FROM jobs").fetchone()
+            trash.purge(store, "job", job["id"])
+            assert (store.home / trash.SWEEP_DUE).is_file()  # the log, emptied when a sweep is next due
+        finally:
+            reader.close()
+        trash.sweep_if_due(store, now=time.time() + 1)
+        assert (store.home / "tuningfork.db-wal").stat().st_size == 0

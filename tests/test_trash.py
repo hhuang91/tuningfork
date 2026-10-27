@@ -138,7 +138,7 @@ class TestDeletedForGood:
         assert fork.id in {run.id for run in store.runs(limit=100, forks=True)}
         goes = trash.preview(store, "run", source.id)
         assert goes == {"runs": 4, "steps": 6, "experiments": 1, "samples": 1, "token_streams": 2, "launches": 2,
-                        "cited_by": []}
+                        "cited_by": [], "notes": []}
 
         removed = trash.purge(store, "run", source.id).to_json()
 
@@ -365,7 +365,7 @@ def test_the_trash_from_the_command_line(store, monkeypatch):
     gone = runner.invoke(app, ["trash", "purge", "named", "--yes", "--home", home])
     assert "deleted for good: 1 run" in gone.output and store.get_run(run) is None
     # Just recorded: what it wrote waits out the grace, and the person is told until when.
-    assert "blob(s) written in the last two minutes stay for a recording in flight" in gone.output
+    assert "blob(s) nothing refers to were written in the last two minutes" in gone.output
     assert json.loads(runner.invoke(app, ["trash", "list", "--json", "--home", home]).output)["runs"] == []
 
 
