@@ -549,6 +549,19 @@ class TestWhatIsShown:
         changed = [line["text"] for hunk in line_diff(was, now)["hunks"] for line in hunk["lines"] if line["op"] != " "]
         assert changed and not [line for line in changed if line.startswith("Note:")]
 
+    def test_a_short_mask_without_a_letter_lands_glued_only_to_what_the_comparison_kept(self):
+        """Carried through compared characters, a short mask without a letter lands as a word of its
+        own, or glued to a character the comparison kept, on either side: no pattern today masks one
+        that its text glues after it, but one could (found in review)."""
+        from tuningfork.store.masking import Masking, _lands
+
+        assert not _lands("x1234y", 1, 5, False, True) and not _lands("x1234y", 1, 5, True, False)
+        assert _lands("x1234y", 1, 5, True, True) and _lands(" 1234 ", 1, 5, False, False)
+        assert _lands("xZ9q4y", 1, 5, False, False)  # a letter among it: wherever the run puts it
+        # A store's own patterns can mask one its text glues after it.
+        pins = Masking(patterns=(r"pin=(?P<secret>\d{4})z",))
+        assert pins.alike(["pin=1234z\n", "pin:1234z\n"])[1] == f"pin:{REDACTED}z\n"
+
     def test_letters_a_changed_line_shares_with_a_key_by_chance_are_shown(self, store):
         """Found in review: a key's line rewritten as a word read `rot<redacted>t<redacted>d`, the
         letters the two happened to share masked. A run of shared characters carries a mask it holds

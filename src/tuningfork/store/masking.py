@@ -318,7 +318,8 @@ def _carried(spans: list[Span], blocks: list[tuple[int, int, int, bool]], into: 
     return carried
 
 
-def _values(texts: Sequence[str], spans: Sequence[list[Span]], found: frozenset[str]) -> list[str]:
+def _values(texts: Sequence[str], spans: Sequence[list[Span]],
+            found: frozenset[str]) -> list[tuple[str, frozenset[str], frozenset[str]]]:
     """What the masks of `texts` took that is found by its value on changed lines (`_found_in`):
     each value once, with the characters before and after its masks, `VALUE_LEAST` characters or
     more, and never one `found` masks wherever it stands already, nor one without a letter —
