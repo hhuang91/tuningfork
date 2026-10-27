@@ -283,13 +283,15 @@ def _outside(store: Store, plan: Purge) -> list[str]:
     groups = sorted({str(folder.parent) for folder in launched if not _inside(home, folder, 1)})
     notes = [f"the folders tuningfork made for its launches outside the recordings folder go too, in "
              f"{', '.join(groups)}"] if groups else []
-    named = _named(store, home)
-    folders = launched + [imports(home) / run for run in plan.runs]
+    folders = launched + [(imports(home) / run).resolve() for run in plan.runs]
+    return notes + _kept_note(_named(store, home), folders)
+
+
+def _kept_note(named: Sequence[Path], folders: Sequence[Path]) -> list[str]:
+    """What stays in the folders a deletion removes, said before it: each path named there."""
     kept = sorted({str(path) for folder in folders for path in named if path == folder or folder in path.parents})
-    if kept:
-        notes.append(f"what a skill added, a scenario or a task file names in them stays, and the rest goes: "
-                     f"{', '.join(kept)}")
-    return notes
+    return [f"what a skill added, a scenario or a task file names in them stays, and the rest goes: "
+            f"{', '.join(kept)}"] if kept else []
 
 
 def _refinement_goes(store: Store, refinement: Any) -> dict[str, Any]:
@@ -298,7 +300,7 @@ def _refinement_goes(store: Store, refinement: Any) -> dict[str, Any]:
 
     made = made_by(store, refinement)
     goes = _goes(store, store.purge_closure(runs=made.runs, experiments=made.experiments), [refinement.id])
-    notes = list(goes["notes"])
+    notes = list(goes["notes"]) + _kept_note(_named(store, store.home.resolve()), [Path(refinement.folder).resolve()])
     if refinement.status == "approved":
         notes.append(f"refinement {refinement.id[:8]} is approved: its approval and the evidence kept in it go "
                      "too; the skill's changelog and its old versions, beside the skill's folder, stay")
@@ -476,17 +478,18 @@ def _remove(store: Store, plan: Purge, removal: Removal) -> None:
     from tuningfork.ops.imports import root as imports
 
     for run_id in plan.runs:
-        kept = imports(home) / run_id
-        if kept.is_dir():
-            _clear(kept, named)
+        folder = (imports(home) / run_id).resolve()  # as the names it holds are read
+        if folder.is_dir():
+            _clear(folder, named)
             removal.folders += 1
     _remove_groups(store, home, groups, removal, named)
 
 
 def _clear(folder: Path, named: Sequence[Path]) -> None:
-    """Remove `folder`, but any path `named` inside it, and the folders leading to one: what a
-    person keeps a name of stays where it is, and the rest of the run goes. One named itself stays
-    whole. What cannot be read is left."""
+    """Remove `folder`, but any path `named` inside it, and the folders or links leading to one:
+    what a person keeps a name of stays where it is, and the rest of the run goes. One named
+    itself stays whole. A link is never followed: it goes, unless a name goes through it. What
+    cannot be read is left."""
     if folder in named:
         return
     kept = [path for path in named if folder in path.parents]
@@ -494,16 +497,18 @@ def _clear(folder: Path, named: Sequence[Path]) -> None:
         if not kept:
             shutil.rmtree(folder, ignore_errors=True)
             return
-        for entry in folder.iterdir():
-            if entry in kept:
-                continue
-            if entry.is_dir() and not entry.is_symlink():
-                if any(entry in path.parents for path in kept):
-                    _clear(entry, kept)
-                else:
-                    shutil.rmtree(entry, ignore_errors=True)
-            else:
-                entry.unlink(missing_ok=True)
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                path = Path(entry.path)
+                leads = path in kept or any(path in name.parents for name in kept)
+                if entry.is_dir(follow_symlinks=False):
+                    if path not in kept:
+                        if leads:
+                            _clear(path, kept)
+                        else:
+                            shutil.rmtree(path, ignore_errors=True)
+                elif not leads:
+                    path.unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -579,9 +584,9 @@ def _named(store: Store, home: Path) -> list[Path]:
     from tuningfork.ops.addskill import added
     from tuningfork.ops.scenarios import SPEC
     from tuningfork.ops.scenarios import root as scenarios
-    from tuningfork.paths import resolve_path
+    from tuningfork.paths import host_path, resolve_path
 
-    found = [each.path.resolve() for each in added(home) if each.kind == "folder"]
+    found = [path for each in added(home) if each.kind == "folder" for path in (each.path, each.path.resolve())]
     # Each task file, with the folder its skill folder is read against: a scenario in the trash
     # comes back to its own name, which a relative skill folder was written from.
     specs = [*((spec, spec.parent) for spec in scenarios(home).glob(f"*/{SPEC}")),
@@ -593,7 +598,9 @@ def _named(store: Store, home: Path) -> list[Path]:
                 continue
             skill = json.loads(spec.read_text(encoding="utf-8")).get("tuningfork", {}).get("skill_dir")
             if isinstance(skill, str) and skill:
-                found.append(resolve_path(skill, base).path.resolve())
+                # As a run opens it, and as written: a name going through a link keeps the link.
+                found += [resolve_path(skill, base).path,
+                          Path(os.path.normpath(os.path.join(base, os.path.expanduser(host_path(skill)))))]
         except Exception:  # noqa: BLE001 - a task file it cannot read names nothing; it stops no deletion
             continue
     return found

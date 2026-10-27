@@ -373,10 +373,10 @@ def test_a_folder_named_itself_stays_whole_and_one_it_cannot_list_is_left(tmp_pa
     trash._clear(folder, [folder])
     assert (folder / "workspace").is_dir()
 
-    def refused(self):
-        raise PermissionError(13, "Permission denied", str(self))
+    def refused(path):
+        raise PermissionError(13, "Permission denied", str(path))
 
-    monkeypatch.setattr(Path, "iterdir", refused)
+    monkeypatch.setattr(trash.os, "scandir", refused)
     trash._clear(folder, [folder / "workspace" / "kept"])  # raises nothing
     assert (folder / "workspace").is_dir()
 
@@ -586,6 +586,7 @@ class TestNamedElsewhere:
         (kept / "SKILL.md").write_text("---\nname: kept-skill\ndescription: a person's own\n---\n", encoding="utf-8")
         addskill.execute_add(store, addskill.prepare_folder(store, kept))
         trash.trash(store, "refinement", made.id)
+        assert any(str(kept) in note for note in trash.preview(store, "refinement", made.id)["notes"])
 
         trash.purge(store, "refinement", made.id)
 
@@ -615,3 +616,51 @@ class TestNamedElsewhere:
                              model="m", harness="fake", n=1)
         with pytest.raises(FileExistsError):
             execute_batch(store, plan, group="taken", start=0)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="links as POSIX makes them")
+class TestThroughALink:
+    def test_a_name_in_an_imports_folder_stays_where_imports_is_a_link(self, stack):
+        # Found in review: the import's folder was taken as written, the names as resolved.
+        from tuningfork.ops import addskill
+        from tuningfork.ops.imports import root as imports
+
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        elsewhere = stack.tmp / "imports-elsewhere"
+        elsewhere.mkdir()
+        if imports(store.home).is_dir():
+            imports(store.home).rmdir()
+        imports(store.home).symlink_to(elsewhere, target_is_directory=True)
+        folder = imports(store.home) / run
+        kept = folder / "skills" / "kept-skill"
+        kept.mkdir(parents=True)
+        (kept / "SKILL.md").write_text("---\nname: kept-skill\ndescription: a person's own\n---\n", encoding="utf-8")
+        (folder / "chat.json").write_text("[]\n", encoding="utf-8")
+        addskill.execute_add(store, addskill.prepare_folder(store, kept))
+        trash.trash(store, "run", run)
+        assert any("kept-skill" in note for note in trash.preview(store, "run", run)["notes"])
+
+        trash.purge(store, "run", run)
+
+        assert (kept / "SKILL.md").is_file() and not (folder / "chat.json").exists()
+
+    def test_a_name_through_a_link_in_a_runs_folder_keeps_the_link(self, stack):
+        # Found in review: the name was kept only as resolved, and the link it goes through went.
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        folder = group_of(store, run) / "0"
+        real = stack.tmp / "real-skills" / "kept-skill"
+        real.mkdir(parents=True)
+        (real / "SKILL.md").write_text("---\nname: kept-skill\ndescription: a person's own\n---\n", encoding="utf-8")
+        (folder / "linked").symlink_to(real.parent, target_is_directory=True)
+        scenario = store.home / "scenarios" / "named"
+        scenario.mkdir(parents=True)
+        (scenario / "evals.json").write_text(json.dumps({
+            "skill_name": "kept-skill", "tuningfork": {"skill_dir": str(folder / "linked" / "kept-skill")}, "evals": [],
+        }), encoding="utf-8")
+
+        deleted(store, run)
+
+        assert (folder / "linked" / "kept-skill" / "SKILL.md").is_file()
+        assert sorted(entry.name for entry in folder.iterdir()) == ["linked"]
