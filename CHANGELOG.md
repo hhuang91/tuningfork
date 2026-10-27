@@ -3,47 +3,57 @@
 ## 0.6.2 — OpenClaw, and what an agent is given, masked
 
 tuningfork launches OpenClaw now, beside Hermes Agent and Claude Code. Every answer an agent gets
-over MCP, and what a proposing model is sent, is masked as it leaves, and so are a check's output
-and the files tuningfork makes from what it recorded. A validation's runs are set up as the run
-it refines was. Making a scenario, the divergence page and a forking-token probe's page were
-reworked.
+over MCP, and what a proposing model is sent, is masked as it leaves. A check's output is masked
+where the check runs, and the files tuningfork makes from what it recorded as they are written. A
+validation's runs are set up as its checkpoint's run was. Making a scenario, the divergence page
+and a forking-token probe's page were reworked.
 
 - **OpenClaw** (`--harness openclaw`, #50) is launched for batches, forks and validations, as
   Hermes Agent and Claude Code are: each run is `openclaw agent exec` in a fresh home of its own,
   with no Gateway. It was checked with OpenClaw 2026.10.7, which runs on Node 24.22.1 or later in
   24, or 26.12.1 or later. Where it finds no Node it runs on, the Connections page says it cannot
-  run here, and why, and a batch or a fork is refused before it starts. A launch is OpenClaw as
-  shipped, Tool Search and the Skill Workshop on, but for the memory flush, which is off. Its
-  harness options are `tool_search`, `skill_workshop`, `memory_flush`, `mcp_servers` (tuningfork's
-  own tools, say) and `context_window`. Its page, `docs/adapters/openclaw.md`, says what its
-  recordings showed and what is not done yet: a subagent, which OpenClaw refuses without its
-  Gateway; a task's `max_turns`; a chain told its check's result; importing OpenClaw's sessions.
-- **Every answer an agent gets over MCP is masked as it leaves**, every refusal too, whatever the
-  recordings folder keeps. tuningfork keeps some things as they were given, because a fork runs
-  them again: a run's workspace, its task's prompt and check, the skill it was given.
+  run here, and why, as `tuningfork connections show` does. A batch or a fork is then refused
+  before it starts. A launch is OpenClaw as shipped, Tool Search and the Skill Workshop on, but
+  for the memory flush, which is off. Its harness options are `tool_search`, `skill_workshop`,
+  `memory_flush`, `mcp_servers` (tuningfork's own tools, say) and `context_window`.
+- **What OpenClaw does not do under tuningfork yet** is on its page, `docs/adapters/openclaw.md`,
+  with what its recordings showed. A subagent does not run: OpenClaw refuses one without its
+  Gateway. A task's `max_turns` does not reach it. A conversation it carries on after a compaction
+  is a thread of its own, so the final reply of a run that compacts is the main thread's last
+  answer. A chain told its check's result and importing OpenClaw's sessions are not done yet, and
+  a scenario made from an OpenClaw run is untried.
+- **A harness adapter can say three things more**, as OpenClaw's does: what to tell a launch of
+  the server (`for_server`), what in its `--version` stops it launching (`version_problem`), and
+  which side calls the conversation goes on from (`fed_back_side_calls`).
+  `docs/adapters/TEMPLATE.md` lists them.
+- **Every answer an agent gets over MCP is masked as it leaves**, every refusal too. Before,
   `show_files`, `show_skill`, `show_run`, `list_tasks`, `list_scenarios`, `show_refinement`,
-  `show_experiment` and `propose_edit` showed them as they were, and `where_it_holds` matched its
-  pattern against them.
-- **A text is masked whole before a view splits it or cuts it short:** `show_skill`'s numbered
-  lines, a file read page by page, a task's prompt in a plan or a packet. Masked line by line,
-  each line of a private key reads as no key, and cut short, a key leaves a part no pattern reads.
-  Each line keeps its number, and each line a mask covers reads `<redacted>`.
-- **Two texts side by side are masked alike:** a file's diff in `show_files`, now of its two texts
-  rather than git's patch, an A/B's wording, and a refinement's proposals. What they share is
-  masked as either masks it. A value either masks, of four characters or more with a letter among
-  them, is masked where it stands on a line that changed, as a word of its own or glued as its
-  mask was (mysql's `-pZ9q4`). An edit can take away what makes a key read as one: a private
-  key's first line, or the option before a password.
+  `show_experiment` and `propose_edit` could show a run's workspace, a task's check, a scenario's
+  task file, the skill a run was given or a wording tried, unmasked. `where_it_holds` matched its
+  pattern against the files as they are.
+- **A text an agent or a proposing model is shown is masked whole before it is split or cut
+  short:** `show_skill`'s numbered lines, a file read page by page, a task's prompt in a plan or a
+  packet. Masked line by line, each line of a private key reads as no key, and cut short, a key
+  leaves a part no pattern reads. Each line keeps its number, and each line a mask covers reads
+  `<redacted>`.
+- **Two texts an agent or a proposing model is shown side by side are masked alike:** a file's
+  diff in `show_files`, now of its two texts rather than git's patch, an A/B's wording, and a
+  refinement's proposals. What they share is masked as either masks it. A value either masks, of
+  four characters or more with a letter among them, is masked where it stands on a line that
+  changed, as a word of its own or glued as its mask was (mysql's `-pZ9q4`). An edit can take away
+  what makes a key read as one: a private key's first line, or the option before a password.
 - **What a proposing model is sent is masked:** the evidence packet as it is built, and the skill
   beside it. The proposer keeps its prompt and its answer masked with the recordings folder's own
-  patterns, not the defaults.
+  patterns.
 - **An edit is resolved against the skill's file, never against what was shown of it.** One that
   would write `<redacted>` into the skill, or change part of a masked key, is refused: a key
   changes whole or not at all. So are edits that change the words a key's pattern reads beside
   it, such as `password=`: they would leave the key to read as none, and every run given the
-  proposal would record the key bare. `show_skill` says these rules wherever it shows a mask. A
-  variant written from the skill as shown is set on the file as it stands, each line it kept the
-  file's.
+  proposal would record the key bare. `show_skill` says these rules wherever it shows a mask.
+- **A variant given as text that reads `<redacted>` more often than the skill's file does**,
+  written from the skill as shown, is set on the file as it stands, each line it kept the file's.
+  One that keeps part of a key, still reads the mask, or leaves a key to read as none is refused.
+  Any other text, a person's, is tested as given.
 - **A check's output is masked where the check runs**, before it is cut to its last 2,000
   characters, kept, or told to a harness. Cut first, a key the cut fell inside kept its end, which
   no pattern reads alone. It is masked every way the store reads a text. The values of the
@@ -52,13 +62,15 @@ reworked.
 - **The files tuningfork makes from what it recorded are masked** as the store masks what it
   records: an imported chat's `chat.json` and each `SKILL.md` taken from it, what a scenario or an
   added skill copies of an import, and a chain's record of the lines each link changed in its
-  skill. An import made before is masked as it is read, its files left as they are.
+  skill. An import made before is masked as it is read, wherever a scenario, a skill added or a
+  refinement is made of it, or its skill is shown.
 - **Making a scenario** names the skill the same way from a run's *Make a scenario…* and from the
-  Scenarios page: the scenario's name, the harness, the skill's name, then its folder, each
-  greyed where the run says it. A folder changed since the run, by an approval say, is offered
-  beside a copy of what the run had (`tuningfork scenario --copy-skill`). Save says whether the
-  scenario is saved, input files go in once it is, each at a path you can change, and *Add a task
-  file you have* takes a task file by its path or its folder uploaded.
+  Scenarios page: the scenario's name, the harness (of a run), the skill's name, then its folder,
+  each greyed where the run says it. A folder changed since the run, by an approval say, is
+  offered beside a copy of what the run had (`tuningfork scenario --copy-skill`).
+- **A scenario's page says whether it is saved**, beside *Save*. Input files go in once it is,
+  each at a path you can change. *Add a task file you have* takes a task file by its path or its
+  folder uploaded.
 - **Where the runs diverge** goes on from the first split to any step: a button for each step,
   shaded where the runs split, the arrow keys, and an address naming the step. Each step says in a
   line what the runs did there.
@@ -66,32 +78,38 @@ reworked.
   each beside the run's own token there, and says which way each moved what was counted. *Every
   continuation* shows what each continuation wrote from its forced token on, its reasoning and
   then its call or reply, by token or by behaviour (#29). `tuningfork experiment --continuations`
-  prints the same, and MCP's `show_experiment` gives it with `continuations`.
-- **A validation's runs are set up as the run it refines was** (#51): its fresh runs, as well as
-  its forks, take that run's harness options, clock, sandbox and layout. A refinement of a Hermes
-  run launched with `-o self_improvement=false` was validated on fresh runs where the model could
-  patch the skill under test. A screen run to the end pools only checkpoints of runs set up alike.
-- **What every check on a machine reads is named once:** a `"check_env"` list in the machine's
+  prints them, narrowed with `--at`, `--token` and `--behaviour`, and `tuningfork tokens --sample`
+  opens one as tokens. MCP's `show_experiment` pages through them with `continuations`.
+- **A validation's runs are set up as its checkpoint's run was** (#51): its fresh runs, as well as
+  its forks, take that run's harness options, but for its MCP servers, and its clock, sandbox and
+  layout. A refinement of a Hermes run launched with `-o self_improvement=false` was validated on
+  fresh runs where the model could patch the skill under test. The plan says the options and the
+  clock where there is something to say, and names the MCP servers left out. A screen run to the
+  end pools only checkpoints of runs set up alike.
+- **What every check on a machine reads can be named once:** a `"check_env"` list in the machine's
   config (`~/.config/tuningfork/config.json`, beside `"protected"`) or in a recordings folder's
   `config.json` adds to what each task names, a proxy's settings, say. A batch's plan, `tuningfork
-  connections show` and the Connections page say which file names what.
+  connections show` and the Connections page say which file names what. A list that cannot be
+  used is refused before anything is launched, naming its file.
 
 Changed:
 
-- **MCP answers carry no field named `sha256` or ending in `_sha256`.** Against a skill's digest,
-  a short key it showed masked could be guessed.
+- **MCP answers carry no field named `sha256` or ending in `_sha256`.**
 - **`where_it_holds`, asked by an agent, matches a file as the agent is shown it**, masked. Asked
-  from the CLI or the web UI, it matches the file as it stands.
+  from the CLI or the web UI, it matches the file itself.
 - **A run's page, its timeline and the task list show its task's check masked.** The form that
   makes a scenario of the run takes the check as written, since the scenario copies it and tries it.
 - **`recheck` and `check-along` print a check's output masked**, and a chain run with `--tell`
   tells its harness the masked output.
-- **A scenario of an imported chat continues the conversation masked**, as one of any other run
-  already did: its runs see `<redacted>` where the chat had a key.
+- **Making a scenario of an imported chat takes the conversation masked**, as making one of any
+  other run already did: its runs see `<redacted>` where the chat had a key.
 - **A screen run to the end passes over a run set up otherwise** as it chooses its checkpoints,
   and says how the run differs. A later screen chooses again where the latest drew from one.
-- **Make a scenario sends a harness only where the run recorded none.** A run through a harness
-  the form does not list was sent as Hermes.
+- **A probe's page says *less often* and *more often***, where it said a forced token flips away
+  or toward what was counted. *What was counted* is a label on a line of its own above a result's
+  verdict, and a refinement's test says *What the model should do*.
+- **Make a scenario says *Skill folder***, where it said *Its folder*, and sends a harness only
+  where the run recorded none: a run through a harness the form does not list was sent as Hermes.
 - **A task file kept as a scenario brings what its check reads from its folder**, and the
   conversation its runs continue.
 - **The Skills page finds a skill's folder from its latest launched run**, so a chat imported
@@ -99,9 +117,9 @@ Changed:
 - **An import whose skills' names make one folder** gives each its own (`tally-report`,
   `tally-report-2`). The import failed before.
 
-Recordings made before, and the files written beside them, keep what they stored. A validation
-run before this release launched its fresh runs with the harness's default options, and with the
-clock, sandbox and layout of wherever it ran: validate again to have them set up as the run was.
+A validation run before this release launched its fresh runs with the harness's default options,
+and with the clock, sandbox and layout of wherever it ran: validate again to have them set up as
+its checkpoint's run was.
 
 ## 0.6.1 — a task's check runs in its run's sandbox
 
