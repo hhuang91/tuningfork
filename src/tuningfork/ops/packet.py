@@ -7,11 +7,16 @@ sampled at the checkpoint that did and did not do what the target describes — 
 reasoning, which often names the instruction the model was weighing — the task's own
 criteria, and what was proposed and screened before.
 
-Built only from stored records, which are redacted on their way in, and only from the
-refinement's own task: a held-out task never reaches a proposer. Kept by its digest in the
-refinement's folder (`packets/<sha>.json`), so every proposal says exactly what its proposer
-saw. Where there is no evidence of a kind, the packet says so rather than leaving it out:
-"no answer sampled here reached the target" is itself what a proposer must know.
+Built only from the refinement's own task's records: a held-out task never reaches a proposer.
+What the store keeps of them is masked as it was kept; the run's skill, kept as it was given,
+and the task's criteria, as its file wrote them, are masked here: the skill whole, each line
+keeping its number, the task's criteria whole before they are clipped, earlier proposals and the
+skill masked alike (`Masking.alike`), and all of it of what the skill's masks took
+(`Masking.shown`). A proposer's model may be hosted. Kept by its digest in the refinement's
+folder (`packets/<sha>.json`), a digest of the packet as it was shown, so every proposal says
+exactly what its proposer saw. Where there is no evidence of a kind, the
+packet says so rather than leaving it out: "no answer sampled here reached the target" is
+itself what a proposer must know.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from typing import Any
 from tuningfork.ops import compact
 from tuningfork.ops.common import OperationError
 from tuningfork.store.db import Store
+from tuningfork.store.masking import Masked
 
 #: Answers shown of each kind: some that reached the target, some that did not.
 EACH = 3
@@ -44,12 +50,13 @@ class Packet:
     def to_json(self) -> dict[str, Any]:
         return {"sha": self.sha, "size": self.size, "packet": self.data}
 
-    def keep(self, folder: Path) -> None:
-        """Keep it in a refinement's folder, by its digest: what a proposal cites."""
+    def keep(self, store: Store, folder: Path) -> None:
+        """Keep it in a refinement's folder, by its digest: what a proposal cites. It is masked
+        as it was built (`build_packet`), and kept as it is (`Store.keep_file`), written as its
+        digest was taken, so that the file's bytes are what its name says."""
         path = folder / "packets" / f"{self.sha}.json"
         if not path.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(canonical(self.data), encoding="utf-8")
+            store.keep_file(path, Masked(canonical(self.data)))
 
 
 def canonical(data: Any) -> str:
@@ -183,6 +190,8 @@ def _task(store: Store, run: Any) -> dict[str, Any] | None:
     item = (launch.eval if launch is not None else None) or {}
     if not item:
         return None
+    # Kept as its file wrote it: masked whole before it is clipped, which would cut a key apart.
+    item = store.masking.shown(item).value
     options = item.get("tuningfork") or {}
     return {
         "prompt": compact.clip(item.get("prompt"), 2000),
@@ -196,7 +205,9 @@ def _tried(store: Store, refinement: Any) -> list[dict[str, Any]]:
     from tuningfork.ops.refine import view
 
     tried = []
-    for proposal in view(store, refinement.id)["proposals"]:
+    # Each proposal's lines from the two texts masked whole and alike (`refine.view`'s `masking`):
+    # one line at a time, a private key's lines pass.
+    for proposal in view(store, refinement.id, masking=store.masking)["proposals"]:
         changed = [line for hunk in proposal["diff"] for line in hunk["lines"] if line["op"] != " "]
         verdicts = [
             "survived" if each.get("survives") else "worse" if each.get("worse")
@@ -234,11 +245,15 @@ def build_packet(store: Store, reference: str, *, include_task: bool = True, kee
         hotspots = compact.tokens(tokens, hotspots=5).get("hotspots") or None
     except OperationError:
         hotspots = None
+    # The skill as the run was given it, masked whole before its lines are numbered, each keeping
+    # its number as show_skill numbers it: line by line, a private key's lines pass.
+    skill = store.masking.shown(baseline, lines=True)
     data = {
         "target": {"description": target.description},
         "skill": {
             "name": refinement.skill,
-            "lines": compact.capped([f"{number}: {line}" for number, line in enumerate(baseline.splitlines(), 1)], 400),
+            "lines": compact.capped([f"{number}: {line}" for number, line in enumerate(skill.value.splitlines(), 1)],
+                                    400),
             "in_context": [
                 {"lines": [span.line_start, span.line_end], "form": span.form, "role": span.role}
                 for span in spans
@@ -253,10 +268,13 @@ def build_packet(store: Store, reference: str, *, include_task: bool = True, kee
         "included": {"task_criteria": include_task},
         "tried_before": _tried(store, refinement) or None,
     }
-    data = compact.fit({key: value for key, value in data.items() if value is not None}, BUDGET)
+    # All of it masked again, of what the skill's masks took too — its parts masked whole where
+    # each was cut or set beside the skill — before it is fitted: a cut would leave half a key.
+    data = store.masking.shown({key: value for key, value in data.items() if value is not None}, also=skill.found)
+    data = compact.fit(data.value, BUDGET)
     packet = Packet(sha=hashlib.sha256(canonical(data).encode("utf-8")).hexdigest()[:16], data=data)
     if keep:
-        packet.keep(refinement.folder)
+        packet.keep(store, refinement.folder)
     return packet
 
 

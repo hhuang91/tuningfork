@@ -6,6 +6,7 @@ own, so the two cannot disagree about one.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from dataclasses import dataclass, field
@@ -170,7 +171,7 @@ def run_detail(store: Store, reference: str) -> dict[str, Any]:
         "run": run_json(found),
         "steps": steps,
         "threads": [run_json(thread) for thread in threads],
-        "launch": launch_json(launch),
+        "launch": launch_json(launch, store.masking),
     }
 
 
@@ -206,17 +207,26 @@ def condition_json(condition: Any) -> dict[str, Any]:
     }
 
 
-def task_summaries(runs: Sequence[Run], checks: dict[str, list[Any]] | None = None) -> list[dict[str, Any]]:
+def task_summaries(
+    runs: Sequence[Run], checks: dict[str, list[Any]] | None = None, *, masking: Any = None,
+) -> list[dict[str, Any]]:
     """Runs grouped by task, with a check pass rate per condition.
 
     A task run under two wordings, models or harnesses has one rate for each: `passed` is
     given for the task as a whole only when all its runs share one condition. `checks` are
-    each task's checks, the latest first (`Store.task_checks`): how its runs pass.
+    each task's checks, the latest first (`Store.task_checks`): how its runs pass — each kept
+    as its task file wrote it, and shown masked as the store masks text (`masking`).
     """
     from tuningfork.analysis.conditions import conditions
     from tuningfork.specs import check_kind, describe_check
 
     checks = checks or {}
+    if checks and masking is None:
+        raise ValueError("a task's check is shown masked: pass the store's masking")
+
+    def shown(described: str | None) -> str | None:
+        return masking.text(described).value if described is not None else None
+
     groups: dict[str | None, list[Run]] = {}
     for found in runs:
         groups.setdefault(found.task_id, []).append(found)
@@ -233,7 +243,7 @@ def task_summaries(runs: Sequence[Run], checks: dict[str, list[Any]] | None = No
                 "uncounted": sum(found["uncounted"] for found in found_conditions),
                 "conditions": found_conditions,
                 "check": (
-                    {"kind": check_kind(checks[task_id][0]), "text": describe_check(checks[task_id][0])}
+                    {"kind": check_kind(checks[task_id][0]), "text": shown(describe_check(checks[task_id][0]))}
                     if checks.get(task_id) else None
                 ),
                 "checks": len(checks.get(task_id) or []),
@@ -244,7 +254,7 @@ def task_summaries(runs: Sequence[Run], checks: dict[str, list[Any]] | None = No
 
 def tasks(store: Store) -> list[dict[str, Any]]:
     """Every task recorded, newest first, with its pass rate under each condition."""
-    return task_summaries(store.runs(limit=100_000), store.task_checks())
+    return task_summaries(store.runs(limit=100_000), store.task_checks(), masking=store.masking)
 
 
 # --- divergence -----------------------------------------------------------------------------
@@ -550,11 +560,13 @@ def declared_alpha(store: Store, experiment: Any) -> float | None:
 
 
 def experiment_report(
-    store: Store, reference: str, *, lens: Sequence[str] | None = None, alpha: float | None = None
+    store: Store, reference: str, *, lens: Sequence[str] | None = None, alpha: float | None = None,
+    masking: Any = None,
 ) -> ExperimentReport:
     """A stored experiment's result, as it reads again. An A/B is judged at the significance
     level it was declared with, unless `alpha` names another (found in review: one declared at
-    0.01 was judged at 0.05 on its own page, while its job's page said 0.01)."""
+    0.01 was judged at 0.05 on its own page, while its job's page said 0.01). `masking`: an A/B's
+    wording as an agent is shown it (`ab_wording`)."""
     from tuningfork.analysis.distribution import compare_arms
     from tuningfork.experiment import (
         CheckpointError,
@@ -622,7 +634,7 @@ def experiment_report(
     if found.kind == "ab":
         from tuningfork.ops.experiments import ab_wording
 
-        report.wording = ab_wording(store, arms)
+        report.wording = ab_wording(store, arms, masking=masking)
     if found.kind != "ab" or not found.group_id:
         if to_end:
             report.kind, report.to_end = "to_end", arm_summary(store, found)
@@ -843,12 +855,43 @@ def workspace_at(store: Store, run: str, where: str) -> WorkspaceView:
         raise OperationError(f"cannot read the snapshot: {exc}") from None
 
 
-def workspace_patch(store: Store, view: WorkspaceView, path: str | None = None) -> str:
+def workspace_patch(store: Store, view: WorkspaceView, path: str | None = None, *, masking: Any = None) -> str:
     """What changed since the snapshot the view is compared with (`view.since`), as a unified
-    diff."""
+    diff. With `masking`, as an agent is shown it: each file's two texts masked whole and alike
+    (`Masking.alike`) before the lines between them are read — git's patch masked as a text puts
+    a `-` before each line it removed, where a key's pattern no longer reads it."""
     from tuningfork.snapshots import Snapshots
 
-    return Snapshots(store.home).patch(view.before, view.commit, path)
+    if masking is None:
+        return Snapshots(store.home).patch(view.before, view.commit, path)
+    return _shown_patch(str(store.home), view.before, view.commit, path, tuple(view.changes), masking)
+
+
+@functools.lru_cache(maxsize=16)
+def _shown_patch(home: str, before: str | None, commit: str, path: str | None,
+                 changes: tuple[tuple[str, str], ...], masking: Any) -> str:
+    """`workspace_patch` as an agent is shown it, made once for the pages read of it: two commits'
+    files never change (found in review: 2,111 files were read and masked again for each page)."""
+    import difflib
+
+    from tuningfork.snapshots import Snapshots
+
+    snapshots = Snapshots(home)
+    pieces = []
+    for status, changed in changes:
+        if path and changed != path and not changed.startswith(path.rstrip("/") + "/"):
+            continue
+        was = snapshots.read(before, changed) if before and status != "A" else b""
+        now = snapshots.read(commit, changed) if status != "D" else b""
+        pieces.append(f"diff --git a/{changed} b/{changed}\n")
+        if b"\0" in was or b"\0" in now:
+            pieces.append(f"Binary files a/{changed} and b/{changed} differ\n")
+            continue
+        old, new = masking.alike([was.decode("utf-8", "replace"), now.decode("utf-8", "replace")])
+        pieces.extend(line if line.endswith("\n") else line + "\n" for line in difflib.unified_diff(
+            old.splitlines(keepends=True), new.splitlines(keepends=True),
+            "/dev/null" if status == "A" else f"a/{changed}", "/dev/null" if status == "D" else f"b/{changed}"))
+    return "".join(pieces)
 
 
 def workspace_states(store: Store, run: Run) -> list[tuple[int, str]] | None:

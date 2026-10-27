@@ -2,14 +2,17 @@
 through the proxy with the fake agent, a scenario's among them, a chain told what its check
 printed whose first link changes the skill its second is given, jobs, a held call edited and
 asked about, a label queued, an import, a server's errors, a scenario made of a run, of the chat
-and of the chain's second link, the chat's skill added and the link's — and every row and blob
-the recordings folder's store holds, and every file beside it, searched for each key's start and
-end.
+and of the chain's second link, the chat's skill added and the link's, a refinement of the link
+and the built-in proposer asked of it — and every row and blob the recordings folder's store
+holds, every file beside it, and every answer an agent is given over MCP, searched for each key's
+start and end.
 
 Only what a run is given, kept as it was given by design, may hold one: a launch's eval and
 variant, and a scenario's context, which a fork runs again as they were written; the files kept
 as they were (`KEPT_AS_IT_WAS`): a launch's own folders, the workspace's snapshots; and, in a
-copy of the skill a chain's second link was given (`GIVEN_COPIES`), the line its first wrote.
+copy of the skill a chain's second link was given (`GIVEN_COPIES`), or in what a refinement of
+it keeps (`GIVEN_TO_A_REFINEMENT`), the line its first wrote. An agent's answers hold none: its
+model may be hosted.
 """
 
 from __future__ import annotations
@@ -48,7 +51,7 @@ PLANTED = (
     "check output its cut falls inside", "variable named as a secret", "key of tuningfork's own",
     "reply cut to its quote", "reply cut to what a trial shows", "check output given from inside it",
     "skill a chain's link edited", "skill an imported chat shows", "turn a scenario starts from",
-    "password an imported answer repeats",
+    "password an imported answer repeats", "proposer's answer", "check's opening words",
 )
 #: Keys no pattern reads alone: masked by a password's name in a call, then quoted bare by the
 #: server's error — masked there only as a value the call's own mask took.
@@ -61,6 +64,10 @@ NOTED = "skill a chain's link edited"
 #: A password a person gave an imported chat by its name, which the model's reasoning — never sent
 #: back — repeats bare: masked there only as a value the masks before it took.
 REPEATED = ("password an imported answer repeats",)
+#: What the built-in proposer's model answered: an edit, its rationale quoting a key.
+PROPOSED = "proposer's answer"
+#: A key a check's command opens on and never prints: where a view that clips a check shows it.
+OPENING = "check's opening words"
 #: What of a key the sweep looks for: its first characters and its last, each enough to name it.
 #: Where a cut fell inside a key, its start or its end is what stands.
 STARTS, ENDS = 16, 20
@@ -99,11 +106,16 @@ def canaries() -> dict[str, str]:
 def model(keys: dict[str, str]):
     """The model: read the input, write the config with a key in it, then say so with another —
     and a sample its own key; a call starting "fail" a refusal quoting one, one starting "cut" a stream
-    that ends in an error quoting one, as llama.cpp's do."""
+    that ends in an error quoting one, as llama.cpp's do; asked as the built-in proposer, an edit
+    whose rationale quotes one."""
 
     def answer(payload: dict) -> MockTurn:
         messages = payload.get("messages") or []
         last = str(messages[-1].get("content") or "") if messages else ""
+        if messages and str(messages[0].get("content") or "").startswith("You improve an agent skill"):
+            return MockTurn(content=json.dumps({"proposals": [{
+                "edits": [{"old": "Write the totals to config.json.", "new": "Write the totals to config.json, then read it back."}],
+                "rationale": f"Runs that read it back passed; none needed {keys[PROPOSED]}."}]}))
         if last.startswith("fail"):
             return MockTurn(status=400, error={"error": {
                 "message": f"invalid api key {keys['server error']}", "type": "invalid_request_error"}})
@@ -199,6 +211,11 @@ GIVEN_TO_A_SCENARIO = ("check", "expected_output", "expectations")
 #: from the run — of a chain's second link, its skill holding the line its first wrote (`NOTED`),
 #: and nothing else planted.
 GIVEN_COPIES = ("scenarios/from-link/skill", "skills/from-link")
+#: And what a refinement of that link keeps of it, in its folder: the skill it refines, as the run
+#: was given it. An edit proposed quotes the text it replaces as a proposer was shown it, masked.
+GIVEN_TO_A_REFINEMENT = ("baseline.md",)
+#: The line of that skill the first link wrote: an agent's edit names it by its number.
+NOTED_LINE = 9
 
 
 def kept_as_it_was(relative: Path) -> bool:
@@ -210,8 +227,10 @@ def kept_as_it_was(relative: Path) -> bool:
 
 def given_copy(relative: Path, name: str) -> bool:
     """Whether the key `name` stands in a file by design: the line a chain's first link wrote, in
-    a copy of the skill its second was given (`GIVEN_COPIES`)."""
-    return name == NOTED and any(relative.as_posix().startswith(f"{copy}/") for copy in GIVEN_COPIES)
+    a copy of the skill its second was given (`GIVEN_COPIES`), or in what a refinement of it keeps
+    of it (`GIVEN_TO_A_REFINEMENT`)."""
+    refined = len(relative.parts) > 2 and relative.parts[0] == "refinements" and relative.parts[2] in GIVEN_TO_A_REFINEMENT
+    return name == NOTED and (refined or any(relative.as_posix().startswith(f"{copy}/") for copy in GIVEN_COPIES))
 
 
 def searched(home: Path, path: Path) -> bytes:
@@ -237,6 +256,68 @@ def found_in_files(home: Path, keys: dict[str, str]) -> list[str]:
         for name, key in keys.items()
         if not given_copy(path.relative_to(home), name) and any(piece.encode() in searched(home, path) for piece in pieces(key))
     ]
+
+
+def asked_over_mcp(store, jobs, keys: dict[str, str], made: dict) -> list[str]:
+    """What an agent is given over MCP, through the server as its client reaches it: every tool that
+    reads, asked of what the sweep made, a refinement started and an edit proposed, the jobs asked
+    after. A key may stand in none of it, however the store keeps it — a launch's eval, a workspace,
+    a skill as it was given: an agent's model may be hosted. Each answer a key's start or end stands
+    in, as `<key> in MCP <tool>`; a file where_it_holds matched a key's start in, as `written by the
+    model in MCP where_it_holds, matched in its file` — read so, a pattern spells a key out. Nothing
+    without the MCP extra, which the suite's own environment has."""
+    try:
+        import mcp_types as types
+        from mcp import Client
+    except ImportError:
+        return []
+    from tuningfork.mcp.server import ToolServer
+    from tuningfork.mcp.tools import registry
+
+    run, link, chat, task = made["run"], made["link"], made["chat"], made["task"]
+    asks = [
+        ("list_tasks", {}), ("list_runs", {}), ("list_runs", {"task": task, "called": "write_file"}),
+        *(("show_run", {"run": each}) for each in (run, link, chat)),
+        ("show_files", {"run": run}), ("show_files", {"run": run, "where": "start", "path": ".env"}),
+        ("show_files", {"run": run, "path": "config.json"}), ("show_files", {"run": run, "diff": True}),
+        # Refused, quoting the path it was asked for.
+        ("show_files", {"run": run, "path": keys["input file"]}),
+        ("find_divergence", {"task": task}), ("tally_failures", {"task": task}),
+        ("show_step", {"run": run, "step": 1}), ("show_step", {"run": chat, "step": 0, "full": True}),
+        ("step_behaviours", {"run": run, "step": 1}), ("step_tokens", {"run": run, "step": 1}),
+        ("where_it_holds", {"task": task, "path": "config.json", "contains": '"api_key": "sk-tfcanary'}),
+        ("show_skill", {"run": link}), ("show_skill", {"run": chat}),
+        ("list_experiments", {}), *(("show_experiment", {"experiment": each}) for each in made["experiments"]),
+        ("server_status", {}), ("list_scenarios", {}), ("list_scenarios", {"name": "from-run"}),
+        ("show_refinement", {"refinement": made["refinement"], "evidence": True}),
+        ("start_refinement", {"run": run, "step": 1, "target_match": "write_file"}),
+        # An edit of the line the link's skill holds a key on, by its number: its answer quotes the line.
+        ("propose_edit", {"refinement": made["refinement"], "rationale": "A key is no part of the skill.",
+                          "edits": [{"line": NOTED_LINE, "new": "Keep keys out of the skill."}]}),
+        ("list_jobs", {}), *(("job_status", {"job": each}) for each in made["jobs"]),
+    ]
+    reading = {name for name, tool in registry("all", max_wait=120).items() if tool.read is not None}
+    assert reading <= {name for name, _ in asks}, sorted(reading - {name for name, _ in asks})
+    server = ToolServer(store, jobs, toolset="all")
+
+    async def ask() -> list[str]:
+        found = []
+        async with Client(server.server(), client_info=types.Implementation(name="canary", version="0")) as client:
+            for name, arguments in asks:
+                result = await client.call_tool(name, arguments)
+                said = result.content[0].text + json.dumps(result.structured_content, ensure_ascii=False)
+                found += [f"{key} in MCP {name}" for key, value in keys.items()
+                          if any(piece in said for piece in pieces(value))]
+                if name == "where_it_holds":
+                    groups = (result.structured_content or {}).get("groups") or []
+                    runs = [entry for group in groups
+                            for entry in (group["runs"]["shown"] if isinstance(group["runs"], dict) else group["runs"])]
+                    assert runs, said
+                    found += ["written by the model in MCP where_it_holds, matched in its file"
+                              for entry in runs if entry.get("held")]
+        return found
+
+    return asyncio.run(ask())
 
 
 def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patterns=None) -> list[str]:
@@ -267,7 +348,9 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
         f"said={keys['variable named as a secret']}", keys["key of tuningfork's own"], f"literal={keys['check command']}"))
     monkeypatch.setattr("tuningfork.specs.MASKED_MOST",
                         len(window) - 6 + after_window + 1 + len(printed) + len(cut) + after_cut)
+    # It opens on a key it never prints (`:` does nothing: `OPENING`).
     check = (
+        f": {keys[OPENING]}; "
         f"printf '%s' {window}; python3 -c \"import sys; sys.stdout.write('w' * {after_window})\"; echo; "
         f"cat config.json; echo; echo env=$TF_CANARY_ENVIRONMENT; echo said=$TF_CANARY_TOKEN; cat {held}; "
         f"echo literal={keys['check command']}; printf '%s' {cut}; "
@@ -312,6 +395,7 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
     store = Store(home, patterns)
     app = create_app(settings, client=upstream, recorder=Recorder(settings, store))
     try:
+        ran: list[dict] = []
         with serving(app) as url, ControlClient(url, timeout=60) as client:
             monkeypatch.setenv("TUNINGFORK_PROXY", url)
             monkeypatch.setenv("TUNINGFORK_UPSTREAM", url)
@@ -319,6 +403,7 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
             def job(kind: str, params: dict) -> dict:
                 done = client.wait_for_job(client.submit(kind, params)["id"], timeout=120, poll=0.1)
                 assert done["status"] == "done", (kind, done.get("error"))
+                ran.append(done)
                 return done
 
             # The server the proxy sends its calls to, read and kept, its address with a password in it.
@@ -368,6 +453,15 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
             client.decide(held["id"], "continue", request=edited)
             caller.join(60)
             assert sent["answer"].status_code == 200
+            # A refinement of the chain's second link, whose skill holds the line its first wrote, and
+            # the built-in proposer asked of it through the proxy: the packet it was shown, what it was
+            # sent and what it answered, each kept in the refinement's folder. And the proxy's status,
+            # as an agent's server_status reads it.
+            from tuningfork.ops import refine
+
+            refined = refine.create(store, linked, "1", target_match="write_file")
+            job("propose", {"refinement": refined.id, "m": 1})
+            status = client.status()
         # A chat had elsewhere, imported: a key said before it, one in the turn the skill came in
         # after, and one in the skill the model read.
         from tests.test_chat_import import SKILL as CHAT_SKILL, conversation, export
@@ -388,11 +482,20 @@ def swept(tmp_path: Path, mock_server, monkeypatch, keys: dict[str, str], patter
         # And of the chain's second link: a copy of what it had, and its skill added.
         imports.make_scenario(store, imports.prepare_scenario(store, linked, "from-link", copy_skill=True))
         addskill.execute_add(store, addskill.prepare_from_run(store, linked, name="from-link"))
+        # And what an agent is given of all of it over MCP.
+        from tuningfork.mcp.backend import InProcessJobs
+
+        told = asked_over_mcp(store, InProcessJobs(app.state.jobs, status=lambda: status), keys, {
+            "run": run_id, "link": linked, "chat": imported.run_id, "task": store.get_run(run_id).task_id,
+            "refinement": refined.id, "jobs": [done["id"] for done in ran],
+            "experiments": [found for done in ran for found in (done.get("links") or {}).get("experiments") or []],
+        })
     finally:
         store.close()
         asyncio.run(upstream.aclose())
 
-    return found_in_rows(home / "tuningfork.db", keys) + found_in_blobs(home, keys) + found_in_files(home, keys)
+    return (found_in_rows(home / "tuningfork.db", keys) + found_in_blobs(home, keys) + found_in_files(home, keys)
+            + told)
 
 
 def test_no_key_planted_in_a_run_is_kept_by_the_store(tmp_path, mock_server, monkeypatch):
@@ -404,6 +507,9 @@ def test_no_key_planted_in_a_run_is_kept_by_the_store(tmp_path, mock_server, mon
     for copy in GIVEN_COPIES:
         held = "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "home" / copy).rglob("*") if path.is_file())
         assert keys[NOTED] in held, copy
+    # And so does a refinement of it: the skill it refines, the run's own as it was given it.
+    assert any(keys[NOTED] in path.read_text(encoding="utf-8")
+               for path in (tmp_path / "home" / "refinements").glob("*/baseline.md"))
 
 
 def test_every_key_planted_reaches_the_store_where_nothing_masks_it(tmp_path, mock_server, monkeypatch):
@@ -431,6 +537,15 @@ def test_every_key_planted_reaches_the_store_where_nothing_masks_it(tmp_path, mo
         "skill an imported chat shows in skills/from-import/SKILL.md",
         "prompt in scenarios/from-run/evals.json",
     } <= made, sorted(made)
+    # And what an agent is given over MCP holds them, where nothing masks it: a task's check and its
+    # prompt, the files a run wrote and read, the skill a run was given, and a refinement of it.
+    told = {place for place in found if " in MCP " in place}
+    assert {
+        f"{OPENING} in MCP show_run", f"{OPENING} in MCP list_tasks", "input file in MCP show_files",
+        "written by the model in MCP show_files", "written by the model in MCP where_it_holds, matched in its file",
+        f"{NOTED} in MCP show_skill", f"{NOTED} in MCP show_refinement", f"{NOTED} in MCP propose_edit",
+        "prompt in MCP show_refinement", f"{PROPOSED} in MCP show_refinement",
+    } <= told, sorted(told)
     # And each reply's cut does fall inside its key: where a trial keeps the cut part, its start
     # stands and its end does not.
     connection = sqlite3.connect(f"file:{tmp_path / 'home' / 'tuningfork.db'}?mode=ro", uri=True)

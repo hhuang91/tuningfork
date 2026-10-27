@@ -198,7 +198,7 @@ class TestDeletedForGood:
         dead = {"pid": 2**22 + 12345, "host": socket.gethostname(), "start": 1}
         store._conn.execute("UPDATE launches SET owner = ? WHERE id = ?", (json.dumps(dead), fork_launch.id))
         store._conn.commit()
-        assert launch_json(store.get_launch(fork_launch.id))["status"] == "interrupted"
+        assert launch_json(store.get_launch(fork_launch.id), store.masking)["status"] == "interrupted"
         trash.trash(store, "run", fork.id)
         trash.trash(store, "run", source.id)
         assert trash.purge(store, "run", source.id).to_json()["removed"]["launches"] == 2

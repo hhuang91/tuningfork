@@ -295,7 +295,7 @@ def create(
     from tuningfork.experiment import resolve_target
     from tuningfork.experiment.sampling import CheckpointError
     from tuningfork.experiment.skill import diagnose, locate, text_sha256
-    from tuningfork.ops.experiments import load
+    from tuningfork.ops.experiments import kept_text, load
     from tuningfork.ops.trash import refuse_trashed
     from tuningfork.ops.variants import skill_name
 
@@ -323,7 +323,7 @@ def create(
             hint="refine from a run tuningfork launched: a batch's, or a fork of one",
             field="run",
         )
-    baseline = _text(found)
+    baseline = kept_text(store, checkpoint.run, found, _text(found))
     if not locate(checkpoint.request, baseline):
         first = _first_step_with(store, checkpoint.run, baseline)
         raise OperationError(
@@ -440,6 +440,7 @@ def add_proposal(
     be screened at the checkpoint.
 
     `strict` holds a proposal to a few small edits; a person's own text only warns."""
+    from tuningfork.config import REDACTED
     from tuningfork.experiment.skill import NothingToCompare, split_frontmatter, substitute, text_sha256
     from tuningfork.ops.diff import apply_resolved, line_diff, resolve_edits
     from tuningfork.ops.experiments import load
@@ -461,9 +462,24 @@ def add_proposal(
                 f"at most {MAX_EDITS} edits in one proposal: small changes are what a screen can attribute",
                 code="bad_params", field="edits",
             )
-        resolved = resolve_edits(baseline, edits)
+        # The run's skill is kept as it was given, and a proposer was shown it masked whole, each
+        # line at its number: each edit, and each refusal, quotes its lines as they were shown —
+        # masked alone, a private key's line or a password another line names would read as no
+        # key — and none may change part of what was shown masked.
+        resolved = resolve_edits(baseline, edits, shown=store.masking.shown(baseline, lines=True).value,
+                                 masks=store.masking.spans(baseline))
         text = apply_resolved(baseline, resolved)
-        kept = [{key: found[key] for key in ("lines", "old", "new", "given")} for found in resolved]
+        if store.masking.bared(baseline, text):
+            # Every run given the proposal would be recorded with the key bare, and shown so.
+            raise OperationError(
+                f"the edits leave a key the skill holds to read as no key: a key's pattern reads the words beside "
+                f"it — `password=`, the `-u` before a password, a private key's first line — and the runs of this "
+                f"proposal would be recorded with the key where you are shown {REDACTED}",
+                hint=f"leave the words beside {REDACTED} as they are, or change its line whole, without it",
+                code="bad_params", field="edits",
+            )
+        kept = [{"lines": found["lines"], "old": found["shown"], "new": found["new"], "given": found["given"]}
+                for found in resolved]
     else:
         kept = None
     assert text is not None
@@ -753,12 +769,16 @@ def made_by(store: Store, refinement: Refinement) -> Made:
     return Made(experiments=sorted(experiments), runs=sorted(runs), variants=sorted(variants))
 
 
-def view(store: Store, reference: str, *, held_out: bool = False) -> dict[str, Any]:
+def view(store: Store, reference: str, *, held_out: bool = False, masking: Any = None) -> dict[str, Any]:
     """A refinement with everything it holds: its proposals with their line diffs, its
     screens with their verdicts, and its validations.
 
     A validation's held-out verdicts, and the gate they feed, are the person's: shown only
-    with `held_out`, for their own views. An agent shown them could fit its edits to them."""
+    with `held_out`, for their own views. An agent shown them could fit its edits to them.
+    With `masking`, as an agent is shown it: the run's skill is kept as it was given, and it
+    and each proposal are masked whole and alike before the lines between them are read, each
+    line keeping its number, and each of its lines shown as it shows them wherever a proposal
+    holds them (`Masking.alike`)."""
     from tuningfork.ops.approve import state as approval_state
     from tuningfork.ops.diff import line_diff
     from tuningfork.ops.validate import validation_views
@@ -778,9 +798,15 @@ def view(store: Store, reference: str, *, held_out: bool = False) -> dict[str, A
                     "baseline": report["baseline"]["target"], "adjusted_p": arm.get("adjusted_p"),
                     "survives": arm.get("survives"), "worse": arm.get("worse"), "complete": report["complete"],
                 })
+    found_proposals = proposals(store, refinement.id)
+    texts = [baseline, *(each.text() for each in found_proposals)]
+    if masking is not None:
+        texts = masking.alike(texts)
+    baseline = texts[0]
     items = []
-    for each in proposals(store, refinement.id):
-        items.append({**each.to_json(), "diff": line_diff(baseline, each.text())["hunks"],
+    for each, text in zip(found_proposals, texts[1:]):
+        proposed = masking.shown(each.to_json()).value if masking is not None else each.to_json()
+        items.append({**proposed, "diff": line_diff(baseline, text)["hunks"],
                       "screens": verdicts.get(each.id, [])})
     packets = sorted(path.stem for path in (refinement.folder / "packets").glob("*.json")) \
         if (refinement.folder / "packets").is_dir() else []

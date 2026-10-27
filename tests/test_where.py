@@ -255,3 +255,20 @@ def test_a_mistake_every_run_made_and_the_passing_runs_mended(stack):
                                      {"task": "tally-report/1", "path": "report.json", "contains": '"count"'}))
     assert answer.lines[-1].startswith("every run made it, the passing ones too, and undid it later")
     assert "step \"changed:report.json\"" in answer.lines[-1] and "target_check" in answer.lines[-1]
+
+
+def test_a_file_asked_for_an_agent_is_matched_as_it_is_shown(stack):
+    """The workspace is kept as the run left it. Asked for an agent, whose model may be hosted, a
+    file is matched as the agent is shown it, masked (`FileReader`'s `masking`): matched as it stands,
+    a pattern would spell a key out a character at a time. Asked by a person, as it stands."""
+    from tests.helpers import KEY
+
+    batch(stack, [{"row_count": 4, "api_key": KEY}])
+    keyed = '"api_key": "' + KEY[:6]
+    for masking, held in ((None, True), (stack.store.masking, False)):
+        (group,) = where_it_holds(stack.store, "tally-report/1", path="report.json", contains=keyed,
+                                  masking=masking).to_json()["groups"]
+        assert [entry["held"] for entry in group["runs"]] == [held], masking
+    (group,) = where_it_holds(stack.store, "tally-report/1", path="report.json", contains='"row_count": 4',
+                              masking=stack.store.masking).to_json()["groups"]
+    assert [entry["held"] for entry in group["runs"]] == [True]

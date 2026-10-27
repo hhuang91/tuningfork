@@ -208,6 +208,10 @@ def prepare_fork(
         original_text = original.read_text(encoding="utf-8")
         if variant_text is None:
             variant_text = variant.read_text(encoding="utf-8")
+        else:
+            from tuningfork.ops.experiments import variant_onto
+
+            variant_text = variant_onto(store, original_text, variant_text)
         if original_text == variant_text:
             raise OperationError("the variant and the original are the same text", field="variant_text")
         swapped = Variant(

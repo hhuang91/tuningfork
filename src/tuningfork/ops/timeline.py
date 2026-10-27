@@ -23,6 +23,7 @@ from tuningfork.analysis.conditions import exclusion_from
 from tuningfork.ops.common import OperationError
 from tuningfork.ops.experiments import resolve_run
 from tuningfork.store.db import Launch, Run, Step, Store, arrived
+from tuningfork.store.masking import Masking
 
 
 def run_json(run: Run) -> dict[str, Any]:
@@ -60,15 +61,18 @@ def run_json(run: Run) -> dict[str, Any]:
     }
 
 
-def launch_json(launch: Launch | None) -> dict[str, Any] | None:
+def launch_json(launch: Launch | None, masking: Masking) -> dict[str, Any] | None:
     """How a run was launched, when tuningfork launched it: what running the task again, or
-    forking it, starts from — and where its harness worked, and how it passes."""
+    forking it, starts from — and where its harness worked, and how it passes. Its check is
+    shown masked as the store masks text (`masking`): the launch keeps its eval as the task file
+    wrote it, since a fork runs it again, and the rest of the run is kept masked."""
     if launch is None:
         return None
     from tuningfork.ops.inspect import launch_status
     from tuningfork.specs import check_kind, describe_check
 
     check = ((launch.eval or {}).get("tuningfork") or {}).get("check")
+    described = describe_check(check)
     settings = launch.settings or {}
     return {
         "id": launch.id,
@@ -85,7 +89,7 @@ def launch_json(launch: Launch | None) -> dict[str, Any] | None:
         # A scenario's run continues a conversation (`tuningfork.context`): how long, from which file.
         "context": {key: value for key, value in (settings.get("context") or {}).items() if key != "blob"} or None,
         "workspace": launch.workspace,
-        "check": describe_check(check),
+        "check": masking.text(described).value if described is not None else None,
         "check_kind": check_kind(check),
         # What the harness saw of the machine: the sandbox's paths, the folders hidden from it and
         # the instant its clock started at — and how it was set up (Hermes's options).
@@ -416,7 +420,7 @@ def run_timeline(store: Store, run_ref: str, *, adapters: Sequence[Any] | None =
     ended = bool(run.result) or (launch is not None and launch_status(launch) not in (None, "running"))
     threads = _threads(store, run, steps)
     if not steps:
-        return RunTimeline(run, launch_json(launch), None, [], [], [], [], [], threads, ended, None)
+        return RunTimeline(run, launch_json(launch, store.masking), None, [], [], [], [], [], threads, ended, None)
 
     # The harness's history, not the model's: what the next call extends.
     leaves = [step.harness_request_node_id or step.request_node_id for step in steps]
@@ -575,7 +579,7 @@ def run_timeline(store: Store, run_ref: str, *, adapters: Sequence[Any] | None =
     reply = reply_text(store.delivered_response(last)) or None
     return RunTimeline(
         run=run,
-        launch=launch_json(launch),
+        launch=launch_json(launch, store.masking),
         wire=wire.name,
         tools=_tool_names(extras),
         entries=entries,

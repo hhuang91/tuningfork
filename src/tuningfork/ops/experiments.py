@@ -176,6 +176,62 @@ def kept_skills(run: Run) -> dict[str, Path]:
     return kept
 
 
+def kept_text(store: Store, run: Run, path: Path, text: str) -> str:
+    """The text of a SKILL.md `run` kept (`path`), as it is read: the one an imported chat's
+    extract made before an import's files were masked is masked as it is read, as what is made of
+    it is (`imports.extracted_unmasked`); any other is kept as it was given, or as it was masked."""
+    from tuningfork.ops.imports import extracted_unmasked
+
+    name = next((name for name, kept in kept_skills(run).items() if kept == path), None)
+    return store.masking.text(text).value if extracted_unmasked(run, name) else text
+
+
+def variant_onto(store: Store, original: str, text: str) -> str:
+    """A variant given as text. One written from the skill as an agent is shown it — masked, each
+    line at its number, each line a mask covers reading `<redacted>`, so that it reads the mask more
+    often than the file does — is set on the skill as it stands (`ops.diff.onto`): each line it kept
+    is the file's, a key with it, and each it changed is as written. Refused where it keeps part of
+    what was shown masked — a key kept whole or not at all — or still reads the mask: the runs would
+    read `<redacted>` for a key. Any other — a person's, written from the file — is as given (found
+    in review: matched against the file as shown, one leaving a key out had it put back)."""
+    from bisect import bisect_right
+
+    from tuningfork.config import REDACTED
+    from tuningfork.ops.diff import onto
+
+    if text.count(REDACTED) <= original.count(REDACTED):
+        return text
+    set_on, taken = onto(original, store.masking.shown(original, lines=True).value, text)
+    starts = [0]
+    for line in original.splitlines(keepends=True):
+        starts.append(starts[-1] + len(line))
+    for low, high in store.masking.spans(original):
+        touched = set(range(bisect_right(starts, low) - 1, bisect_right(starts, high - 1)))
+        if touched & taken and not touched <= taken:
+            raise OperationError(
+                f"the variant keeps part of what reads {REDACTED} over several lines: a key the skill holds, "
+                "kept whole or not at all",
+                hint=f"keep every line of it that reads {REDACTED} as show_skill shows it, or none of them",
+                code="bad_params", field="variant_text",
+            )
+    if set_on.count(REDACTED) > original.count(REDACTED):
+        raise OperationError(
+            f"the variant reads {REDACTED} where the skill holds a key: what is shown of a skill is masked, and "
+            "the runs would read the mask, not the key",
+            hint=f"keep each line that reads {REDACTED} as show_skill shows it, or rewrite the line without it",
+            code="bad_params", field="variant_text",
+        )
+    if store.masking.bared(original, set_on):
+        raise OperationError(
+            f"the variant leaves a key the skill holds to read as no key: a key's pattern reads the words beside "
+            f"it — `password=`, the `-u` before a password, a private key's first line — and its runs would be "
+            f"recorded with the key where show_skill shows {REDACTED}",
+            hint=f"keep the words beside each {REDACTED} as show_skill shows them, or leave its line out",
+            code="bad_params", field="variant_text",
+        )
+    return set_on
+
+
 def study_skill(run: Run, skill: str | None = None) -> tuple[str, Path] | None:
     """The skill to study in `run`, by name, and its SKILL.md: the one named, else the run's own —
     a batch run's, the one an import was told to study, or the only one it kept. None where it
@@ -483,7 +539,7 @@ def recorded_skill(store: Store, run: str, skill: str | None = None) -> Recorded
         run_id=found.id,
         skill=skill_name(found, path),
         path=path,
-        text=path.read_text(encoding="utf-8") if path else None,
+        text=kept_text(store, found, path, path.read_text(encoding="utf-8")) if path else None,
         kept=list(kept_skills(found)),
     )
 
@@ -635,6 +691,8 @@ def prepare_ab(
     original_text = original.read_text(encoding="utf-8")
     if variant_text is None:
         variant_text = variant.read_text(encoding="utf-8")
+    else:
+        variant_text = variant_onto(store, original_text, variant_text)
     if variant_text == original_text:
         raise OperationError("the variant and the original are the same text", field="variant_text")
 
@@ -773,12 +831,15 @@ class Wording:
         }
 
 
-def ab_wording(store: Store, arms: dict[str, Any]) -> Wording | None:
+def ab_wording(store: Store, arms: dict[str, Any], *, masking: Any = None) -> Wording | None:
     """What an A/B changed, read back from what it recorded rather than from files that can
     have changed since: a fork's launch keeps both texts whole, and a checkpoint A/B's arms
     the requests they sent, the variant where the original was (`experiment.skill.swapped`).
     Else the files the A/B names, each only while it still holds the text it tested. None for
-    an experiment that swapped no wording."""
+    an experiment that swapped no wording. With `masking`, as an agent is shown it: a fork's
+    launch and the files keep the texts as given, and both are masked whole and alike before
+    the lines between them are read, each line keeping its number, the original's lines shown
+    as it shows them wherever the variant holds them (`Masking.alike`)."""
     from tuningfork.experiment.skill import swapped
     from tuningfork.ops.diff import line_diff
 
@@ -811,6 +872,8 @@ def ab_wording(store: Store, arms: dict[str, Any]) -> Wording | None:
     if texts is None:
         found.missing = "neither what its arms recorded nor the files it names hold the texts it tested"
         return found
+    if masking is not None:
+        texts = tuple(masking.alike(texts))
     found.diff = _renumbered(line_diff(*texts), offset)
     return found
 

@@ -1173,6 +1173,9 @@ def scenario_choices(store: Store, reference: str, *, skill: str | None = None, 
         "system": _text(chat.messages[0].get("content")) if chat.system_prompt else None,
         "tools": chat.tools or [],
         "before": [_gist(message) for message in start.context.before] if start else [],
+        # As its task file wrote it, unlike a run's views (`timeline.launch_json`): the form copies
+        # it into the scenario's spec as it is (`GIVEN_TO_A_SCENARIO`), and tries it as it is
+        # ("Test this check…" sends what it shows), as the scenario's own editor shows its check.
         "check": (task.get("tuningfork") or {}).get("check"),
     }
 

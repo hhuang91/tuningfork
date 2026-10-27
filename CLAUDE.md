@@ -264,9 +264,9 @@ resolved to an exact replacement of the text as shown, so none shifts another) c
 most 10 lines — a person's whole text only warns — never the frontmatter, and it must change what the model
 saw at the step; it is saved as a variant, with who proposed it, why, and the packet they
 were shown (`ops/packet.py`: built from the run's own task's records only, never sampled
-for). A screen (`ops/screen.py`; `analysis/screen.py`) draws a fresh original arm first,
-then each proposal, and tests each against it — Fisher, Holm over the proposals named
-before sampling; an unfinished screen has rates and no verdict. Run to the end
+for, and masked as it is built). A screen (`ops/screen.py`; `analysis/screen.py`) draws a
+fresh original arm first, then each proposal, and tests each against it — Fisher, Holm over
+the proposals named before sampling; an unfinished screen has rates and no verdict. Run to the end
 (`prepare_screen_to_end`, `refine screen --to-end`, the `screen-to-end` job kind), each
 arm's samples are forks from the checkpoint through the harness and the task's check decides
 each (`compare_verdicts`) — one that timed out failed, as the gate counts it, here and in an
@@ -524,11 +524,11 @@ whose original arm reaches the target four times in five says so too); and
 find_divergence also names the step whose behaviour best predicts the verdict, when one does
 (`ops.inspect.verdict_split`). No agent is offered the built-in
 proposer — sending recordings to an endpoint is the person's decision — nor anything that
-approves an edit. An answer is a compact view (`ops/compact.py`) whose
-sentences lead both its text and its structured content (`summary`): Claude Code shows the
-model only the structured content, OpenJarvis the text, and Hermes both side by side — every
-answer twice, so for it `--mcp-results text` (`mcp --results text`) sends the text alone
-(`mcp.server.RESULTS`). The same refusal three times running carries the tool's description
+approves an edit. An answer is a compact view (`ops/compact.py`), masked as it leaves the server
+(`ToolServer.shown`), whose sentences lead both its text and its structured content (`summary`):
+Claude Code shows the model only the structured content, OpenJarvis the text, and Hermes both side
+by side — every answer twice, so for it `--mcp-results text` (`mcp --results text`) sends the text
+alone (`mcp.server.RESULTS`). The same refusal three times running carries the tool's description
 again, and from the sixth time says to stop sending that call and try another edit, step or
 tool (`ToolServer._repeated`): a weak reader reads each as the first, and one told to stop
 would take it for the task. Point a driving agent's own model at the inference
@@ -716,18 +716,50 @@ the skill, of both texts masked whole and alike, each line keeping its number (`
 the masks before it took, as a step's answer is (`imports.kept_chat`), and the SKILL.md of each
 skill the model read, as the masked chat shows it; the import names the patterns
 (`parity.imported.masked`). The chat of an import made before that is masked as it is read
-(`imports.chat_of`), and so is its SKILL.md extracted, wherever a scenario or a skill added is
-made of it (`imports.extracted_unmasked`). What a run is given is kept as it was given, since a fork runs
-it again — a launch's eval and variant, a scenario's context (`Store.put_given`) — and so is what a
-scenario or a skill added copies of it, the skill a launched run was given (a chain's link's, which
-the link before wrote, too), and an experiment's settings, the test it declared. Masking is not
+(`imports.chat_of`), and so is its SKILL.md extracted, wherever a scenario, a skill added or a
+refinement is made of it, or it is shown (`imports.extracted_unmasked`, `experiments.kept_text`). What
+a run is given is kept as it was given, since a fork runs it again — a launch's eval and variant, a
+scenario's context (`Store.put_given`) — and so is what a scenario, a skill added or a refinement
+copies of it, the skill a launched run was given (a chain's link's, which the link before wrote,
+too), and an experiment's settings, the test it declared. What leaves tuningfork is masked as it
+leaves, whatever the store keeps (`Masking.shown`): every answer and refusal an agent is given over
+MCP (`ToolServer.shown`), its model maybe hosted, and what a proposing model is sent — the packet,
+masked as it is built and kept so (`Packet.keep`), and the skill beside it, its exchange kept as the
+store keeps a file (`Store.keep_file`). A text a view splits or cuts short — show_skill's numbered
+lines, show_files' pages, a task's prompt in a plan or the packet — is masked whole first, each line
+at its number, each line a mask covers reading `<redacted>` (`Masking.shown`'s `lines`): line by
+line, a private key's lines pass, and a cut through a key leaves a part no pattern reads. Texts set
+side by side — a diff: show_files', an A/B's wording, a refinement's proposals — are masked alike,
+what they share masked as either masks it, and a mask's value — four characters or more, a letter
+among them — wherever it stands on any of their changed lines as a word of its own, or glued as
+its mask was (mysql's `-pZ9q4`) (`Masking.alike`): an edit can take away a private key's first
+line, or the command a password's pattern reads. A shorter mask, or one without a letter — a PIN,
+a year, a run of `#`, which masking by value would point out among a text's numbers and rules — is
+carried onto a changed line only where the lines around it are compared character by character
+(`CHARS_COMPARED`), and there, under eight characters and without a letter, only where it lands as
+a word of its own or glued to what the comparison kept. An edit's quotes — the text it replaced, the
+lines a refusal finds closest — are the skill as show_skill shows it. A file where_it_holds asks of
+for an agent is matched as the agent is shown it. A run's views show its task's check masked
+(`timeline.launch_json`, `inspect.task_summaries`); the form that makes a scenario of the run takes
+it as written, as the scenario copies and tries it. An edit is resolved against the skill's file,
+never what was shown of it (`ops.diff.resolve_edits`' `shown` and `masks`): it never writes the mask
+where the text it replaces held none, and changes a key whole or not at all; and a proposal that
+leaves a key to read as none — the words its pattern reads changed beside it, `password=` — is
+refused (`Masking.bared`): every run given it would record the key bare. A variant given as text that
+reads the mask more often than the file does — written from the skill as shown — is set on the file
+as it stands (`experiments.variant_onto`), each line it kept the file's, a key whole or not at all
+and still masked; any other, a person's, is tested as given. No answer gives a digest (a field named
+`sha256` or `*_sha256`) of what it shows masked (`mcp.server._without_digests`): against one, a short
+key is guessed. Masking is not
 idempotent, and a fork matches a call masked once against a step stored masked once;
 `tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
 `tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file
-for it, but the files kept as they were (`KEPT_AS_IT_WAS`: a launch's folders, the workspace's
-snapshots, a scenario's inputs, the wordings tried), what a copy of the skill a launched run was
-given holds as given (`GIVEN_COPIES`), and what a scenario's spec takes from its run's task as
-written (`GIVEN_TO_A_SCENARIO`). Never report a rate without its interval — see `analysis/stats.py`.
+for it, and every answer an agent is given over MCP, but the files kept as they were
+(`KEPT_AS_IT_WAS`: a launch's folders, the workspace's snapshots, a scenario's inputs, the
+wordings tried), what a copy of the skill a launched run was given holds as given, or a
+refinement's copy of it (`GIVEN_COPIES`, `GIVEN_TO_A_REFINEMENT`), and what a scenario's spec
+takes from its run's task as written (`GIVEN_TO_A_SCENARIO`). Never report a rate without its
+interval — see `analysis/stats.py`.
 
 Server- and harness-specific knowledge lives behind the `backends/`, `harness/` and `wire/`
 seams, never in the core. Supporting another harness or inference server must not require

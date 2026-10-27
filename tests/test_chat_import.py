@@ -424,6 +424,22 @@ class TestWhatItKeepsBesideTheRun:
         assert made[True] == made[False] and CHAT_KEY not in made[True]
         assert kept.read_text(encoding="utf-8") == was and CHAT_KEY in was
 
+    def test_one_kept_before_is_read_masked_where_it_is_shown_or_refined(self, store):
+        """The Skills page, show_skill and a refinement read the SKILL.md a run kept as it stands: of an
+        import made before imports were masked, masked as it is read, as what is made of it is
+        (`experiments.kept_text`). The kept file is as it was."""
+        from tuningfork.ops import skills
+        from tuningfork.ops.experiments import recorded_skill
+
+        run = imported_before(store, chat_with_keys())
+        kept = store.home / "imports" / run.id / "skills" / "tally-report" / "SKILL.md"
+        was = kept.read_text(encoding="utf-8")
+        last = str(len(store.steps(run.id)) - 1)
+        made = refine.create(store, run.id, last, target_rules=[{"if": "calls", "value": "write_file"}])
+        for read in (skills.text_of(store, run), recorded_skill(store, run.id).text, made.baseline_text()):
+            assert CHAT_KEY not in read and "The key is" in read
+        assert kept.read_text(encoding="utf-8") == was and CHAT_KEY in was
+
     def test_one_kept_before_is_masked_once_for_each_version_of_its_chat(self, store, monkeypatch):
         """A scenario's form asks at every change: found in review, each read masked a chat of 5 MB
         again, in more than a second."""
@@ -944,6 +960,25 @@ def test_a_task_folder_changed_since_the_run_can_give_way_to_a_copy_of_what_it_h
     with pytest.raises(OperationError) as both:
         imports.prepare_scenario(stack.store, source.run_id, "both", copy_skill=True, skill_dir=str(task_skill.parent))
     assert both.value.field == "skill_dir"
+
+
+def test_a_launched_runs_check_is_shown_masked_and_given_to_a_scenario_as_written(stack):
+    """A launch keeps its task's check as the task's file wrote it, since a fork runs it again. A view
+    of the run — its page, its timeline, the tasks' rates — shows it masked, as the rest of the run is
+    kept; the form that makes a scenario of the run takes it as written, since the scenario copies it,
+    and tries it, as it is."""
+    from tuningfork.config import REDACTED
+    from tuningfork.ops import inspect
+    from tuningfork.ops.timeline import run_timeline
+    from tests.helpers import KEY
+
+    stack.item.tuningfork.check = f": {KEY}; {stack.item.tuningfork.check}"
+    source = stack.record()
+    shown = [inspect.run_detail(stack.store, source.run_id)["launch"]["check"],
+             run_timeline(stack.store, source.run_id).to_json()["launch"]["check"],
+             next(task["check"]["text"] for task in inspect.tasks(stack.store) if task["task_id"] == "tally-report/1")]
+    assert all(KEY not in each and each.startswith(f": {REDACTED}; ") for each in shown), shown
+    assert imports.scenario_choices(stack.store, source.run_id)["check"].startswith(f": {KEY}; ")
 
 
 def test_a_launched_runs_scenario_from_later_in_its_turn_has_its_workspace_there(stack, monkeypatch):
