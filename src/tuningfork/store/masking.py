@@ -11,6 +11,7 @@ sample's answer, so a report recomputing it from the store agrees — asks for i
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
@@ -101,25 +102,25 @@ class Masking:
 
     def alike(self, texts: Sequence[str]) -> list[str]:
         """Texts shown side by side — a text and what was made of it, the two sides of a diff — each
-        masked whole, each line at its number, of what the masks took in any of them; and each
-        masked wherever it holds, unchanged, text another masks — a line they share, characters a
-        changed line shares (`_carried`) — and, on its changed lines, wherever it holds the value of
-        another's mask, `VALUE_LEAST` characters or more (`_found_in`). A key's pattern reads its
-        context, which an edit can take away — a private key's first line, the `-u` before a
-        password — leaving what it masked to read as no key on its own. A shorter mask is carried
-        onto a changed line only where the characters around it are compared (`CHARS_COMPARED`)."""
+        masked whole, each line at its number, of what the masks took in any of them; each masked
+        wherever it holds, unchanged, text another masks — a line they share, the characters a
+        changed line shares (`_carried`) — and, on its changed lines, wherever a mask's value
+        stands as a word of its own (`_values`, `_found_in`). A key's pattern reads its context,
+        which an edit can take away — a private key's first line, the `-u` before a password —
+        leaving what it masked to read as no key on its own. The first is masked as each other is
+        shown beside it, and each other as the first: a line two of them share reads alike."""
         texts = list(texts)
-        found = tuple(frozenset().union(*(self.text(text).found for text in texts)))
-        spans = [text_spans(text, self.patterns, found) for text in texts]
+        found = frozenset().union(*(self.text(text).found for text in texts))
+        spans = [text_spans(text, self.patterns, tuple(found)) for text in texts]
         if len(texts) > 1:
             shared = [_shared(texts[0], other) for other in texts[1:]]
-            back: list[Span] = []
-            for k, (blocks, changed, changed_other) in enumerate(shared, 1):
-                back += _carried(spans[k], [(theirs, ours, size, lines) for ours, theirs, size, lines in blocks])
-                back += _found_in(texts[k], spans[k], texts[0], changed)
-            spans[0] = _merged(spans[0] + back)
-            for k, (blocks, changed, changed_other) in enumerate(shared, 1):
-                spans[k] = _merged(spans[k] + _carried(spans[0], blocks) + _found_in(texts[0], spans[0], texts[k], changed_other))
+            values = _values(texts, spans, found)
+            back = [span for k, (blocks, _, _) in enumerate(shared, 1)
+                    for span in _carried(spans[k], [(theirs, ours, size, lines) for ours, theirs, size, lines in blocks])]
+            changed = _merged([span for _, ours, _ in shared for span in ours])
+            spans[0] = _merged(spans[0] + back + _found_in(texts[0], values, changed))
+            for k, (blocks, _, theirs) in enumerate(shared, 1):
+                spans[k] = _merged(spans[k] + _carried(spans[0], blocks) + _found_in(texts[k], values, theirs))
         return [_applied(text, masks, 0, len(text), lines=True)[0].value for text, masks in zip(texts, spans)]
 
     def bared(self, before: str, after: str) -> list[str]:
@@ -251,8 +252,8 @@ def _marked(taken: str) -> str:
 #: The most characters of two runs of changed lines compared one by one (their lengths
 #: multiplied): beyond it, only their lines are matched.
 CHARS_COMPARED = 2_000_000
-#: The fewest characters of a mask on a changed line found by its value on the other text's changed
-#: lines: fewer stand anywhere by chance.
+#: The fewest characters of a mask's value found by its value on changed lines: fewer stand
+#: anywhere by chance.
 VALUE_LEAST = 4
 
 
@@ -292,37 +293,66 @@ def _shared(first: str, other: str) -> tuple[list[tuple[int, int, int, bool]], l
 CARRIED_LEAST = 8
 
 
-def _carried(spans: list[tuple[int, int]], blocks: list[tuple[int, int, int, bool]]) -> list[tuple[int, int]]:
-    """`spans` of one text, carried into another through what they share (`blocks`, as `_shared`
-    gives them): each part of a span inside a run of shared lines, where it stands in the other;
-    inside a run of shared characters, a span it holds whole, or `CARRIED_LEAST` characters of one
-    (found in review: a key's line rewritten as `rotated` read `rot<redacted>t<redacted>d`)."""
+def _carried(spans: list[Span], blocks: list[tuple[int, int, int, bool]]) -> list[Span]:
+    """`spans` of one text — sorted and apart, as `text_spans` and `_merged` give them — carried into
+    another through what they share (`blocks`, as `_shared` gives them): each part of a span inside a
+    run of shared lines, where it stands in the other; inside a run of shared characters, a span it
+    holds whole, or `CARRIED_LEAST` characters of one (found in review: a key's line rewritten as
+    `rotated` read `rot<redacted>t<redacted>d`). Each run reads only the spans that reach it (found
+    in review: every span against every run took seconds for a few thousand lines)."""
+    starts = [start for start, _ in spans]
     carried = []
-    for start, end in spans:
-        for ours, theirs, size, lines in blocks:
+    for ours, theirs, size, lines in blocks:
+        k = max(bisect_right(starts, ours) - 1, 0)
+        while k < len(spans) and spans[k][0] < ours + size:
+            start, end = spans[k]
             low, high = max(start, ours), min(end, ours + size)
             if low < high and (lines or (low, high) == (start, end) or high - low >= CARRIED_LEAST):
                 carried.append((low - ours + theirs, high - ours + theirs))
+            k += 1
     return carried
 
 
-def _found_in(text: str, spans: list[Span], other: str, changed_other: list[Span]) -> list[Span]:
-    """Each mask of `text`, `VALUE_LEAST` characters or more, wherever its value stands on the lines
-    of `other` that changed (`changed_other`): a run of changed lines too long to compare by
-    characters (`CHARS_COMPARED`), or a line moved, carries none of it (found in review: a
-    four-character password whose `mysql -p` was rewritten among eighty lines changed showed on the
-    other side). Lines that did not change are masked alike already: none is masked here."""
+def _values(texts: Sequence[str], spans: Sequence[list[Span]], found: frozenset[str]) -> list[str]:
+    """What the masks of `texts` took that is found by its value on changed lines (`_found_in`):
+    each value once, `VALUE_LEAST` characters or more, and never one `found` masks wherever it
+    stands already, nor digits alone — a PIN or a year stands for any number in a text, and masking
+    those that read the same would say, beside the text shown alone, which number is the key (found
+    in review: `1234` masked in `51234`)."""
+    values: dict[str, None] = {}
+    for text, masks in zip(texts, spans):
+        for start, end in masks:
+            value = text[start:end]
+            if len(value) >= VALUE_LEAST and not value.isdigit() and value not in found:
+                values.setdefault(value)
+    return list(values)
+
+
+def _found_in(text: str, values: list[str], changed: list[Span]) -> list[Span]:
+    """Where each of `values` stands as a word of its own on `text`'s changed lines (`changed`): a run
+    of changed lines too long to compare by characters (`CHARS_COMPARED`), or a line moved, carries no
+    mask onto them (found in review: a four-character password whose `mysql -p` was rewritten among
+    eighty lines changed showed on the other side). Every text's changed lines are read alike, so a
+    line two texts hold unchanged reads alike in both; one glued to a letter, a digit or `_` is
+    another word (found in review: `run_1234.csv`)."""
     carried = []
-    for start, end in spans:
-        value = text[start:end]
-        if len(value) < VALUE_LEAST:
-            continue
-        for begin, stop in changed_other:
-            at = other.find(value, begin, stop)
+    for value in values:
+        for begin, stop in changed:
+            at = text.find(value, begin, stop)
             while at >= 0:
-                carried.append((at, at + len(value)))
-                at = other.find(value, at + 1, stop)
+                if _apart(text, at, at + len(value)):
+                    carried.append((at, at + len(value)))
+                at = text.find(value, at + 1, stop)
     return carried
+
+
+def _apart(text: str, start: int, end: int) -> bool:
+    """`text[start:end]` glued to no letter, digit or `_` where its own edge is one."""
+    def word(char: str) -> bool:
+        return char.isalnum() or char == "_"
+
+    return not ((start > 0 and word(text[start]) and word(text[start - 1]))
+                or (end < len(text) and word(text[end - 1]) and word(text[end])))
 
 
 def _bare(text: str, value: str, spans: list[tuple[int, int]]) -> int:

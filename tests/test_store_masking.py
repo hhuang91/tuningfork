@@ -494,9 +494,42 @@ class TestWhatIsShown:
         # Masked on a line both hold, and said bare on a line the other changed.
         kept = "Run: mysql -pZ9q4 tally < dump.sql\nThen check it.\n"
         assert store.masking.alike([kept, kept.replace("check it", "echo Z9q4")])[1].endswith(f"Then echo {REDACTED}.\n")
-        # A mask of fewer than four characters is found by its value nowhere: so few stand anywhere by chance.
-        short = "curl -u admin:a1b https://api.test/x\nThen check it.\n"
-        assert store.masking.alike([short, short.replace("check it", "read part a1b2 of it")])[1].endswith("part a1b2 of it.\n")
+        # A mask of fewer than four characters is found by its value nowhere: a word that short stands in
+        # a text by chance (`x86`, a password, beside `x86`, a processor).
+        short = "curl -u admin:x86 https://api.test/x\nThen check it.\n"
+        assert REDACTED in store.masking.shown(short).value
+        assert store.masking.alike([short, short.replace("check it", "build for x86")])[1].endswith("Then build for x86.\n")
+
+    def test_a_value_is_found_as_a_word_of_its_own_and_never_as_digits_alone(self, store):
+        """Found in review: `1234`, a password, was masked in `51234`, `12345` and `run_1234.csv` on
+        the other side's changed lines — and, beside the file shown alone, said which number was the
+        key. Digits alone stand for any number: never found by their value. Any other value is found
+        only as a word of its own."""
+        numbers = "Load: mysql -p1234 tally\nWrite out.csv\n"
+        written = "Write run_1234.csv, rows 51234 and 12345, then 1234\n"
+        assert store.masking.alike([numbers, numbers.replace("Write out.csv\n", written)])[1].endswith(written)
+        word = "Load: mysql -pZ9q4 tally\nWrite out.csv\n"
+        shown = store.masking.alike([word, word.replace("out.csv", "xZ9q4.csv, Z9q4x, then Z9q4-note")])[1]
+        assert shown.endswith(f"Write xZ9q4.csv, Z9q4x, then {REDACTED}-note\n")
+
+    def test_a_line_two_texts_hold_unchanged_reads_alike_in_both(self, store):
+        """Found in review: in a long text, a line repeated often was matched as changed — difflib
+        does not anchor on a line that common — and a value found on it was masked on one side only,
+        so a diff showed it changed. Every text's changed lines are read alike."""
+        from tuningfork.ops.diff import line_diff
+
+        popular = "Note: Z9q4 rotates monthly."
+        before, after = ["Run: mysql -pZ9q4 tally"], ["Run: psql tally"]
+        for n in range(300):
+            if n % 60 == 30:
+                before += [f"alpha {n}", popular, f"omega {n}"]
+                after += [f"ALPHA {n}", popular, f"OMEGA {n}"]
+            else:
+                before.append(f"same line {n}")
+                after.append(f"same line {n}")
+        was, now = store.masking.alike(["\n".join(before) + "\n", "\n".join(after) + "\n"])
+        changed = [line["text"] for hunk in line_diff(was, now)["hunks"] for line in hunk["lines"] if line["op"] != " "]
+        assert changed and not [line for line in changed if line.startswith("Note:")]
 
     def test_letters_a_changed_line_shares_with_a_key_by_chance_are_shown(self, store):
         """Found in review: a key's line rewritten as a word read `rot<redacted>t<redacted>d`, the
