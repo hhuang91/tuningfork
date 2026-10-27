@@ -782,3 +782,31 @@ def test_a_deletion_reads_the_names_before_any_row_goes(stack, monkeypatch):
     with pytest.raises(OperationError):
         trash._remove(store, store.purge_closure(runs=[run]), trash.Removal())
     assert store.get_run(run) is not None
+
+
+def test_a_file_beside_the_scenarios_refuses_nothing(stack):
+    # Found checking the description: listed as a scenario's folder, a `.DS_Store` there refused
+    # every deletion, as a folder that could not be read.
+    store = stack.store
+    (run,) = batch(stack, store.home / "batches", n=1)
+    scenarios = store.home / "scenarios"
+    scenarios.mkdir()
+    (scenarios / ".DS_Store").write_bytes(b"\0")
+    (scenarios / "notes.txt").write_text("a person's own\n", encoding="utf-8")
+
+    deleted(store, run)
+
+    assert store.get_run(run) is None and trash.listing(store).empty
+
+
+def test_a_scenario_entry_it_cannot_check_is_said(tmp_path, monkeypatch):
+    # Python 3.12 and 3.13 raise from `is_dir` where an entry cannot be checked; 3.14 says False.
+    (tmp_path / "scenarios" / "named").mkdir(parents=True)
+
+    def refused(self):
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr(Path, "is_dir", refused)
+    with pytest.raises(OperationError) as unread:
+        trash._scenario_folders(tmp_path / "scenarios")
+    assert unread.value.code == "unreadable"

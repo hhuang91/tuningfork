@@ -596,7 +596,7 @@ def _named(store: Store, home: Path) -> list[Path]:
     read, or made sense of, names nothing."""
     from tuningfork.ops.addskill import added
     from tuningfork.ops.addskill import root as skills
-    from tuningfork.ops.scenarios import SPEC, TRASH
+    from tuningfork.ops.scenarios import SPEC
     from tuningfork.ops.scenarios import root as scenarios
     from tuningfork.paths import host_path, resolve_path
 
@@ -607,7 +607,7 @@ def _named(store: Store, home: Path) -> list[Path]:
     # Each task file, with the folder its skill folder is read against, and whether it is the
     # recordings folder's own: a scenario in the trash comes back to its own name, which a relative
     # skill folder was written from.
-    specs = [(folder / SPEC, folder, True) for folder in _listing(scenarios(home)) if folder.name != TRASH]
+    specs = [(folder / SPEC, folder, True) for folder in _scenario_folders(scenarios(home))]
     specs += [(entry["path"] / SPEC, scenarios(home) / entry["name"], True) for entry in _trashed_scenarios(home)]
     specs += [(Path(path), Path(path).parent, False) for path in store.spec_paths()]
     for spec, base, ours in specs:
@@ -637,6 +637,17 @@ def _named(store: Store, home: Path) -> list[Path]:
         except Exception:  # noqa: BLE001 - a name it cannot make sense of names nothing
             continue
     return found
+
+
+def _scenario_folders(folder: Path) -> list[Path]:
+    """The scenarios' folders, as the Scenarios page lists them (`scenarios.NAME`): never a file
+    beside them — a note, a `.DS_Store` — nor their trash."""
+    from tuningfork.ops.scenarios import NAME
+
+    try:
+        return [path for path in _listing(folder) if NAME.fullmatch(path.name) and path.is_dir()]
+    except OSError as error:
+        raise _unreadable(folder) from error
 
 
 def _listing(folder: Path) -> list[Path]:
