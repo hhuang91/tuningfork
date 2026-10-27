@@ -35,6 +35,7 @@ import contextlib
 import json
 import os
 import shutil
+import stat
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -353,8 +354,8 @@ def purge(store: Store, kind: str, reference: str) -> Removal:
         plan = store.purge_closure(runs=made.runs, experiments=made.experiments)
         removal.items.append({"kind": kind, "id": found.id, "label": found.skill})
         removal.cited_by = _goes(store, plan, [found.id])["cited_by"]
-        _remove(store, plan, removal)
-        _remove_refinement(store, found, made.variants, removal)
+        named = _remove(store, plan, removal)
+        _remove_refinement(store, found, made.variants, removal, named)
         _sweep(store, removal)
         return removal
     if kind == "run":
@@ -401,19 +402,21 @@ def empty(store: Store) -> Removal:
     refinements = _trashed_refinements(store)
     for refinement in refinements:
         _refinement_busy(store, refinement)
+    # Read before anything goes, as every refusal is.
+    scenarios = _trashed_scenarios(store.home)
+    named = _named(store, store.home.resolve())
     made = {refinement.id: made_by(store, refinement) for refinement in refinements}
     tied_runs = runs + [run for each in made.values() for run in each.runs]
     tied_experiments = experiments + [experiment for each in made.values() for experiment in each.experiments]
     if tied_runs or tied_experiments:
         plan = store.purge_closure(runs=tied_runs, experiments=tied_experiments)
         removal.cited_by = _goes(store, plan, list(made))["cited_by"]
-        _remove(store, plan, removal)
+        _remove(store, plan, removal, named)
     for refinement in refinements:
-        _remove_refinement(store, refinement, made[refinement.id].variants, removal)
+        _remove_refinement(store, refinement, made[refinement.id].variants, removal, named)
     for job in found["jobs"]:
         store.purge_job(job.id)
     removal.add({"jobs": len(found["jobs"])})
-    scenarios = _trashed_scenarios(store.home)
     for entry in scenarios:
         shutil.rmtree(entry["path"])
     removal.add({"scenarios": len(scenarios)})
@@ -456,16 +459,19 @@ def _refuse_running(store: Store, plan: Purge) -> None:
             )
 
 
-def _remove(store: Store, plan: Purge, removal: Removal) -> None:
+def _remove(store: Store, plan: Purge, removal: Removal, named: Sequence[Path] | None = None) -> list[Path]:
+    """Delete `plan` for good, and the folders tuningfork made for it but what a person keeps a
+    name of (`named`, read here before anything goes where not given). Returns those names."""
     from tuningfork.snapshots import SnapshotError, Snapshots
 
     _refuse_running(store, plan)
+    home = store.home.resolve()
+    # Before anything goes: a list of names that cannot be read refuses the deletion.
+    named = _named(store, home) if named is None else list(named)
     groups = _groups(store, plan)  # read from the launches, before their rows go
     store.purge(plan)
     removal.add(plan.to_json())
     snapshots = Snapshots(store.home)
-    home = store.home.resolve()
-    named = _named(store, home)  # by what is left
     for launch_id, (workspace, harness_home) in plan.launches.items():
         try:
             snapshots.drop(launch_id)
@@ -484,6 +490,7 @@ def _remove(store: Store, plan: Purge, removal: Removal) -> None:
             _clear(folder, named)
             removal.folders += 1
     _remove_groups(store, home, groups, removal, named)
+    return named
 
 
 def _clear(folder: Path, named: Sequence[Path]) -> None:
@@ -581,46 +588,75 @@ def _named(store: Store, home: Path) -> list[Path]:
     """The skill folders something a person keeps names, as a run would open them: a skill added
     and remembered where it is, a scenario's (one in the trash too), and the task file's of each
     launch left in the store. A person can name a batch's skill copy, or a skill as a run's
-    harness left it, as any of them, and an approval then writes there: what holds one stays."""
+    harness left it, as any of them, and an approval then writes there: what holds one stays.
+
+    What the recordings folder holds of them must be readable: where its list of skills added or
+    of scenarios, or one of them, cannot be read, the deletion is refused before anything goes
+    (`_unreadable`), since what it names could not be kept. A task file elsewhere that cannot be
+    read, or made sense of, names nothing."""
     from tuningfork.ops.addskill import added
-    from tuningfork.ops.scenarios import SPEC
+    from tuningfork.ops.addskill import root as skills
+    from tuningfork.ops.scenarios import SPEC, TRASH
     from tuningfork.ops.scenarios import root as scenarios
     from tuningfork.paths import host_path, resolve_path
 
-    found = _listed(lambda: [path for each in added(home) if each.kind == "folder"
-                             for path in (each.path, each.path.resolve())])
-    # Each task file, with the folder its skill folder is read against: a scenario in the trash
-    # comes back to its own name, which a relative skill folder was written from.
-    specs = [*_listed(lambda: [(spec, spec.parent) for spec in scenarios(home).glob(f"*/{SPEC}")]),
-             *_listed(lambda: [(entry["path"] / SPEC, scenarios(home) / entry["name"])
-                               for entry in _trashed_scenarios(home)]),
-             *_listed(lambda: [(Path(path), Path(path).parent) for path in store.spec_paths()])]
-    for spec, base in specs:
+    for record in _listing(skills(home)):
+        if record.suffix == ".json" and not os.access(record, os.R_OK):
+            raise _unreadable(record)
+    found = [path for each in added(home) if each.kind == "folder" for path in (each.path, each.path.resolve())]
+    # Each task file, with the folder its skill folder is read against, and whether it is the
+    # recordings folder's own: a scenario in the trash comes back to its own name, which a relative
+    # skill folder was written from.
+    specs = [(folder / SPEC, folder, True) for folder in _listing(scenarios(home)) if folder.name != TRASH]
+    specs += [(entry["path"] / SPEC, scenarios(home) / entry["name"], True) for entry in _trashed_scenarios(home)]
+    specs += [(Path(path), Path(path).parent, False) for path in store.spec_paths()]
+    for spec, base, ours in specs:
         try:
-            if not spec.is_file():  # a regular file only: never a pipe, which would hold every deletion
+            if not stat.S_ISREG(spec.stat().st_mode):  # never a pipe, which would hold every deletion
                 continue
             skill = json.loads(spec.read_text(encoding="utf-8")).get("tuningfork", {}).get("skill_dir")
-            if isinstance(skill, str) and skill:
-                # As a run opens it, and as written: a name going through a link keeps the link. Up
-                # to its last climb (`..`) it is read as the system reads it, from a link's target.
-                found.append(resolve_path(skill, base).path)
-                written = Path(os.path.join(base, os.path.expanduser(host_path(skill))))
-                if ".." in written.parts:
-                    last = len(written.parts) - written.parts[::-1].index("..")
-                    written = Path(os.path.realpath(Path(*written.parts[:last]))).joinpath(*written.parts[last:])
-                found.append(Path(os.path.normpath(written)))
-        except Exception:  # noqa: BLE001 - a task file it cannot read names nothing; it stops no deletion
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            if ours:
+                raise _unreadable(spec) from error
+            continue
+        except Exception:  # noqa: BLE001 - one it cannot make sense of names nothing; it stops no deletion
+            continue
+        if not isinstance(skill, str) or not skill:
+            continue
+        try:
+            # As a run opens it, and as written: a name going through a link keeps the link. Up to
+            # its last climb (`..`) it is read as the system reads it, from a link's target.
+            found.append(resolve_path(skill, base).path)
+            written = Path(os.path.join(base, os.path.expanduser(host_path(skill))))
+            if ".." in written.parts:
+                last = len(written.parts) - written.parts[::-1].index("..")
+                written = Path(os.path.realpath(Path(*written.parts[:last]))).joinpath(*written.parts[last:])
+            found.append(Path(os.path.normpath(written)))
+        except Exception:  # noqa: BLE001 - a name it cannot make sense of names nothing
             continue
     return found
 
 
-def _listed(read: Any) -> list[Any]:
-    """What `read` lists, or nothing where it cannot list it: a folder it cannot read names
-    nothing, and stops no deletion."""
+def _listing(folder: Path) -> list[Path]:
+    """What a folder of the recordings folder's holds: nothing where there is no such folder, and
+    one that cannot be listed refused (`_unreadable`)."""
     try:
-        return list(read())
-    except Exception:  # noqa: BLE001 - as a task file it cannot read
+        return sorted(folder.iterdir())
+    except FileNotFoundError:
         return []
+    except OSError as error:
+        raise _unreadable(folder) from error
+
+
+def _unreadable(where: Path) -> OperationError:
+    """A refusal for something of the recordings folder's that cannot be read: what it holds or
+    names could not be kept."""
+    return OperationError(
+        f"{where} cannot be read, so what it holds or names could not be kept",
+        hint="make it readable again (it is in your recordings folder), then try again", code="unreadable",
+    )
 
 
 def _holds(folder: Path, named: Sequence[Path]) -> bool:
@@ -628,12 +664,14 @@ def _holds(folder: Path, named: Sequence[Path]) -> bool:
     return any(path == folder or folder in path.parents for path in named)
 
 
-def _remove_refinement(store: Store, refinement: Any, variants: Sequence[Path], removal: Removal) -> None:
+def _remove_refinement(store: Store, refinement: Any, variants: Sequence[Path], removal: Removal,
+                       named: Sequence[Path]) -> None:
     """A refinement's own files, once what it made is gone from the store: its proposals'
-    saved texts, then its folder, but a path in it something a person keeps names."""
+    saved texts, then its folder, but a path in it something a person keeps names (`named`,
+    read before anything went)."""
     for path in variants:
         path.unlink(missing_ok=True)
-    _clear(Path(refinement.folder).resolve(), _named(store, store.home.resolve()))
+    _clear(Path(refinement.folder).resolve(), named)
     removal.add({"refinements": 1, "variants": len(variants)})
 
 
@@ -866,11 +904,14 @@ def _trashed_scenarios(home: Path) -> list[dict[str, Any]]:
 
     folder = root(home) / TRASH
     entries = []
-    for path in sorted(folder.iterdir() if folder.is_dir() else (), key=lambda p: p.stat().st_mtime, reverse=True):
-        if path.is_dir():
-            # `<name>-<YYYYmmdd-HHMMSS>`, as `ops.scenarios.delete_scenario` names it.
-            name = path.name.rsplit("-", 2)[0] if path.name.count("-") >= 2 else path.name
-            entries.append({"id": path.name, "name": name, "trashed_at": path.stat().st_mtime, "path": path})
+    try:  # one that cannot be listed is said, everywhere the trash is read (`_unreadable`)
+        for path in sorted(_listing(folder), key=lambda p: p.stat().st_mtime, reverse=True):
+            if path.is_dir():
+                # `<name>-<YYYYmmdd-HHMMSS>`, as `ops.scenarios.delete_scenario` names it.
+                name = path.name.rsplit("-", 2)[0] if path.name.count("-") >= 2 else path.name
+                entries.append({"id": path.name, "name": name, "trashed_at": path.stat().st_mtime, "path": path})
+    except OSError as error:
+        raise _unreadable(folder) from error
     return entries
 
 

@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from tuningfork.ops import trash
+from tuningfork.ops.common import OperationError
 from tuningfork.ops.batch import execute_batch, prepare_batch
 from tuningfork import runner
 from tests.test_approve import stack  # noqa: F401 — the fixture: a task, a proxy, a skill folder
@@ -714,21 +715,49 @@ class TestThroughALink:
 
 
 @pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="file modes, as a user they bind")
-def test_a_scenarios_trash_it_cannot_list_stops_no_deletion(stack):
-    # Found checking the description: listed outside every guard, it stopped the preview and the
-    # deletion both.
+def test_a_scenarios_trash_it_cannot_list_refuses_before_anything_goes(stack):
+    # Found checking the description: listed unguarded, it raised where it was read — emptying the
+    # trash after its runs had gone — and, guarded to name nothing, would let a deletion take what
+    # a scenario in it names. Refused, saying why, wherever the trash is read.
     store = stack.store
     (run,) = batch(stack, store.home / "batches", n=1)
     trashed = store.home / "scenarios" / ".trash"
     trashed.mkdir(parents=True)
+    trash.trash(store, "run", run)
     trashed.chmod(0)
     try:
-        trash.trash(store, "run", run)
-        trash.preview(store, "run", run)
-        trash.purge(store, "run", run)
+        for step in (lambda: trash.preview(store, "run", run), lambda: trash.purge(store, "run", run),
+                     lambda: trash.listing(store), lambda: trash.empty(store)):
+            with pytest.raises(OperationError) as refused:
+                step()
+            assert refused.value.code == "unreadable" and ".trash" in str(refused.value)
     finally:
         trashed.chmod(0o700)
-    assert store.get_run(run) is None
+    assert store.get_run(run) is not None
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="file modes, as a user they bind")
+def test_a_skill_record_or_a_scenario_it_cannot_read_refuses_before_anything_goes(stack):
+    from tuningfork.ops import addskill
+
+    store = stack.store
+    (run,) = batch(stack, store.home / "batches", n=1)
+    copy = group_of(store, run) / "skill-snapshot" / "tally-report"
+    addskill.execute_add(store, addskill.prepare_folder(store, copy))
+    (record,) = (store.home / "skills").glob("*.json")
+    scenario = store.home / "scenarios" / "named"
+    scenario.mkdir(parents=True)
+    (scenario / "evals.json").write_text(json.dumps({"skill_name": "x", "evals": []}), encoding="utf-8")
+    trash.trash(store, "run", run)
+    for unread in (record, scenario / "evals.json"):
+        unread.chmod(0)
+        try:
+            with pytest.raises(OperationError) as refused:
+                trash.purge(store, "run", run)
+            assert refused.value.code == "unreadable" and str(unread) in str(refused.value)
+        finally:
+            unread.chmod(0o600)
+    assert store.get_run(run) is not None and (copy / "SKILL.md").is_file()
 
 
 def test_a_mark_set_far_ahead_is_set_back_by_the_next_look(stack):
@@ -737,3 +766,19 @@ def test_a_mark_set_far_ahead_is_set_back_by_the_next_look(stack):
     now = time.time()
     assert trash.sweep_if_due(store, now=now) is None
     assert trash._read_due(store.home / trash.SWEEP_DUE)[0] == pytest.approx(now + trash.GRACE, abs=0.01)
+
+
+def test_a_deletion_reads_the_names_before_any_row_goes(stack, monkeypatch):
+    # Whoever calls it: the names are read, and a list of them that cannot be read refuses the
+    # deletion, before the rows go — not only where the preview read them first.
+    store = stack.store
+    (run,) = batch(stack, store.home / "batches", n=1)
+    trash.trash(store, "run", run)
+
+    def unread(store, home):
+        raise OperationError("skills cannot be read", code="unreadable")
+
+    monkeypatch.setattr(trash, "_named", unread)
+    with pytest.raises(OperationError):
+        trash._remove(store, store.purge_closure(runs=[run]), trash.Removal())
+    assert store.get_run(run) is not None
