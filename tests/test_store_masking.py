@@ -480,6 +480,13 @@ class TestWhatIsShown:
         numbered = "Run: mysql -p1234 tally\n"
         assert store.masking.alike([numbered, "Run: port 1234 tally\n"])[1] == f"Run: port {REDACTED} tally\n"
         assert store.masking.alike([numbered, "Run: port 51234 tally\n"])[1] == "Run: port 51234 tally\n"
+        # Glued to its option, as mysql writes one, a value is the same password where the run kept the
+        # option, or holds a letter (found in review: `mycli -pZ9q4`, read bare beside `-p<redacted>`).
+        assert store.masking.alike([numbered, "Run: mycli -p1234 tally\n"])[1] == f"Run: mycli -p{REDACTED} tally\n"
+        lettered = "Run: mysql -u root -pZ9q4 tally\n"
+        for rewritten in ("Run: mycli -u root -pZ9q4 tally\n", "Run: mysql -u root -PZ9q4 tally\n"):
+            assert "Z9q4" in store.masking.shown(rewritten).value  # alone, the value reads as no key
+            assert "Z9q4" not in store.masking.alike([lettered, rewritten])[1], rewritten
 
     def test_a_short_value_on_a_changed_line_is_masked_where_the_other_holds_it_changed(self, store):
         """Found in review: a four-character password whose `mysql -p` was rewritten, among eighty
@@ -491,7 +498,9 @@ class TestWhatIsShown:
         rewritten = "Run: the Z9q4 load first\n" + "\n".join(line.replace("copy", "move") for line in lines) + "\n"
         assert "Z9q4" in store.masking.shown(rewritten, lines=True).value  # alone, the value reads as no key
         moved = "\n".join(lines) + "\nRun: load Z9q4 into the tally first\n"
-        for other, line in ((rewritten, f"Run: the {REDACTED} load first"), (moved, f"Run: load {REDACTED} into the tally first")):
+        option = rewritten.replace("Run: the Z9q4 load first", "Run: mycli -pZ9q4 tally < dump.sql")  # glued as before
+        for other, line in ((rewritten, f"Run: the {REDACTED} load first"), (moved, f"Run: load {REDACTED} into the tally first"),
+                            (option, f"Run: mycli -p{REDACTED} tally < dump.sql")):
             was_shown, now = store.masking.alike([was, other + "Keep Z9q4 out of the logs.\n"])
             assert line in now.splitlines() and was_shown.startswith(f"Run: mysql -p{REDACTED} tally")
             assert was_shown.endswith("Keep Z9q4 out of the logs.\n") and now.endswith("Keep Z9q4 out of the logs.\n")

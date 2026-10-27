@@ -105,10 +105,11 @@ class Masking:
         masked whole, each line at its number, of what the masks took in any of them; each masked
         wherever it holds, unchanged, text another masks — a line they share, the characters a
         changed line shares (`_carried`) — and, on its changed lines, wherever a mask's value
-        stands as a word of its own (`_values`, `_found_in`). A key's pattern reads its context,
-        which an edit can take away — a private key's first line, the `-u` before a password —
-        leaving what it masked to read as no key on its own. The first is masked as each other is
-        shown beside it, and each other as the first: a line two of them share reads alike."""
+        stands as a word of its own, or glued as its mask was (`_values`, `_found_in`). A key's
+        pattern reads its context, which an edit can take away — a private key's first line, the
+        `-u` before a password — leaving what it masked to read as no key on its own. The first is
+        masked as each other is shown beside it, and each other as the first: a line two of them
+        share reads alike."""
         texts = list(texts)
         found = frozenset().union(*(self.text(text).found for text in texts))
         spans = [text_spans(text, self.patterns, tuple(found)) for text in texts]
@@ -298,11 +299,10 @@ def _carried(spans: list[Span], blocks: list[tuple[int, int, int, bool]], into: 
     """`spans` of one text — sorted and apart, as `text_spans` and `_merged` give them — carried into
     another, `into`, through what they share (`blocks`, as `_shared` gives them): each part of a span
     inside a run of shared lines, where it stands in the other; inside a run of shared characters,
-    `CARRIED_LEAST` characters of one, or a shorter span it holds whole where it stands there as a
-    word of its own (found in review: a key's line rewritten as `rotated` read
-    `rot<redacted>t<redacted>d`, and `mysql -p1234` rewritten as `port 51234`, `port 5<redacted>`).
-    Each run reads only the spans that reach it (found in review: every span against every run took
-    seconds for a few thousand lines)."""
+    `CARRIED_LEAST` characters of one, or a shorter span it holds whole where it may land (`_lands`;
+    found in review: a key's line rewritten as `rotated` read `rot<redacted>t<redacted>d`). Each run
+    reads only the spans that reach it (found in review: every span against every run took seconds
+    for a few thousand lines)."""
     starts = [start for start, _ in spans]
     carried = []
     for ours, theirs, size, lines in blocks:
@@ -312,7 +312,7 @@ def _carried(spans: list[Span], blocks: list[tuple[int, int, int, bool]], into: 
             low, high = max(start, ours), min(end, ours + size)
             there = (low - ours + theirs, high - ours + theirs)
             if low < high and (lines or high - low >= CARRIED_LEAST
-                               or ((low, high) == (start, end) and _apart(into, *there))):
+                               or ((low, high) == (start, end) and _lands(into, *there, start > ours, end < ours + size))):
                 carried.append(there)
             k += 1
     return carried
@@ -320,45 +320,61 @@ def _carried(spans: list[Span], blocks: list[tuple[int, int, int, bool]], into: 
 
 def _values(texts: Sequence[str], spans: Sequence[list[Span]], found: frozenset[str]) -> list[str]:
     """What the masks of `texts` took that is found by its value on changed lines (`_found_in`):
-    each value once, `VALUE_LEAST` characters or more, and never one `found` masks wherever it
-    stands already, nor one without a letter — digits, a PIN or a year, or punctuation, `####`, stand
-    for any number or rule in a text, and masking those that read the same would say, beside the
-    text shown alone, which of them is the key (found in review: `1234` masked in `51234`, `1,234` in
-    a count, `####` in a heading)."""
-    values: dict[str, None] = {}
+    each value once, with the characters before and after its masks, `VALUE_LEAST` characters or
+    more, and never one `found` masks wherever it stands already, nor one without a letter —
+    digits, a PIN or a year, or punctuation, `####`, stand for any number or rule in a text, and
+    masking those that read the same would say, beside the text shown alone, which of them is the
+    key (found in review: `1234` masked in `51234`, `1,234` in a count, `####` in a heading)."""
+    values: dict[str, tuple[set[str], set[str]]] = {}
     for text, masks in zip(texts, spans):
         for start, end in masks:
             value = text[start:end]
             if len(value) >= VALUE_LEAST and any(char.isalpha() for char in value) and value not in found:
-                values.setdefault(value)
-    return list(values)
+                before, after = values.setdefault(value, (set(), set()))
+                before.update(text[start - 1:start])
+                after.update(text[end:end + 1])
+    return [(value, frozenset(before), frozenset(after)) for value, (before, after) in values.items()]
 
 
-def _found_in(text: str, values: list[str], changed: list[Span]) -> list[Span]:
-    """Where each of `values` stands as a word of its own on `text`'s changed lines (`changed`): a run
-    of changed lines too long to compare by characters (`CHARS_COMPARED`), or a line moved, carries no
-    mask onto them (found in review: a four-character password whose `mysql -p` was rewritten among
+def _found_in(text: str, values: list[tuple[str, frozenset[str], frozenset[str]]], changed: list[Span]) -> list[Span]:
+    """Where each of `values` (as `_values` gives them) stands on `text`'s changed lines (`changed`): a
+    run of changed lines too long to compare by characters (`CHARS_COMPARED`), or a line moved, carries
+    no mask onto them (found in review: a four-character password whose `mysql -p` was rewritten among
     eighty lines changed showed on the other side). Every text's changed lines are read alike, so a
-    line two texts hold unchanged reads alike in both; one glued to a letter, a digit or `_` is
-    another word (found in review: `run_1234.csv`)."""
+    line two texts hold unchanged reads alike in both. One glued to a letter, a digit or `_` is
+    another word (found in review: `run_1234.csv`) — but one its own mask was glued to: the same
+    option, mysql's `-pZ9q4` (found in review: `mycli -pZ9q4`)."""
     carried = []
-    for value in values:
+    for value, before, after in values:
         for begin, stop in changed:
             at = text.find(value, begin, stop)
             while at >= 0:
-                if _apart(text, at, at + len(value)):
+                glued_before, glued_after = _glued(text, at, at + len(value))
+                if not (glued_before and text[at - 1] not in before) and not (glued_after and text[at + len(value)] not in after):
                     carried.append((at, at + len(value)))
                 at = text.find(value, at + 1, stop)
     return carried
 
 
-def _apart(text: str, start: int, end: int) -> bool:
-    """`text[start:end]` glued to no letter, digit or `_` where its own edge is one."""
+def _lands(into: str, start: int, end: int, kept_before: bool, kept_after: bool) -> bool:
+    """Where a short mask carried whole through a run of shared characters may land in `into`: one with a
+    letter wherever the run puts it, glued to its option or not (mysql's `-pZ9q4`, rewritten `-PZ9q4`); one
+    without a letter only as a word of its own, or glued to a character the run kept (found in review:
+    `-p1234` rewritten as `port 51234` read `port 5<redacted>`; as `mycli -p1234`, the run kept the `p`)."""
+    if any(char.isalpha() for char in into[start:end]):
+        return True
+    glued_before, glued_after = _glued(into, start, end)
+    return not (glued_before and not kept_before) and not (glued_after and not kept_after)
+
+
+def _glued(text: str, start: int, end: int) -> tuple[bool, bool]:
+    """Whether `text[start:end]` is glued, before it and after it, to a letter, a digit or `_` where
+    its own edge is one."""
     def word(char: str) -> bool:
         return char.isalnum() or char == "_"
 
-    return not ((start > 0 and word(text[start]) and word(text[start - 1]))
-                or (end < len(text) and word(text[end - 1]) and word(text[end])))
+    return (start > 0 and word(text[start]) and word(text[start - 1]),
+            end < len(text) and word(text[end - 1]) and word(text[end]))
 
 
 def _bare(text: str, value: str, spans: list[tuple[int, int]]) -> int:

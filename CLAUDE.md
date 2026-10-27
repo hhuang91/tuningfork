@@ -731,12 +731,13 @@ at its number, each line a mask covers reading `<redacted>` (`Masking.shown`'s `
 line, a private key's lines pass, and a cut through a key leaves a part no pattern reads. Texts set
 side by side — a diff: show_files', an A/B's wording, a refinement's proposals — are masked alike,
 what they share masked as either masks it, and a mask's value — four characters or more, a letter
-among them — wherever it stands as a word of its own on any of their changed lines
-(`Masking.alike`): an edit can take away a private key's first line, or the command a password's
-pattern reads. A shorter mask, or one without a letter — a PIN, a year, a run of `#`, which masking
-by value would point out among a text's numbers and rules — is carried onto a changed line only
-where the lines around it are compared character by character (`CHARS_COMPARED`), and there, under
-eight characters, only where it lands as a word of its own. An edit's quotes — the text it replaced, the
+among them — wherever it stands on any of their changed lines as a word of its own, or glued as
+its mask was (mysql's `-pZ9q4`) (`Masking.alike`): an edit can take away a private key's first
+line, or the command a password's pattern reads. A shorter mask, or one without a letter — a PIN,
+a year, a run of `#`, which masking by value would point out among a text's numbers and rules — is
+carried onto a changed line only where the lines around it are compared character by character
+(`CHARS_COMPARED`), and there, under eight characters and without a letter, only where it lands as
+a word of its own or glued to what the comparison kept. An edit's quotes — the text it replaced, the
 lines a refusal finds closest — are the skill as show_skill shows it. A file where_it_holds asks of
 for an agent is matched as the agent is shown it. A run's views show its task's check masked
 (`timeline.launch_json`, `inspect.task_summaries`); the form that makes a scenario of the run takes
