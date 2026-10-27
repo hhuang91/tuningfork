@@ -312,8 +312,11 @@ class TestWhatIsNotItsOwn:
         (run,) = batch(stack, store.home / "batches", n=1)
         copy = group_of(store, run) / "skill-snapshot" / "tally-report"
         addskill.execute_add(store, addskill.prepare_folder(store, copy))
+        trash.trash(store, "run", run)
+        # Said before it is deleted, as of a run's own folder (found checking the description).
+        assert any(str(copy) in note for note in trash.preview(store, "run", run)["notes"])
 
-        deleted(store, run)
+        trash.purge(store, "run", run)
 
         assert (copy / "SKILL.md").is_file()
 
@@ -708,3 +711,29 @@ class TestThroughALink:
 
         assert (scenario / named / "SKILL.md").is_file()
         assert sorted(entry.name for entry in folder.iterdir()) == ["linked"]
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="file modes, as a user they bind")
+def test_a_scenarios_trash_it_cannot_list_stops_no_deletion(stack):
+    # Found checking the description: listed outside every guard, it stopped the preview and the
+    # deletion both.
+    store = stack.store
+    (run,) = batch(stack, store.home / "batches", n=1)
+    trashed = store.home / "scenarios" / ".trash"
+    trashed.mkdir(parents=True)
+    trashed.chmod(0)
+    try:
+        trash.trash(store, "run", run)
+        trash.preview(store, "run", run)
+        trash.purge(store, "run", run)
+    finally:
+        trashed.chmod(0o700)
+    assert store.get_run(run) is None
+
+
+def test_a_mark_set_far_ahead_is_set_back_by_the_next_look(stack):
+    store = stack.store
+    trash._put_due(store.home / trash.SWEEP_DUE, float("inf"), False)
+    now = time.time()
+    assert trash.sweep_if_due(store, now=now) is None
+    assert trash._read_due(store.home / trash.SWEEP_DUE)[0] == pytest.approx(now + trash.GRACE, abs=0.01)

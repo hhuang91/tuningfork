@@ -283,7 +283,8 @@ def _outside(store: Store, plan: Purge) -> list[str]:
     groups = sorted({str(folder.parent) for folder in launched if not _inside(home, folder, 1)})
     notes = [f"the folders tuningfork made for its launches outside the recordings folder go too, in "
              f"{', '.join(groups)}"] if groups else []
-    folders = launched + [(imports(home) / run).resolve() for run in plan.runs]
+    batches = [group for group, chain in _groups(store, plan).items() if not chain]
+    folders = launched + [(imports(home) / run).resolve() for run in plan.runs] + batches
     return notes + _kept_note(_named(store, home), folders)
 
 
@@ -586,12 +587,14 @@ def _named(store: Store, home: Path) -> list[Path]:
     from tuningfork.ops.scenarios import root as scenarios
     from tuningfork.paths import host_path, resolve_path
 
-    found = [path for each in added(home) if each.kind == "folder" for path in (each.path, each.path.resolve())]
+    found = _listed(lambda: [path for each in added(home) if each.kind == "folder"
+                             for path in (each.path, each.path.resolve())])
     # Each task file, with the folder its skill folder is read against: a scenario in the trash
     # comes back to its own name, which a relative skill folder was written from.
-    specs = [*((spec, spec.parent) for spec in scenarios(home).glob(f"*/{SPEC}")),
-             *((entry["path"] / SPEC, scenarios(home) / entry["name"]) for entry in _trashed_scenarios(home)),
-             *((Path(path), Path(path).parent) for path in store.spec_paths())]
+    specs = [*_listed(lambda: [(spec, spec.parent) for spec in scenarios(home).glob(f"*/{SPEC}")]),
+             *_listed(lambda: [(entry["path"] / SPEC, scenarios(home) / entry["name"])
+                               for entry in _trashed_scenarios(home)]),
+             *_listed(lambda: [(Path(path), Path(path).parent) for path in store.spec_paths()])]
     for spec, base in specs:
         try:
             if not spec.is_file():  # a regular file only: never a pipe, which would hold every deletion
@@ -609,6 +612,15 @@ def _named(store: Store, home: Path) -> list[Path]:
         except Exception:  # noqa: BLE001 - a task file it cannot read names nothing; it stops no deletion
             continue
     return found
+
+
+def _listed(read: Any) -> list[Any]:
+    """What `read` lists, or nothing where it cannot list it: a folder it cannot read names
+    nothing, and stops no deletion."""
+    try:
+        return list(read())
+    except Exception:  # noqa: BLE001 - as a task file it cannot read
+        return []
 
 
 def _holds(folder: Path, named: Sequence[Path]) -> bool:
@@ -722,10 +734,15 @@ def _write_due(home: Path, when: float, *, only_the_log: bool = False) -> None:
 def sweep_if_due(store: Store, *, now: float | None = None) -> Removal | None:
     """Sweep what a deletion for good left for the grace, once the grace has passed: its blobs
     and snapshot objects, and the database's log — or only the log, where that is all the mark
-    asks for. None where nothing is due yet, or the mark cannot be read."""
+    asks for. None where nothing is due yet, or the mark cannot be read. A mark set further ahead
+    than the grace, by a clock set wrong once, is set back to it."""
     path = store.home / SWEEP_DUE
     found = _read_due(path)
-    if found is None or (time.time() if now is None else now) < found[0]:
+    now = time.time() if now is None else now
+    if found is not None and found[0] > now + GRACE:
+        _put_due(path, now + GRACE, found[1])
+        return None
+    if found is None or now < found[0]:
         return None
     when, only_the_log, written = found
     removal = Removal()

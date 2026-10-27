@@ -24,11 +24,12 @@ does to keep that local:
   messages, blobs and workspace snapshots, and its batch's folder with the skill copy the batch
   was given, once none of the batch's runs is left and nothing else is in it. A path in any of
   them that a skill added, a scenario, or the task file of a run still recorded names stays where
-  it is, and the deletion's preview says so. Outside the recordings folder, a folder goes only where
-  tuningfork marked it as made for this recordings folder, which earlier versions did not. What its
-  database rows held is overwritten. What was written in the last two minutes, which a recording
-  in flight may still need, goes once those have passed, while a proxy serves the recordings
-  folder, or at the next deletion. Files go as your file system deletes them.
+  it is, and the deletion's preview says so. Outside the recordings folder, a folder goes only
+  where tuningfork marked it as made for this recordings folder, which earlier versions did not.
+  What its database rows held is overwritten, and the database's log emptied once no other process
+  is reading it. What was written in the last two minutes, which a recording in flight may still
+  need, goes once those have passed, while a proxy serves the recordings folder, or at the next
+  deletion. Files go as your file system deletes them.
 - **An agent's MCP client holds no key to the rest.** The MCP endpoint takes a token of its
   own, and no other; the access token is refused there. No MCP tool approves an edit to a
   skill, and none offers the held-out results an edit is judged by.
