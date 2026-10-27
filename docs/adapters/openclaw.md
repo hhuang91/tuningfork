@@ -338,8 +338,9 @@ Beside the seam's own arguments, a batch or a chain can give OpenClaw options
 (`--harness-option k=v` on the CLI, `harness_options` in a job's parameters, the "Harness
 options" field of the Run a task form), read strictly by the adapter (`OpenClawOptions`) and
 recorded in each launch's settings under `harness`; a fork is set up as its source was, and
-every run of a validation as the checkpoint's run was. A launch is OpenClaw as shipped but for
-the memory flush.
+every run of a validation as the checkpoint's run was, but for its MCP servers, which the
+settings do not keep whole (below): those runs go without them, and the plan says so. A launch
+is OpenClaw as shipped but for the memory flush.
 
 | Option | Default | What it does |
 |---|---|---|
@@ -347,7 +348,7 @@ the memory flush.
 | `skill_workshop` | on | On, as shipped: the Skill Workshop's section of the system prompt and the `skill_workshop` tool (above). Off, the tool is denied (`tools.deny: ["skill_workshop"]`), and OpenClaw leaves the section out with it: verified, the only difference in the request, 1,051 characters. OpenClaw's own `skills.workshop.autonomous.mode: "off"` stops only the background review, and changed nothing sent. |
 | `memory_flush` | off | Off, every launch's config says `agents.defaults.compaction.memoryFlush.enabled: false`; on, the launch keeps OpenClaw's own default, on. The flush never runs in a one-shot launch either way (above): the setting is there for a later turn of a kept session. |
 | `mcp_servers` | none | MCP servers for the launch's config, as OpenClaw takes them under `mcp.servers` (`command`, `args`, `env`, or `url` with its `transport`; name the transport of a URL server, which OpenClaw takes as SSE otherwise): how a launched OpenClaw gets tuningfork's own tools. Verified with the proxy's own route (`{"url": "http://127.0.0.1:8787/_tuningfork/mcp", "transport": "streamable-http", "headers": {"Authorization": "Bearer <the MCP token>"}}`) and Tool Search off: the model was given each tool as `tuningfork__<tool>`, and called `tuningfork__list_tasks`. A server is written whole into the launch's config, in its home, where the run can read it; the settings record its command or URL, never its environment or headers. |
-| `context_window` | the server's | The context window OpenClaw is told the model has, at least 4,000 tokens: the server's `n_ctx` unless given, a fork's its source's, and every run of a validation's the checkpoint run's. |
+| `context_window` | the server's | The context window OpenClaw is told the model has, at least 4,000 tokens: the server's `n_ctx` unless given; in a fork, its source's; and in every run of a validation, the checkpoint run's. |
 
 ## Still to verify
 
