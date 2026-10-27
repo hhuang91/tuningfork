@@ -699,9 +699,11 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                server, client by client), web-ui.md (the pages, pictured);
                                adapters/, one page per harness; images/, the pictures (hero.py
                                draws the figure)
-    scripts/                  tuningfork inside WSL from a checkout on Windows: tuningfork.ps1 for
-                               PowerShell, tuningfork for Git Bash, twins — the distro only ever
-                               the one TUNINGFORK_WSL_DISTRO names (tests/test_wsl_wrapper.py)
+    scripts/                  tuningfork in a Linux VM from a checkout on Windows or a Mac:
+                               tuningfork.ps1 for PowerShell, tuningfork for Git Bash, twins under
+                               WSL — the distro only ever the one TUNINGFORK_WSL_DISTRO names
+                               (tests/test_wsl_wrapper.py); on a Mac, tuningfork goes through Lima,
+                               to the VM TUNINGFORK_LIMA_INSTANCE names (tests/test_lima_wrapper.py)
 
 A request is never stored whole: messages live in the content-addressed tree and are
 rebuilt by `Store.rebuild_request`. What the store keeps of what happened — steps, samples and

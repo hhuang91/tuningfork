@@ -1,16 +1,33 @@
 #!/usr/bin/env bash
-# tuningfork inside WSL, from a checkout on Windows, from Git Bash:
+# tuningfork inside a Linux VM, from a checkout on Windows (Git Bash, WSL) or on a Mac (Lima):
 #
 #   scripts/tuningfork <command> [args]         any tuningfork command, as on Linux
 #   scripts/tuningfork --run <program> [args]   anything else, in tuningfork's venv
 #
-# The checkout stays where Windows editors see it; tuningfork's venv and its recordings stay
-# in the distro's Linux file system, where SQLite's locking works. tuningfork.ps1 is its twin
-# for PowerShell: change both together.
+# The checkout stays where your editors see it; tuningfork's venv and its recordings stay in
+# the VM's own Linux file system, where SQLite's locking works. Under WSL, tuningfork.ps1 is
+# its twin for PowerShell: change both together. Each argument reaches tuningfork as it was typed.
 #
-# It runs nothing until TUNINGFORK_WSL_DISTRO names the distro: with more than one installed,
-# the default one may not be the one meant. Each argument reaches tuningfork as it was typed.
+# Under WSL it runs nothing until TUNINGFORK_WSL_DISTRO names the distro: with more than one
+# installed, the default one may not be the one meant. On a Mac it runs in the Lima VM that
+# TUNINGFORK_LIMA_INSTANCE names, `tuningfork` unless set, which sees the checkout where it is:
+# Lima shows a VM your home at the same path. macOS's own bash is 3.2: nothing newer here.
 set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Run in the VM: one fixed script, the arguments after it, never read back as shell.
+script='export UV_PROJECT_ENVIRONMENT="$HOME/.local/share/tuningfork/venv"; '\
+'command -v uv >/dev/null || { echo "uv is not installed in this distro: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; exit 127; }; '\
+'if [ "${1:-}" = --run ]; then shift; exec uv run "$@"; fi; exec uv run tuningfork "$@"'
+
+if [ "$(uname -s)" = Darwin ]; then
+    if ! command -v limactl >/dev/null; then
+        echo 'Lima is not installed: brew install lima, then make the VM as docs/setup.md says (On macOS)' >&2
+        exit 127
+    fi
+    exec limactl shell --workdir "$here" "${TUNINGFORK_LIMA_INSTANCE:-tuningfork}" bash -lc "$script" tuningfork "$@"
+fi
 
 if [ -z "${TUNINGFORK_WSL_DISTRO:-}" ]; then
     echo 'Name the WSL distro tuningfork runs in first, for example:  export TUNINGFORK_WSL_DISTRO=Ubuntu' >&2
@@ -19,13 +36,7 @@ if [ -z "${TUNINGFORK_WSL_DISTRO:-}" ]; then
     exit 2
 fi
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 repo="$(cygpath -w "$here" 2>/dev/null || printf '%s' "$here")"
-
-# Run in the distro: one fixed script, the arguments after it, never read back as shell.
-script='export UV_PROJECT_ENVIRONMENT="$HOME/.local/share/tuningfork/venv"; '\
-'command -v uv >/dev/null || { echo "uv is not installed in this distro: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; exit 127; }; '\
-'if [ "${1:-}" = --run ]; then shift; exec uv run "$@"; fi; exec uv run tuningfork "$@"'
 
 # Git Bash rewrites an argument that looks like a POSIX path into a Windows one: /tmp/lab
 # would reach the distro as C:/Program Files/Git/tmp/lab.
