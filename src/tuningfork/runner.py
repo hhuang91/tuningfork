@@ -229,6 +229,40 @@ def named_side_call(store: Store, adapter: Any, run: Any) -> bool:
     return bool(said) and said not in getattr(adapter, "fed_back_side_calls", ())
 
 
+#: Written in the folder a batch's launches, or a set of forks, are laid out in, naming the
+#: recordings folder that made it on its first line: deleting their runs for good from that one
+#: removes the folder, wherever it is, once nothing left refers to it (`ops.trash`). A copy of the
+#: recordings folder, whose launches name the same folders, never does; nor does any folder
+#: outside the recordings folder without the mark.
+GROUP_MARK = ".tuningfork-group"
+#: The skill copy a batch's runs are given, in its folder (a chain's links: `skill-snapshot-<i>`).
+SNAPSHOT = "skill-snapshot"
+
+
+def make_group(workdir: Path, name: str, home: Path, *, fresh: bool = True) -> Path:
+    """The folder one batch's launches, or one set of forks, go in: this user's alone (0700),
+    since what a harness keeps there is the conversation it had, and marked as made for the
+    recordings folder `home`. A new one is never a folder that was there already (`fresh`); a
+    chain's links share their chain's."""
+    folder = Path(workdir) / name
+    folder.mkdir(mode=0o700, parents=True, exist_ok=not fresh)
+    mark = folder / GROUP_MARK
+    if not mark.exists():
+        mark.write_text(f"{Path(home).resolve()}\nMade by tuningfork for the launches in it, recording to the folder "
+                        "above. Deleting their runs for good there removes it.\n", encoding="utf-8")
+    return folder
+
+
+def made_for(group: Path, home: Path) -> bool:
+    """Whether `group` carries the mark of a folder tuningfork made for the recordings folder
+    `home` (`make_group`). Unreadable, it does not."""
+    try:
+        with (group / GROUP_MARK).open(encoding="utf-8") as mark:
+            return mark.readline().rstrip("\n") == str(Path(home).resolve())
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
 def lookalike_skill_files(skill_dir: Path) -> list[str]:
     """Other `SKILL*.md` files in a skill folder: variants kept beside the skill.
 
@@ -897,7 +931,7 @@ class BatchRunner(Launcher):
         group: str | None = None,
         start: int = 0,
         skill_dir: Path | None = None,
-        skill_snapshot: str = "skill-snapshot",
+        skill_snapshot: str = SNAPSHOT,
         settings: dict[str, Any] | None = None,
         launch_seconds: float | None = None,
     ) -> BatchResult:
@@ -916,6 +950,7 @@ class BatchRunner(Launcher):
                 f"({spec.directory}): {', '.join(missing)}"
             )
         batch = group or uuid.uuid4().hex[:8]
+        make_group(self.workdir, batch, self.store.home, fresh=group is None or start == 0)  # a chain: its first link
         skill = self._snapshot_skill(spec, batch, source=skill_dir, name=skill_snapshot)
         parity = {**(parity or {}), "skill_snapshot": hash_tree([skill]) if skill else {}}
         if skill:
@@ -938,7 +973,7 @@ class BatchRunner(Launcher):
         batch: str,
         *,
         source: Path | None = None,
-        name: str = "skill-snapshot",
+        name: str = SNAPSHOT,
     ) -> Path | None:
         """Freeze the skill for the whole batch.
 
@@ -1055,6 +1090,7 @@ class ForkRunner(Launcher):
         experiment_id: str | None = None,
     ) -> list[RunOutcome]:
         group = uuid.uuid4().hex[:8]
+        make_group(self.workdir, group, self.store.home)
 
         def one(index: int) -> RunOutcome:
             return self._fork_once(source, group, index, experiment_id)

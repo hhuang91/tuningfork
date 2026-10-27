@@ -639,7 +639,7 @@ def machine_config_path() -> Path:
 def write_home_config(home: Path, data: dict[str, Any]) -> None:
     """Replace the recordings folder's `config.json` atomically."""
     path = Path(home) / HOME_CONFIG
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temporary = path.with_name(f".{HOME_CONFIG}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(temporary, path)

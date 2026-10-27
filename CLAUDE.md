@@ -96,12 +96,24 @@ is, and no new work starts on a run there (`ops.trash.refuse_trashed`). Deleting
 trash is permanent: the item goes with what is tied to it (`Store.purge_closure`: a run's
 threads, the experiments at its steps and their samples, forks tuningfork launched from it,
 token streams, launches and their folders), then what nothing left refers to — message nodes,
-blobs, snapshot objects — with a two-minute grace for a recording in flight. A refinement goes
-with what it made (`refine.made_by`): its screens, its validations' forks and fresh training
-runs, its proposals' saved texts and its folder — never the run it studies, nor the changelog
-and old versions an approval wrote beside the skill's folder. One in the trash is shown as it
-was and takes no new work (`refine.refuse_closed`). A fork an experiment drew goes to the
-trash, and is deleted, only with its experiment, as a thread goes with its run
+blobs, snapshot objects, the folder a batch or a set of forks was laid out in with the skill
+copy its runs were given (`trash._remove_groups`) — with a two-minute grace for a recording in
+flight, swept once it has passed (`trash.sweep_if_due`: a running proxy looks every half
+minute, and a later deletion sweeps everything). A path a skill added, a scenario or a
+remaining launch's task file names stays where it is, the rest of its folder going
+(`trash._named`, `_clear`), and a batch's folder holding one stays. A launch's folder
+outside the recordings folder goes only where tuningfork marked its group as made for this
+recordings folder (`runner.GROUP_MARK`, `made_for`, `make_group`: 0700): a copy of the
+recordings folder, whose launches name the original's folders, removes none of them, nor its
+own copies of them. What a deleted row held is overwritten (`secure_delete`), and the
+database's log emptied once no other process reads it (`Store.checkpoint`). A job keeps its
+record of the work, a chain its record and the skill each link left, and what was made of a run
+— a scenario, a skill added — what it took: each goes only as itself, a chain by hand. A
+refinement goes with what it made (`refine.made_by`): its screens, its validations' forks and
+fresh training runs, its proposals' saved texts and its folder — never the run it studies, nor
+the changelog and old versions an approval wrote beside the skill's folder. One in the trash is
+shown as it was and takes no new work (`refine.refuse_closed`). A fork an experiment drew goes
+to the trash, and is deleted, only with its experiment, as a thread goes with its run
 (`trash.experiment_of_fork`): its verdict is the experiment's, kept in its sample, and taking
 single forks out of a finished screen would choose which of them count.
 
@@ -579,10 +591,13 @@ deleted, and not while a scenario runs from it.
 Every state change under `/_tuningfork/` needs the proxy's access token
 (`x-tuningfork-token`, or `Authorization: Bearer`): minted each `serve`, written to
 `<home>/.access-token` (0600), and checked in `api/guard.LocalOnly`, never in a route. Reads
-stay open, except the MCP endpoint, which takes its own MCP token on every method
-(`<home>/.mcp-token`, pinned by `TUNINGFORK_MCP_TOKEN`) and nothing else: the access token is
-refused there, and the MCP token everywhere else, so an MCP client never holds a key to what
-its tools leave out. The CLI finds both itself; tests send them
+stay open, to anything that can reach the port. The recordings folder is this user's alone when
+tuningfork makes it (0700), and `serve` and `ui` say when one made before is not
+(`access.open_to_others`), never changing it. The MCP endpoint is the exception to open reads:
+it takes its own MCP token on every method (`<home>/.mcp-token`, pinned by
+`TUNINGFORK_MCP_TOKEN`) and nothing else: the access token is refused there, and the MCP token
+everywhere else, so an MCP client never holds a key to what its tools leave out. The CLI finds
+both itself; tests send them
 (`tests/helpers.control_headers`, `mcp_headers`). One proxy per home: two would overwrite
 each other's tokens.
 

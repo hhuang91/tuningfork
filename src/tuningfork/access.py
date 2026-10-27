@@ -1,6 +1,9 @@
 """The access token: what a request needs to change tuningfork's state.
 
-Reading stays open to the person at the machine. Anything that changes state — pausing,
+Reading stays open: to the person at the machine, and to anything else that can reach the
+port — another user's process, or, under WSL's mirrored networking, a Windows program. The
+recordings folder itself is this user's alone when tuningfork makes it (0700), and `serve` says
+when one made before is not (`open_to_others`). Anything that changes state — pausing,
 a breakpoint, a decision at a held call, and from Phase 5 starting work that launches
 harnesses — needs the token a running proxy was started with. A web page open in the same
 browser can send requests to a loopback port, but it cannot read the token: it is in the
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import re
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,11 +78,37 @@ def write_token(home: Path | str, token: str) -> Path:
     return write_secret(token_path(home), token)
 
 
+def open_to_others(folder: Path | str) -> str | None:
+    """Who besides this user can open a recordings folder, in words, with how to make it this
+    user's alone — or None where no one else can. A folder tuningfork makes is 0700; one made
+    before, or by a person, keeps its mode, which tuningfork never changes by itself."""
+    import shlex
+
+    from tuningfork.paths import drive_root, under_wsl
+
+    if os.name != "posix":
+        return None
+    try:
+        mode = Path(folder).stat().st_mode & 0o777
+    except OSError:
+        return None
+    if not mode & 0o077:
+        return None
+    who = ("its group and other users" if mode & 0o070 and mode & 0o007
+           else "its group" if mode & 0o070 else "other users")
+    if under_wsl() and re.match(re.escape(drive_root()) + r"[A-Za-z](/|$)", str(Path(folder).resolve())):
+        # A Windows drive, which keeps no file modes unless mounted with `metadata`.
+        return (f"{who} on this machine can open it (mode {mode:o}): it is on a Windows drive, where "
+                "chmod may not hold; keep recordings on the Linux file system")
+    return (f"{who} on this machine can open it (mode {mode:o}): `chmod 700 {shlex.quote(str(folder))}` "
+            "makes it yours alone")
+
+
 def write_secret(path: Path | str, text: str) -> Path:
     """Write a secret atomically, mode 0600 from the moment the file exists — a secret
     briefly readable by others would be a secret given away."""
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:

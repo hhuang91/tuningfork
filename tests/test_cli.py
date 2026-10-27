@@ -9,6 +9,8 @@ over realistic text catches that.
 from __future__ import annotations
 
 import json
+import os
+import stat
 
 import httpx
 import pytest
@@ -578,3 +580,43 @@ def test_serve_reads_its_settings_from_the_environment(cli, tmp_path, monkeypatc
     # The token can be pinned, and the address printed carries it.
     assert seen["settings"].token == "pinned"
     assert "http://127.0.0.2:9797/_tuningfork/ui/?token=pinned" in result.output
+
+
+@pytest.mark.skipif(os.name != "posix", reason="file modes are POSIX")
+def test_serve_says_when_others_can_open_its_recordings_folder(cli, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    class Server:
+        def __init__(self, app, *, host, port):
+            pass
+
+        def run(self):
+            pass
+
+    def create_app(settings):
+        return SimpleNamespace(settings=settings, state=SimpleNamespace(access=SimpleNamespace(token="t")))
+
+    monkeypatch.setattr("tuningfork.proxy.app.create_app", create_app)
+    monkeypatch.setattr("tuningfork.proxy.app.ProxyServer", Server)
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o755)
+    told = cli("serve", "--upstream", "http://127.0.0.1:1", "--home", str(shared)).output
+    assert "other users on this machine can open it (mode 755)" in told and f"chmod 700 {shared}" in told
+
+    made = tmp_path / "made"
+    quiet = cli("serve", "--upstream", "http://127.0.0.1:1", "--home", str(made)).output
+    assert "can open it" not in quiet and stat.S_IMODE(made.stat().st_mode) == 0o700
+
+
+@pytest.mark.skipif(os.name != "posix", reason="file modes are POSIX")
+def test_ui_says_when_others_can_open_the_recordings_folder(cli, tmp_path, monkeypatch):
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
+    monkeypatch.setattr("tuningfork.proxy.app.create_browse_app", lambda store, host: store.close())
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o755)
+    told = cli("ui", "--home", str(shared)).output
+    assert "other users on this machine can open it (mode 755)" in told

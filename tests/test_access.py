@@ -190,3 +190,59 @@ class TestTheMcpToken:
         monkeypatch.setenv(MCP_ENV, "mcp-secret")
         result = run_check('test -z "${TUNINGFORK_MCP_TOKEN:-}"', tmp_path)
         assert result.passed, result.output
+
+
+@pytest.mark.skipif(os.name != "posix", reason="file modes are POSIX")
+class TestTheRecordingsFolder:
+    def test_one_made_here_is_this_users_alone_and_one_made_before_keeps_its_mode(self, tmp_path):
+        from tuningfork.store.db import Store
+
+        Store(tmp_path / "new" / "home").close()
+        assert stat.S_IMODE((tmp_path / "new" / "home").stat().st_mode) == 0o700
+        before = tmp_path / "before"
+        before.mkdir()
+        before.chmod(0o755)
+        Store(before).close()
+        assert stat.S_IMODE(before.stat().st_mode) == 0o755  # told, never changed
+
+    def test_who_else_can_open_it_is_said_with_how_to_make_it_private(self, tmp_path):
+        from tuningfork.access import open_to_others
+
+        folder = tmp_path / "home"
+        folder.mkdir()
+        said = {}
+        for mode in (0o700, 0o750, 0o705, 0o755):
+            folder.chmod(mode)
+            said[mode] = open_to_others(folder)
+        assert said[0o700] is None
+        assert said[0o750].startswith("its group on this machine can open it (mode 750)")
+        assert said[0o705].startswith("other users on this machine can open it (mode 705)")
+        assert said[0o755].startswith("its group and other users on this machine")
+        assert said[0o755].endswith(f"`chmod 700 {folder}` makes it yours alone")
+
+    def test_every_way_one_is_first_made_makes_it_this_users_alone(self, tmp_path):
+        from tuningfork.access import write_secret
+        from tuningfork.config import write_home_config
+        from tuningfork.demo import lab
+
+        write_home_config(tmp_path / "configured", {"protected": []})
+        write_secret(tmp_path / "keyed" / ".proposer-key", "sk-test")
+        lab.demo_home(tmp_path / "demo", "lab")
+        for made in ("configured", "keyed", "demo"):
+            assert stat.S_IMODE((tmp_path / made).stat().st_mode) == 0o700, made
+
+    def test_its_advice_quotes_the_folder_and_holds_on_a_windows_drive(self, tmp_path, monkeypatch):
+        from tuningfork import access
+
+        spaced = tmp_path / "my recordings"
+        spaced.mkdir()
+        spaced.chmod(0o755)
+        assert f"`chmod 700 '{spaced}'`" in access.open_to_others(spaced)
+
+        monkeypatch.setattr("tuningfork.paths.under_wsl", lambda: True)
+        monkeypatch.setattr("tuningfork.paths.drive_root", lambda: str(tmp_path) + "/")
+        drive = tmp_path / "c"
+        drive.mkdir()
+        drive.chmod(0o777)
+        said = access.open_to_others(drive)
+        assert "on a Windows drive" in said and "chmod 700" not in said

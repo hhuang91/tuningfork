@@ -53,7 +53,7 @@ export async function trashView(root) {
   replace(root,
     h("div", { class: "page-head" },
       h("div", null, h("h1", null, "Trash"),
-        h("p", { class: "sub" }, "Set aside, out of every list and pass rate, and back as it went when restored. Deleting from here is for good: a run goes with what is tied to it — the experiments at its steps, their samples, the forks that replayed it — and a refinement with what it made: its tests at a step, its full test runs, its proposals' saved texts.")),
+        h("p", { class: "sub" }, "Set aside, out of every list and pass rate, and back as it went when restored. Deleting from here is for good: a run goes with what is tied to it — the experiments at its steps, their samples, the forks that replayed it — and a refinement with what it made: its tests at a step, its full test runs, its proposals' saved texts. A job keeps its record of the work, a chain its record and the skills its links left, and a scenario or a skill made from a run what it took.")),
       total && live.mode === "live" ? h("div", { class: "actions" }, emptyButton(total, reload)) : null),
     total ? h("div", { class: "stack" }, sections) : h("div", { class: "panel empty" }, h("h2", null, "The trash is empty"),
       h("p", { class: "muted" }, "Runs, experiments, jobs, scenarios and refinements moved to the trash wait here until restored or deleted for good.")));
