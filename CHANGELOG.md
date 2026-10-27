@@ -16,21 +16,25 @@ and a forking-token probe's page were reworked.
   before it starts. A launch is OpenClaw as shipped, Tool Search and the Skill Workshop on, but
   for the memory flush, which is off. Its harness options are `tool_search`, `skill_workshop`,
   `memory_flush`, `mcp_servers` (tuningfork's own tools, say) and `context_window`.
-- **What OpenClaw does not do under tuningfork yet** is on its page, `docs/adapters/openclaw.md`,
-  with what its recordings showed. A subagent does not run: OpenClaw refuses one without its
-  Gateway. A task's `max_turns` does not reach it. A conversation it carries on after a compaction
-  is a thread of its own, so the final reply of a run that compacts is the main thread's last
-  answer. A chain told its check's result and importing OpenClaw's sessions are not done yet, and
-  a scenario made from an OpenClaw run is untried.
-- **A harness adapter can say three things more**, as OpenClaw's does: what to tell a launch of
-  the server (`for_server`), what in its `--version` stops it launching (`version_problem`), and
-  which side calls the conversation goes on from (`fed_back_side_calls`).
-  `docs/adapters/TEMPLATE.md` lists them.
+- **What to allow for with OpenClaw** is on its page, `docs/adapters/openclaw.md`, with what its
+  recordings showed. A reply usually begins with `[[reply_to_current]]`, which a reply check
+  reads as the model wrote it. OpenClaw counts tokens its own way, so a conversation can outgrow
+  the server's window: the server refuses the call, and the run is left out of a batch's pass
+  rate. A task's `max_turns` does not reach it. A conversation it carries on after a compaction is
+  a thread of its own, so the final reply of a run that compacts is the main thread's last answer.
+- **Not done yet with OpenClaw:** a subagent, which OpenClaw refuses without its Gateway; a chain
+  told its check's result; importing its sessions. A scenario made from an OpenClaw run is
+  untried.
+- **A harness adapter can say three things more**, as OpenClaw's does: what a launch is told of
+  the server it talks to (`for_server`), what in its `--version` stops it launching
+  (`version_problem`), and which side calls the conversation goes on from
+  (`fed_back_side_calls`). `docs/adapters/TEMPLATE.md` lists them.
 - **Every answer an agent gets over MCP is masked as it leaves**, every refusal too. Before,
   `show_files`, `show_skill`, `show_run`, `list_tasks`, `list_scenarios`, `show_refinement`,
   `show_experiment` and `propose_edit` could show a run's workspace, a task's check, a scenario's
-  task file, the skill a run was given or a wording tried, unmasked. `where_it_holds` matched its
-  pattern against the files as they are.
+  task file, the skill a run was given or a wording tried, unmasked. A `start_*` tool's dry run
+  gave its plan unmasked, a batch's with its task's prompt and check, and `where_it_holds`
+  matched its pattern against the files as they are.
 - **A text an agent or a proposing model is shown is masked whole before it is split or cut
   short:** `show_skill`'s numbered lines, a file read page by page, a task's prompt in a plan or a
   packet. Masked line by line, each line of a private key reads as no key, and cut short, a key
@@ -53,7 +57,7 @@ and a forking-token probe's page were reworked.
 - **A variant given as text that reads `<redacted>` more often than the skill's file does**,
   written from the skill as shown, is set on the file as it stands, each line it kept the file's.
   One that keeps part of a key, still reads the mask, or leaves a key to read as none is refused.
-  Any other text, a person's, is tested as given.
+  Any other text, a person's, is not set on the file.
 - **A check's output is masked where the check runs**, before it is cut to its last 2,000
   characters, kept, or told to a harness. Cut first, a key the cut fell inside kept its end, which
   no pattern reads alone. It is masked every way the store reads a text. The values of the
@@ -68,9 +72,10 @@ and a forking-token probe's page were reworked.
   Scenarios page: the scenario's name, the harness (of a run), the skill's name, then its folder,
   each greyed where the run says it. A folder changed since the run, by an approval say, is
   offered beside a copy of what the run had (`tuningfork scenario --copy-skill`).
-- **A scenario's page says whether it is saved**, beside *Save*. Input files go in once it is,
-  each at a path you can change. *Add a task file you have* takes a task file by its path or its
-  folder uploaded.
+- **A scenario's page says whether it is saved**, beside *Save*, and input files go in once it
+  is, each at a path you can change.
+- **The Scenarios page's *Add a task file you have*** takes the task file's folder uploaded, as
+  well as its path, and plans what it will write before it writes anything.
 - **Where the runs diverge** goes on from the first split to any step: a button for each step,
   shaded where the runs split, the arrow keys, and an address naming the step. Each step says in a
   line what the runs did there.
@@ -105,11 +110,14 @@ Changed:
   other run already did: its runs see `<redacted>` where the chat had a key.
 - **A screen run to the end passes over a run set up otherwise** as it chooses its checkpoints,
   and says how the run differs. A later screen chooses again where the latest drew from one.
-- **A probe's page says *less often* and *more often***, where it said a forced token flips away
-  or toward what was counted. *What was counted* is a label on a line of its own above a result's
-  verdict, and a refinement's test says *What the model should do*.
-- **Make a scenario says *Skill folder***, where it said *Its folder*, and sends a harness only
-  where the run recorded none: a run through a harness the form does not list was sent as Hermes.
+- **A forking-token probe says *less often* and *more often***, where it said a forced token
+  flips away or toward what was counted.
+- **A result's target is headed *What was counted***, where it said *What you count*, on a line
+  of its own above the verdict.
+- **A skill's folder is labelled *Skill folder*** in Make a scenario and in the Skills page's
+  *Add a skill…*, where they said *Its folder*.
+- **Make a scenario sends a harness only where the run recorded none.** A run through a harness
+  the form does not list was sent as Hermes.
 - **A task file kept as a scenario brings what its check reads from its folder**, and the
   conversation its runs continue.
 - **The Skills page finds a skill's folder from its latest launched run**, so a chat imported
@@ -119,7 +127,7 @@ Changed:
 
 A validation run before this release launched its fresh runs with the harness's default options,
 and with the clock, sandbox and layout of wherever it ran: validate again to have them set up as
-its checkpoint's run was.
+its checkpoint's run was, but for its MCP servers.
 
 ## 0.6.1 — a task's check runs in its run's sandbox
 
