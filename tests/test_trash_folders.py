@@ -685,3 +685,26 @@ class TestThroughALink:
         trash.purge(store, "run", run)
 
         assert not folder.exists()
+
+    def test_a_relative_name_climbing_out_of_its_scenario_keeps_the_link_it_goes_through(self, stack):
+        # Found in review: kept only as resolved, every relative name leaving its scenario's
+        # folder lost the links it goes through, and its skill folder opened no more.
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        folder = group_of(store, run) / "0"
+        real = stack.tmp / "real-skills" / "kept-skill"
+        real.mkdir(parents=True)
+        (real / "SKILL.md").write_text("---\nname: kept-skill\ndescription: a person's own\n---\n", encoding="utf-8")
+        (folder / "linked").symlink_to(real.parent, target_is_directory=True)
+        scenario = store.home / "scenarios" / "relative"
+        scenario.mkdir(parents=True)
+        named = os.path.relpath(folder / "linked" / "kept-skill", scenario)
+        assert named.startswith("..")
+        (scenario / "evals.json").write_text(json.dumps({
+            "skill_name": "kept-skill", "tuningfork": {"skill_dir": named}, "evals": [],
+        }), encoding="utf-8")
+
+        deleted(store, run)
+
+        assert (scenario / named / "SKILL.md").is_file()
+        assert sorted(entry.name for entry in folder.iterdir()) == ["linked"]

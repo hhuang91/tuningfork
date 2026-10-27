@@ -598,12 +598,14 @@ def _named(store: Store, home: Path) -> list[Path]:
                 continue
             skill = json.loads(spec.read_text(encoding="utf-8")).get("tuningfork", {}).get("skill_dir")
             if isinstance(skill, str) and skill:
-                # As a run opens it, and as written: a name going through a link keeps the link. Not
-                # where it climbs (`..`): after a link, the system climbs from the link's target.
+                # As a run opens it, and as written: a name going through a link keeps the link. Up
+                # to its last climb (`..`) it is read as the system reads it, from a link's target.
                 found.append(resolve_path(skill, base).path)
                 written = Path(os.path.join(base, os.path.expanduser(host_path(skill))))
-                if ".." not in written.parts:
-                    found.append(Path(os.path.normpath(written)))
+                if ".." in written.parts:
+                    last = len(written.parts) - written.parts[::-1].index("..")
+                    written = Path(os.path.realpath(Path(*written.parts[:last]))).joinpath(*written.parts[last:])
+                found.append(Path(os.path.normpath(written)))
         except Exception:  # noqa: BLE001 - a task file it cannot read names nothing; it stops no deletion
             continue
     return found
