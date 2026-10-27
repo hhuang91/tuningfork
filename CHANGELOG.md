@@ -17,12 +17,12 @@ and a forking-token probe's page were reworked.
   for the memory flush, which is off. Its harness options are `tool_search`, `skill_workshop`,
   `memory_flush`, `mcp_servers` (tuningfork's own tools, say) and `context_window`.
 - **What to allow for with OpenClaw** is on its page, `docs/adapters/openclaw.md`, with what its
-  recordings showed. It asks the model to begin a reply with `[[reply_to_current]]`, and Gemma 4
-  31B mostly did: a reply check reads the reply as the model wrote it. OpenClaw counts tokens its
-  own way, so a conversation can outgrow the server's window: the server refuses the call, and the
-  run is left out of a batch's pass rate, a fork out of its arm's count to the end. A task's
-  `max_turns` does not reach it. A conversation it carries on after a compaction is a thread of
-  its own, so the final reply of a run that compacts is the main thread's last answer.
+  recordings showed. OpenClaw asks the model to begin a reply with `[[reply_to_current]]`, and
+  Gemma 4 31B mostly did: a reply check reads the reply as the model wrote it. OpenClaw counts
+  tokens its own way, so a conversation can outgrow the server's window: the server refuses the
+  call, and the run is left out of a batch's pass rate, a fork out of its arm's count to the end.
+  A task's `max_turns` does not reach OpenClaw. A conversation it carries on after a compaction is
+  a thread of its own, so the final reply of a run that compacts is the main thread's last answer.
 - **Not done yet with OpenClaw:** a subagent, which OpenClaw refuses without its Gateway; a chain
   told its check's result; importing its sessions. A scenario made from an OpenClaw run is
   untried.
