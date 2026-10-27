@@ -73,7 +73,8 @@ CALL_TIMEOUT = 86_400
 #: - `context_window`: the context window OpenClaw is told the model has, in tokens. OpenClaw
 #:   does not ask the server, and assumes 200,000 tokens of a model its config does not size;
 #:   it compacts a conversation, and bounds an answer, by this. Unless given, a batch sets it
-#:   to the server's own (`for_server`), and a fork to its source's.
+#:   to the server's own (`for_server`), a fork to its source's, and every run of a validation
+#:   to the checkpoint run's.
 OPTIONS = ("tool_search", "skill_workshop", "memory_flush", "mcp_servers", "context_window")
 
 #: Carried into the child from the parent; everything else is dropped, so a stray

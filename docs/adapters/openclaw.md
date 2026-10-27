@@ -91,13 +91,15 @@ The config tuningfork writes, `~/.openclaw/openclaw.json` (JSON5, so a comment l
 - **`contextWindow`**: OpenClaw never asks the server, and of a model its config does not size
   it assumes 200,000 tokens. It compacts a conversation by this, and bounds each answer below
   it. A batch writes the server's own (`n_ctx`), as OpenClaw's own llama.cpp provider does for
-  a server it finds running (from its `/props`), a fork its source's, and the harness option
-  `context_window` another. OpenClaw counts tokens its own way, though: on a log full of digits
-  it counted about a third fewer than the server (below), so a conversation can outgrow the
-  server's window before OpenClaw compacts it. The server then refuses the call, and OpenClaw
-  compacts and asks again (source). tuningfork, finding a failed call, leaves such a run out of
-  a batch's pass rate, and a fork out of its arm's count to the end, since a failed call is no
-  timeout: an edit that makes runs longer is then measured only on the runs that fit the window.
+  a server it finds running (from its `/props`), unless the harness option `context_window`
+  gives another. A fork writes its source's, and every run of a validation the checkpoint
+  run's: none, where that run recorded none. OpenClaw counts tokens its own way, though: on a
+  log full of digits it counted about a third fewer than the server (below), so a conversation
+  can outgrow the server's window before OpenClaw compacts it. The server then refuses the
+  call, and OpenClaw compacts and asks again (source). tuningfork, finding a failed call, leaves
+  such a run out of a batch's pass rate, and a fork out of its arm's count to the end, since a
+  failed call is no timeout: an edit that makes runs longer is then measured only on the runs
+  that fit the window.
 - **The output limit** is left to OpenClaw: 8,192 tokens, sent as `max_completion_tokens`,
   which llama-server honours (measured: `finish_reason: length` at the limit, as for
   `max_tokens`).
@@ -335,8 +337,9 @@ about every two days.
 Beside the seam's own arguments, a batch or a chain can give OpenClaw options
 (`--harness-option k=v` on the CLI, `harness_options` in a job's parameters, the "Harness
 options" field of the Run a task form), read strictly by the adapter (`OpenClawOptions`) and
-recorded in each launch's settings under `harness`; a fork is set up as its source was. A
-launch is OpenClaw as shipped but for the memory flush.
+recorded in each launch's settings under `harness`; a fork is set up as its source was, and
+every run of a validation as the checkpoint's run was. A launch is OpenClaw as shipped but for
+the memory flush.
 
 | Option | Default | What it does |
 |---|---|---|
@@ -344,7 +347,7 @@ launch is OpenClaw as shipped but for the memory flush.
 | `skill_workshop` | on | On, as shipped: the Skill Workshop's section of the system prompt and the `skill_workshop` tool (above). Off, the tool is denied (`tools.deny: ["skill_workshop"]`), and OpenClaw leaves the section out with it: verified, the only difference in the request, 1,051 characters. OpenClaw's own `skills.workshop.autonomous.mode: "off"` stops only the background review, and changed nothing sent. |
 | `memory_flush` | off | Off, every launch's config says `agents.defaults.compaction.memoryFlush.enabled: false`; on, the launch keeps OpenClaw's own default, on. The flush never runs in a one-shot launch either way (above): the setting is there for a later turn of a kept session. |
 | `mcp_servers` | none | MCP servers for the launch's config, as OpenClaw takes them under `mcp.servers` (`command`, `args`, `env`, or `url` with its `transport`; name the transport of a URL server, which OpenClaw takes as SSE otherwise): how a launched OpenClaw gets tuningfork's own tools. Verified with the proxy's own route (`{"url": "http://127.0.0.1:8787/_tuningfork/mcp", "transport": "streamable-http", "headers": {"Authorization": "Bearer <the MCP token>"}}`) and Tool Search off: the model was given each tool as `tuningfork__<tool>`, and called `tuningfork__list_tasks`. A server is written whole into the launch's config, in its home, where the run can read it; the settings record its command or URL, never its environment or headers. |
-| `context_window` | the server's | The context window OpenClaw is told the model has, at least 4,000 tokens: the server's `n_ctx` unless given, a fork's its source's. |
+| `context_window` | the server's | The context window OpenClaw is told the model has, at least 4,000 tokens: the server's `n_ctx` unless given, a fork's its source's, and every run of a validation's the checkpoint run's. |
 
 ## Still to verify
 

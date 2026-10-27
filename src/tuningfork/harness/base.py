@@ -124,7 +124,8 @@ class HarnessAdapter(Protocol):
     - `for_server(server)`: the adapter set up for the server it will talk to, from the
       server's identity (`n_ctx`, …) — for a harness that does not ask the server itself:
       OpenClaw is told its context window. A batch calls it (`ops.batch`); what it sets is
-      the adapter's `settings`, so a fork, set up from its source's, needs none.
+      the adapter's `settings`, so a fork, set up from its source's, needs none, nor does a
+      batch set up as a recorded run was (its `setup`: a validation's fresh runs).
     - `version_problem(output)`: why a harness that answers `--version` still cannot launch,
       read from what that printed (OpenClaw on a Node it does not run on), or None — the
       harness's `problem` (`ops.connections`): the Connections page says it cannot run here,

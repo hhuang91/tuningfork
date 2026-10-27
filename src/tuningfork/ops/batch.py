@@ -156,9 +156,10 @@ def prepare_batch(
     the one before left. `harness_options` are the harness's own (Hermes: `await_review`,
     `review_every_turn`, `mcp_servers`), read by its adapter and recorded with each run.
     `setup` sets every run up as a recorded run was, as a fork of it is (`ops.launch.Setup`):
-    its harness options in place of `harness_options`, but its MCP servers; its layout; its
-    sandbox, or none where it had none; its clock; and what its sandbox hid — how a
-    validation's fresh runs are measured beside its forks.
+    its harness options in place of `harness_options`, but its MCP servers, and none fitted
+    to the server (`for_server`: OpenClaw told the window the run recorded, or none); its
+    layout; its sandbox, or none where it had none; its clock; and what its sandbox hid — how
+    a validation's fresh runs are measured beside its forks.
 
     A held-out eval judges an edit, so its runs must stay where no agent can read them: it
     runs here only with `include_held_out`, and is never the default (`refine validate` runs
@@ -274,9 +275,10 @@ def prepare_batch(
 
     server = proxy.raw.get("server") or {}
     # A harness that does not ask the server what it holds is told it (OpenClaw's context
-    # window); the launches record it, and a fork is told what its source was.
+    # window); the launches record it. A fork is told what its source was, and so is every run
+    # set up as a recorded run was: a validation's, beside its forks.
     fitted = getattr(adapter, "for_server", None)
-    if fitted is not None:
+    if fitted is not None and setup is None:
         adapter = fitted(server)
     served = [m for m in server.get("models") or [] if isinstance(m, str)]
     if not model:
