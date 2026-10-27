@@ -664,3 +664,24 @@ class TestThroughALink:
 
         assert (folder / "linked" / "kept-skill" / "SKILL.md").is_file()
         assert sorted(entry.name for entry in folder.iterdir()) == ["linked"]
+
+    def test_a_name_climbing_after_a_link_keeps_nothing_it_does_not_reach(self, stack):
+        # Found in review: written as `out/../workspace`, read as text it named the run's own
+        # workspace, which a run opens through the link's target instead.
+        store = stack.store
+        (run,) = batch(stack, store.home / "batches", n=1)
+        folder = group_of(store, run) / "0"
+        (stack.tmp / "elsewhere" / "sub").mkdir(parents=True)
+        (folder / "out").symlink_to(stack.tmp / "elsewhere" / "sub", target_is_directory=True)
+        scenario = store.home / "scenarios" / "climbing"
+        scenario.mkdir(parents=True)
+        (scenario / "evals.json").write_text(json.dumps({
+            "skill_name": "tally-report", "tuningfork": {"skill_dir": str(folder / "out" / ".." / "workspace")},
+            "evals": [],
+        }), encoding="utf-8")
+        trash.trash(store, "run", run)
+        assert trash.preview(store, "run", run)["notes"] == []
+
+        trash.purge(store, "run", run)
+
+        assert not folder.exists()
