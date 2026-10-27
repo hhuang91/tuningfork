@@ -59,6 +59,49 @@ def chat(content: str = "hi") -> dict:
     return {"model": "m", "messages": [{"role": "user", "content": content}]}
 
 
+async def test_connections_say_what_every_check_may_read(two_servers, tmp_path, monkeypatch):
+    """What this machine's config names for every check, or why it cannot be read: the page
+    shows it beside the sandbox, and nothing else stops."""
+    import json
+
+    app, _, _ = two_servers
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    machine = tmp_path / "config" / "tuningfork" / "config.json"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(json.dumps({"check_env": ["https_proxy"]}), encoding="utf-8")
+    async with client_of(app) as client:
+        shown = (await client.get(f"{API}/connections")).json()
+    assert shown["check_env"] == {"names": ["https_proxy"], "sources": [{"path": str(machine), "names": ["https_proxy"]}]}
+    machine.write_text(json.dumps({"check_env": "https_proxy"}), encoding="utf-8")
+    async with client_of(app) as client:
+        shown = (await client.get(f"{API}/connections")).json()
+    assert shown["check_env"]["names"] == [] and str(machine) in shown["check_env"]["problem"]
+    assert shown["server"]["url"] == "http://a.test"
+    # A config that does not parse stops every call: the page says so, rather than failing.
+    machine.write_text('{"check_env": ["https_proxy"],', encoding="utf-8")
+    async with client_of(app) as client:
+        response = await client.get(f"{API}/connections")
+    assert response.status_code == 200, response.text
+    assert str(machine) in response.json()["check_env"]["problem"]
+    assert str(machine) in response.json()["proxy"]["config_problem"]
+
+
+def test_connections_show_says_why_when_the_machines_config_cannot_be_read(tmp_path, monkeypatch):
+    """Refused before anything is sent: said as a refusal, never a traceback."""
+    from typer.testing import CliRunner
+
+    from tuningfork.cli import app
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    machine = tmp_path / "config" / "tuningfork" / "config.json"
+    machine.parent.mkdir(parents=True)
+    machine.write_text('{"protected": [', encoding="utf-8")
+    shown = CliRunner().invoke(app, ["connections", "show", "--proxy", "http://127.0.0.1:9"], env={"COLUMNS": "400"})
+    assert shown.exit_code == 1, shown.output
+    assert "cannot be read" in shown.output and "fix the file" in shown.output
+    assert not isinstance(shown.exception, OperationError)
+
+
 class TestSwitchingTheServer:
     async def test_a_dry_run_says_what_would_change_and_changes_nothing(self, two_servers):
         app, first, second = two_servers

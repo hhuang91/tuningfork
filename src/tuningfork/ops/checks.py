@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from tuningfork.ops.common import OperationError
-from tuningfork.specs import CHECK_KEPT
+from tuningfork.specs import CHECK_KEPT, MASKED_MARGIN, MASKED_MOST
 from tuningfork.store.db import Run, Store
 from tuningfork.store.masking import Masked
 
@@ -48,7 +48,8 @@ class CheckTrialPlan:
     own: bool = False
     #: The folder of the spec the run was launched from: `$TUNINGFORK_SPEC_DIR` for the check.
     spec_dir: str | None = None
-    #: The variables the run's task lets its check read (`check_env`).
+    #: The variables the check may read: those this machine's config names for every check
+    #: (`specs.configured_check_env`), and those the run's task names (`check_env`).
     check_env: list[str] = field(default_factory=list)
     #: Where a shell check runs: a `tuningfork.sandbox.Sandbox`, as a launch does, or None —
     #: and then why not (`unsandboxed`), unless the person turned it off.
@@ -90,6 +91,10 @@ class CheckTrial:
     found: list[str]
     #: Characters cut from the output's start, as a verdict cuts them (`specs.CHECK_KEPT`).
     cut: int = 0
+    #: The reply judged, masked as the output is, before it is cut to what is shown; and how much of
+    #: it past what was masked (`specs.MASKED_MOST`) is left out.
+    reply_shown: str | None = None
+    reply_more: int = 0
 
     @property
     def agrees(self) -> bool | None:
@@ -98,7 +103,7 @@ class CheckTrial:
         return None if recorded is None else recorded == self.passed
 
     def to_json(self) -> dict[str, Any]:
-        reply = self.plan.reply
+        reply, more = (self.plan.reply, 0) if self.reply_shown is None else (self.reply_shown, self.reply_more)
         return {
             **self.plan.to_json(),
             "passed": self.passed,
@@ -107,7 +112,8 @@ class CheckTrial:
             "output_cut": self.cut,
             "found": self.found[:FILES_SHOWN],
             "found_more": max(0, len(self.found) - FILES_SHOWN),
-            "reply": reply if len(reply) <= REPLY_SHOWN else f"{reply[:REPLY_SHOWN]}… (+{len(reply) - REPLY_SHOWN} chars)",
+            "reply": reply if len(reply) <= REPLY_SHOWN and not more
+            else f"{reply[:REPLY_SHOWN]}… (+{max(0, len(reply) - REPLY_SHOWN) + more} chars)",
             "agrees": self.agrees,
         }
 
@@ -126,7 +132,7 @@ def prepare_check_trial(
     from tuningfork.ops.experiments import resolve_run
     from tuningfork.runner import final_reply
     from tuningfork.snapshots import available
-    from tuningfork.specs import Eval, SpecError, check_kind, check_problems, inside
+    from tuningfork.specs import Eval, SpecError, check_kind, check_problems, configured_check_env, inside
 
     found: Run | None = None
     commit = None
@@ -211,7 +217,8 @@ def prepare_check_trial(
     )
     return CheckTrialPlan(
         check=check, run=found, commit=commit, reply=reply or "", files=written,
-        timeout=timeout, recorded=recorded, own=own, spec_dir=spec_dir, check_env=check_env,
+        timeout=timeout, recorded=recorded, own=own, spec_dir=spec_dir,
+        check_env=[*configured_check_env(store.home), *check_env] if kind == "shell" else [],
         sandbox=sandbox, unsandboxed=None if turned_off() else unsandboxed,
     )
 
@@ -219,7 +226,8 @@ def prepare_check_trial(
 def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None = CHECK_KEPT) -> CheckTrial:
     """Run the check in a throwaway folder laid out as a run's: the workspace, and the reply
     in a file beside it (`$TUNINGFORK_REPLY`). Nothing is kept, and nothing recorded. The
-    output is its last `keep` characters, as a verdict keeps it; None, all of it."""
+    output is masked as a verdict's is, and is its last `keep` characters; None, all of it."""
+    from tuningfork.access import held_secrets
     from tuningfork.snapshots import Snapshots
     from tuningfork.specs import inside, run_check
 
@@ -237,11 +245,15 @@ def execute_check_trial(store: Store, plan: CheckTrialPlan, *, keep: int | None 
         found = sorted(path.relative_to(workspace).as_posix() for path in workspace.rglob("*") if path.is_file())
         reply_file = root / "reply.txt"
         reply_file.write_text(plan.reply, encoding="utf-8")
+        held = held_secrets(store.home)
         result = run_check(plan.check, workspace, plan.timeout, reply=plan.reply, reply_file=reply_file,
                            spec_dir=Path(plan.spec_dir) if plan.spec_dir else None, check_env=plan.check_env,
-                           sandbox=plan.sandbox, keep=keep)
+                           sandbox=plan.sandbox, keep=keep, masking=store.masking, also=held)
+    # The reply shown, from its start as far as is masked, read on past that place (`Masking.part`).
+    shown, _, until = store.masking.part(plan.reply[: MASKED_MOST + MASKED_MARGIN], 0,
+                                         min(len(plan.reply), MASKED_MOST), also=held)
     return CheckTrial(plan=plan, passed=result.passed, returncode=result.returncode, output=result.output, found=found,
-                      cut=result.cut)
+                      cut=result.cut, reply_shown=shown, reply_more=len(plan.reply) - until)
 
 
 def try_check(store: Store, check: Any = None, **options: Any) -> CheckTrial:
@@ -342,14 +354,17 @@ def execute_check_along(
             reply = plan.trial.reply if end else ""
             seen[key] = execute_check_trial(store, replace(plan.trial, commit=commit, reply=reply), keep=None)
         trial = seen[key]
+        # An output past what is masked (`specs.MASKED_MOST`) is given from its end: its findings
+        # are not all there, and none of the run's is placed.
+        found = kept_findings(trial.output) | ({"findings_cut": True} if trial.cut else {})
         states.append({"before_step": before, "end": end, "commit": commit, "passed": trial.passed,
-                       "output": trial.output[-CHECK_KEPT:], **kept_findings(trial.output)})
+                       "output": trial.output[-CHECK_KEPT:], **found})
         emit(progress, "state", done=index + 1, total=len(plan.states))
     record = {"states": states, "steps": plan.steps, "at": time.time()}
     run = store.get_run(plan.trial.run.id)
-    # The result as it is stored, masked already, and the record masked once beside it: masked
-    # again, a command's second password would fall too.
-    store.annotate_run(run.id, result=Masked({**(run.result or {}), ALONG: store.masking.value(record)}))
+    # The result as it is stored, masked already, and the record beside it, made of what the check
+    # printed, masked where it ran: masked again, a command's second password would fall too.
+    store.annotate_run(run.id, result=Masked({**(run.result or {}), ALONG: record}))
     return {"run": run.id, **record, "made": made_by_calls(record) or []}
 
 
@@ -428,6 +443,10 @@ def prepare_check_along_runs(
         try:
             plans.append(prepare_check_along(store, found.id, timeout=timeout))
         except OperationError as error:
+            if error.code == "check_env":
+                # The configs' list cannot be read: the whole job is refused, once, rather than
+                # every run passed over in turn.
+                raise
             skipped.append(f"run {found.id[:8]}: {error.message}")
     return CheckAlongRunsPlan(task_id=task, plans=plans, skipped=skipped)
 

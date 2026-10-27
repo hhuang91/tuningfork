@@ -324,15 +324,25 @@ fork of a sandboxed run is refused without one. `TUNINGFORK_SANDBOX=off` turns i
 A run's check runs in the same sandbox once the run ends, since it can run what the model left
 in the workspace. It works in `/home/user/project`, sees the task's folder read-only, which no
 launch sees, and has an empty home of its own. Of your environment variables it gets only
-`PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, and those its task names in
-[`check_env`](#a-task); without the sandbox it gets the same ones. That leaves out a proxy's
-settings too (`https_proxy`, `SSL_CERT_FILE`), as for a launch: name them in `check_env` if a
-check needs the network behind one. A tool's cache starts empty, so a check that installs a
-package each time (`uv run --with …`) downloads it. It writes nowhere but the workspace, its
-own home and its own `/tmp`, and it cannot read the run's home. A check tried with `tuningfork
-recheck`, or run along a run, runs the same way. Keep a task file in a folder of its own: one
-directly in `/tmp`, or in the recordings folder itself, leaves its check without what is kept
-beside it, since a check never sees either, and a batch's plan says so.
+`PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, those its task names in
+[`check_env`](#a-task), and those the machine's config names for every check; without the
+sandbox it gets the same ones.
+
+A proxy's settings (`https_proxy`, `SSL_CERT_FILE`) belong to the machine, not to a task. Name
+them once in its config, `~/.config/tuningfork/config.json`, beside any endpoints it protects:
+`{"protected": ["localhost:1234"], "check_env": ["https_proxy", "SSL_CERT_FILE"]}`. A recordings
+folder's `config.json` takes the same list, the two adding up. A batch's plan and Connections say
+which file names what. A list in either that is not one of variable names is refused, naming the
+file. The machine's config that cannot be read at all stops all of tuningfork's traffic until it
+is fixed, as it always has; a recordings folder's that cannot be read names nothing, as for its
+other settings.
+
+A tool's cache starts empty, so a check that installs a package each time (`uv run --with …`)
+downloads it. It writes nowhere but the workspace, its own home and its own `/tmp`, and it cannot
+read the run's home. A check tried with `tuningfork recheck`, or run along a run, runs the same
+way. Keep a task file in a folder of its own: one directly in `/tmp`, or in the recordings folder
+itself, leaves its check without what is kept beside it, since a check never sees either, and a
+batch's plan says so.
 
 It keeps runs alike; it is not a security boundary. Inside, the rest of the machine stays
 readable, your home included, and the network is reachable: see [`SECURITY.md`](../SECURITY.md).
@@ -341,10 +351,10 @@ readable, your home included, and the network is reachable: see [`SECURITY.md`](
 
 The harness puts the date in the model's prompt, and at a knife edge the date decides.
 `TUNINGFORK_CLOCK="2026-10-01 09:00:00"` starts every launch's clock at that instant, so the
-harness reads the same date whichever day a run is made, and a fork reads its source's. It uses
-libfaketime (`sudo apt install libfaketime`) under `LD_PRELOAD`, monotonic clocks left real;
-`TUNINGFORK_CLOCK_LIBRARY` names the library if it is elsewhere, and a plan warns when it is
-missing.
+harness reads the same date whichever day a run is made, and a fork reads its source's, as does
+every run of a validation. It uses libfaketime (`sudo apt install libfaketime`) under
+`LD_PRELOAD`, monotonic clocks left real; `TUNINGFORK_CLOCK_LIBRARY` names the library if it is
+elsewhere, and a plan warns when it is missing.
 
 ## A task
 
@@ -386,10 +396,11 @@ tuningfork's own settings under a `tuningfork` key.
   `{"reply_matches": "(?i)row.count"}`. A check that prints what it found wrong, one finding a
   line, gets its findings counted across the failed runs (`tuningfork tally`).
 - **`check_env`** names environment variables of yours a shell check may read, such as an LLM
-  judge's key: `["OPENAI_API_KEY"]`. A check gets no others but a few like `PATH` and `LANG`
-  ([the sandbox](#the-sandbox)), and never one of tuningfork's own keys. Whatever the check runs
-  reads the variables it gets too, code the model left in the workspace included, and the network
-  is reachable.
+  judge's key: `["OPENAI_API_KEY"]`. A check gets no others but a few like `PATH` and `LANG`, and
+  those the machine's config names ([the sandbox](#the-sandbox)), and never one of tuningfork's
+  own keys. Whatever the check runs reads the variables it gets too, code the model left in the
+  workspace included, and the network is reachable. What every check on a machine reads, a
+  proxy's settings say, goes in the machine's config instead ([the sandbox](#the-sandbox)).
 - **`held_out`** marks a task that judges an edit rather than shaping one: a batch never picks
   it, no agent may read its runs, and a validation runs it in a private folder that keeps only
   its verdicts.
@@ -426,7 +437,9 @@ sends it nothing — not a resample, not a probe, not a harness's call. List it 
 
 or in `TUNINGFORK_PROTECTED` (a comma-separated list of `host:port`, where either side may be
 `*`), or in a recordings folder's own `config.json`. The lists add up; none takes back another's
-entry. A list that cannot be read stops all of tuningfork's traffic until it is fixed.
+entry. A list that cannot be read stops all of tuningfork's traffic until it is fixed, and so does
+a machine's config that does not parse; a recordings folder's `config.json` that does not parse
+protects nothing, as for its other settings.
 
 ## Environment variables
 
@@ -445,4 +458,5 @@ entry. A list that cannot be read stops all of tuningfork's traffic until it is 
 | `TUNINGFORK_HOST`, `TUNINGFORK_PORT`, `TUNINGFORK_MAX_INFLIGHT`, `TUNINGFORK_JOBS`, `TUNINGFORK_MAX_OUTPUT`, `TUNINGFORK_MCP_TOOLS`, `TUNINGFORK_MCP_RESULTS`, `TUNINGFORK_MCP_MAX_WAIT` | `serve`'s options of the same names |
 
 A check is given `TUNINGFORK_REPLY` and `TUNINGFORK_SPEC_DIR`, and of your own variables only a
-few like `PATH` and those its task names in `check_env`: see [a task](#a-task).
+few like `PATH` and those its task or the machine's config names in `check_env`: see
+[a task](#a-task).

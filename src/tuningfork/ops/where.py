@@ -59,6 +59,10 @@ class Probe:
     path: str | None = None
     pattern: re.Pattern[str] | None = None
     at_least: int = 1
+    #: Asked for an agent, a file is matched as the agent is shown it, masked whole
+    #: (`Masking.shown`): matched as it stands, a pattern would spell a key out to it a
+    #: character at a time. Asked by a person, None: the file as it stands.
+    masking: Any = None
 
     @property
     def kind(self) -> str:
@@ -304,7 +308,7 @@ def answers_along(store: Store, run: Run, probe: Probe) -> RunHeld:
 
 class FileReader:
     """A probe's file read once a content: the same text in two snapshots, or in two runs, is one
-    object in the store, and is counted once."""
+    object in the store, and is counted once — as the probe's asker is shown it (`Probe.masking`)."""
 
     def __init__(self, store: Store, probe: Probe) -> None:
         from tuningfork.snapshots import Snapshots
@@ -321,7 +325,10 @@ class FileReader:
                 self.counts[key] = None
             else:
                 raw = self.snapshots.blob(entry.sha) if entry.sha else self.snapshots.read(commit, entry.path)
-                self.counts[key] = sum(1 for _ in self.probe.pattern.finditer(raw.decode("utf-8", "replace")))
+                text = raw.decode("utf-8", "replace")
+                if self.probe.masking is not None:
+                    text = self.probe.masking.shown(text, lines=True).value
+                self.counts[key] = sum(1 for _ in self.probe.pattern.finditer(text))
         return self.counts[key]
 
     def holds(self, commit: str) -> tuple[bool, str | None, int | None, str | None]:
@@ -427,17 +434,20 @@ def where_it_holds(
     limit: int = 200,
     hidden: Iterable[str] = (),
     screen: str | None = None,
+    masking: Any = None,
 ) -> WhereItHolds:
     """Ask the probe of each of a task's runs — its own, not forks or threads, the newest `limit` —
     and count the answers by verdict, by condition. With `screen`, of a screen run to the end's
     forks instead, arm by arm (`screen_forks`): where none of a broken skill's own runs passed, a
-    proposal's passing forks beside its failing ones are the comparison there is."""
+    proposal's passing forks beside its failing ones are the comparison there is. `masking`: a file
+    is matched as an agent is shown it (`Probe.masking`)."""
     from tuningfork.analysis.conditions import conditions
     from tuningfork.ops.inspect import condition_json
     from tuningfork.ops.tally import refuse_hidden_task
 
     probe = make_probe(target_match=target_match, target_rules=target_rules, path=path, contains=contains,
                        at_least=at_least, normalizers=normalizers)
+    probe.masking = masking
     if screen is not None:
         return where_in_screen(store, screen, probe, hidden=hidden)
     if not task:

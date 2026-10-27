@@ -35,8 +35,9 @@ REPLY_ENV = "TUNINGFORK_REPLY"
 SPEC_DIR_ENV = "TUNINGFORK_SPEC_DIR"
 #: What a shell check keeps of the machine's environment, as a launch does: where programs
 #: are, the language, the terminal, the temporary folder, who runs it. Nothing else of the
-#: person's but what its task names (`check_env`): a check can run code the model wrote, and a
-#: variable can hold a key.
+#: person's but what its task names (`check_env`) and what the machine's config names for every
+#: check (`configured_check_env`): a check can run code the model wrote, and a variable can hold
+#: a key.
 CHECK_INHERITED = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "USER")
 #: A variable's name, as a shell writes one.
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -681,6 +682,64 @@ REPLY_QUOTED = 500
 #: The end of a check's output a verdict keeps, in characters.
 CHECK_KEPT = 2000
 
+#: How much of a check's output is given to keep its end, and of a reply to quote its start, in
+#: characters: far less than a check can print. Masking reads a text many times over — seven to
+#: eighteen bytes for each where escapes are dense — in the process running the check, `serve` for
+#: a job. It reads `MASKED_MARGIN` more, on the side where the part given starts or ends, so that
+#: a key that place falls inside is found whole and left out (`Masking.part`): a key, or a value
+#: under a secret's name, up to that long — a PEM private key is a few thousand characters.
+MASKED_MOST = 1_000_000
+MASKED_MARGIN = 65_536
+
+
+def check_env_sources(home: Path | None = None) -> list[tuple[Path, list[str]]]:
+    """Where the variables every check here may read are named, besides those its task names,
+    and which: `"check_env"` in the machine's config (`config.machine_config_path()`) and in the
+    recordings folder's `config.json` — a proxy's settings, say, which belong to the machine and
+    to no task file. The machine's is read strictly, as `endpoints` reads it: a file that does
+    not parse is refused, saying where. The recordings folder's is read as its other settings
+    are: one that does not parse names nothing. In either, a list that is not one of your
+    variables' names is refused; a file that is not there, or an empty list, names none."""
+    from tuningfork.config import HOME_CONFIG, machine_config_path, read_home_config
+    from tuningfork.ops.common import OperationError
+
+    places: list[tuple[Path, dict[str, Any]]] = []
+    machine = machine_config_path()
+    # Fixed, not removed: removed, it no longer protects the endpoints it names either.
+    refusal = {"hint": "fix the file; removing it would drop the endpoints it protects too",
+               "code": "check_env", "field": "check_env"}
+    try:
+        data = json.loads(machine.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        data = {}
+    except (OSError, ValueError) as error:
+        raise OperationError(f"the machine's config, {machine}, cannot be read: {error}", **refusal) from None
+    if not isinstance(data, dict):
+        raise OperationError(f"the machine's config, {machine}, holds no settings object", **refusal)
+    places.append((machine, data))
+    if home is not None:
+        places.append((Path(home) / HOME_CONFIG, read_home_config(home)))
+    found: list[tuple[Path, list[str]]] = []
+    for path, settings in places:
+        if "check_env" not in settings:
+            continue
+        problem = check_env_problem(settings["check_env"])
+        if problem:
+            raise OperationError(
+                f'"check_env" in {path} {problem}',
+                hint='name your own variables, as a list: {"check_env": ["https_proxy", "SSL_CERT_FILE"]}',
+                code="check_env", field="check_env",
+            )
+        if settings["check_env"]:
+            found.append((path, list(settings["check_env"])))
+    return found
+
+
+def configured_check_env(home: Path | None = None) -> list[str]:
+    """The variables every check here may read besides those its task names, from wherever
+    they are named (`check_env_sources`), each once."""
+    return list(dict.fromkeys(name for _, names in check_env_sources(home) for name in names))
+
 
 def check_environment(
     names: Sequence[str] = (), *, reply_file: Path | None = None, spec_dir: Path | None = None,
@@ -711,6 +770,8 @@ def run_check(
     check_env: Sequence[str] = (),
     sandbox: Any = None,
     keep: int | None = CHECK_KEPT,
+    masking: Any = None,
+    also: Iterable[str] = (),
 ) -> CheckResult:
     """Judge a finished run: a shell command run in its workspace, or a reply check.
 
@@ -726,15 +787,30 @@ def run_check(
     person's), and, given the `sandbox` its launch ran in, runs there
     (`tuningfork.sandbox.Sandbox.check_command`).
 
+    The output is masked with `masking`, the store's (`tuningfork.store.masking.Masking`), every
+    way storage reads a text (`Masking.text`), before it is cut: cut first, a key the cut fell
+    inside would keep its end. A reply check's reply is masked before it is cut to its quote. A
+    long output is masked from its end, and a long reply from its start (`MASKED_MOST`): a caller
+    keeping the output whole is given that end, the rest counted as cut.
+    Masked too, wherever it stands, is a value `also` names, and the value of each variable the
+    check got whose name is a secret's (`config.secret_name`) — a key its task let it read, which
+    a request that failed may print — each as a mask takes a value: eight characters or more,
+    with no space, quote or backslash (`config._FOUND`). What keeps the output, shows it or tells
+    it to a harness passes the store's masking; None masks nothing.
+
     No check means no verdict — recorded as `None`-ish rather than silently passing, since
     a check that does not run must never look like a success.
     """
+    from tuningfork.config import secret_name
+
+    also = tuple(also)  # read for each text it masks
     kind = check_kind(command)
     if kind is None:
         return CheckResult(passed=False, output="no check command defined", returncode=None)
     if kind in REPLY_CHECKS:
-        return _reply_check(kind, command[kind], reply or "")
+        return _reply_check(kind, command[kind], reply or "", masking=masking, also=also)
     environment = check_environment(check_env, reply_file=reply_file, spec_dir=spec_dir)
+    secret = [value for name, value in environment.items() if secret_name(name)]
     if sandbox is not None:
         argv, environment = sandbox.check_command(
             command, workspace=Path(workspace), environment=environment, reply_file=reply_file, spec_dir=spec_dir,
@@ -754,17 +830,27 @@ def run_check(
     except subprocess.TimeoutExpired:
         return CheckResult(passed=False, output=f"check timed out after {timeout}s")
     output = ((completed.stdout or "") + (completed.stderr or "")).strip()
+    skipped = 0
+    if masking is not None:
+        # Its end, if it is long: even a caller keeping it whole is given that, the rest said cut.
+        read = max(0, len(output) - MASKED_MOST - MASKED_MARGIN)
+        start = max(0, len(output) - MASKED_MOST) - read
+        output, given, _ = masking.part(output[read:], start, also=[*also, *secret])
+        skipped = read + given
     kept = output[-keep:] if keep is not None else output
     return CheckResult(
         passed=completed.returncode == 0,
         output=kept,
         returncode=completed.returncode,
-        cut=len(output) - len(kept),
+        cut=skipped + len(output) - len(kept),
     )
 
 
-def _reply_check(kind: str, wanted: str, reply: str) -> CheckResult:
-    """A reply check, judged here: its output says what was judged, and quotes the reply."""
+def _reply_check(
+    kind: str, wanted: str, reply: str, *, masking: Any = None, also: Iterable[str] = (),
+) -> CheckResult:
+    """A reply check, judged here: its output says what was judged, and quotes the reply — each
+    masked with `masking` before the reply is cut to its quote (`run_check`)."""
     if kind == "reply_contains":
         passed = wanted in reply
         verdict = f"the reply {'contains' if passed else 'does not contain'} {json.dumps(wanted, ensure_ascii=False)}"
@@ -773,10 +859,17 @@ def _reply_check(kind: str, wanted: str, reply: str) -> CheckResult:
         # (?=.*A)(?=.*B). Found on a real check: without it, A and B had to share a line.
         passed = re.search(wanted, reply, re.DOTALL) is not None
         verdict = f"the reply {'matches' if passed else 'does not match'} /{wanted}/"
-    if not reply:
+    more = 0
+    if masking is not None:
+        # Its start, if it is long (`MASKED_MOST`): the quote is.
+        verdict = masking.text(verdict, also=also).value
+        given, _, until = masking.part(reply[: MASKED_MOST + MASKED_MARGIN], 0, min(len(reply), MASKED_MOST),
+                                       also=also)
+        reply, more = given, len(reply) - until
+    if not reply and not more:
         quoted = "(none: the run ended without a reply)"
-    elif len(reply) > REPLY_QUOTED:
-        quoted = f"{reply[:REPLY_QUOTED]}… (+{len(reply) - REPLY_QUOTED} chars)"
+    elif len(reply) > REPLY_QUOTED or more:
+        quoted = f"{reply[:REPLY_QUOTED]}… (+{max(0, len(reply) - REPLY_QUOTED) + more} chars)"
     else:
         quoted = reply
     return CheckResult(passed=passed, output=f"{verdict}\n\nthe reply:\n{quoted}", returncode=None)

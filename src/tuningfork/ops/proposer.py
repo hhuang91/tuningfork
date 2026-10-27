@@ -30,6 +30,7 @@ from typing import Any
 
 from tuningfork.ops.common import Cancel, OperationError, Progress, emit
 from tuningfork.store.db import Store
+from tuningfork.store.masking import Masked
 
 DEFAULTS: dict[str, Any] = {
     "url": None,
@@ -252,7 +253,11 @@ def prepare_propose(
     packet = build_packet(store, refinement.id, include_task=include_task, keep=False)
     if not include_task:
         warnings.append("the task's criteria are left out: the proposer sees only the step and its answers")
-    user = canonical({"skill": refinement.baseline_text(), "evidence": packet.data})
+    # The skill whole as the packet numbers its lines, masked as the packet was built
+    # (`build_packet`), and the packet, of what the masks took in either: a proposer's model may be
+    # hosted, and the run's skill is kept as it was given.
+    skill = store.masking.shown(refinement.baseline_text(), lines=True)
+    user = canonical(store.masking.shown({"skill": skill.value, "evidence": packet.data}, also=skill.found).value)
     return ProposePlan(
         refinement=refinement, packet=packet, url=url, wire=get_wire(settings["wire"]),
         model=settings["model"], host=f"{host}:{port}", remote=remote, via_proxy=via_proxy, m=m,
@@ -342,7 +347,7 @@ async def execute_propose(
     import httpx
 
     from tuningfork.analysis.tokens import split_logprobs
-    from tuningfork.config import redact_json, server_root
+    from tuningfork.config import server_root
     from tuningfork.endpoints import guard_hooks
     from tuningfork.experiment.sampling import send_experiment_call
     from tuningfork.ops import refine
@@ -354,7 +359,7 @@ async def execute_propose(
     headers = plan.wire.auth_headers(key) if key else {}
     url = f"{server_root(plan.url)}{plan.wire.endpoint}"
     started = time.monotonic()
-    plan.packet.keep(plan.refinement.folder)
+    plan.packet.keep(store, plan.refinement.folder)
     emit(progress, "proposer", host=plan.host, model=plan.model, packet=plan.packet.sha)
 
     async def call() -> httpx.Response:
@@ -373,16 +378,18 @@ async def execute_propose(
         native = None
     folder = plan.refinement.folder / "proposer"
     stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + f"-{plan.prompt_sha[:6]}"
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / f"{stamp}-prompt.json").write_text(json.dumps({
+    # Kept as it was sent, masked as it was made (`prepare_propose`).
+    store.keep_file(folder / f"{stamp}-prompt.json", Masked({
         "model": plan.model, "host": plan.host, "wire": plan.wire.name, "packet": plan.packet.sha,
         "system": plan.system, "user": plan.user,
-    }, indent=2), encoding="utf-8")
+    }), indent=2)
     problem = plan.wire.failure(response.status_code, native if isinstance(native, dict) else None)
-    common = redact_json(split_logprobs(plan.wire.canonical_response(native))[0]) if isinstance(native, dict) else None
-    (folder / f"{stamp}-response.json").write_text(json.dumps({
+    # Its answer masked as the store masks what it keeps, with the store's patterns, and read so.
+    common = (store.masking.value(split_logprobs(plan.wire.canonical_response(native))[0])
+              if isinstance(native, dict) else None)
+    store.keep_file(folder / f"{stamp}-response.json", Masked({
         "status": response.status_code, "seconds": round(seconds, 1), "response": common,
-    }, indent=2), encoding="utf-8")
+    }), indent=2)
     if problem or not isinstance(common, dict) or not common.get("choices"):
         raise OperationError(f"the proposer's model answered {response.status_code}: {problem or 'no answer'}",
                              code="proposer_failed")

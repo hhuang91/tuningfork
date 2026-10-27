@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+from array import array
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -185,10 +186,35 @@ _SECRET_NAME = (
     r"|PAT(?<=[A-Z0-9]_PAT)|CREDENTIALS(?<=[A-Z0-9]_CREDENTIALS)))"
 )
 
+#: A whole name that is a secret's (`secret_name`).
+_SECRET_NAME_ENDS = re.compile(f"(?:{_SECRET_NAME})\\Z")
+#: How a name says where a secret is kept, or which one it is, rather than holding it: a path, a
+#: name, an id (`API_KEY_FILE`, `VAULT_SECRET_PATH`, `AWS_SECRET_NAME`) — but a secret's own id,
+#: which Vault's AppRole logs in with (`VAULT_SECRET_ID`).
+_A_SECRETS_PLACE = re.compile(r"(?i)[_\-.](?:file|path|dir|name|arn|url|uri|ref|(?<!secret[_\-.])id)\Z")
+#: How else an environment names a secret: ending in a key, in any case (`openai_key`); in `_PWD`
+#: (`MYSQL_PWD`, not the shell's own `PWD`); or with the word `secret` in it (`SECRET_KEY_BASE`).
+_SECRET_VARIABLE = re.compile(r"(?i)(?:^|[_\-.])(?:key|secret)\Z|[_\-.]pwd\Z|(?:^|[_\-.])secret[_\-.]")
+
 #: Names ending in `key` whose value is no secret, though random: a request's idempotency key, a
 #: cache's, a table's.
 _NOT_SECRET_KEYS = ("idempotency", "cache", "sort", "partition", "primary", "foreign", "object", "row",
                     "dedup", "dedupe", "lookup", "storage", "message", "translation", "i18n")
+
+
+def secret_name(name: str) -> bool:
+    """Whether a variable's name is a secret's, as an environment or a `.env` file writes one: as
+    the patterns read a name (`OPENAI_API_KEY`, `DB_PASSWORD`, `GITHUB_TOKEN`), and as only an
+    environment names one (`MYSQL_PWD`, `openai_key`, `SECRET_KEY_BASE`). Not `HTTPS_PROXY`, nor
+    `NEXT_PAGE_TOKEN`, nor a name saying where a secret is kept or which one it is (`API_KEY_FILE`,
+    `VAULT_SECRET_PATH`); nor, but as the patterns read upper-case `.env` names, a public key's or
+    one the patterns call no secret (`cache_key`)."""
+    if _SECRET_NAME_ENDS.search(name):
+        return True
+    if _A_SECRETS_PLACE.search(name) or _SECRET_VARIABLE.search(name) is None:
+        return False
+    words = re.split(r"[_\-.]", name.lower())
+    return not (words[-1] == "key" and len(words) > 1 and words[-2] in ("public", "publishable", *_NOT_SECRET_KEYS))
 
 #: A long flag named for a secret: `--api-key`, `--secret-key`, `--azure-openai-key`, `--db-pass`;
 #: not GnuPG's, which name a public key's id (`--recv-key`).
@@ -458,17 +484,37 @@ def _read_spans(text: str, patterns: tuple[str, ...]) -> list[tuple[int, int]]:
     return spans
 
 
-def _json_escaped(text: str) -> tuple[str, list[int]]:
-    """`text` as a JSON string holds it (between the quotes), and for each character of that
-    the index of the character of `text` it came from."""
-    short = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
-    out: list[str] = []
-    origin: list[int] = []
-    for index, char in enumerate(text):
-        piece = short.get(char) or (f"\\u{ord(char):04x}" if ord(char) < 0x20 else char)
-        out.append(piece)
-        origin.extend([index] * len(piece))
-    return "".join(out), origin
+#: What a JSON string escapes, and how long each escape is: a quote, a backslash, a control character.
+_ESCAPED_BY_JSON = re.compile(r'["\\\x00-\x1f]')
+_ESCAPE_WIDTHS = {char: len(json.dumps(char)) - 2 for char in ['"', "\\", *map(chr, range(0x20))]}
+
+
+def _json_escaped(text: str) -> tuple[str, Callable[[int], int]]:
+    """`text` as a JSON string holds it (between the quotes), and a map from an index of that to
+    the index of the character of `text` it came from — each character of an escape to the one it
+    writes. Only the escapes' places are kept: one for each character took some forty bytes for
+    each byte of a long text, a check's output of a few hundred MB some GB."""
+    escaped = json.dumps(text, ensure_ascii=False)[1:-1]
+    starts = array("q")  # where each escape starts in `escaped`
+    ahead = array("q")  # how far `escaped` runs ahead of `text` before each escape
+    widths = array("b")
+    shift = 0
+    for match in _ESCAPED_BY_JSON.finditer(text):
+        width = _ESCAPE_WIDTHS[match.group()]
+        starts.append(match.start() + shift)
+        ahead.append(shift)
+        widths.append(width)
+        shift += width - 1
+
+    def origin(index: int) -> int:
+        before = bisect.bisect_right(starts, index) - 1
+        if before < 0:
+            return index
+        if index < starts[before] + widths[before]:
+            return starts[before] - ahead[before]
+        return index - ahead[before] - widths[before] + 1
+
+    return escaped, origin
 
 
 def redact_spans(
@@ -486,7 +532,27 @@ def redact_spans(
     escaped, origin = _json_escaped(text)
     for start, end in _masked_spans(escaped, patterns):
         if end > start:
-            spans.append((origin[start], origin[end - 1] + 1))
+            spans.append((origin(start), origin(end - 1) + 1))
+    return _merged(spans)
+
+
+def text_spans(
+    text: str, patterns: tuple[str, ...] = DEFAULT_REDACTIONS, also: Iterable[str] = ()
+) -> list[tuple[int, int]]:
+    """The spans of a text a redaction masks every way storage reads one, merged and in order:
+    `redact_spans`'s, and every place a value `also` names stands as the text's JSON escapes read,
+    `JSON_DEPTH` deep — a value an encoder wrote with an escape in it (`\\/`, `\\u00fc`), as a JSON
+    string reads it. What a check prints is masked so (`store.masking.Masking.text`)."""
+    found = [value for value in also if _FOUND.fullmatch(value)]
+    spans = redact_spans(text, patterns, found)
+    view, back = text, (lambda index: index)
+    for _ in range(JSON_DEPTH if found else 0):
+        read = _json_unescaped(view)
+        if read is None:
+            break
+        view, inner = read
+        back = (lambda outer, inner: lambda index: outer(inner(index)))(back, inner)
+        spans += [(back(start), back(end)) for start, end in _found_spans(view, found)]
     return _merged(spans)
 
 
@@ -564,7 +630,8 @@ def read_home_config(home: Path) -> dict[str, Any]:
 def machine_config_path() -> Path:
     """The machine's own settings, whichever recordings folder is in use:
     `$XDG_CONFIG_HOME/tuningfork/config.json`, by default under `~/.config`. Read, strictly,
-    for the endpoints to protect on this machine (`endpoints`)."""
+    for the endpoints to protect on this machine (`endpoints`), and for the variables every
+    check may read (`specs.check_env_sources`)."""
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     return Path(base) / "tuningfork" / HOME_CONFIG
 

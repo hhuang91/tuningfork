@@ -17,7 +17,6 @@ still says how far it got; its links' launches are a batch's, under one group fo
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import time
 import uuid
@@ -174,7 +173,8 @@ class Link:
     #: The harness's own review after the answer, when it ran: its run, how many steps, whether
     #: it ended, and how many skill-editing calls it made.
     review: dict[str, Any] | None
-    #: The lines of SKILL.md that changed, when they did (`ops.diff.line_diff`).
+    #: The lines of SKILL.md that changed, when they did (`ops.diff.line_diff`), of each text
+    #: masked whole.
     diff: dict[str, Any] | None
     #: Where the skill was left, copied: the next link's start.
     left: str | None
@@ -299,7 +299,7 @@ def execute_chain(
             plan=plan, links=list(links), final_skill=current,
             elapsed=time.monotonic() - started, status=status, started_at=started_at, stopped=stopped,
         )
-        _write(store.home, found)
+        _write(store, found)
         return found
 
     report("running")
@@ -377,7 +377,15 @@ def _link(
             )
             old, new = _text(given / "SKILL.md"), _text(left / "SKILL.md")
             if old != new:
-                diff = line_diff(old, new)
+                # The lines that changed, of each text masked whole, as the store masks the call that
+                # wrote it: found in review, masked line by line, a private key's lines and a block's
+                # stood, and so did a value the skill names a password, said bare in a line added. Both
+                # masked alike, of what the masks took in either, or a line holding such a value bare
+                # would differ though the link never changed it; each mask keeps its line breaks, so
+                # the lines keep their numbers in the file.
+                found = store.masking.text(old).found | store.masking.text(new).found
+                was, now = (store.masking.text(text, also=found, lines=True).value for text in (old, new))
+                diff = line_diff(was, now)
         else:
             changed = sorted({*changed, "SKILL.md (gone: the chain goes on from the skill before)"})
     told = getattr(outcome, "told", None) or {}
@@ -416,6 +424,9 @@ def skill_edits(
     fed_back = frozenset(getattr(adapter, "fed_back_side_calls", ()) or ())
     edits: list[dict[str, Any]] = []
     review: dict[str, Any] | None = None
+    # The message is the check's output masked where it ran; the request that carried it is kept
+    # masked again, which can mask more (masking is not idempotent).
+    told_as = {told, _as_requested(store, told)} if told else set()
     for run in store.launch_runs(launch_id):
         for step in store.steps(run.id):
             request = store.harness_request(step)
@@ -429,7 +440,7 @@ def skill_edits(
                 thread = said
             elif not run.is_thread:
                 thread = "task"
-            elif told and _last_user(request) == told:
+            elif _last_user(request) in told_as:
                 thread = "told"
             else:
                 thread = run.role or "thread"
@@ -454,6 +465,15 @@ def skill_edits(
     return edits, review
 
 
+def _as_requested(store: Store, message: str) -> str:
+    """`message` as the store keeps a request that carries it as the user's turn."""
+    kept = store.masking.value({"messages": [{"role": "user", "content": message}]})
+    try:
+        return str(kept["messages"][0]["content"])
+    except (KeyError, IndexError, TypeError):
+        return message
+
+
 def _last_user(request: dict[str, Any]) -> str:
     from tuningfork.analysis.normalize import content_text
 
@@ -464,13 +484,20 @@ def _last_user(request: dict[str, Any]) -> str:
 # --- the chains kept ---------------------------------------------------------------------------
 
 
-def _write(home: Path, report: ChainReport) -> None:
-    folder = root(home)
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{report.plan.id}.json"
-    staging = path.with_suffix(".json.tmp")
-    staging.write_text(json.dumps(report.to_json(), indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(staging, path)
+#: What a chain's record keeps of each link as it was masked where it was made: what its harness
+#: was told, masked where its check ran (`runner.MASKED_WHERE_MADE`); its skill-editing calls, read
+#: from the store as it keeps them; and the lines it changed in the skill, of each text masked
+#: whole (`_link`). Masked again, a command's second password would fall too.
+LINK_MASKED = ("told", "edits", "diff")
+
+
+def _write(store: Store, report: ChainReport) -> None:
+    """The chain's record, masked as the store masks what it keeps (`Store.keep_file`), once. The
+    copy of the skill a link left, the next link's start, is kept as it was left."""
+    data = report.to_json()
+    links = [store.masking.of(link, masked=LINK_MASKED).value for link in data["links"]]
+    store.keep_file(root(store.home) / f"{report.plan.id}.json",
+                    store.masking.of({**data, "links": links}, masked=("links",)), indent=2)
 
 
 def list_chains(store: Store, limit: int = 20) -> list[dict[str, Any]]:

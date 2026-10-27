@@ -280,6 +280,203 @@ class TestTheRun:
         assert not any("names no tools" in warning for warning in plan.warnings)
 
 
+#: A key in each part of a chat a scenario or a skill is made of: said before the task, and in the
+#: skill the model read; and a command whose second password only a second masking takes.
+CHAT_KEY = "sk-" "tfchatkey4Hq2Lm7Xw3Rv5Pz8Bq"
+COMMAND = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+
+
+def chat_with_keys() -> str:
+    earlier = [{**EARLIER[0], "content": f"{EARLIER[0]['content']} My key is {CHAT_KEY}."}, EARLIER[1]]
+    rows = conversation(("tally-report", SKILL + f"\nThe key is {CHAT_KEY}.\n"))
+    rows[0] = {**rows[0], "content": f"{rows[0]['content']} Connect with {COMMAND}."}
+    return export(earlier + rows)
+
+
+def made_of(store, run_id: str, name: str) -> dict[str, str]:
+    """Every file of a scenario made of the run, by its place in the scenario's folder, and the
+    skill a copy of it would add."""
+    from tuningfork.ops import addskill, scenarios
+
+    imports.make_scenario(store, imports.prepare_scenario(store, run_id, name))
+    folder = scenarios.folder(store.home, name)
+    added = addskill.prepare_from_run(store, run_id, name=name)
+    made = {path.relative_to(folder).as_posix(): path.read_text(encoding="utf-8")
+            for path in sorted(folder.rglob("*")) if path.is_file()}
+    return {**made, "added/SKILL.md": added.files["SKILL.md"].decode("utf-8")}
+
+
+def imported_before(store, data: str):
+    """An import as one made before imports were masked kept it: its chat and the SKILL.md it
+    extracted whole, and its run saying nothing of masking."""
+    plan = imports.prepare_import(store, data)
+    result = imports.execute_import(store, plan)
+    (result.folder / "chat.json").write_text(json.dumps(plan.chat.to_json()), encoding="utf-8")
+    (result.folder / "skills" / "tally-report" / "SKILL.md").write_text(plan.skills[0].text, encoding="utf-8")
+    run = store.get_run(result.run_id)
+    imported = {key: value for key, value in run.parity["imported"].items() if key != "masked"}
+    store.annotate_run(run.id, parity={**run.parity, "imported": imported})
+    return store.get_run(run.id)
+
+
+class TestWhatItKeepsBesideTheRun:
+    def test_its_chat_and_skills_are_masked_as_its_steps_are(self, store):
+        """Found in the redaction audit: its steps were masked, and the chat and the SKILL.md kept
+        beside them, which a scenario and a skill added are made of, were not."""
+        from tuningfork.config import REDACTED
+        from tuningfork.experiment.skill import locate
+
+        result = imports.execute_import(store, imports.prepare_import(store, chat_with_keys()))
+        chat, skill = result.folder / "chat.json", result.folder / "skills" / "tally-report" / "SKILL.md"
+        assert CHAT_KEY not in chat.read_text(encoding="utf-8") + skill.read_text(encoding="utf-8")
+        run = store.get_run(result.run_id)
+        assert run.parity["imported"]["masked"] == store.masking.digest  # the patterns that masked them
+        # The SKILL.md as the step that read it holds it: an A/B and a refinement find it there.
+        kept = skill.read_text(encoding="utf-8")
+        assert REDACTED in kept and locate(store.rebuild_request(store.steps(run.id)[2]), kept)
+        # Read back as it was kept, masked once: masked again, a command's second password would fall too.
+        assert "-pZq8xK3vN5wLp" in json.dumps(imports.chat_of(store, run).messages)
+        made = "".join(made_of(store, run.id, "from-the-chat").values())
+        assert CHAT_KEY not in made and REDACTED in made and "-pZq8xK3vN5wLp" in made
+
+    def test_an_answer_is_masked_of_what_the_masks_before_it_took(self, store, tmp_path):
+        """As a step's answer is masked of what its request's masks took. Found in review: masked
+        whole by the patterns alone, a password the person gave by its name stood in the chat where
+        the model said it bare — in its reasoning, never sent back, and in its last answer, in no
+        later request — beside a store that held it nowhere; and in a scenario's conversation, cut
+        at the person's turn after it."""
+        from tuningfork.ops import scenarios
+
+        password = "Zq8xK3vN5wLpQ7Tr"
+        rows = [{"id": 1, "role": "user", "content": f"Log in with password={password}.", "timestamp": 0.5},
+                {"id": 2, "role": "assistant", "content": "Logged in.", "reasoning_content": f"The password is {password}.",
+                 "finish_reason": "stop", "timestamp": 0.6},
+                {"id": 3, "role": "user", "content": "Which did you use?", "timestamp": 0.7},
+                {"id": 4, "role": "assistant", "content": f"I used {password}.", "finish_reason": "stop", "timestamp": 0.8},
+                {"id": 5, "role": "user", "content": "Thanks.", "timestamp": 0.9}]
+        result = imports.execute_import(store, imports.prepare_import(store, export(rows)))
+        run = store.get_run(result.run_id)
+        held = [[store.rebuild_request(step), store.response(step)] for step in store.steps(run.id)]
+        assert password not in json.dumps(held)
+        assert password not in (result.folder / "chat.json").read_text(encoding="utf-8")
+        folder = tmp_path / "tally-report"
+        folder.mkdir()
+        (folder / "SKILL.md").write_text(SKILL, encoding="utf-8")
+        imports.make_scenario(store, imports.prepare_scenario(store, run.id, "after-it", cut=5, skill_dir=folder))
+        assert password not in (scenarios.folder(store.home, "after-it") / "context.json").read_text(encoding="utf-8")
+
+    def test_two_skills_whose_names_make_one_folder_each_keep_their_own(self, store):
+        """Found in review: "tally report" and "tally-report" made one folder, the second's SKILL.md
+        over the first's, each skill's record leading to it."""
+        from pathlib import Path
+
+        other = SKILL.replace("name: tally-report", "name: tally report").replace("Write the totals", "Count the rows")
+        # And one whose name differs only in case: one folder where a file system ignores case.
+        third = SKILL.replace("name: tally-report", "name: Tally-Report").replace("Write the totals", "Sum the rows")
+        data = export(conversation(("tally-report", SKILL), ("tally report", other), ("Tally-Report", third)))
+        result = imports.execute_import(store, imports.prepare_import(store, data))
+        kept = store.get_run(result.run_id).parity["skill_dirs"]
+        assert {name: (Path(place) / "SKILL.md").read_text(encoding="utf-8") for name, place in kept.items()} == {
+            "tally-report": SKILL, "tally report": other, "Tally-Report": third}
+        assert len({Path(place).name.casefold() for place in kept.values()}) == 3
+
+    def test_one_kept_before_it_was_masked_is_masked_as_it_is_read(self, store):
+        """An import made before kept its chat and the SKILL.md extracted from it whole: what is made
+        of them is masked as they are read, once, and is what an import made now makes. The files
+        themselves are as they were."""
+        run = imported_before(store, chat_with_keys())
+        said = json.dumps(imports.chat_of(store, run).messages)
+        assert CHAT_KEY not in said and "-pZq8xK3vN5wLp" in said
+        made = made_of(store, run.id, "from-before")
+        assert CHAT_KEY not in "".join(made.values()) and "-pZq8xK3vN5wLp" in "".join(made.values())
+        now = imports.execute_import(store, imports.prepare_import(store, chat_with_keys()))
+        made_now = made_of(store, now.run_id, "from-now")
+        for place in ("context.json", "skill/tally-report/SKILL.md", "added/SKILL.md"):
+            assert made[place] == made_now[place], place
+        assert CHAT_KEY in (store.home / "imports" / run.id / "chat.json").read_text(encoding="utf-8")
+
+    def test_one_kept_before_and_changed_since_is_taken_as_it_now_is(self, store):
+        """Its SKILL.md changed since the import — an approved edit written to it, say — is what a
+        scenario and a skill added take, masked as text: found in review, they took the chat's."""
+        run = imported_before(store, chat_with_keys())
+        kept = store.home / "imports" / run.id / "skills" / "tally-report" / "SKILL.md"
+        kept.write_text(kept.read_text(encoding="utf-8") + "\nCheck the totals twice.\n", encoding="utf-8")
+        made = made_of(store, run.id, "changed-since")
+        for place in ("skill/tally-report/SKILL.md", "added/SKILL.md"):
+            assert "Check the totals twice." in made[place] and CHAT_KEY not in made[place], place
+
+    def test_a_copy_of_one_kept_before_asked_for_is_masked_as_it_is_read(self, store):
+        """A copy of what the run had, asked for (`copy_skill`, which the form offers where a folder
+        changed since the run), is the SKILL.md a scenario that finds no folder takes: masked as it is
+        read, and said to be the copy the run kept. The kept file is as it was."""
+        from tuningfork.ops import scenarios
+
+        run = imported_before(store, chat_with_keys())
+        kept = store.home / "imports" / run.id / "skills" / "tally-report" / "SKILL.md"
+        was = kept.read_text(encoding="utf-8")
+        made = {}
+        for name, copy in (("found-none", False), ("asked-for", True)):
+            plan = imports.prepare_scenario(store, run.id, name, copy_skill=copy)
+            assert any(f"the copy run {run.id[:8]} kept" in line for line in plan.notes + plan.warnings), name
+            imports.make_scenario(store, plan)
+            made[copy] = (scenarios.folder(store.home, name) / "skill" / "tally-report" / "SKILL.md").read_text(
+                encoding="utf-8")
+        assert made[True] == made[False] and CHAT_KEY not in made[True]
+        assert kept.read_text(encoding="utf-8") == was and CHAT_KEY in was
+
+    def test_one_kept_before_is_read_masked_where_it_is_shown_or_refined(self, store):
+        """The Skills page, show_skill and a refinement read the SKILL.md a run kept as it stands: of an
+        import made before imports were masked, masked as it is read, as what is made of it is
+        (`experiments.kept_text`). The kept file is as it was."""
+        from tuningfork.ops import skills
+        from tuningfork.ops.experiments import recorded_skill
+
+        run = imported_before(store, chat_with_keys())
+        kept = store.home / "imports" / run.id / "skills" / "tally-report" / "SKILL.md"
+        was = kept.read_text(encoding="utf-8")
+        last = str(len(store.steps(run.id)) - 1)
+        made = refine.create(store, run.id, last, target_rules=[{"if": "calls", "value": "write_file"}])
+        for read in (skills.text_of(store, run), recorded_skill(store, run.id).text, made.baseline_text()):
+            assert CHAT_KEY not in read and "The key is" in read
+        assert kept.read_text(encoding="utf-8") == was and CHAT_KEY in was
+
+    def test_one_kept_before_is_masked_once_for_each_version_of_its_chat(self, store, monkeypatch):
+        """A scenario's form asks at every change: found in review, each read masked a chat of 5 MB
+        again, in more than a second."""
+        run = imported_before(store, chat_with_keys())
+        masked = []
+        masking = imports.kept_chat
+        monkeypatch.setattr(imports, "kept_chat", lambda *given: masked.append(1) or masking(*given))
+        assert imports.chat_of(store, run).messages == imports.chat_of(store, run).messages
+        assert len(masked) == 1
+        path = store.home / "imports" / run.id / "chat.json"
+        changed = json.loads(path.read_text(encoding="utf-8"))
+        changed["messages"][1]["content"] += " And one more thing."
+        path.write_text(json.dumps(changed), encoding="utf-8")
+        assert imports.chat_of(store, run).messages[1]["content"].endswith("And one more thing.")
+        assert len(masked) == 2
+
+    @pytest.mark.parametrize("imported, skill, unmasked", [
+        ({"skills": [{"name": "tally-report", "source": "extracted"}]}, "tally-report", True),
+        # Its mark names the patterns that masked it; one that names none is read masked.
+        ({"skills": [{"name": "tally-report", "source": "extracted"}], "masked": "5f0c9a2e41d7"}, "tally-report", False),
+        ({"skills": [{"name": "tally-report", "source": "extracted"}], "masked": True}, "tally-report", True),
+        # A folder its person named is kept as it was given.
+        ({"skills": [{"name": "tally-report", "source": "folder"}]}, "tally-report", False),
+        ({"skills": [{"name": "tally-report", "source": "extracted"}]}, "csv-tidy", False),
+        ({"skills": [{"name": "tally-report", "source": "extracted"}]}, None, False),
+        # One skill, kept before an import kept several.
+        ({"skill": "tally-report", "skill_source": "extracted"}, "tally-report", True),
+        ({"skill": "tally-report", "skill_source": "folder"}, "tally-report", False),
+        (None, "tally-report", False),
+    ])
+    def test_what_is_masked_as_it_is_read(self, imported, skill, unmasked):
+        from types import SimpleNamespace
+
+        run = SimpleNamespace(parity={"imported": imported} if imported is not None else {})
+        assert imports.extracted_unmasked(run, skill) is unmasked
+
+
 def test_a_person_imports_from_the_terminal(store, tmp_path):
     from tuningfork.cli import app
 
@@ -447,6 +644,7 @@ class TestAScenarioOfAnImport:
         result = imports.execute_import(store, imports.prepare_import(store, export(rows)))
         choices = imports.scenario_choices(store, result.run_id)
         assert choices["skill"] is None and choices["cut"] == 1 and choices["prompt"] == "Look at data.csv."
+        assert not choices["can_copy"] and choices["skill_dir"] is None  # nothing to copy: a folder is named
         assert [turn["offered"] for turn in choices["turns"]] == [True, True]
         later = imports.scenario_choices(store, result.run_id, cut=3)
         assert later["prompt"] == "Now summarize it into report.json." and later["context"] == 2
@@ -513,6 +711,8 @@ class TestAScenarioOfAnImport:
         result = imports.execute_import(store, imports.prepare_import(store, chat_with_earlier_turns(), skill_dir=str(folder)))
         plan = imports.prepare_scenario(store, result.run_id, "own-folder")
         assert plan.skill_dir == folder.resolve() and not any("extracted" in warning for warning in plan.warnings)
+        choices = imports.scenario_choices(store, result.run_id)
+        assert (choices["skill_dir"], choices["skill_dir_from"]) == (str(folder.resolve()), "import")
 
     def test_a_run_recorded_as_it_happened_keeps_the_skill_its_model_read(self, store):
         """A run that came through the proxy outside any launch: its conversation is its last
@@ -528,6 +728,8 @@ class TestAScenarioOfAnImport:
         assert not run.parity.get("imported") and not run.launch_id
         choices = imports.scenario_choices(store, run.id)
         assert (choices["skill"], choices["cut"], choices["launched"]) == ("tally-report", 3, False)
+        # No folder of its own: unless one is named, the scenario keeps a copy of what its model read.
+        assert (choices["skill_dir"], choices["can_copy"], choices["copy_dir"]) == (None, True, "skill/tally-report")
         # Only the turn the skill came in after: a run sent the earlier one would never vary it.
         assert [(turn["message"], turn["offered"]) for turn in choices["turns"]] == [(1, False), (3, True)]
         assert choices["prompt"] == "Summarize data.csv into report.json."
@@ -706,6 +908,9 @@ def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_chec
     choices = imports.scenario_choices(stack.store, source.run_id)
     assert choices["launched"] and choices["check"] == stack.item.tuningfork.check and choices["cut"] == 1
     assert choices["prompt"] == stack.item.prompt
+    # Its skill folder is its task's own: the form shows it, fixed.
+    assert choices["skill_dir_from"] == "task"
+    assert choices["skill_dir"] == str((stack.tmp / "skills-src" / "tally-report").resolve())
     plan = imports.prepare_scenario(stack.store, source.run_id, "tally-again")
     assert (plan.cut, plan.prompt, plan.context.messages) == (1, stack.item.prompt, 0)
     assert plan.skill == "tally-report" and not plan.own_skill
@@ -727,6 +932,53 @@ def test_a_launched_runs_scenario_keeps_its_task_its_workspace_and_what_its_chec
     (again,) = runner.run(spec, spec.evals[0], 1).outcomes
     assert again.passed, again.stderr  # its check found its script beside the scenario's spec
     assert stack.store.get_run(again.run_id).task_id == "tally-report/tally-again"
+
+
+def test_a_task_folder_changed_since_the_run_can_give_way_to_a_copy_of_what_it_had(stack):
+    """Found in review: the form fixed the task's folder whenever its SKILL.md was there, so a
+    scenario of an old failing run could not study the text it failed with. A folder whose
+    SKILL.md has changed since the run is said to have, and a copy of what the run had can be
+    kept in its place."""
+    from tuningfork.ops import scenarios
+
+    stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")  # the task's file, read back
+    source = stack.record()
+    task_skill = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+    had = task_skill.read_bytes()
+    assert not imports.scenario_choices(stack.store, source.run_id)["skill_dir_changed"]
+    task_skill.write_bytes(had + b"\nAn edit approved since.\n")
+    choices = imports.scenario_choices(stack.store, source.run_id)
+    assert choices["skill_dir_from"] == "task" and choices["skill_dir_changed"] and choices["can_copy"]
+    as_now = imports.prepare_scenario(stack.store, source.run_id, "as-now")
+    assert not as_now.own_skill
+    assert any("has changed since run" in warning and "--copy-skill" in warning for warning in as_now.warnings)
+    as_it_was = imports.prepare_scenario(stack.store, source.run_id, "as-it-was", copy_skill=True)
+    assert as_it_was.own_skill and not any("has changed since" in warning for warning in as_it_was.warnings)
+    imports.make_scenario(stack.store, as_it_was)
+    kept = scenarios.folder(stack.store.home, "as-it-was") / "skill" / "tally-report" / "SKILL.md"
+    assert kept.read_bytes() == had
+    with pytest.raises(OperationError) as both:
+        imports.prepare_scenario(stack.store, source.run_id, "both", copy_skill=True, skill_dir=str(task_skill.parent))
+    assert both.value.field == "skill_dir"
+
+
+def test_a_launched_runs_check_is_shown_masked_and_given_to_a_scenario_as_written(stack):
+    """A launch keeps its task's check as the task's file wrote it, since a fork runs it again. A view
+    of the run — its page, its timeline, the tasks' rates — shows it masked, as the rest of the run is
+    kept; the form that makes a scenario of the run takes it as written, since the scenario copies it,
+    and tries it, as it is."""
+    from tuningfork.config import REDACTED
+    from tuningfork.ops import inspect
+    from tuningfork.ops.timeline import run_timeline
+    from tests.helpers import KEY
+
+    stack.item.tuningfork.check = f": {KEY}; {stack.item.tuningfork.check}"
+    source = stack.record()
+    shown = [inspect.run_detail(stack.store, source.run_id)["launch"]["check"],
+             run_timeline(stack.store, source.run_id).to_json()["launch"]["check"],
+             next(task["check"]["text"] for task in inspect.tasks(stack.store) if task["task_id"] == "tally-report/1")]
+    assert all(KEY not in each and each.startswith(f": {REDACTED}; ") for each in shown), shown
+    assert imports.scenario_choices(stack.store, source.run_id)["check"].startswith(f": {KEY}; ")
 
 
 def test_a_launched_runs_scenario_from_later_in_its_turn_has_its_workspace_there(stack, monkeypatch):
@@ -864,6 +1116,12 @@ async def test_the_web_ui_makes_a_scenario_and_edits_its_conversation(proxy_clie
     assert choices["cut"] == 3 and choices["skill"] == "tally-report" and choices["imported"]
     odd = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "x", "task_check": "no"})
     assert odd.status_code == 400 and odd.json()["error"]["field"] == "task_check"
+    # A copy of what the run had, asked for in place of the folder its skill came from.
+    copied = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario",
+                                     json={"name": "a-copy", "copy_skill": True, "dry_run": True})
+    assert copied.status_code == 200 and copied.json()["plan"]["own_skill"]
+    odd = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "x", "copy_skill": "yes"})
+    assert odd.status_code == 400 and odd.json()["error"]["field"] == "copy_skill"
     other = await proxy_client.post(f"/_tuningfork/api/runs/{run}/scenario", json={"name": "by-run", "harness": "hermes"})
     assert other.status_code == 201 and other.json()["harness"] == "hermes"
 

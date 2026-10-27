@@ -3,14 +3,17 @@ records, kept by its digest — on runs a real batch made (the fake agent, the m
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
 
+from tuningfork.config import REDACTED
 from tuningfork.ops import packet as packets
 from tuningfork.ops import refine
 from tuningfork.ops.batch import execute_batch, prepare_batch
-from tests.helpers import VARIANT, task_stack
+from tests.helpers import KEY, SKILL, VARIANT, task_stack
+from tests.test_store_masking import PRIVATE
 
 RULES = [{"if": "calls", "value": "write_file"}, {"if": "contains", "value": "row_count"}]
 KEYS = {"old": "Write the totals to report.json.", "new": "Write the totals to report.json, using the keys row_count and amount_total."}
@@ -79,3 +82,32 @@ def test_what_was_tried_before_is_in_the_next_packet(stack):
     (tried,) = packets.build_packet(stack.store, made.id).data["tried_before"]
     assert tried["changed"][0].startswith("- Write the totals") and tried["screened"] is None
     assert tried["rationale"] == "the check reads these keys"
+
+
+def test_what_a_proposer_is_shown_of_the_skill_and_the_task_is_masked_each_line_at_its_number(stack):
+    """The run's skill is kept as it was given, and its task as its file wrote it: a proposer's model
+    may be hosted, and is shown them masked — the skill whole before its lines are numbered, as
+    show_skill numbers them (line by line, a private key's lines pass). Kept, the packet is as built."""
+    keyed = SKILL + f"\nLog in with {KEY}.\n\n" + "\n".join(PRIVATE) + "\n\nThen write the report.\n"
+    (stack.tmp / "skills-src" / "tally-report" / "SKILL.md").write_text(keyed, encoding="utf-8")
+    # A key where a plan cuts the task's prompt short (240 characters), one where the packet does
+    # (2,000): masked whole before it is cut, or the part left reads as no key (found in review).
+    stack.item.prompt = "p" * 229 + f" {KEY} " + "q" * 1735 + f" {KEY} Summarize data.csv into report.json."
+    assert (stack.item.prompt.index(KEY), stack.item.prompt.rindex(KEY)) == (230, 1990)
+    stack.item.tuningfork.check = f": {KEY}; {stack.item.tuningfork.check}"
+    stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+    plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                         model="m", harness="fake", n=1)
+    (brief,) = plan.to_json()["evals"]
+    assert brief["prompt"].startswith("p" * 229) and KEY[:10] not in brief["prompt"]
+    made = refine.create(stack.store, runs(stack, 1)[0], "write_file", target_rules=RULES)
+    found = packets.build_packet(stack.store, made.id)
+    kept = (made.folder / "packets" / f"{found.sha}.json").read_bytes()
+    for said in (json.dumps(found.data), kept.decode("utf-8")):
+        assert KEY[:10] not in said and PRIVATE[1] not in said and PRIVATE[2] not in said
+    # Kept as its digest was taken: the file's bytes are what its name says (found in review).
+    assert hashlib.sha256(kept).hexdigest().startswith(found.sha)
+    lines, numbered = keyed.splitlines(), found.data["skill"]["lines"]
+    at, after = lines.index(f"Log in with {KEY}.") + 1, lines.index("Then write the report.") + 1
+    assert numbered[at - 1] == f"{at}: Log in with {REDACTED}." and numbered[after - 1] == f"{after}: Then write the report."
+    assert REDACTED in found.data["task"]["prompt"] and REDACTED in found.data["task"]["check"]

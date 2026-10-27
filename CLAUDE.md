@@ -120,7 +120,8 @@ its harness shows skills (`skill_spans`) and kept beside the run, `<home>/import
 The one an A/B, a refinement or a scenario studies is named when it starts (`skill`,
 `experiments.study_skill`, refused where several were kept and none is named), unless the import
 named one or kept only one: the run's `parity.skill_snapshot_dir` points at that, as a batch
-run's does. The conversation is kept there too.
+run's does. The conversation is kept there too, masked as its steps are, and each SKILL.md
+extracted is taken from it so (`Store.keep_file`); a folder the person names is kept as given.
 Its steps are recorded under an assignment of the run's own, never a pending label a live call
 could take; nothing launched it, so it forks nowhere, and deleting it for good takes its folder.
 
@@ -164,17 +165,45 @@ loads a skill other than the spec's (`LaunchState.next_skill`, the adapter's `sk
 notes the launch (`Store.note_launch`), the runner ends the harness and runs the check on the
 workspace as it is, and the run counts, its result saying where it stopped (`stopped_at_skill`).
 
+A task file a person has becomes a scenario too (`scenarios.prepare_import`, `prepare_upload`,
+`execute_import`; the Scenarios page's Add a task file you have, `POST /scenarios/import`), planned
+before anything is written: by its path, its skill folder kept where it is, or its folder uploaded,
+the skill folder it holds copied into the scenario's own (`skill/<name>/`). Either way its input
+files, the conversation its runs continue, and what its check reads from its folder
+(`$TUNINGFORK_SPEC_DIR/…`, read inside it as the shell reads it, `//` too) come with it; a
+scenario whose check reads what its folder lacks says so before it runs. A form plans an upload by
+its files' sizes, and makes it with the data of the files it takes alone (`scenarios.Unsent`, the
+plan's `taken`). A new scenario's page and
+Make a scenario name the skill alike (`ui/static/js/skillpick.js`): the scenario's name, the
+harness (of a run), the skill's name, then its folder — an existing skill the Skills page lists, or
+a path, a relative one shown after the scenario's own folder it is taken from, and of a run a copy
+of what it had — each greyed where the run says it, but a folder whose SKILL.md has changed since
+the run, offered beside a copy of what the run had (`copy_skill`). A scenario's input files go into
+it only once it is saved, each at a path in the workspace the person can change.
+
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
 reply) and `$TUNINGFORK_SPEC_DIR` (its spec's folder, where a check script can live out of the
 agent's sight). It can run what the model wrote — a `conftest.py` its `pytest` finds — so its
 environment is made from scratch, sandbox or not (`specs.check_environment`: a launch's few
-variables and those its task names in `check_env`, never tuningfork's keys), and a run's check
-runs in the sandbox its run ran in (`Sandbox.check_command`): the workspace as
+variables, those its task names in `check_env`, and those the configs name for every check —
+`"check_env"` in the machine's config, read strictly, and in the recordings folder's
+`config.json`, read as its other settings are, once where a batch, fork or trial is planned,
+`specs.check_env_sources` — never tuningfork's keys), and a run's check runs in the sandbox its
+run ran in (`Sandbox.check_command`): the workspace as
 `/home/user/project`, an empty home, the task's folder shown read-only (`Sandbox.shows`: never
 one of tuningfork's own, `own`, nor one holding `/tmp` or `/home`), a Python environment on its
 `PATH` that a hidden folder holds shown too, and what is hidden inside a shown folder hidden
 still. A check tried (`ops/checks.py`) and one run along a run run in one like it wherever
-bubblewrap runs, hiding what the run's launch hid. A check that prints what it found wrong, one finding a line, gets a tally
+bubblewrap runs, hiding what the run's launch hid. What a check prints is masked where it runs,
+every way storage reads a text (`run_check`'s `masking`, `Masking.text`, `config.text_spans`),
+before it is cut, kept or told to a harness — a reply check's reply before it is cut to its
+quote; a long output from its end, `MASKED_MOST` characters, read on before it (`MASKED_MARGIN`,
+`Masking.part`) so that a key where it starts, up to that long, is left out whole, and where check-along places none
+of the run's findings — and so is every place, written as it is or with JSON's escapes, where the value of a
+variable it got whose name is a secret's stands
+(`config.secret_name`), or one of tuningfork's own keys (`access.held_secrets`), each eight
+characters or more as a mask takes a value (`config._FOUND`). A run's result, its launch's exit
+and its check along it keep it so, masked once. A check that prints what it found wrong, one finding a line, gets a tally
 (`ops/tally.py`; `tuningfork tally`, MCP's tally_failures, the divergence and experiment pages):
 each finding counted across a task's failed runs by condition, or a screen's failed forks by
 arm, its numbers and colours masked and a run counted once, the most common first — the failure to fix
@@ -237,9 +266,9 @@ resolved to an exact replacement of the text as shown, so none shifts another) c
 most 10 lines — a person's whole text only warns — never the frontmatter, and it must change what the model
 saw at the step; it is saved as a variant, with who proposed it, why, and the packet they
 were shown (`ops/packet.py`: built from the run's own task's records only, never sampled
-for). A screen (`ops/screen.py`; `analysis/screen.py`) draws a fresh original arm first,
-then each proposal, and tests each against it — Fisher, Holm over the proposals named
-before sampling; an unfinished screen has rates and no verdict. Run to the end
+for, and masked as it is built). A screen (`ops/screen.py`; `analysis/screen.py`) draws a
+fresh original arm first, then each proposal, and tests each against it — Fisher, Holm over
+the proposals named before sampling; an unfinished screen has rates and no verdict. Run to the end
 (`prepare_screen_to_end`, `refine screen --to-end`, the `screen-to-end` job kind), each
 arm's samples are forks from the checkpoint through the harness and the task's check decides
 each (`compare_verdicts`) — one that timed out failed, as the gate counts it, here and in an
@@ -253,7 +282,9 @@ the check, and a screen's plan, say when a call before the step changed the work
 findings §31.42: a screen after a delivery was booked saw neither an edit's gain nor its harm).
 And one prefix is one draw of the model's path, so the forks
 are drawn from several checkpoints by default (`--checkpoints`, `choose_checkpoints`): the
-refinement's own run and others of its task at the same step — each run's own such step when
+refinement's own run and others of its task set up as it was (`ops.launch.Setup`: harness, model,
+harness options, layout, sandbox and clock; a later screen chooses again where the latest drew
+from a run set up otherwise) at the same step — each run's own such step when
 the step was named by what the run did there (`ops.experiments.find_step`: the first call of a
 tool, `write_file`, or `write_file|execute_code` for whichever came first; `changed:<path>`, the
 call that first changed that file; `made:<words>`, the call that first made a finding of the
@@ -282,7 +313,11 @@ checkpoint to the end, full runs of the training task with the edit from the fir
 full runs of each held-out eval through a private proxy (`ops/private.py`) that records into
 a 0700 temp folder outside the home and is deleted after — its calls reach the server through
 a relay launch the main proxy forwards and never records (`LaunchState.records`), and only
-verdicts leave. It is refused when the skill's file, its other files or the training eval
+verdicts leave. Every part is set up as the checkpoint's run was, as its forks are
+(`ops.launch.Setup`, `prepare_batch`'s `setup`): its harness, model, harness options, layout,
+sandbox and clock; an MCP server, recorded by name only, reaches none of them, and the plan
+says so once.
+It is refused when the skill's file, its other files or the training eval
 changed since the checkpoint's run, and unless the proposal survived its latest complete
 screen (`validate.latest_screen`: a screen of more proposals, or one run to the end, can undo
 an earlier survival). Its record, `refinements/<id>/validations/<vid>.json`, is
@@ -327,7 +362,13 @@ entries' ids had failed every answer holding one. The forking-token probe forces
 stream, and tests each alternative against its position's baseline, Holm-corrected over the
 family planned before sampling; each behaviour it reached says whether the target counts it and
 which tokens led to it (`ForkingReport.led_by`): a token can change what the model does and miss
-a target too fine to count it. The server check (Connections) measures what each needs — the
+a target too fine to count it. What each continuation wrote from the token it forced on — its
+reasoning, then its call or reply — is read back from the tokens kept with its sample, in the parts
+the probe's format marks, read after the base's tokens before the position
+(`ops.forking.continuations`: the probe's page, where every continuation is grouped by token or by
+behaviour, a click apart (`continuationsSection` in `results.js`), `experiment --continuations`,
+`tokens --sample`, MCP's show_experiment with `continuations`, page by page): what a forced token did
+to the model's deliberation, not only where it ended. The server check (Connections) measures what each needs — the
 raw completion, the prompt rendered as the chat endpoint renders it, the output format, and the
 chat endpoint's own logprobs, which a resample's kept tokens need — and token work it found the
 server without is refused before anything is sent (`ops.connections.token_work`, in the job
@@ -392,9 +433,10 @@ its scripts and keys belong. `TUNINGFORK_SANDBOX=off` turns it off — the suite
 `tests/test_sandbox.py` turns it back on where bubblewrap can run. `TUNINGFORK_CLOCK=YYYY-MM-DD
 HH:MM:SS` starts every launch's clock at that instant (libfaketime under `LD_PRELOAD`, monotonic
 clocks left real): the harness reads the same date whichever day a run is made — the model
-reads it, and at a knife edge it decides — a fork reads its source's, the launch records it,
-and a plan warns where the library is missing (`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere). The normalizer masks the
-sandbox's paths as it masks a launch's own (`NORMALIZER_VERSION` 3).
+reads it, and at a knife edge it decides — a fork reads its source's, as does every run of a
+validation, the launch records it, and a plan warns where the library is missing
+(`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere). The normalizer masks the sandbox's paths as it
+masks a launch's own (`NORMALIZER_VERSION` 3).
 
 Live breakpoints talk to a running proxy (`--proxy`, or `TUNINGFORK_PROXY`, default :8787):
 
@@ -484,11 +526,11 @@ whose original arm reaches the target four times in five says so too); and
 find_divergence also names the step whose behaviour best predicts the verdict, when one does
 (`ops.inspect.verdict_split`). No agent is offered the built-in
 proposer — sending recordings to an endpoint is the person's decision — nor anything that
-approves an edit. An answer is a compact view (`ops/compact.py`) whose
-sentences lead both its text and its structured content (`summary`): Claude Code shows the
-model only the structured content, OpenJarvis the text, and Hermes both side by side — every
-answer twice, so for it `--mcp-results text` (`mcp --results text`) sends the text alone
-(`mcp.server.RESULTS`). The same refusal three times running carries the tool's description
+approves an edit. An answer is a compact view (`ops/compact.py`), masked as it leaves the server
+(`ToolServer.shown`), whose sentences lead both its text and its structured content (`summary`):
+Claude Code shows the model only the structured content, OpenJarvis the text, and Hermes both side
+by side — every answer twice, so for it `--mcp-results text` (`mcp --results text`) sends the text
+alone (`mcp.server.RESULTS`). The same refusal three times running carries the tool's description
 again, and from the sixth time says to stop sending that call and try another edit, step or
 tool (`ToolServer._repeated`): a weak reader reads each as the first, and one told to stop
 would take it for the task. Point a driving agent's own model at the inference
@@ -504,7 +546,11 @@ greyed and saying why, and its foot is a status strip — the proxy, the server 
 from `GET /connections`. Its front page is `#/guide` — setup, where you left off, a map of the
 loop and the ways in — and its words have a page of their own, `#/words`, each living once in
 `ops/glossary.py`. Each page leads with its take-away: a run its verdict strip; the divergence
-page the step whose behaviour best predicts the verdict, in a callout with the ways to it;
+page the step whose behaviour best predicts the verdict, in a callout with the ways to it, then the
+runs side by side one step at a time, from the first split, every step a click away (`atStep` in
+`views/compare.js`: the first split is often not the step that decides); a forking-token probe the
+forced tokens that changed what the model did, each beside the run's own token there — what each
+led to, and how often it did what was counted (`flipsTable` in `results.js`);
 Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model, a
 word and a colour each, the server in the status strip's words (`serverWord`), and what that means
 in at most three sentences (`whatItMeans`); a refinement its four stages in a line (`stagesOf` in
@@ -662,13 +708,60 @@ rebuilt by `Store.rebuild_request`. What the store keeps of what happened — st
 their tokens, jobs, runs' results, launches' exits, servers — it masks itself, once, with its one
 set of patterns (`Store.masking`, `store/masking.py`): a writer hands it what it has — or, where it
 must read a value as it will be stored first (an outcome computed from an answer), the `Masked`
-it asked the store's masking for. What a run is given is kept as it was given, since a fork runs
-it again — a launch's eval and variant, a scenario's context (`Store.put_given`) — and so is an
-experiment's settings, the test it declared. Masking is not idempotent, and a fork matches a call
-masked once against a step stored masked once; `tests/test_store_masking.py` fails on code
-elsewhere that masks or writes a blob itself, and `tests/test_canaries.py` plants a key in the
-loop's inputs and searches every row and blob for it. Never report a rate without its interval —
-see `analysis/stats.py`.
+it asked the store's masking for; a check's output and what a harness was told of it, masked
+where the check ran, are fields of a run's result and of its launch's exit kept as they are
+(`Masking.of`'s `masked`). A file the store keeps beside its rows, made from what was recorded,
+it masks as it writes it (`Store.keep_file`): a chain's record — the lines each link changed in
+the skill, of both texts masked whole and alike, each line keeping its number (`Masking.text`'s
+`lines`), and what its harness was told and its skill-editing calls, masked already
+(`chain.LINK_MASKED`), kept as they are; an imported chat, each answer also of what
+the masks before it took, as a step's answer is (`imports.kept_chat`), and the SKILL.md of each
+skill the model read, as the masked chat shows it; the import names the patterns
+(`parity.imported.masked`). The chat of an import made before that is masked as it is read
+(`imports.chat_of`), and so is its SKILL.md extracted, wherever a scenario, a skill added or a
+refinement is made of it, or it is shown (`imports.extracted_unmasked`, `experiments.kept_text`). What
+a run is given is kept as it was given, since a fork runs it again — a launch's eval and variant, a
+scenario's context (`Store.put_given`) — and so is what a scenario, a skill added or a refinement
+copies of it, the skill a launched run was given (a chain's link's, which the link before wrote,
+too), and an experiment's settings, the test it declared. What leaves tuningfork is masked as it
+leaves, whatever the store keeps (`Masking.shown`): every answer and refusal an agent is given over
+MCP (`ToolServer.shown`), its model maybe hosted, and what a proposing model is sent — the packet,
+masked as it is built and kept so (`Packet.keep`), and the skill beside it, its exchange kept as the
+store keeps a file (`Store.keep_file`). A text a view splits or cuts short — show_skill's numbered
+lines, show_files' pages, a task's prompt in a plan or the packet — is masked whole first, each line
+at its number, each line a mask covers reading `<redacted>` (`Masking.shown`'s `lines`): line by
+line, a private key's lines pass, and a cut through a key leaves a part no pattern reads. Texts set
+side by side — a diff: show_files', an A/B's wording, a refinement's proposals — are masked alike,
+what they share masked as either masks it, and a mask's value — four characters or more, a letter
+among them — wherever it stands on any of their changed lines as a word of its own, or glued as
+its mask was (mysql's `-pZ9q4`) (`Masking.alike`): an edit can take away a private key's first
+line, or the command a password's pattern reads. A shorter mask, or one without a letter — a PIN,
+a year, a run of `#`, which masking by value would point out among a text's numbers and rules — is
+carried onto a changed line only where the lines around it are compared character by character
+(`CHARS_COMPARED`), and there, under eight characters and without a letter, only where it lands as
+a word of its own or glued to what the comparison kept. An edit's quotes — the text it replaced, the
+lines a refusal finds closest — are the skill as show_skill shows it. A file where_it_holds asks of
+for an agent is matched as the agent is shown it. A run's views show its task's check masked
+(`timeline.launch_json`, `inspect.task_summaries`); the form that makes a scenario of the run takes
+it as written, as the scenario copies and tries it. An edit is resolved against the skill's file,
+never what was shown of it (`ops.diff.resolve_edits`' `shown` and `masks`): it never writes the mask
+where the text it replaces held none, and changes a key whole or not at all; and a proposal that
+leaves a key to read as none — the words its pattern reads changed beside it, `password=` — is
+refused (`Masking.bared`): every run given it would record the key bare. A variant given as text that
+reads the mask more often than the file does — written from the skill as shown — is set on the file
+as it stands (`experiments.variant_onto`), each line it kept the file's, a key whole or not at all
+and still masked; any other, a person's, is tested as given. No answer gives a digest (a field named
+`sha256` or `*_sha256`) of what it shows masked (`mcp.server._without_digests`): against one, a short
+key is guessed. Masking is not
+idempotent, and a fork matches a call masked once against a step stored masked once;
+`tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
+`tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file
+for it, and every answer an agent is given over MCP, but the files kept as they were
+(`KEPT_AS_IT_WAS`: a launch's folders, the workspace's snapshots, a scenario's inputs, the
+wordings tried), what a copy of the skill a launched run was given holds as given, or a
+refinement's copy of it (`GIVEN_COPIES`, `GIVEN_TO_A_REFINEMENT`), and what a scenario's spec
+takes from its run's task as written (`GIVEN_TO_A_SCENARIO`). Never report a rate without its
+interval — see `analysis/stats.py`.
 
 Server- and harness-specific knowledge lives behind the `backends/`, `harness/` and `wire/`
 seams, never in the core. Supporting another harness or inference server must not require
@@ -694,8 +787,9 @@ than on a hardcoded assumption about which server is running.
 - The UI puts every string on the page as a text node — payloads are full of markup-looking
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
 - The web UI says some terms more plainly than the CLI, MCP and the docs, which keep the precise
-  words: an arm is a *wording*, a target *what you count* (a refinement's, *what the model should
-  do*), a screen a *test at this step*, a validation *full test runs*, a spec a *task file*.
+  words: an arm is a *wording*, a target *what you count* (in a result, *what was counted*, its
+  label on a line of its own; a refinement's, *what the model should do*), a screen a *test at this
+  step*, a validation *full test runs*, a spec a *task file*.
   `ui/static/js/words.js` holds the phrase for each term the glossary defines (a term's `ui`;
   `tests/test_words.py` holds the two together), the Words page shows both, and `tuningfork
   glossary` finds a term by its page phrase too. A sentence the server writes — a refusal, a plan's

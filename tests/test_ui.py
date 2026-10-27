@@ -177,6 +177,14 @@ class TestStartingWork:
         assert 'kind: "check-trial"' in tried
         assert all("checkPicker(" in source(page) for page in ("js/views/scenarios.js", "js/views/import.js"))
 
+    def test_both_ways_to_make_a_scenario_choose_its_skill_alike(self):
+        """A new scenario and one made from a run name the skill alike and choose its folder with
+        one picker — a skill the Skills page lists, or a path to one (the user's ask, 2026-10-25)."""
+        for page in ("js/views/scenarios.js", "js/views/import.js"):
+            assert "skillPicker({" in source(page) and "skillNameLabel()" in source(page), page
+        picker = source("js/skillpick.js")
+        assert '["known", "Existing skill"]' in picker and '["path", "Path to skill"]' in picker
+
 
 class TestRefining:
     """A refinement starts from a step, proposes through the propose job and screens through

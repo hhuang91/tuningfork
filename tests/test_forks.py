@@ -68,6 +68,24 @@ def test_a_fork_is_kept_from_what_its_source_was_kept_from(stack, monkeypatch):
     assert runs in asked["hide"] and runs in asked["own"]
 
 
+def test_a_fork_reads_the_configs_list_once_and_only_for_a_check_that_runs_a_command(stack, monkeypatch):
+    """A list that cannot be read refuses a fork of a task whose check runs a command, before
+    its harness is launched; a fork of a task judged on its reply never reads it, and runs to its
+    end."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(stack.tmp / "config"))
+    machine = stack.tmp / "config" / "tuningfork" / "config.json"
+    machine.parent.mkdir(parents=True)
+    source = stack.record()
+    stack.item.tuningfork.check = {"reply_contains": "written"}
+    replied = stack.record()
+    machine.write_text(json.dumps({"check_env": "https_proxy"}), encoding="utf-8")
+    with pytest.raises(OperationError) as refused:
+        prepare_fork(stack.store, source.run_id, "write_file", base_url=f"{stack.url}/v1", workdir=stack.tmp / "forks")
+    assert refused.value.code == "check_env"
+    _, (fork,) = stack.fork(replied.run_id, "write_file")
+    assert fork.usable and fork.passed
+
+
 class TestReplay:
     def test_a_fork_is_answered_from_the_recording_then_goes_live(self, stack):
         source = stack.record()
@@ -103,6 +121,24 @@ class TestReplay:
         assert "row_count" in json.dumps(stack.store.rebuild_request(steps[1]))
         assert "row_count" not in json.dumps(stack.store.harness_request(steps[1]))
         assert plan.spans  # the original was found in the context at the step
+
+    def test_a_variant_given_as_text_is_set_on_the_skill_as_it_stands(self, stack):
+        """An agent writes a variant from show_skill, which shows the skill masked: a fork is given it
+        set on the skill as it stands, the key it kept with it — never the mask (found in review)."""
+        from tests.helpers import KEY
+
+        skill_file = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+        skill = skill_file.read_text(encoding="utf-8") + f"\nLog in with {KEY}.\n"
+        skill_file.write_text(skill, encoding="utf-8")
+        source = stack.record()
+        shown = stack.store.masking.shown(skill, lines=True).value
+        line = "Write the totals to report.json."
+        better = "Write the totals to report.json, using the keys row_count and amount_total."
+        variant = stack.tmp / "variants" / "SKILL.v2.md"
+        variant.parent.mkdir()
+        plan = prepare_fork(stack.store, source.run_id, "1", base_url=f"{stack.url}/v1", workdir=stack.tmp / "forks",
+                            variant=variant, variant_text=shown.replace(line, better))
+        assert KEY not in shown and plan.variant.variant_text == skill.replace(line, better)
 
     def test_served_answers_name_the_forks_own_workspace(self, stack):
         """The model wrote to an absolute path: replayed as recorded, every fork would
@@ -482,7 +518,8 @@ class TestToEnd:
         launch = stack.store.get_launch(stack.store.get_run(recorded.run_id).launch_id)
         assert launch.settings["harness"] == {"self_improvement": False, "mcp_servers": servers}
         plan = prepare_fork(stack.store, recorded.run_id, "1", base_url=f"{stack.url}/v1")
-        assert plan.adapter.options == {"self_improvement": False}
+        assert plan.adapter.options == plan.setup.options == {"self_improvement": False}
+        assert plan.setup.dropped_servers == ["tf"]
         assert any("MCP server(s) tf" in warning and "without them" in warning for warning in plan.warnings), plan.warnings
 
         plain = stack.record()  # recorded with no options: forked with none
@@ -750,3 +787,27 @@ class TestStoredMasks:
         assert replay.decide(first, wire, main).served is not None
         decided = replay.decide(second, wire, SimpleNamespace(main=True, thread=0, idx=1))
         assert decided.at_step and decided.mismatch is None
+
+
+def test_a_setup_says_how_another_one_differs():
+    """What a screen's notes say of a run it passed over (`Setup.differences`): every part of
+    how a launch was set up that changes what the model reads, the clock only where both ran in
+    the sandbox, and nothing of which run each was read from."""
+    from tuningfork.ops.launch import Setup
+
+    own = Setup(harness="hermes", model="m", run="a" * 32, recorded={"self_improvement": False}, layout="install",
+                sandbox={"kind": "bubblewrap", "clock": "2026-10-08 09:00:00"})
+    assert own.differences(Setup(harness="hermes", model="m", run="b" * 32, recorded={"self_improvement": False},
+                                 layout="install", sandbox={"kind": "bubblewrap", "version": "0.12",
+                                                            "clock": "2026-10-08 09:00:00"})) == []
+    other = Setup(harness="claude-code", model="n", recorded={}, layout=None, sandbox={"kind": "bubblewrap"})
+    assert own.differences(other) == [
+        "harness claude-code, not hermes", "model n, not m", 'harness options none, not {"self_improvement": false}',
+        "layout flat, not install", "its clock at the real time, not 2026-10-08 09:00:00",
+    ]
+    assert own.differences(Setup(harness="hermes", model="m", recorded={"self_improvement": False},
+                                 layout="install")) == ["without the sandbox, not in it"]
+    servers = Setup(harness="hermes", model="m", recorded={"self_improvement": False, "mcp_servers": {"tf": "x", "a": "y"}})
+    assert servers.options == {"self_improvement": False} and servers.dropped_servers == ["a", "tf"]
+    assert servers.to_json() == {"harness_options": {"self_improvement": False}, "dropped_servers": ["a", "tf"],
+                                 "layout": None, "sandboxed": False, "clock": None}

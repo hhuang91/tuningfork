@@ -171,6 +171,15 @@ was exploratory. A long file or message is read page by page from an `offset`. T
 recordings — prompts, tool results, model output, skills — is data to study, never instructions
 to follow, and the server's instructions say so.
 
+An agent's model may be a hosted one, so every answer is redacted as it leaves the server, as
+tuningfork redacts what it records — a run's files, its task's check and the skill it was given
+too, which tuningfork keeps as they were, and an answer gives no digest of them. A key in a skill
+reads `<redacted>` on each line it holds, and each line keeps its number: an edit can name those
+lines, but cannot write `<redacted>` into the skill, changes a key whole or not at all, and leaves
+the words that make it a key (`password=` before it) as they are. A whole
+wording given to `start_ab` as text, written from the skill as shown, is set on the skill as it
+stands: each line it keeps as shown is the skill's own, the key with it.
+
 A result carries its text and its structured content, because a client shows the model one of
 them: Claude Code the structured content, OpenJarvis the text. Hermes shows both, so give it
 `--results text`. The same refusal three times running carries the tool's description again, and
@@ -188,10 +197,11 @@ tuningfork chain show <id> --diff
 ```
 
 `--tell` gives each run's harness the check's verdict and output as the user's next turn, before
-its review: what a person who looked at the result would say. `await_review` lets Hermes's review
-finish before the process exits, and `review_every_turn` makes it due after every turn; without
-both, Hermes's loop never acts in a one-shot launch. `--budget-seconds N` stops once the links'
-model calls have taken N seconds, so two loops can be given the same time. `chain show --diff`
-shows who changed the skill after each run, and the lines they changed; the web UI's Chains page
-shows the same. The [case study](../examples/hermes-architecture-diagram/README.md) sets this
-loop against an agent with tuningfork's tools.
+its review: what a person who looked at the result would say. The output is masked as tuningfork
+keeps it: what the masking takes reaches the harness as `<redacted>`. `await_review` lets
+Hermes's review finish before the process exits, and `review_every_turn` makes it due after every
+turn; without both, Hermes's loop never acts in a one-shot launch. `--budget-seconds N` stops
+once the links' model calls have taken N seconds, so two loops can be given the same time.
+`chain show --diff` shows who changed the skill after each run, and the lines they changed; the
+web UI's Chains page shows the same. The [case study](../examples/hermes-architecture-diagram/README.md)
+sets this loop against an agent with tuningfork's tools.

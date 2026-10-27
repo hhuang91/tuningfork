@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from tuningfork.analysis.conditions import TIMED_OUT, fork_counted
 from tuningfork.ops.common import Cancel, Cancelled, OperationError, Progress, emit
 from tuningfork.ops.trash import refuse_trashed
 from tuningfork.ops.experiments import load
-from tuningfork.ops.launch import ProxyStatus, check_launchable, check_proxy
+from tuningfork.ops.launch import ProxyStatus, Setup, check_launchable, check_proxy, setup_of
 from tuningfork.store.db import Store
 
 
@@ -39,6 +39,12 @@ class ForkPlan:
     #: The sandbox the fork runs in, as its source did (`tuningfork.sandbox.Sandbox`), or
     #: None: the source ran in its own folders, and so does the fork.
     sandbox: Any = None
+    #: The variables its check may read besides those its task names, read from the configs
+    #: here, once (`specs.configured_check_env`).
+    check_env: list[str] = field(default_factory=list)
+    #: How its source was set up, which the fork repeats (`ops.launch.Setup`): its harness
+    #: options but its MCP servers, its layout, its sandbox and its clock.
+    setup: Setup | None = None
 
     def to_json(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -57,6 +63,17 @@ class ForkPlan:
             "sandbox": self.sandbox.to_json() if self.sandbox is not None else None,
             "warnings": self.warnings,
         }
+
+
+#: What a fork plan says follows from leaving a run's MCP servers out.
+FORKS_WITHOUT_SERVERS = "its forks run without them, and may depart from the recording"
+
+
+def servers_warning(run_id: str, servers: Iterable[str], consequence: str = FORKS_WITHOUT_SERVERS) -> str:
+    """The warning that runs planned from run `run_id` go without its MCP servers, which a
+    launch records by name only: `consequence` says which runs, and what follows."""
+    return (f"run {run_id[:8]} had MCP server(s) {', '.join(sorted(servers))}, which a launch records by "
+            f"name only: {consequence}")
 
 
 def prepare_fork(
@@ -83,7 +100,7 @@ def prepare_fork(
     from tuningfork.paths import host_path
     from tuningfork.replay import Variant, replay_problems, replayed_steps
     from tuningfork.runner import ForkSource
-    from tuningfork.specs import Eval, load_spec
+    from tuningfork.specs import Eval, check_kind, configured_check_env, load_spec
 
     checkpoint = load(store, run, step)
     refuse_trashed(checkpoint.run)
@@ -95,12 +112,13 @@ def prepare_fork(
         )
 
     launch = store.get_launch(source_run.launch_id) if source_run.launch_id else None
+    setup = setup_of(store, source_run)
+    harness = setup.harness
     initial_commit = skill_commit = None
     if launch is not None and launch.eval:
         item = Eval.from_dict(launch.eval)
         spec_dir = Path(launch.eval.get("spec_dir") or ".")
         skill = Path(launch.skill_dir) if launch.skill_dir else None
-        harness = launch.harness
         initial_commit, skill_commit = launch.initial_commit, launch.skill_commit
     else:
         if spec is None:
@@ -117,7 +135,6 @@ def prepare_fork(
         spec_dir = task_spec.directory
         snapshot = source_run.parity.get("skill_snapshot_dir")
         skill = Path(snapshot) if snapshot else task_spec.resolved_skill_dir()
-        harness = source_run.harness
     if not harness or harness not in ADAPTERS or harness == "generic":
         raise OperationError(
             f"run {source_run.id[:8]} was not run by a harness tuningfork can launch ({harness or 'unknown'})"
@@ -128,36 +145,33 @@ def prepare_fork(
     # layouts were recorded was laid out flat. Set up as it was, too: a harness option
     # changes what the model is told (Hermes's self_improvement, its system prompt), and a
     # fork told otherwise departs from the recording at its first step.
-    recorded = dict((launch.settings.get("harness") if launch else None) or {})
-    servers = recorded.pop("mcp_servers", None)
-    adapter = adapter_for(
-        store.home, harness, layout=(launch.settings.get("layout") if launch else None) or "flat",
-        options=recorded or None,
-    )
+    adapter = adapter_for(store.home, harness, layout=setup.layout or "flat", options=setup.options or None)
     check_launchable(adapter)
     workdir = Path(workdir) if workdir else store.home / "forks"
     sandbox = None
-    if launch is not None and launch.settings.get("sandbox"):
+    if setup.sandbox:
         # What it replays names the sandbox's paths, and what the model saw was the same
         # home and folder: a fork of it runs there too, or not at all.
-        from tuningfork.sandbox import for_launches, recorded_hiding
+        from tuningfork.sandbox import for_launches, recorded_hiding, remedy
 
         # And its clock starts where its source's did, so its live steps read the
         # recording's date; a source made on the real clock forks on the real clock. It is
         # kept from what its source was kept from, too: the source batch's runs among them.
-        hid, mine = recorded_hiding(launch.settings.get("sandbox"), task=spec_dir.resolve())
+        hid, mine = recorded_hiding(setup.sandbox, task=spec_dir.resolve())
         sandbox, unsandboxed = for_launches(
-            [store.home, workdir, spec_dir, *hid], own=[store.home, workdir, *mine],
-            clock=(launch.settings.get("sandbox") or {}).get("clock"),
+            [store.home, workdir, spec_dir, *hid], own=[store.home, workdir, *mine], clock=setup.clock,
         )
         if sandbox is None:
             raise OperationError(
                 f"run {source_run.id[:8]} ran in the sandbox, so its forks must: {unsandboxed}",
-                hint="install bubblewrap, or fork a run launched without it",
+                hint=", or ".join(part for part in (remedy(unsandboxed), "fork a run launched without it") if part),
                 code="no_sandbox",
             )
     if skill is not None and not skill.exists() and not skill_commit:
         raise OperationError(f"the skill folder the run was given, {skill}, no longer exists")
+    # Read once, here, for a check that runs a command: a list that cannot be read is refused
+    # before a fork is launched, and every fork is judged with the same.
+    every_check = configured_check_env(store.home) if check_kind(item.tuningfork.check) == "shell" else []
     if need_check and not item.tuningfork.check:
         raise OperationError(
             "the task defines no check, so a fork has no verdict to count",
@@ -176,14 +190,10 @@ def prepare_fork(
     warnings: list[str] = []
     if sandbox is not None and sandbox.clock_problem:
         warnings.append(
-            f"{sandbox.clock_problem}: the forks read today's date where the recording read "
-            f"{(launch.settings.get('sandbox') or {}).get('clock') if launch else None}"
+            f"{sandbox.clock_problem}: the forks read today's date where the recording read {setup.clock}"
         )
-    if servers:
-        warnings.append(
-            f"run {source_run.id[:8]} had MCP server(s) {', '.join(sorted(servers))}, which a launch "
-            "records by name only: its forks run without them, and may depart from the recording"
-        )
+    if setup.dropped_servers:
+        warnings.append(servers_warning(source_run.id, setup.dropped_servers))
     if variant is not None:
         variant = Path(host_path(str(variant)))
         original = Path(host_path(str(original))) if original else (skill / "SKILL.md" if skill else None)
@@ -198,6 +208,10 @@ def prepare_fork(
         original_text = original.read_text(encoding="utf-8")
         if variant_text is None:
             variant_text = variant.read_text(encoding="utf-8")
+        else:
+            from tuningfork.ops.experiments import variant_onto
+
+            variant_text = variant_onto(store, original_text, variant_text)
         if original_text == variant_text:
             raise OperationError("the variant and the original are the same text", field="variant_text")
         swapped = Variant(
@@ -264,6 +278,8 @@ def prepare_fork(
         warnings=warnings,
         adapter=adapter,
         sandbox=sandbox,
+        check_env=every_check,
+        setup=setup,
     )
 
 
@@ -297,6 +313,7 @@ def execute_forks(
         workdir=plan.workdir,
         concurrency=concurrency,
         sandbox=plan.sandbox,
+        check_env=plan.check_env,
     )
     unregister = (
         cancel.on_cancel(lambda: runner.cancel.cancel(cancel.reason or "cancelled"))

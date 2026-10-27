@@ -171,6 +171,22 @@ class TestExecute:
         assert plan["evals"][1]["prompt"] == "Do it the other way."
         assert plan["eval"] == data["evals"][0]["id"]
 
+    def test_a_task_s_prompt_in_brief_says_no_key(self, stack):
+        """A plan lists each task by its prompt's start, kept as its file wrote it: cut where no key
+        stands, and masked of what its own masks took — a password said bare before the prompt names
+        it (found in review)."""
+        from tuningfork.config import REDACTED
+        from tests.test_store_masking import PASSWORD
+
+        data = stack.spec.to_dict()
+        data["evals"].append({**data["evals"][0], "id": "2",
+                              "prompt": f"Answer {PASSWORD} if asked. " + "x" * 300 + f" (password={PASSWORD})"})
+        stack.spec.path.write_text(json.dumps(data), encoding="utf-8")
+
+        brief = prepare(stack, n=1).to_json()["evals"][1]["prompt"]
+
+        assert brief.startswith(f"Answer {REDACTED} if asked. x") and PASSWORD not in brief
+
     def test_a_batch_can_be_judged_on_the_agents_final_reply(self, stack):
         """End to end: the fake agent's last turn says "The report is written." — recorded by
         the proxy, and judged by the check, with no shell command involved."""

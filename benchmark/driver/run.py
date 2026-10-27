@@ -595,6 +595,7 @@ class Bench:
         it, so the recordings and the counts agree. Each cell keeps its verdicts by run."""
         from tuningfork.ops.checks import try_check
         from tuningfork.ops.common import OperationError
+        from tuningfork.store.masking import Masked
 
         state = self.skill_state(skill)
         cells = state.get("eval") or {}
@@ -616,11 +617,13 @@ class Bench:
                             again = "passed" if tried.passed else "failed"
                             if again != verdict:
                                 log(f"{skill}: {key} {run_id[:8]} {verdict} -> {again}: {tried.output.strip()[:160]!r}")
-                                store.annotate_run(run_id, result={
+                                # Kept as it is: the result as stored, and the check's output as
+                                # masked where it ran. Masked again, a second password would fall.
+                                store.annotate_run(run_id, result=Masked({
                                     **result, "passed": tried.passed, "check_output": tried.output[-2000:],
                                     "rescored_from": {"passed": result.get("passed"), "check_output": result.get("check_output"),
                                                       "at": time.time()},
-                                })
+                                }))
                                 changed += 1
                                 verdict = again
                     verdicts[run_id] = verdict

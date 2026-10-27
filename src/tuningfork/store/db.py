@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import sqlite3
 import threading
 import time
@@ -909,6 +910,24 @@ class Store:
         each fork after. Like a launch's eval, what the model is sent is not changed; the steps
         that send it are masked as they are recorded."""
         return self.blobs.put_json(value)
+
+    def keep_file(self, path: Path | str, value: Any, *, indent: int | None = None) -> Path:
+        """A file kept beside the store, made from what was recorded — a chain's record, an imported
+        chat and the skills it showed: `value` masked as the store masks what it keeps (a `Masked`
+        as it is), text as text and anything else as the JSON it is written as, written whole or not
+        at all. What a run is given — a skill's copy, a scenario's inputs — is kept as it was given."""
+        kept = self.masking.of(value).value
+        data = kept if isinstance(kept, str) else json.dumps(kept, indent=indent, ensure_ascii=False)
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staging = target.with_name(f".{target.name}.{uuid.uuid4().hex[:8]}.tmp")
+        try:
+            staging.write_text(data, encoding="utf-8")
+            os.replace(staging, target)
+        except BaseException:
+            staging.unlink(missing_ok=True)
+            raise
+        return target
 
     def record_step(
         self,

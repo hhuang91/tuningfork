@@ -102,6 +102,21 @@ def test_it_is_run_from_the_terminal_once_a_run(stack):
     assert stack.store.get_run(run.id).result[ALONG]
 
 
+def test_a_list_that_cannot_be_read_refuses_the_whole_job_once(stack, monkeypatch):
+    """Not each run in turn, passed over with the same refusal, and the job done with nothing
+    run along."""
+    from tuningfork.ops.checks import prepare_check_along_runs
+
+    one_run(stack)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(stack.tmp / "config"))
+    machine = stack.tmp / "config" / "tuningfork" / "config.json"
+    machine.parent.mkdir(parents=True)
+    machine.write_text(json.dumps({"check_env": ["TUNINGFORK_TOKEN"]}), encoding="utf-8")
+    with pytest.raises(OperationError) as refused:
+        prepare_check_along_runs(stack.store, task=TASK)
+    assert refused.value.code == "check_env" and str(machine) in refused.value.message
+
+
 def test_it_says_when_the_check_cannot_run_in_the_sandbox(stack, monkeypatch):
     import tuningfork.sandbox
 
@@ -283,6 +298,32 @@ def test_a_mistake_every_run_made_is_named_with_the_call_that_made_it(store):
     # A person too.
     printed = CliRunner().invoke(app, ["tally", "--task", "t/1", "--home", str(store.home)], env={"COLUMNS": "220"})
     assert printed.exit_code == 0 and "made:in stock, the document leads to" in printed.output
+
+
+def test_the_check_along_a_run_is_kept_as_it_was_masked_where_it_ran(stack):
+    """What it printed at each state is masked before a state keeps its end or its findings, and
+    kept so — masked again, a command's second password would fall too — and the lines it says
+    each call made are the masked ones."""
+    key = "sk-" "tfalongkey4Q7xZ2mN8pL4vR6tY0a"
+    command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+    stack.item.tuningfork.check = f"echo 'login {command} with {key}'; {NAMING}"
+    stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+    run = one_run(stack)
+    done = check_along(stack.store, run.id)
+    assert key not in json.dumps(done) and any("-pZq8xK3vN5wLp" in entry["line"] for entry in done["made"])
+    kept = stack.store.get_run(run.id).result[ALONG]
+    assert kept["states"] == done["states"] and key not in json.dumps(kept)
+    assert all("-pZq8xK3vN5wLp" in state["output"] for state in kept["states"])
+
+
+def test_a_state_whose_output_was_too_long_to_mask_whole_places_nothing(stack, monkeypatch):
+    """Its findings are read from its end, as far as it is masked (`specs.MASKED_MOST`): some may be
+    missing, so no call is named for any of the run's."""
+    run = one_run(stack)
+    monkeypatch.setattr("tuningfork.specs.MASKED_MOST", 10)
+    record = check_along(stack.store, run.id)
+    assert all(state["findings_cut"] for state in record["states"]) and record["made"] == []
+    assert made_by_calls(stack.store.get_run(run.id).result[ALONG]) is None
 
 
 def test_the_check_along_a_run_leaves_its_result_as_it_was_kept(stack):

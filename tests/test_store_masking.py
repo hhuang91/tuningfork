@@ -269,6 +269,21 @@ class TestTheRestOfTheStore:
         run = store.get_run(step.run_id)
         assert KEY not in json.dumps([run.label, run.parity, run.result])
 
+    def test_a_field_masked_where_it_was_made_is_kept_as_it_is(self, store):
+        """A check's output, masked where the check ran, before it was cut: the rest of a run's
+        result, and of its launch's exit, is masked as the store masks."""
+        output = store.masking.value(COMMAND)
+        assert "-pZq8xK3vN5wLp" in output  # masked once, the second password stands
+        step = store.record_step(request=request_with([text_message("hi")]))
+        result = {"check_output": output, "told": {"message": output}, "label": f"api_key={KEY}"}
+        store.annotate_run(step.run_id, result=store.masking.of(result, masked=("check_output", "told")))
+        kept = store.get_run(step.run_id).result
+        assert kept["check_output"] == output and kept["told"] == {"message": output}
+        assert KEY not in kept["label"] and list(kept) == list(result)  # in its own order
+        launch = store.create_launch(kind="batch", eval={})
+        store.end_launch(launch.id, exit=store.masking.of({"told": {"message": output}}, masked=("told",)))
+        assert store.get_launch(launch.id).exit == {"told": {"message": output}}
+
     def test_a_launch_s_eval_and_variant_are_kept_as_given(self, store):
         """A fork runs them again as they were written: masked where they are shown or sent."""
         launch = store.create_launch(
@@ -328,6 +343,259 @@ class TestTheRestOfTheStore:
         store.update_job(job.id, plan=Plan(env={"TOKEN": f"api_key={KEY}"}))
         plan = store.get_job(job.id).plan
         assert "Plan(env={'TOKEN': " in plan and REDACTED in plan and KEY not in plan  # read, as it is written
+
+
+class TestAFileKeptBesideIt:
+    """A file made from what was recorded — a chain's record, an imported chat and its skills — is
+    masked as the store masks what it keeps (`Store.keep_file`)."""
+
+    def test_it_is_masked_as_the_store_masks(self, store, tmp_path):
+        record = {"said": f"config.json holds api_key={KEY}", "n": 3}
+        path = store.keep_file(tmp_path / "kept" / "record.json", record, indent=1)
+        assert json.loads(path.read_text(encoding="utf-8")) == store.masking.value(record)
+        text = store.keep_file(tmp_path / "kept" / "SKILL.md", f"Use api_key={KEY}\n")
+        assert text.read_text(encoding="utf-8") == f"Use api_key={REDACTED}\n"
+        assert KEY not in path.read_text(encoding="utf-8") + text.read_text(encoding="utf-8")
+
+    def test_a_value_masked_already_is_kept_as_it_is(self, store, tmp_path):
+        once = store.masking.of({"told": COMMAND})
+        path = store.keep_file(tmp_path / "record.json", once)
+        assert json.loads(path.read_text(encoding="utf-8")) == once.value
+        assert "-pZq8xK3vN5wLp" in path.read_text(encoding="utf-8")  # masked again, it would fall too
+
+    def test_it_is_written_whole_or_not_at_all(self, store, tmp_path, monkeypatch):
+        import os
+        from pathlib import Path
+
+        path = store.keep_file(tmp_path / "kept" / "record.json", {"links": 1})
+        replace = os.replace
+
+        def interrupted(source, target, **options):
+            # The disk full only for this file: whatever else replaces a file meanwhile goes on.
+            if Path(target) == path:
+                raise OSError("the disk is full")
+            return replace(source, target, **options)
+
+        monkeypatch.setattr(os, "replace", interrupted)
+        with pytest.raises(OSError):
+            store.keep_file(path, {"links": 2})
+        assert json.loads(path.read_text(encoding="utf-8")) == {"links": 1}
+        assert [found.name for found in path.parent.iterdir()] == ["record.json"]
+
+
+class TestALinedText:
+    @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r", chr(0x2028)])
+    def test_each_line_keeps_its_number_where_a_mask_took_several(self, store, newline):
+        """A private key's lines masked as one, and every line after it kept at its number, however the
+        file breaks its lines (`Masking.text`'s `lines`): found in review, a carriage return alone, or
+        U+2028, still moved them."""
+        body = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW"
+        lines = ["# Deploy", "-----BEGIN OPENSSH PRIVATE KEY-----", body, "QyNTUxOQAAACDx2Jx7dGgHJ1s0kpk8q9fG1hX",
+                 "-----END OPENSSH PRIVATE KEY-----", "Then run the tests."]
+        text = newline.join(lines) + newline
+        masked = store.masking.text(text, lines=True).value
+        assert body not in masked and REDACTED in masked
+        assert len(masked.splitlines()) == len(text.splitlines())
+        assert masked.splitlines()[-1] == "Then run the tests."
+        assert len(store.masking.text(text).value.splitlines()) < len(lines)  # without, they move
+
+
+#: A private key in a skill: its lines read as no key one at a time.
+PRIVATE = ["-----BEGIN OPENSSH PRIVATE KEY-----", "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW",
+           "QyNTUxOQAAACDx2Jx7dGgHJ1s0kpk8q9fG1hX", "-----END OPENSSH PRIVATE KEY-----"]
+
+
+class TestWhatIsShown:
+    """What is shown outside tuningfork — to an agent over MCP, to a proposing model — of a value,
+    whatever the store keeps of it (`Masking.shown`)."""
+
+    def test_every_text_is_masked_a_key_s_too_and_its_numbers_and_shape_kept(self, store):
+        shown = store.masking.shown({"said": f"use {KEY}", KEY: [3, f"again {KEY}", None], "count": 3})
+        assert shown.value == {"said": f"use {REDACTED}", REDACTED: [3, f"again {REDACTED}", None], "count": 3}
+        assert shown.made == 3
+
+    def test_a_value_one_text_names_is_masked_where_another_says_it_bare(self, store):
+        """A password named in one field, and said bare in another: as a step's answer is masked of
+        what its request's masks took."""
+        shown = store.masking.shown({"check": NAMED, "lines": [f"it was {PASSWORD}"]}).value
+        assert PASSWORD not in json.dumps(shown) and shown["lines"] == [f"it was {REDACTED}"]
+        assert store.masking.shown(f"{NAMED}; it was {PASSWORD}").value.count(REDACTED) == 2
+
+    def test_two_keys_a_mask_makes_one_are_both_kept(self, store):
+        assert len(store.masking.shown({KEY: 1, "sk-z9Y8x7W6v5U4t3S2r1Q0": 2}).value) == 2
+
+    def test_a_text_shown_whole_keeps_its_lines_where_line_by_line_a_private_key_passes(self, store):
+        """A text a view splits — numbered lines, pages, a diff — is shown whole first: line by line,
+        each of a private key's lines reads as no key."""
+        text = "\n".join(["# Deploy", *PRIVATE, "Then run the tests."]) + "\n"
+        whole = store.masking.shown(text, lines=True).value
+        assert PRIVATE[1] not in whole and PRIVATE[2] not in whole
+        assert len(whole.splitlines()) == len(text.splitlines()) and whole.splitlines()[-1] == "Then run the tests."
+        assert PRIVATE[1] in store.masking.shown(text.splitlines()).value  # what masking line by line misses
+
+    def test_what_the_store_kept_masked_is_shown_as_it_is(self, store):
+        kept = store.masking.value(f"{NAMED}, then {KEY}")
+        assert store.masking.shown(kept).value == kept
+
+    def test_a_value_json_cannot_write_is_shown_as_the_text_it_is_written_as(self, store):
+        """An answer is written with `default=str`: found in review, anything but text, a mapping or
+        a list was let through unread."""
+        from pathlib import PurePosixPath
+
+        shown = store.masking.shown({"path": PurePosixPath(f"/keys/{KEY}.txt"), "count": 3, "done": True}).value
+        assert shown == {"path": f"/keys/{REDACTED}.txt", "count": 3, "done": True}
+
+    def test_texts_side_by_side_show_what_they_share_as_either_shows_it(self, store):
+        """An edit can take away what a key's pattern needs — a private key's first line — and leave
+        its body to read as no key (found in review): each line one text holds is shown as the other
+        shows it, wherever it stands, the first's and the later's alike — a run can give a block its
+        first line as well as take it (found in review); each keeps its number."""
+        original = "\n".join(["# Deploy", *PRIVATE, "Then run the tests."]) + "\n"
+        edited = original.replace(PRIVATE[0], "The deploy key is kept in the vault.")
+        inserted = original.replace(PRIVATE[0] + "\n", PRIVATE[0] + "\n(the deploy key)\n")
+        for other in (edited, inserted):
+            assert PRIVATE[1] in store.masking.shown(other, lines=True).value  # alone, the body reads as no key
+            was, now = store.masking.alike([original, other])
+            assert PRIVATE[1] not in now and PRIVATE[2] not in now and "the deploy key" in now.lower()
+            assert len(now.splitlines()) == len(other.splitlines()) and len(was.splitlines()) == len(original.splitlines())
+            was, now = store.masking.alike([other, original])
+            assert PRIVATE[1] not in was + now and PRIVATE[2] not in was + now
+        named = f"{NAMED}\nThen: it was {PASSWORD}.\n"
+        assert PASSWORD not in store.masking.alike([named, f"Then: it was {PASSWORD}.\n"])[1]
+        assert PASSWORD not in store.masking.alike([f"Then: it was {PASSWORD}.\n", named])[0]
+
+    def test_a_line_that_keeps_a_value_and_loses_what_made_it_one_is_masked_there(self, store):
+        """A password's pattern reads the command before it: an edit of that command alone leaves the
+        password to read as no key on its own line (found in review). What the two texts share is
+        masked as either masks it."""
+        original = "Call it: curl -u admin:Xy7pQ2 https://api.test\n"
+        edited = original.replace("curl -u admin:", "http -a admin:")
+        assert "Xy7pQ2" in store.masking.shown(edited).value  # alone, the value reads as no key
+        was, now = store.masking.alike([original, edited])
+        assert "Xy7pQ2" not in was + now and now.startswith("Call it: http -a admin:")
+        short = "Call it: curl -u admin:a1b https://api.test\n"  # too short to be found by its value
+        assert "a1b" not in "".join(store.masking.alike([short, short.replace("curl -u admin:", "http -a admin:")]))
+        # Carried through the characters a rewritten line shares, a short value lands as a word of its own,
+        # never inside another (found in review: `port 5<redacted>`, beside `port 51234` read alone).
+        numbered = "Run: mysql -p1234 tally\n"
+        assert store.masking.alike([numbered, "Run: port 1234 tally\n"])[1] == f"Run: port {REDACTED} tally\n"
+        assert store.masking.alike([numbered, "Run: port 51234 tally\n"])[1] == "Run: port 51234 tally\n"
+        # Glued to its option, as mysql writes one, a value is the same password where the run kept the
+        # option, or holds a letter (found in review: `mycli -pZ9q4`, read bare beside `-p<redacted>`).
+        assert store.masking.alike([numbered, "Run: mycli -p1234 tally\n"])[1] == f"Run: mycli -p{REDACTED} tally\n"
+        lettered = "Run: mysql -u root -pZ9q4 tally\n"
+        for rewritten in ("Run: mycli -u root -pZ9q4 tally\n", "Run: mysql -u root -PZ9q4 tally\n"):
+            assert "Z9q4" in store.masking.shown(rewritten).value  # alone, the value reads as no key
+            assert "Z9q4" not in store.masking.alike([lettered, rewritten])[1], rewritten
+
+    def test_a_short_value_on_a_changed_line_is_masked_where_the_other_holds_it_changed(self, store):
+        """Found in review: a four-character password whose `mysql -p` was rewritten, among eighty
+        lines changed — too many to compare their characters — showed on the other side; so did one on
+        a line moved. A mask of four characters or more is masked wherever its value stands on the
+        other's changed lines; lines that did not change are masked alike."""
+        lines = [f"step {n}: copy part {n} of the tally into the report" for n in range(80)]
+        was = "Run: mysql -pZ9q4 tally < dump.sql\n" + "\n".join(lines) + "\nKeep Z9q4 out of the logs.\n"
+        rewritten = "Run: the Z9q4 load first\n" + "\n".join(line.replace("copy", "move") for line in lines) + "\n"
+        assert "Z9q4" in store.masking.shown(rewritten, lines=True).value  # alone, the value reads as no key
+        moved = "\n".join(lines) + "\nRun: load Z9q4 into the tally first\n"
+        option = rewritten.replace("Run: the Z9q4 load first", "Run: mycli -pZ9q4 tally < dump.sql")  # glued as before
+        for other, line in ((rewritten, f"Run: the {REDACTED} load first"), (moved, f"Run: load {REDACTED} into the tally first"),
+                            (option, f"Run: mycli -p{REDACTED} tally < dump.sql")):
+            was_shown, now = store.masking.alike([was, other + "Keep Z9q4 out of the logs.\n"])
+            assert line in now.splitlines() and was_shown.startswith(f"Run: mysql -p{REDACTED} tally")
+            assert was_shown.endswith("Keep Z9q4 out of the logs.\n") and now.endswith("Keep Z9q4 out of the logs.\n")
+            assert line in store.masking.alike([other + "Keep Z9q4 out of the logs.\n", was])[0].splitlines()
+        # Masked on a line both hold, and said bare on a line the other changed.
+        kept = "Run: mysql -pZ9q4 tally < dump.sql\nThen check it.\n"
+        assert store.masking.alike([kept, kept.replace("check it", "echo Z9q4")])[1].endswith(f"Then echo {REDACTED}.\n")
+        # A mask of fewer than four characters is found by its value nowhere: a word that short stands in
+        # a text by chance (`x86`, a password, beside `x86`, a processor).
+        short = "curl -u admin:x86 https://api.test/x\nThen check it.\n"
+        assert REDACTED in store.masking.shown(short).value
+        assert store.masking.alike([short, short.replace("check it", "build for x86")])[1].endswith("Then build for x86.\n")
+
+    def test_a_value_is_found_as_a_word_of_its_own_and_never_without_a_letter(self, store):
+        """Found in review: `1234`, a password, was masked in `51234`, `12345` and `run_1234.csv` on
+        the other side's changed lines — and, beside the file shown alone, said which number was the
+        key; so were `####` in a heading and `1,234` in a count. A value without a letter stands for
+        any number or rule: never found by its value. Any other is found only as a word of its own."""
+        numbers = "Load: mysql -p1234 tally\nWrite out.csv\n"
+        written = "Write run_1234.csv, rows 51234 and 12345, then 1234\n"
+        assert store.masking.alike([numbers, numbers.replace("Write out.csv\n", written)])[1].endswith(written)
+        for password, written in (("####", "#### Steps\n"), ("1,234", "Rows: 1,234 of 5,000\n")):
+            rule = f"Load: mysql -p{password} tally\nWrite out.csv\n"
+            assert REDACTED in store.masking.shown(rule).value
+            assert store.masking.alike([rule, rule.replace("Write out.csv\n", written)])[1].endswith(written)
+        word = "Load: mysql -pZ9q4 tally\nWrite out.csv\n"
+        shown = store.masking.alike([word, word.replace("out.csv", "xZ9q4.csv, Z9q4x, then Z9q4-note")])[1]
+        assert shown.endswith(f"Write xZ9q4.csv, Z9q4x, then {REDACTED}-note\n")
+
+    def test_a_line_two_texts_hold_unchanged_reads_alike_in_both(self, store):
+        """Found in review: in a long text, a line repeated often was matched as changed — difflib
+        does not anchor on a line that common — and a value found on it was masked on one side only,
+        so a diff showed it changed. Every text's changed lines are read alike."""
+        from tuningfork.ops.diff import line_diff
+
+        popular = "Note: Z9q4 rotates monthly."
+        before, after = ["Run: mysql -pZ9q4 tally"], ["Run: psql tally"]
+        for n in range(300):
+            if n % 60 == 30:
+                before += [f"alpha {n}", popular, f"omega {n}"]
+                after += [f"ALPHA {n}", popular, f"OMEGA {n}"]
+            else:
+                before.append(f"same line {n}")
+                after.append(f"same line {n}")
+        was, now = store.masking.alike(["\n".join(before) + "\n", "\n".join(after) + "\n"])
+        changed = [line["text"] for hunk in line_diff(was, now)["hunks"] for line in hunk["lines"] if line["op"] != " "]
+        assert changed and not [line for line in changed if line.startswith("Note:")]
+
+    def test_a_short_mask_without_a_letter_lands_glued_only_to_what_the_comparison_kept(self):
+        """Carried through compared characters, a short mask without a letter lands as a word of its
+        own, or glued to a character the comparison kept, on either side: no pattern today masks one
+        that its text glues after it, but one could (found in review)."""
+        from tuningfork.store.masking import Masking, _lands
+
+        assert not _lands("x1234y", 1, 5, False, True) and not _lands("x1234y", 1, 5, True, False)
+        assert _lands("x1234y", 1, 5, True, True) and _lands(" 1234 ", 1, 5, False, False)
+        assert _lands("xZ9q4y", 1, 5, False, False)  # a letter among it: wherever the run puts it
+        # A store's own patterns can mask one its text glues after it.
+        pins = Masking(patterns=(r"pin=(?P<secret>\d{4})z",))
+        assert pins.alike(["pin=1234z\n", "pin:1234z\n"])[1] == f"pin:{REDACTED}z\n"
+
+    def test_letters_a_changed_line_shares_with_a_key_by_chance_are_shown(self, store):
+        """Found in review: a key's line rewritten as a word read `rot<redacted>t<redacted>d`, the
+        letters the two happened to share masked. A run of shared characters carries a mask it holds
+        whole, or eight characters of one."""
+        was, now = store.masking.alike([f"# Deploy\n{KEY}\n", "# Deploy\nrotated\n"])
+        assert KEY not in was and now == "# Deploy\nrotated\n"
+        # A private key's first line taken, a character of its body changed: what it shares is the key.
+        original = "\n".join(["# Deploy", *PRIVATE, "Then run the tests."]) + "\n"
+        edited = original.replace(PRIVATE[0] + "\n", "").replace(PRIVATE[1], PRIVATE[1][:-1] + "!")
+        assert PRIVATE[1][:-1] not in store.masking.alike([original, edited])[1]
+
+    def test_each_line_a_mask_covers_reads_it(self, store):
+        """A private key's lines, masked, each read `<redacted>`: shown blank, they read as lines with
+        nothing on them, which an edit could take (found in review)."""
+        text = "\n".join(["# Deploy", *PRIVATE, "Then run the tests."]) + "\n"
+        lines = store.masking.shown(text, lines=True).value.splitlines()
+        assert lines == ["# Deploy", PRIVATE[0] + REDACTED, REDACTED, REDACTED, PRIVATE[-1], "Then run the tests."]
+
+    def test_a_value_an_edit_leaves_to_read_as_no_key_is_found(self, store):
+        """An edit can take away what a key's pattern reads — the `-u` before a password, `password=`,
+        a private key's first line — and leave the key bare wherever the text is next kept or shown on
+        its own (`Masking.bared`); one taken out with its line, or left as it was, is not."""
+        before = f"Call it: curl -u admin:Xy7pQ2 https://api.test\n{NAMED}\n" + "\n".join(PRIVATE) + "\n"
+        assert store.masking.bared(before, before.replace("Call it", "Fetch it")) == []
+        assert store.masking.bared(before, before.replace("curl -u admin:", "http -a admin:")) == ["Xy7pQ2"]
+        assert store.masking.bared(before, before.replace("password=", "the password ")) == [PASSWORD]
+        assert len(store.masking.bared(before, before.replace(PRIVATE[0], PRIVATE[0] + " (rotated)"))) == 1
+        assert store.masking.bared(before, before.replace(f"{NAMED}\n", "")) == []
+        bare = f"Say Xy7pQ2 if asked.\nCall it: curl -u admin:Xy7pQ2 https://api.test\n"  # said bare already
+        assert store.masking.bared(bare, bare.replace("Say", "Answer")) == []
+
+    def test_where_a_text_is_masked_is_found_of_what_its_own_masks_took(self, store):
+        text = f"{NAMED}\nit was {PASSWORD}\n"
+        assert [text[start:end] for start, end in store.masking.spans(text)] == [PASSWORD, PASSWORD]
 
 
 class TestAnAddressKeptAndShown:
@@ -417,6 +685,65 @@ class TestOnePatternSet:
         assert Masking().of(once) is once and Masking().value(Masked(None)) is None
 
 
+class TestAPartOfAText:
+    def test_an_edge_a_key_falls_inside_moves_past_its_mask(self, store):
+        """Read on to either side, the key an edge falls inside is found whole: what is given holds
+        neither its end nor half of its mask (found in review, where a long output was given from a
+        place inside a key)."""
+        text = f"start {KEY} middle {KEY} end"
+        first, second = text.index(KEY), text.rindex(KEY)
+        given, start, end = store.masking.part(text, first + 5, second + 5)
+        assert given == " middle " and (start, end) == (first + len(KEY), second)
+        assert store.masking.part(text, 0, 5) == ("start", 0, 5)
+        assert store.masking.part(text) == (store.masking.text(text).value, 0, len(text))
+
+
+class TestTheEscapedReading:
+    """A text as a JSON string writes it, read for keys a pattern finds there alone (`redact_spans`):
+    each character of it mapped back to the one it came from."""
+
+    @staticmethod
+    def one_by_one(text: str) -> tuple[str, list[int]]:
+        """How it was read before: a place kept for each character."""
+        short = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+        out, origin = [], []
+        for index, char in enumerate(text):
+            piece = short.get(char) or (f"\\u{ord(char):04x}" if ord(char) < 0x20 else char)
+            out.append(piece)
+            origin.extend([index] * len(piece))
+        return "".join(out), origin
+
+    def test_each_character_maps_back_to_the_one_it_came_from(self):
+        import random
+
+        from tuningfork.config import _json_escaped
+
+        draw = random.Random(7)
+        alphabet = 'ab"\\\n\t\r\x01\x1f\x7f/é  '
+        for _ in range(3000):
+            text = "".join(draw.choices(alphabet, k=draw.randint(0, 24)))
+            escaped, origin = _json_escaped(text)
+            expected, places = self.one_by_one(text)
+            assert escaped == expected and [origin(index) for index in range(len(escaped))] == places, repr(text)
+
+    def test_a_long_text_costs_about_its_own_size(self):
+        """A place for each character took some forty bytes for each byte of a long text (found in
+        review): a check's output of a few hundred MB would have taken GB in the proxy."""
+        import tracemalloc
+
+        from tuningfork.config import _json_escaped
+
+        text = ("collected 12 items\n" + "x" * 60 + "\n") * 15000
+        tracemalloc.start()
+        try:
+            _json_escaped(text)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        # A place for each character, even in a compact array, would take some ten times its size.
+        assert peak < 4 * len(text), peak
+
+
 class TestOneBoundary:
     #: Who masks with the patterns themselves, or writes a blob, and why: everything else hands the
     #: store what it has (or asks the store's own `masking` for a value it must read as stored).
@@ -428,12 +755,11 @@ class TestOneBoundary:
         "analysis/tokens.py": "a token stream masked token-aware, which the store's masking calls",
         "replay.py": "a fork's call keyed as the store masked its step",
         "experiment/skill.py": "a skill found as storage masked it, and a wording sent masked alike",
-        "ops/proposer.py": "the proposer's exchange kept beside its refinement, a file",
         "launches.py": "a call's path predicted as the store masks, where no store is given",
         "breakpoints/engine.py": "a call's place predicted as the store masks, where no store is given",
     }
     MASKERS = {"redact", "redact_json", "redact_json_counted", "redact_json_found", "redact_stream",
-               "redact_spans", "_masking", "Masking", "bytes_without_secrets"}
+               "redact_spans", "text_spans", "_masking", "Masking", "bytes_without_secrets"}
 
     def test_nothing_else_masks_or_writes_a_blob_itself(self):
         """Masking is not idempotent, and a fork matches a call masked once against a step stored

@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Sequence
 
+from tuningfork.access import held_secrets
 from tuningfork.analysis.conditions import exclusion_from
 from tuningfork.analysis.conditions import pass_rate  # noqa: F401 - long imported from here
 from tuningfork.harness.base import HarnessError, LaunchSpec
@@ -181,6 +182,12 @@ class RunOutcome:
         return result
 
 
+#: What a run's result and its launch's exit hold that was masked where it was made: the check's
+#: output, before it was cut (`run_check`), and what the harness was told of it, which the harness
+#: was given masked (`Launcher._tell`: the message and numbers). The store keeps them as they are.
+MASKED_WHERE_MADE = ("check_output", "told")
+
+
 def told_message(template: str, check: CheckResult) -> str:
     """What the harness is told of the check: the template with the verdict and the check's
     output, as a person who ran the check would put it."""
@@ -296,12 +303,17 @@ class Launcher:
         sandbox: Any = None,
         tell: str | None = None,
         launch_seconds: float | None = None,
+        check_env: Sequence[str] = (),
     ) -> None:
         self.store = store
         self.adapter = adapter
         #: Where each launch runs: a `tuningfork.sandbox.Sandbox`, in which every launch sees
         #: the same home and folder, or None for each in its own folders.
         self.sandbox = sandbox
+        #: The variables every check may read besides those its task names, as the plan read
+        #: them from the configs (`specs.configured_check_env`): read once, so every run of the
+        #: batch is judged alike, and a list that cannot be read is refused before a launch.
+        self.check_env = list(check_env)
         #: A template with `{verdict}` and `{output}`: after the check, the harness is given
         #: its result as one more user turn of the same session (`continue_launch`), before
         #: its own review — what a person who looked at the result would say. The verdict
@@ -508,9 +520,12 @@ class Launcher:
         reply_file = workspace.parent / "reply.txt"
         reply_file.write_text(reply, encoding="utf-8")
         # In the sandbox the launch ran in, if it ran in one: the check can run what the model wrote.
+        # It reads what its task names, and what the configs name for every check, as planned. Its
+        # output is masked there, before it is cut, kept or told to the harness.
         check = run_check(
             item.tuningfork.check, workspace, reply=reply, reply_file=reply_file, spec_dir=spec_dir,
-            check_env=item.tuningfork.check_env, sandbox=self.sandbox,
+            check_env=[*self.check_env, *item.tuningfork.check_env], sandbox=self.sandbox,
+            masking=self.store.masking, also=held_secrets(self.store.home),
         )
         told = None
         if (
@@ -521,12 +536,12 @@ class Launcher:
             duration = time.monotonic() - started
         self.store.end_launch(
             launch.id,
-            exit={
+            exit=self.store.masking.of({
                 "returncode": returncode, "timed_out": timed_out, "duration_s": round(duration, 2),
                 **({"told": told} if told else {}),
                 **({"stopped_at_skill": exited.stopped} if exited.stopped else {}),
                 **({"cap_seconds": self.launch_seconds} if self.launch_seconds is not None else {}),
-            },
+            }, masked=MASKED_WHERE_MADE),
         )
         self.store.set_launch_snapshots(
             launch.id, final_commit=self._snap(workspace, launch, "final")
@@ -586,6 +601,8 @@ class Launcher:
             reason = self.cancel.reason or "cancelled"
             self._stopped(launch, workspace, reason, time.monotonic() - started, annotate)
             raise Cancelled(reason)
+        # Kept as it is (`MASKED_WHERE_MADE`): the message, masked where the check ran, and numbers.
+        # Text added here is masked here.
         return {
             "message": message,
             "returncode": exited.returncode,
@@ -706,7 +723,7 @@ class Launcher:
             self.store.annotate_run(
                 main.id,
                 harness=self.adapter.name,
-                result=outcome.to_result(),
+                result=self.store.masking.of(outcome.to_result(), masked=MASKED_WHERE_MADE),
                 **annotate,
             )
         return outcome
@@ -858,10 +875,11 @@ class BatchRunner(Launcher):
         concurrency: int = 1,
         sandbox: Any = None,
         tell: str | None = None,
+        check_env: Sequence[str] = (),
     ) -> None:
         super().__init__(
             store, adapter, base_url=base_url, model=model, workdir=workdir, settle=settle,
-            concurrency=concurrency, sandbox=sandbox, tell=tell,
+            concurrency=concurrency, sandbox=sandbox, tell=tell, check_env=check_env,
         )
         self.keep_workspaces = keep_workspaces
         #: Installed as the skill's SKILL.md in every run, in place of the spec's own — how

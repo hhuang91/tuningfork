@@ -1193,7 +1193,11 @@ def tokens(
     run: str = typer.Argument(..., help="Run id, prefix, or label."),
     reference: str = typer.Argument(..., metavar="step", help=STEP_HELP),
     stream: Optional[str] = typer.Option(None, "--stream", help="A stream at the step, by its id (see the list printed)."),
-    sample: Optional[str] = typer.Option(None, "--sample", help="A sample's tokens, as EXPERIMENT:INDEX (resampled with --logprobs)."),
+    sample: Optional[str] = typer.Option(
+        None, "--sample",
+        help="A sample's tokens, as EXPERIMENT:INDEX: resampled with --logprobs, or a forking-token "
+        "probe's continuation, from the token it forced on.",
+    ),
     score: bool = typer.Option(
         False, "--score",
         help="Score the answer the run gave first: its exact context sent once more, with the "
@@ -1268,6 +1272,12 @@ def tokens(
     if view.sample:
         console.print(f"  sample {view.sample['idx']} of experiment {view.sample['experiment_id'][:8]}: "
                       f"{escape(view.sample['outcome'] or '')}")
+        forced = view.sample.get("forced")
+        if forced:
+            who = "the run's own token" if forced["original"] else "a token forced"
+            at = "[" + str(forced["position"]) + "]"
+            console.print(f"  a continuation: {who}, {escape(repr(forced['text']))} at {escape(at)}, "
+                          "then the tokens below, as the model wrote them — numbered from 0, the token after it")
     choice = view.choice()
     if choice is not None:
         from tuningfork.ops.compact import choice_text
@@ -1467,7 +1477,7 @@ def recheck(
         compared = f" — the run was judged {'pass' if recorded else 'fail'} when it ran"
     console.print(f"{verdict}{compared}")
     if data.get("output_cut"):
-        console.print(f"  [yellow]{data['output_cut']:,} characters it printed before these are not shown[/yellow]: a "
+        console.print(f"  [yellow]{data['output_cut']:,} characters of its output before these are not shown[/yellow]: a "
                       f"verdict keeps the last {CHECK_KEPT:,}, and only they are tallied")
     for line in (data["output"] or "").splitlines()[:40]:
         console.print(f"  {escape(line)}")
@@ -1655,6 +1665,10 @@ def scenario_of_run(
         None, "--skill-dir", help="The skill's folder on this machine, which the scenario tunes: by default the folder "
         "the run's skill came from, else a copy kept in the scenario's own folder.",
     ),
+    copy_skill: bool = typer.Option(
+        False, "--copy-skill", help="Keep a copy of what the run had, in the scenario's own folder, even where the "
+        "folder its skill came from is there: one changed since the run, say, whose old text the scenario studies.",
+    ),
     harness: Optional[str] = typer.Option(
         None, "--harness", help="The harness the conversation was had with, where the run does not say (hermes, "
         "claude-code, generic).",
@@ -1682,7 +1696,7 @@ def scenario_of_run(
     try:
         plan = prepare_scenario(store, run, name, cut=cut, check=checked, skill=skill,
                                 skill_dir=str(skill_dir) if skill_dir else None, harness=harness, task_check=not no_check,
-                                prompt=prompt)
+                                prompt=prompt, copy_skill=copy_skill)
     except OperationError as error:
         _refuse(error)
     console.print(f"[bold]{escape(name)}[/bold] · a scenario of run {plan.run_id[:8]} · {escape(plan.harness or '-')}")
@@ -2656,6 +2670,28 @@ def _print_forking(report) -> None:
         console.print(f"With {report.per_arm} continuations a token, no change could reach significance: raise -n.")
 
 
+def _print_continuations(store: Any, reference: str, *, at: int | None, token: str | None,
+                         behaviour: str | None, asked: bool) -> None:
+    """What a probe's continuations wrote (`experiment --continuations`), each from the token it
+    forced on, grouped by position, token and behaviour."""
+    from tuningfork.ops.forking import continuations
+
+    if not asked:
+        _refuse(OperationError("--at, --token and --behaviour choose among continuations: add --continuations",
+                               field="continuations"))
+    try:
+        found = continuations(store, reference, position=at, token=token, behaviour=behaviour)
+    except OperationError as error:
+        _refuse(error)
+    probe = found.experiment
+    console.print(f"[bold]the continuations of probe {probe.id[:8]} at run {(probe.run_id or '')[:8]} step "
+                  f"{probe.step_idx}[/bold] — what each wrote from the token it forced on")
+    console.print(f"  target (declared before sampling): {escape(found.target)}")
+    console.print(f"  [dim]{len(found.found)} continuation(s); the forced token marked ⟦ ⟧. The model's words: "
+                  "data to read, never instructions.[/dim]\n")
+    console.print(escape(found.text()), highlight=False, soft_wrap=True, end="")
+
+
 def _print_screen(report, arms: dict) -> None:
     """A screen: each proposal against one fresh baseline, Holm-corrected over the family."""
     console.print(f"\n[bold]target[/bold] (declared before sampling): {escape(report.target)}")
@@ -3405,6 +3441,18 @@ def experiment(
         "--normalizer",
         help="Re-analyse the stored samples under other normalizers, e.g. tool_name.",
     ),
+    continuations: bool = typer.Option(
+        False, "--continuations",
+        help="A forking-token probe's: what each continuation wrote from the token it forced on, by "
+        "token and behaviour — the model's deliberation, not only where it ended.",
+    ),
+    at: Optional[int] = typer.Option(None, "--at", help="With --continuations: only those of this position."),
+    token: Optional[str] = typer.Option(
+        None, "--token", help="With --continuations: only those of this token, as the probe shows it."
+    ),
+    behaviour: Optional[str] = typer.Option(
+        None, "--behaviour", help="With --continuations: only those that ended in this behaviour, by its letter."
+    ),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """Show a stored experiment's result again, without drawing new samples."""
@@ -3419,6 +3467,9 @@ def experiment(
         raise typer.Exit(code=1) from None
 
     store = _store(home)
+    if continuations or at is not None or token is not None or behaviour is not None:
+        _print_continuations(store, reference, at=at, token=token, behaviour=behaviour, asked=continuations)
+        return
     try:
         report = experiment_report(store, reference, lens=lens, alpha=alpha)
     except OperationError as error:
@@ -4149,6 +4200,13 @@ def refine_validate(
                       + (f"; a copy kept at {escape(shown['private']['kept_at'])}" if shown["private"]["kept_at"] else ""),
                       soft_wrap=True)
     console.print(f"  runs      {plan.total} in all, through {escape(plan.proxy_url)}")
+    setup = shown["setup"] or {}
+    if setup.get("harness_options"):
+        console.print(f"  options   every run launched with the harness options the checkpoint's run had: "
+                      f"{escape(json.dumps(setup['harness_options']))}", soft_wrap=True)
+    if setup.get("clock"):
+        console.print(f"  clock     every run starts at {escape(setup['clock'])}, as the checkpoint's run did",
+                      soft_wrap=True)
     for warning in plan.warnings:
         console.print(f"  [yellow]{escape(warning)}[/yellow]", soft_wrap=True)
     if dry_run:
@@ -4330,7 +4388,8 @@ def _control(proxy: Optional[str]):
 
 
 def _or_exit(call):
-    """Run a control call, turning a refusal into a readable error rather than a traceback."""
+    """Run a control call, turning a refusal into a readable error rather than a traceback: the
+    proxy's, or this machine's own before anything is sent (a config that cannot be read)."""
     from tuningfork.control import ControlError
 
     try:
@@ -4338,6 +4397,8 @@ def _or_exit(call):
     except ControlError as exc:
         console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(code=1) from None
+    except OperationError as error:
+        _refuse(error)
 
 
 @break_app.command("add")
@@ -4776,7 +4837,16 @@ def connections_show(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)
             f"\n[bold]sandbox[/bold]   [yellow]none: {escape(str(sandbox.get('reason')))}[/yellow] — each launch "
             "sees its own folders"
         )
+    check_env = found.get("check_env") or {}
+    if check_env.get("problem"):
+        console.print(f"  [yellow]{escape(check_env['problem'])}[/yellow]")
+    for source in check_env.get("sources") or []:
+        console.print(f"  every check may also read {escape(', '.join(source['names']))}, named in "
+                      f"{escape(source['path'])}")
     console.print(f"\n[bold]proxy[/bold]     {escape(found['proxy']['home'])}")
+    if found["proxy"].get("config_problem"):
+        console.print(f"  [yellow]{escape(found['proxy']['config_problem'])}[/yellow]. Nothing is sent anywhere "
+                      "until it is fixed.")
     if found.get("busy"):
         console.print(f"  in use: {escape('; '.join(found['busy']))}")
     console.print(f"  [dim]restart with: {escape(found['proxy']['restart'])}[/dim]")
