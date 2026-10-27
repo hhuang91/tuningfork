@@ -17,11 +17,12 @@ and a forking-token probe's page were reworked.
   for the memory flush, which is off. Its harness options are `tool_search`, `skill_workshop`,
   `memory_flush`, `mcp_servers` (tuningfork's own tools, say) and `context_window`.
 - **What to allow for with OpenClaw** is on its page, `docs/adapters/openclaw.md`, with what its
-  recordings showed. A reply usually begins with `[[reply_to_current]]`, which a reply check
-  reads as the model wrote it. OpenClaw counts tokens its own way, so a conversation can outgrow
-  the server's window: the server refuses the call, and the run is left out of a batch's pass
-  rate. A task's `max_turns` does not reach it. A conversation it carries on after a compaction is
-  a thread of its own, so the final reply of a run that compacts is the main thread's last answer.
+  recordings showed. It asks the model to begin a reply with `[[reply_to_current]]`, and Gemma 4
+  31B mostly did: a reply check reads the reply as the model wrote it. OpenClaw counts tokens its
+  own way, so a conversation can outgrow the server's window: the server refuses the call, and the
+  run is left out of a batch's pass rate, a fork out of its arm's count to the end. A task's
+  `max_turns` does not reach it. A conversation it carries on after a compaction is a thread of
+  its own, so the final reply of a run that compacts is the main thread's last answer.
 - **Not done yet with OpenClaw:** a subagent, which OpenClaw refuses without its Gateway; a chain
   told its check's result; importing its sessions. A scenario made from an OpenClaw run is
   untried.
@@ -32,9 +33,8 @@ and a forking-token probe's page were reworked.
 - **Every answer an agent gets over MCP is masked as it leaves**, every refusal too. Before,
   `show_files`, `show_skill`, `show_run`, `list_tasks`, `list_scenarios`, `show_refinement`,
   `show_experiment` and `propose_edit` could show a run's workspace, a task's check, a scenario's
-  task file, the skill a run was given or a wording tried, unmasked. A `start_*` tool's dry run
-  gave its plan unmasked, a batch's with its task's prompt and check, and `where_it_holds`
-  matched its pattern against the files as they are.
+  task file, the skill a run was given or a wording tried, unmasked, and `where_it_holds` matched
+  its pattern against the files as they are.
 - **A text an agent or a proposing model is shown is masked whole before it is split or cut
   short:** `show_skill`'s numbered lines, a file read page by page, a task's prompt in a plan or a
   packet. Masked line by line, each line of a private key reads as no key, and cut short, a key
@@ -110,8 +110,8 @@ Changed:
   other run already did: its runs see `<redacted>` where the chat had a key.
 - **A screen run to the end passes over a run set up otherwise** as it chooses its checkpoints,
   and says how the run differs. A later screen chooses again where the latest drew from one.
-- **A forking-token probe says *less often* and *more often***, where it said a forced token
-  flips away or toward what was counted.
+- **A forking-token probe's pages say *less often* and *more often***, where they said a forced
+  token flips away or toward what was counted.
 - **A result's target is headed *What was counted***, where it said *What you count*, on a line
   of its own above the verdict.
 - **A skill's folder is labelled *Skill folder*** in Make a scenario and in the Skills page's
