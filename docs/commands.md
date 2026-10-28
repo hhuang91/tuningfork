@@ -15,7 +15,7 @@ which gives them all. For a walk through them on a real task, see
 - [How do I fix the skill?](#how-do-i-fix-the-skill) — `refine`, `skills`, `skill`, `add-skill`, `forget-skill`,
   `connections proposer`
 - [Setting up, and keeping things tidy](#setting-up-and-keeping-things-tidy) — `serve`, `ui`, `demo`, `token`,
-  `connections`, `probe`, `servers`, `jobs`, `trash`, `glossary`, `mcp`, `version`
+  `connections`, `probe`, `servers`, `jobs`, `trash`, `scan`, `glossary`, `mcp`, `version`
 
 ## How commands name things
 
@@ -558,12 +558,14 @@ The recording proxy: point a harness at `http://127.0.0.1:8787/v1`. It forwards 
 server, records every call, serves the web UI and the MCP route, and runs the jobs the web UI and
 agents start. [Setup](setup.md#start-tuningfork) lists its options. Pointed at a hosted model's
 API, it says in its first lines that tuningfork is built for a model you run yourself, and what
-works there ([cloud models](setup.md#cloud-models)).
+works there ([cloud models](setup.md#cloud-models)). It says there too when its recordings folder
+holds runs an older tuningfork recorded, which masked fewer keys ([`scan`](#scan)).
 
 ### `ui`
 
 The web UI over recordings, read-only, with no proxy running (`--home`, `--port` default 8788).
-With a proxy running, use its own UI instead: it adds live breakpoints and starts work.
+With a proxy running, use its own UI instead: it adds live breakpoints and starts work. Like
+`serve`, it says when the folder holds runs an older tuningfork recorded ([`scan`](#scan)).
 
 ### `demo`
 
@@ -634,6 +636,33 @@ goes once those have passed, swept by a running proxy or the next deletion. A jo
 record of the work it did, a chain its record and the skill each link left (`chains/` in the
 recordings folder, and the chain's own folder, removed by hand), and a scenario or a skill made
 from a run what it took.
+
+### `scan`
+
+Looks for what an older tuningfork kept in clear: where in a recordings folder today's masking
+would mask something, run by run — never the key itself. One before 0.6.0 kept a key in clear in
+an answer's raw bytes where a stream sent it in pieces, in a server's errors, an imported chat, a
+check's output, a job's results, and in every format its patterns missed; one of 0.6 in the files
+written from an imported chat.
+
+It reads the store's rows, the blobs they name, and the files tuningfork writes from what it
+recorded: an imported chat and each skill it extracted from it, a skill added from what a run's
+model read with what an approval kept beside it (forgotten too), a chain's record, what a
+refinement keeps but what a person gave it, and a scenario's conversation and spec — whether a
+run or a task file made the scenario, which nothing records — with its copy of a skill where that
+is one of the skills read. It never reads what is kept as it was given: a launch's folders, the
+workspace's snapshots, a scenario's inputs and any other copy of a skill, a skill a person
+brought, the wordings tried. Besides what today's patterns read, it looks for tuningfork's own
+keys wherever they stand. It cannot find a key no pattern reads: the end of one a check's output
+was cut through, as 0.6 kept it, or the value of a variable named as a secret's, printed bare.
+
+Of a launched run whose answer holds a key, it names the step: a fork past it gives the harness
+that answer again. It changes no recording. It prints the `trash` commands that set what it found
+aside — a thread goes with its run, a fork an experiment drew with that experiment, and nothing
+already in the trash or still running is listed — and says what goes by hand; what goes is yours
+to decide (`--json`: the report as JSON, its commands too). It reads every recording, which takes
+a while in a large folder. `serve` and `ui` say in a line when the folder holds runs or jobs
+recorded before this version first opened it, until a scan has read it or those runs are gone.
 
 ### `glossary`, `version`
 

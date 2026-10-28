@@ -89,6 +89,8 @@ Inspecting and experimenting (all take `--home <recordings dir>`):
     tuningfork glossary [word]            # tuningfork's words, each defined once
     tuningfork trash run|experiment|job|scenario|refinement <id>   # set aside: out of every list and rate
     tuningfork trash list | restore <id> | purge <id> | empty   # deletion is from the trash, for good
+    tuningfork scan                       # what an older tuningfork kept in clear: where today's
+                                          #   masking would mask something, run by run, never the key
 
 Moving something to the trash changes a mark and nothing else: it leaves every list and every
 statistic (`Store.runs`, `experiments`, `jobs` leave it out), what is tied to it stays where it
@@ -116,6 +118,30 @@ shown as it was and takes no new work (`refine.refuse_closed`). A fork an experi
 to the trash, and is deleted, only with its experiment, as a thread goes with its run
 (`trash.experiment_of_fork`): its verdict is the experiment's, kept in its sample, and taking
 single forks out of a finished screen would choose which of them count.
+
+What an older tuningfork kept in clear — before 0.6.0, a key a stream sent in pieces in an
+answer's raw bytes, a server's errors, an imported chat, a check's output; in 0.6, the files
+written from an imported chat — is never masked again: a message's id is a digest of its content
+and its parent's id, so masking one changes every id after it. A scan (`ops/scan.py`; `tuningfork
+scan`, the CLI's alone) reads the folder whole, only when a person asks, for where today's masking
+would mask something, run by run and never the key: every row but what a run is given (`GIVEN`),
+every blob a row names but a scenario's context — an answer's raw bytes also as its wire reads
+them back, a token stream as its tokens join — and the files written from recordings, where what
+they record says so: an import's chat and each skill it extracted (never one from a folder the
+person named), a skill added from what a run's model read (its record's `origin`), with what an
+approval kept beside it, forgotten too, a chain's record, a refinement's but what a person gave it
+(`GIVEN_TO_A_REFINEMENT`, a proposal only a person made), a scenario's conversation and spec but
+`GIVEN_TO_A_SCENARIO`, in the trash too — a run's or a task file's alike, since nothing records
+which — and its copy of a skill where that is one of the skills read. What a mask took is looked
+for wherever else it stands, as are tuningfork's own keys — never this process's variables, whose
+local defaults (`PGPASSWORD=postgres`) are words. Each finding carries what the trash takes to set
+it aside (`ScanReport.commands`: a thread with its run, a fork with its experiment; none in the
+trash or still running) or the paths to remove by hand. It changes no recording, only its mark:
+the store marks the first time a tuningfork that keeps marks opened the folder (`Store.mark`,
+`OPENED`), and `serve` and `ui` say in a line, from a count of the runs and jobs older than that
+(`ops.scan.older`, no recording read), that the folder holds what an older one recorded — until a
+scan (`SCANNED`), or until those are gone. A table the store gains is read, or named as holding no
+recording (`OWNED`, `NOT_RECORDED`), or `tests/test_scan.py` fails.
 
 A conversation an agent had elsewhere is imported as a run (`ops/imports.py`; `tuningfork
 import`, the Runs page's Import a chat…, `POST /imports`): a Hermes session file, its export, or
@@ -650,7 +676,8 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                beside it), skills (each skill's versions, texts and rates; its
                                folder now), addskill (a skill a person adds: its folder, or a
                                copy of tuningfork's own), glossary (the words, once), imports
-                               (a conversation had elsewhere, as a run; any run as a scenario);
+                               (a conversation had elsewhere, as a run; any run as a scenario),
+                               scan (what an older tuningfork kept in clear, run by run);
                                the job catalog; `common`: events, cancellation, strict parameters
     src/tuningfork/jobs.py     the job runner inside `serve`: lanes, progress, cancel, sweep
     src/tuningfork/access.py   the access token and the MCP token; endpoints.py: protected endpoints
