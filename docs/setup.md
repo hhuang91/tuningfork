@@ -623,21 +623,24 @@ in a Lima VM, run these steps there: in the distro's shell, or in the VM's
 (`limactl shell tuningfork`, then `cd ~`). With the checkout's wrapper, tuningfork is
 `~/.local/share/tuningfork/venv/bin/tuningfork` there.
 
-1. **Stop `serve` and any `tuningfork mcp` on the folder, and copy it, but for the folders runs
-   were launched in, two minutes or more after anything was last recorded into it:**
+1. **Stop `serve` and any `tuningfork mcp` on the folder, and copy it without `batches/` and
+   `forks/`, two minutes or more after anything was last recorded into it:**
 
    ```bash
    rsync -a --copy-links --exclude=/batches/ --exclude=/forks/ ~/.tuningfork/ <copy>/
    ```
 
    Put the folder `TUNINGFORK_HOME` or `--home` names in place of `~/.tuningfork`, and a `<copy>`
-   that does not exist yet, on the Linux file system as the recordings themselves — under WSL in
-   `~`, in a Lima VM on its own disk. Where rsync is missing, `sudo apt-get install -y rsync` adds
-   it.
-   - **The copy shares nothing with the folder.** The `/` after the folder's name copies what it
-     holds even where the folder is a link, as one moved to a bigger disk is, and `--copy-links`
-     copies what each link in it leads to. A copy that kept a link would share what it leads to,
-     and deleting in the copy would delete it in the original.
+   that does not exist yet, in a folder that does, on the Linux file system as the recordings
+   themselves — under WSL in `~`, in a Lima VM on its own disk. Keep the `/` after the folder's
+   name: it puts what the folder holds in `<copy>` itself, where the excludes and the steps below
+   look. Without it, rsync makes `<copy>/<name>/`, with `batches/`, `forks/` and the keys in it.
+   Where rsync is missing, `sudo apt-get update && sudo apt-get install -y rsync` adds it.
+   - **The copy shares no file with the folder.** `--copy-links` copies what each link in it leads
+     to, and what the folder leads to where it is a link itself, as one moved to a bigger disk is.
+     A copy that kept a link would share what it leads to, and deleting in the copy would delete
+     it in the original. A link that leads nowhere is left out: rsync names it (`symlink has no
+     referent`) and ends with code 23, the rest copied.
    - **It keeps each file's time.** A deletion leaves what was written in the last two minutes,
      which a recording in flight may still need, judged by each file's time. A copy that made
      every file new would keep every blob and snapshot object a deletion in it would take, until
