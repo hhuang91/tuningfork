@@ -128,11 +128,12 @@ would mask something, run by run and never the key: every row but what a run is 
 every blob a row names but a scenario's context — an answer's raw bytes also as its wire reads
 them back, a token stream as its tokens join — and the files written from recordings, where what
 they record says so: an import's chat and each skill it extracted (never one from a folder the
-person named), a skill added from what a run's model read (its record's `origin`), with what an
-approval kept beside it, forgotten too, a chain's record, a refinement's but what a person gave it
-(`GIVEN_TO_A_REFINEMENT`, a proposal only a person made), a scenario's conversation and spec but
-`GIVEN_TO_A_SCENARIO`, in the trash too — a run's or a task file's alike, since nothing records
-which — and its copy of a skill where that is one of the skills read. What a mask took is looked
+person named), a skill added from what a run's model read (its record's `origin`; of a run that is
+gone, the copy it kept, whichever that was), with what an approval kept beside it, forgotten too,
+a chain's record, a refinement's but what a person gave it (`GIVEN_TO_A_REFINEMENT`, a proposal
+only a person made), a scenario's conversation and spec but `GIVEN_TO_A_SCENARIO`, in the trash
+too — a run's or a task file's alike, since nothing records which — and its copy of a skill where
+that is one of the skills read. What a mask took is looked
 for wherever else it stands, as are tuningfork's own keys — never this process's variables, whose
 local defaults (`PGPASSWORD=postgres`) are words. Each finding carries what the trash takes to set
 it aside (`ScanReport.commands`: a thread with its run, a fork with its experiment; none in the

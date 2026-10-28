@@ -652,9 +652,11 @@ refinement keeps but what a person gave it, and a scenario's conversation and sp
 run or a task file made the scenario, which nothing records — with its copy of a skill where that
 is one of the skills read. It never reads what is kept as it was given: a launch's folders, the
 workspace's snapshots, a scenario's inputs and any other copy of a skill, a skill a person
-brought, the wordings tried. Besides what today's patterns read, it looks for tuningfork's own
-keys wherever they stand. It cannot find a key no pattern reads: the end of one a check's output
-was cut through, as 0.6 kept it, or the value of a variable named as a secret's, printed bare.
+brought, the wordings tried. One exception: a skill added from a run that is gone, as the copy
+that run kept, is read, since which copy it was is gone with the run. Besides what today's
+patterns read, it looks for tuningfork's own keys wherever they stand. It cannot find a key no
+pattern reads: the end of one a check's output was cut through, as 0.6 kept it, or the value of a
+variable named as a secret's, printed bare.
 
 Of a launched run whose answer holds a key, it names the step: a fork past it gives the harness
 that answer again. It changes no recording. It prints the `trash` commands that set what it found
