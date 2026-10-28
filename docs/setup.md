@@ -1,11 +1,11 @@
 # Setup
 
-tuningfork runs on Linux, natively or under WSL 2 on Windows. This page covers installing it,
-starting a model server whose numbers repeat, the harnesses, the sandbox, and the settings a
-person changes. For the first runs, follow [the guide](../examples/README.md); for every
-command, see [commands](commands.md).
+tuningfork runs on Linux: natively, under WSL 2 on Windows, or in a Lima VM on a Mac. This page
+covers installing it, starting a model server whose numbers repeat, the harnesses, the sandbox,
+and the settings a person changes. For the first runs, follow [the guide](../examples/README.md);
+for every command, see [commands](commands.md).
 
-- [Install](#install), and [on Windows](#on-windows)
+- [Install](#install), [on Windows](#on-windows) and [on macOS](#on-macos)
 - [The model server](#the-model-server) — and [numbers that repeat](#numbers-that-repeat)
 - [The harnesses](#the-harnesses)
 - [Start tuningfork](#start-tuningfork), and [recording an agent as you use it](#recording-an-agent-as-you-use-it)
@@ -35,8 +35,8 @@ source .venv/bin/activate
 tuningfork version
 ```
 
-`uv sync` installs everything, the MCP server included. On Windows, tuningfork runs inside WSL:
-[on Windows](#on-windows) says how.
+`uv sync` installs everything, the MCP server included. On Windows, tuningfork runs inside WSL,
+and on a Mac inside a Linux VM: [on Windows](#on-windows) and [on macOS](#on-macos) say how.
 
 tuningfork records into `~/.tuningfork`, or into the folder `TUNINGFORK_HOME` or a command's
 `--home` names. Keep tuningfork, the harnesses and the recordings out of `/tmp`: in
@@ -89,6 +89,95 @@ $env:TUNINGFORK_WSL_DISTRO = "Ubuntu"      # the distro it runs in
   keeps its venv there, in `~/.local/share/tuningfork/venv`.
 - **Windows PowerShell 5.1 runs no script until you allow it**, once:
   `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. PowerShell 7 runs it as it is.
+
+## On macOS
+
+tuningfork runs in a Linux VM that [Lima](https://lima-vm.io/) makes, and its web UI opens in your
+Mac's browser.
+
+1. **Make the VM**, from the Mac's terminal, with [Homebrew](https://brew.sh). This one has 4
+   CPUs, 6 GiB of memory and a 40 GiB disk, which fit a Mac with 16 GB:
+
+   ```bash
+   brew install lima
+   limactl start --name=tuningfork --vm-type=vz --cpus=4 --memory=6 --disk=40 \
+     --mount-writable --tty=false template:ubuntu-24.04
+   ```
+
+   Lima shows the VM your Mac home at the same path, writable. The agents tuningfork launches in
+   the VM can read it too, as they read the rest of the machine ([the sandbox](#the-sandbox)),
+   and without the sandbox they can write to it. `limactl shell tuningfork` opens a shell in the
+   VM. It starts in the Mac folder you ran it from, or in your Mac home if the VM cannot see that
+   folder; `cd ~` takes you to the VM's own home, on its disk.
+2. **Work inside it, as on Linux:** in the VM's home (`cd ~`), [install](#install) tuningfork,
+   with bubblewrap and the harnesses. Keep the checkout, its venv and the recordings there: your
+   Mac home reaches the VM through a shared file system, where SQLite's locking is untried.
+
+   ```bash
+   sudo apt-get update && sudo apt-get install -y bubblewrap git
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   source $HOME/.local/bin/env      # uv, in this shell
+   ```
+
+   Ubuntu 24.04 asks for [one more step](#the-sandbox) before bubblewrap can make a sandbox.
+   Claude Code and OpenClaw install with npm. OpenClaw needs a newer Node than Ubuntu's, which
+   [NodeSource](https://github.com/nodesource/distributions) has ([the harnesses](#the-harnesses)
+   gives the version). After `npm config set prefix ~/.local`, `npm install -g` needs no `sudo`.
+   npm 11.16 and later say they skipped some install scripts: Claude Code's own, and those of four
+   packages OpenClaw uses. Both ran without them.
+3. **Run the model server on the Mac** (`brew install llama.cpp`), not in the VM, which has no
+   GPU. On a Mac with 16 GB, this 4B model fits beside the VM:
+
+   ```bash
+   llama-server -hf unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M --alias qwen3-4b \
+     --host 127.0.0.1 --port 8081 -c 32768 -np 1 -ctk q8_0 -ctv q8_0 --jinja \
+     --ctx-checkpoints 0 --no-cache-prompt
+   ```
+
+   Its context of 32,768 tokens is enough for Claude Code and OpenClaw, not for Hermes Agent,
+   which needs 64,000 ([the harnesses](#the-harnesses)). The VM reaches the Mac's `127.0.0.1` as
+   `host.lima.internal`: start tuningfork with
+   `tuningfork serve --upstream http://host.lima.internal:8081`, and set
+   `TUNINGFORK_UPSTREAM=http://host.lima.internal:8081` for the commands that send to the server
+   directly, such as `resample`. A server on another machine that the Mac forwards to its own
+   `127.0.0.1` is reached the same way.
+4. **Open the web UI in your Mac's browser**, at the address tuningfork prints: Lima forwards the
+   VM's `127.0.0.1` to the Mac.
+
+A model on a small Mac is slow. On an M1 MacBook Air with 16 GB, each of Claude Code's calls to
+that 4B model, a prompt of about 15,000 tokens, took about two minutes. A server on a machine with
+a GPU, forwarded to the Mac's `127.0.0.1`, is much quicker.
+
+### Keeping the checkout on the Mac
+
+To keep the checkout where your Mac's editors see it, run tuningfork through
+`scripts/tuningfork`, from the Mac's terminal. The checkout stays on the Mac, anywhere under your
+home, which the VM sees at the same path; tuningfork's venv and its recordings stay in the VM.
+
+```bash
+git clone https://github.com/hhuang91/tuningfork.git
+cd tuningfork
+scripts/tuningfork version      # the first run installs it in the VM
+scripts/tuningfork demo         # made-up runs and a scripted model, no GPU
+```
+
+- **It runs in the VM `TUNINGFORK_LIMA_INSTANCE` names**, `tuningfork` unless set. It tells you
+  when there is no such VM, when the VM is stopped, or when the VM cannot see the checkout.
+- **Every tuningfork command goes through** as on Linux, each argument as you typed it. `--run`
+  runs anything else in tuningfork's venv, such as `--run pytest` for the tests.
+- **The recordings stay in the VM**, in its `~/.tuningfork`. Never name a Mac folder as `--home`
+  or in `TUNINGFORK_HOME`: the VM would reach it through the shared file system. Your Mac's shell
+  turns `~/lab` into a Mac path before the wrapper sees it.
+- **A `TUNINGFORK_` variable you export on the Mac goes with the command**, and tuningfork in the
+  VM reads it. A server on the Mac is `host.lima.internal` from the VM
+  (`TUNINGFORK_UPSTREAM=http://host.lima.internal:8081`); the proxy runs in the VM, so
+  `TUNINGFORK_PROXY` keeps `127.0.0.1`. A key or a token stays on the Mac, since on ssh's command
+  line any account on the Mac could read it with `ps`. In the VM, tuningfork reads its tokens from
+  the recordings folder, and `connections proposer set --key-stdin` keeps the proposer's key there
+  too, where no launch in the sandbox can read it.
+- **Ctrl-C, or closing the window, stops tuningfork in the VM too.** So does killing the wrapper,
+  as a script or an agent does to stop a command.
+- **It needs uv inside the VM**, and keeps its venv there, in `~/.local/share/tuningfork/venv`.
 
 ## The model server
 
@@ -309,10 +398,29 @@ On Linux, install [bubblewrap](https://github.com/containers/bubblewrap)
 that looks the same each time: its home is `/home/user`, it works in `/home/user/project`, and
 the harness keeps its files where it installs them.
 
-The model reads those paths. Without the sandbox, each launch sees its own folders under the
-recordings folder, and a few digits of a fork's folder name were seen to decide whether the
-model wrote a file or only said it did: resampled at the same step, two forks whose requests
-differed only in that number wrote it 5 times in 20 and 20 times in 20.
+Ubuntu 24.04 lets a program make the user namespaces bubblewrap needs only where an AppArmor
+profile allows it. Until one does, bubblewrap fails with `setting up uid map: Permission
+denied`, and a batch's plan warns that its runs go without the sandbox. Allow it for bubblewrap
+alone, once, with this profile; it stays across restarts:
+
+```bash
+sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
+
+Under WSL, bubblewrap works without it.
+
+The model reads `/home/user` and `/home/user/project`. Without the sandbox, each launch sees its
+own folders under the recordings folder, and a few digits of a fork's folder name were seen to
+decide whether the model wrote a file or only said it did: resampled at the same step, two forks
+whose requests differed only in that number wrote it 5 times in 20 and 20 times in 20.
 
 Inside, the rest of the machine is read-only, `/tmp` and the process list are the launch's own,
 and the recordings folder and the task's spec folder are empty: the harness can read neither

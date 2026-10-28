@@ -1,4 +1,5 @@
-# The contribution gate: the whole suite, with no GPU and no model, on every supported Python.
+# The contribution gate: the whole suite, with no GPU and no model, on every supported Python,
+# and on arm64 Linux.
 name: tests
 
 on:
@@ -16,13 +17,20 @@ concurrency:
 
 jobs:
   test:
-    name: Python ${{ matrix.python }}
-    runs-on: ubuntu-latest
+    # The names the branch's required checks match: one more for arm64, never another for these.
+    name: Python ${{ matrix.python }}${{ matrix.runner == 'ubuntu-24.04-arm' && ' on arm64' || '' }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         python: ["3.12", "3.13", "3.14"]
+        runner: [ubuntu-latest]
+        include:
+          # Linux on arm64 too: what a Linux VM on an Apple Silicon Mac runs (docs/setup.md, On macOS).
+          # Ubuntu 24.04's own Python is 3.12.
+          - python: "3.12"
+            runner: ubuntu-24.04-arm
     steps:
       # Pinned to commits: a tag can move, and setup-uv publishes no major-version tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

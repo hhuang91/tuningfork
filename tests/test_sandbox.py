@@ -180,6 +180,23 @@ class TestTheCommand:
         sandbox, why = for_launches([])
         assert sandbox is None and SWITCH in why
 
+    def test_on_a_mac_it_says_where_tuningfork_runs_instead(self, monkeypatch):
+        """bubblewrap cannot be installed on a Mac, and "install bubblewrap" would send a person
+        looking for it: tuningfork runs there in a Linux VM."""
+        from tuningfork.sandbox import NOT_INSTALLED, NOT_LINUX, remedy
+
+        monkeypatch.delenv(SWITCH, raising=False)
+        monkeypatch.setattr(tuningfork.sandbox.shutil, "which", lambda name: None)
+        found = {}
+        for platform in ("darwin", "linux"):
+            monkeypatch.setattr(sys, "platform", platform)
+            tuningfork.sandbox._probe.cache_clear()
+            found[platform] = status().reason
+        tuningfork.sandbox._probe.cache_clear()
+        assert found == {"darwin": NOT_LINUX, "linux": NOT_INSTALLED}
+        assert "Linux VM" in NOT_LINUX and remedy(NOT_LINUX) == "run tuningfork in a Linux VM"
+        assert remedy(NOT_INSTALLED) == "install bubblewrap"
+
     def test_a_launch_keeps_the_sandbox_it_ran_in(self):
         kept = layout_setting(FakeAgent(), Sandbox("/usr/bin/bwrap", "0.11.1"))
         assert kept["sandbox"] == {"kind": "bubblewrap", "version": "0.11.1", "home": "/home/user", "workspace": "/home/user/project"}

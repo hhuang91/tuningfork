@@ -29,6 +29,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
@@ -51,6 +52,8 @@ SWITCH = "TUNINGFORK_SANDBOX"
 #: Why no launch runs in the sandbox, where one thing would let them (`remedy`).
 TURNED_OFF = f"turned off ({SWITCH}=off)"
 NOT_INSTALLED = "bubblewrap is not installed (Linux: the bubblewrap package)"
+#: On a Mac, where bubblewrap cannot be installed: tuningfork runs there in a Linux VM.
+NOT_LINUX = "bubblewrap runs only on Linux: on a Mac, run tuningfork in a Linux VM (docs/setup.md, On macOS)"
 #: Folders every launch sees empty besides tuningfork's own, named by the person as PATH
 #: is (`os.pathsep` between them): a benchmark's folder of tasks, say. A check sees them
 #: empty too, but for its own task's folder, where its scripts and keys belong.
@@ -144,16 +147,19 @@ def status() -> Status:
 
 def remedy(reason: str | None) -> str | None:
     """What would let launches run in the sandbox, for the reason `status` gave that they
-    cannot: the sandbox turned on again, or bubblewrap installed. Else none: bubblewrap is
-    there and could not make a sandbox, or the person's home is where a launch's goes, and
-    the reason says which."""
-    return {TURNED_OFF: f"turn it on again (unset {SWITCH})", NOT_INSTALLED: "install bubblewrap"}.get(reason or "")
+    cannot: the sandbox turned on again, bubblewrap installed, or, on a Mac, tuningfork run in
+    a Linux VM. Else none: bubblewrap is there and could not make a sandbox, or the person's
+    home is where a launch's goes, and the reason says which."""
+    return {
+        TURNED_OFF: f"turn it on again (unset {SWITCH})", NOT_INSTALLED: "install bubblewrap",
+        NOT_LINUX: "run tuningfork in a Linux VM",
+    }.get(reason or "")
 
 
 @lru_cache(maxsize=8)
 def _probe(executable: str | None, real_home: str) -> Status:
     if os.name != "posix" or executable is None:
-        return Status(None, None, NOT_INSTALLED)
+        return Status(None, None, NOT_LINUX if sys.platform == "darwin" else NOT_INSTALLED)
     version = None
     try:
         done = subprocess.run(
