@@ -630,12 +630,13 @@ in a Lima VM, run these steps there: in the distro's shell, or in the VM's
    rsync -a --copy-links --exclude=/batches/ --exclude=/forks/ ~/.tuningfork/ <copy>/
    ```
 
-   Put the folder `TUNINGFORK_HOME` or `--home` names in place of `~/.tuningfork`, and a `<copy>`
-   that does not exist yet, in a folder that does, on the Linux file system as the recordings
-   themselves — under WSL in `~`, in a Lima VM on its own disk. Keep the `/` after the folder's
-   name: it puts what the folder holds in `<copy>` itself, where the excludes and the steps below
-   look. Without it, rsync makes `<copy>/<name>/`, with `batches/`, `forks/` and the keys in it.
-   Where rsync is missing, `sudo apt-get update && sudo apt-get install -y rsync` adds it.
+   Put the folder `TUNINGFORK_HOME` or `--home` names in place of `~/.tuningfork`. For `<copy>`,
+   name a folder that does not exist yet, inside one that does, on the Linux file system as the
+   recordings themselves — under WSL in `~`, in a Lima VM on its own disk. Keep the `/` after the
+   folder's name: it puts what the folder holds in `<copy>` itself, where the excludes and the
+   steps below look. Without it, rsync makes `<copy>/<name>/`, with `batches/`, `forks/` and the
+   keys in it. Where rsync is missing, `sudo apt-get update && sudo apt-get install -y rsync` adds
+   it.
    - **The copy shares no file with the folder.** `--copy-links` copies what each link in it leads
      to, and what the folder leads to where it is a link itself, as one moved to a bigger disk is.
      A copy that kept a link would share what it leads to, and deleting in the copy would delete
