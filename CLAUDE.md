@@ -133,10 +133,10 @@ gone, the copy it kept, whichever that was), with what an approval kept beside i
 a chain's record, a refinement's but what a person gave it (`GIVEN_TO_A_REFINEMENT`, a proposal
 only a person made), a scenario's conversation and spec but `GIVEN_TO_A_SCENARIO`, in the trash
 too — a run's or a task file's alike, since nothing records which — and its copy of a skill where
-that is one of the skills read. What a mask took is looked
-for wherever else it stands, as are tuningfork's own keys — never this process's variables, whose
-local defaults (`PGPASSWORD=postgres`) are words. Each finding carries what the trash takes to set
-it aside (`ScanReport.commands`: a thread with its run, a fork with its experiment; none in the
+that is one of the skills read. What a mask took is looked for wherever else it stands, as are
+tuningfork's own keys — never this process's variables, whose local defaults
+(`PGPASSWORD=postgres`) are words. Each finding carries what the trash takes to set it aside
+(`ScanReport.commands`: a thread with its run, a fork with its experiment; none in the
 trash or still running) or the paths to remove by hand. It changes no recording, only its mark:
 the store marks the first time a tuningfork that keeps marks opened the folder (`Store.mark`,
 `OPENED`), and `serve` and `ui` say in a line, from a count of the runs and jobs older than that
