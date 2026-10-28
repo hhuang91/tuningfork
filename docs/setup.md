@@ -2,8 +2,8 @@
 
 tuningfork runs on Linux: natively, under WSL 2 on Windows, or in a Lima VM on a Mac. This page
 covers installing it, starting a model server whose numbers repeat, the harnesses, the sandbox,
-and the settings a person changes. For the first runs, follow [the guide](../examples/README.md);
-for every command, see [commands](commands.md).
+the settings a person changes, and what a recordings folder holds. For the first runs, follow
+[the guide](../examples/README.md); for every command, see [commands](commands.md).
 
 - [Install](#install), [on Windows](#on-windows) and [on macOS](#on-macos)
 - [The model server](#the-model-server) — and [numbers that repeat](#numbers-that-repeat)
@@ -12,6 +12,7 @@ for every command, see [commands](commands.md).
 - [The sandbox](#the-sandbox), and [a pinned clock](#a-pinned-clock)
 - [A task](#a-task)
 - [Protecting a server](#protecting-a-server)
+- [What a recordings folder holds](#what-a-recordings-folder-holds), and [before you share one](#before-you-share-one)
 - [Environment variables](#environment-variables)
 
 ## Install
@@ -39,10 +40,10 @@ tuningfork version
 and on a Mac inside a Linux VM: [on Windows](#on-windows) and [on macOS](#on-macos) say how.
 
 tuningfork records into `~/.tuningfork`, or into the folder `TUNINGFORK_HOME` or a command's
-`--home` names. Keep tuningfork, the harnesses and the recordings out of `/tmp`: in
-[the sandbox](#the-sandbox) every launch has a `/tmp` of its own, so a harness kept there
-vanishes from a run's sight. `tuningfork demo` is the exception: it records into the system's
-temporary folder, and the harness it launches is part of tuningfork.
+`--home` names ([what it holds](#what-a-recordings-folder-holds)). Keep tuningfork, the harnesses
+and the recordings out of `/tmp`: in [the sandbox](#the-sandbox) every launch has a `/tmp` of its
+own, so a harness kept there vanishes from a run's sight. `tuningfork demo` is the exception: it
+records into the system's temporary folder, and the harness it launches is part of tuningfork.
 
 ## On Windows
 
@@ -549,6 +550,120 @@ or in `TUNINGFORK_PROTECTED` (a comma-separated list of `host:port`, where eithe
 entry. A list that cannot be read stops all of tuningfork's traffic until it is fixed, and so does
 a machine's config that does not parse; a recordings folder's `config.json` that does not parse
 protects nothing, as for its other settings.
+
+## What a recordings folder holds
+
+tuningfork keeps what it records in one folder, `~/.tuningfork` unless `TUNINGFORK_HOME` or
+`--home` names another: what your agents sent and received — prompts, tool output, the files they
+read — and what tuningfork made of it.
+
+| In it | What it holds |
+|---|---|
+| `tuningfork.db`, `blobs/` | Every call a harness made through the proxy and its answer, with the server's errors; runs and their results, experiments and their samples, jobs, the servers that answered, and what each launch was given |
+| `snapshots.git` | Each launched run's workspace at every call, and the skill it was given |
+| `batches/`, `forks/` | The folders runs were launched in, unless `--workdir` put them elsewhere: each run's workspace as it left it, and its harness's home — the harness's own record of the conversation, its logs and its settings — with the skill the runs were given |
+| `imports/` | Each imported chat, and the skills it showed |
+| `scenarios/` | Each scenario's task file, the conversation its runs continue, its input files, what its check reads from its task's folder, and its copy of a skill where it keeps one |
+| `skills/` | The skills you added: a record of each, and tuningfork's copy where it keeps one. Forgetting a skill moves its copy to `skills/.forgotten/` |
+| `refinements/` | Each refinement's evidence, the skill it refines, its proposals, test results and approval |
+| `variants/` | Wordings saved to be tested: each refinement's proposals, and a wording given as text rather than as a file |
+| `chains/` | Each chain's record: what each link was told, and how it changed the skill |
+| `.access-token`, `.mcp-token`, `.proposer-key` | The proxy's two tokens, and the built-in proposer's API key if you keep it here |
+| `config.json` | Its settings: the harnesses' paths, the built-in proposer's endpoint, and what you add |
+
+### What is masked
+
+These are masked as they are stored, a key in them reading `<redacted>`:
+
+- every call a harness makes through the proxy, and its answer, and every sample an experiment
+  draws;
+- the server's errors, what a check printed, a run's result and a job's;
+- the files tuningfork writes from them: an imported chat and the skills taken from it, a chain's
+  record, a refinement's evidence, a scenario's conversation taken from a run, a skill taken from
+  what a run's model read.
+
+The patterns read keys by their shape (`sk-…`, GitHub's, AWS's and many more), private keys,
+bearer tokens, passwords in URLs and on command lines, and a value under a secret's name where it
+reads as a key rather than as code ([`SECURITY.md`](../SECURITY.md)). Masking is a net, not a
+promise: what its patterns miss is kept as it came — a password written in a sentence, say, or set
+under a name that does not say it is one.
+
+Kept as it was:
+
+- **What a run is given,** since a fork runs it again: its task's text, input files and check, its
+  skill, a wording tested, and the copies a scenario, a skill added or a refinement makes of them.
+- **The test an experiment declared,** read again whenever the experiment is judged.
+- **What a run did on the machine:** its workspace at every call, and the folder it was launched
+  in, with the harness's own record of the conversation.
+- **What you brought:** a task file you made a scenario of, with what its check reads; a skill
+  folder you named or added.
+
+### Who can read it
+
+- **On disk, whatever runs as you.** A folder tuningfork made is yours alone (mode 0700), and so
+  are the folders it launches runs in, wherever they are: your own agents can read them, as can a
+  harness tuningfork launches where there is no sandbox, and your programs on Windows (`\\wsl$`)
+  or on the Mac (`limactl shell`). One made before can be open to others: `serve` and `ui` say so,
+  with the `chmod` that makes it yours. Keep recordings on the Linux file system:
+  under WSL, not on a Windows drive, which may keep no modes; in a Lima VM, on its own disk.
+- **Through the web UI, anything that reaches its port.** While `serve` or `ui` runs, reading the
+  recordings needs no token: any process on this machine can, another user's included, and so can
+  Windows' own under WSL, and the Mac's where tuningfork runs in a Lima VM. Keep them on
+  `127.0.0.1`, the default.
+- **An agent over MCP** gets what its tools answer, masked as it leaves, since its model may be
+  hosted, and no tool gives it a held-out task's runs.
+- **What tuningfork sends of your recordings** goes to your model server — a resample, a fork,
+  scoring — and, masked, to the built-in proposer where you set one up: the evidence for an edit.
+  It has no telemetry.
+
+### Before you share one
+
+To share part of a folder, share a copy, and delete there what you would not share. Under WSL or
+in a Lima VM, run these steps there: in the distro's shell, or in the VM's
+(`limactl shell tuningfork`, then `cd ~`). With the checkout's wrapper, tuningfork is
+`~/.local/share/tuningfork/venv/bin/tuningfork` there.
+
+1. **Stop `serve` and any `tuningfork mcp` on the folder, and copy it two minutes or more after
+   anything was last recorded into it:** `cp -a ~/.tuningfork <copy>` (or the folder
+   `TUNINGFORK_HOME` or `--home` names), to a `<copy>` that does not exist yet, on the Linux file
+   system as the recordings themselves — under WSL in `~`, in a Lima VM on its own disk. A
+   deletion leaves what was written in the last two minutes, which a recording in flight may still
+   need, judged by each file's time. `cp -a` keeps the times; `cp -r` makes every file new, and a
+   deletion in its copy then leaves every blob and snapshot object it would take, until a later
+   deletion or a proxy serving the copy sweeps them.
+2. **Delete for good, with nothing else open on the copy** — `serve`, `ui`, `tuningfork mcp` — so
+   the database's log is emptied. `tuningfork trash run <id> --home <copy>` sets a run aside,
+   `trash experiment`, `trash job`, `trash scenario` and `trash refinement` the others, and
+   `trash empty --home <copy>` deletes for good all the trash holds, what was there before
+   included. `tuningfork runs --home <copy>` lists the runs, and `tuningfork ui --home <copy>`
+   shows everything, closed again before `trash empty`.
+3. **Delete its `batches/` and `forks/`** (`rm -rf <copy>/batches <copy>/forks`), and any folder
+   inside it that `--workdir` named. A copy's runs name the original's launch folders, which a
+   deletion in a copy never touches, so the copy's own stay whole, the deleted runs' included.
+4. **Delete the keys from it:** `rm -f <copy>/.access-token <copy>/.mcp-token <copy>/.proposer-key`.
+5. **Look at what is left**, below. Only then send it, moving it first to Windows or the Mac if
+   you send from there, and remove every copy once it is shared: unlike the recordings folder, a
+   copy is not hidden from the agents tuningfork launches in its sandbox, unless
+   `TUNINGFORK_SANDBOX_HIDE` named it when `serve`, or a command that launches runs, started.
+
+What is left to look at:
+
+- **What a deletion leaves:** a job's record of the work it did, a chain's record, a refinement's
+  quotes of a run it cites, what a scenario or a skill added took from a run, the changelog and old
+  versions an approval kept beside a skill copied into `skills/` or a scenario, and an A/B's
+  wording saved in `variants/` — in a copy, a refinement's proposals there too.
+- **What an older tuningfork recorded.** It kept more in clear, and `serve` and `ui` say when the
+  folder holds what one recorded: `tuningfork scan --home <copy>` says where, run by run, never the
+  key, and prints the `trash` commands that set it aside, to delete for good as in step 2.
+- **What is kept as it was:** the snapshots; the wordings tested; a scenario's input files, what its
+  check reads, and its task file's check, expected output and expectations; the copies of skills —
+  in `skills/`, a scenario's, a refinement's, a folder you named for an import; and each task
+  file's text and check, which the database keeps as you wrote them. Git keeps `snapshots.git`
+  compressed, so a plain search does not find what it holds:
+  `tuningfork files <run> <k> --home <copy>` shows a workspace.
+- **What names this machine:** the database and the records beside it — `config.json`, `skills/`,
+  `refinements/`, `chains/`, a scenario's task file — name its folders, your user name among them;
+  the database also names the servers that answered.
 
 ## Environment variables
 
