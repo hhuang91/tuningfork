@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 from datetime import datetime
 from pathlib import Path
 from typing import Any, NoReturn, Optional
@@ -208,6 +209,8 @@ def serve(
     except OperationError as error:
         _refuse(error)
     settings.home.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with Store(settings.home) as opened:
+        older = _older(opened, home)
     try:
         proxy = create_app(settings)
     except ValueError as error:
@@ -223,6 +226,7 @@ def serve(
     _print_reminder(asyncio.run(read_reminder(upstream)), indent="                ")
     console.print(f"  recording to  {settings.home}")
     _print_open_to_others(settings.home, indent="                ")
+    _print_older(older, indent="                ")
     console.print(f"  max in flight {max_inflight}")
     if max_output is not None:
         console.print(f"  output cap    {max_output} tokens a call (what a harness asks above it is recorded)")
@@ -797,6 +801,125 @@ def servers(home: Optional[Path] = typer.Option(None)) -> None:
             str(identity.get("chat_template_sha256", "-"))[:8],
         )
     console.print(table)
+
+
+@app.command("scan")
+def scan_command(
+    home: Optional[Path] = typer.Option(None, help="The recordings folder to read; the default one where none is named."),
+    as_json: bool = typer.Option(False, "--json", help="The report as JSON."),
+) -> None:
+    """Look for what an older tuningfork kept in clear: where in a recordings folder today's
+    masking would mask something, run by run — never the key itself. It reads every recording,
+    which takes a while in a large folder, and changes no recording; what goes is yours to decide,
+    by the trash."""
+    from tuningfork.ops import scan as scan_ops
+    from tuningfork.ops.common import Event
+
+    folder = home or default_home()
+    if not (folder / "tuningfork.db").is_file():
+        _refuse(OperationError(f"no recordings folder at {folder}", hint="name one with --home"))
+    store = _store(folder)
+    with console.status("reading the recordings folder…") as status:
+
+        def progress(event: Event) -> None:
+            if event.kind == "scan_phase":
+                again = "again, for what the masks took: " if event.data.get("again") else ""
+                status.update(f"reading {again}its {event.data['phase']}…")
+            elif event.kind == "scan_read":
+                status.update(f"read {event.data['read']:,} places…")
+
+        report = scan_ops.scan(store, progress=progress)
+    if as_json:
+        typer.echo(json.dumps(report.to_json(), indent=2, ensure_ascii=False))
+        return
+    _print_scan(report, _home_option(folder, home))
+
+
+def _home_option(folder: Path, home: Optional[Path]) -> str:
+    """` --home <folder>` for a command printed for a person to run, where the folder is not the default."""
+    if home is None or Path(home).expanduser().resolve() == default_home().expanduser().resolve():
+        return ""
+    return f" --home {shlex.quote(str(folder))}"
+
+
+def _counted(count: int, name: str) -> str:
+    return f"{count:,} {name}" + ("" if count == 1 else "es" if name.endswith("s") else "s")
+
+
+def _print_scan(report: Any, home: str) -> None:
+    from tuningfork.ops.scan import KINDS, NOT_FOUND, NOT_READ
+
+    read = ", ".join(_counted(count, name.rstrip("s")) for name, count in report.read.items())
+    console.print(f"read {escape(report.home)} in {report.seconds:.0f} s: {read or 'nothing'}")
+    if not report.found:
+        console.print("nothing here holds what today's masking would mask")
+    else:
+        what = " and ".join(part for part in (_counted(len(report.runs), "run") if report.runs else "",
+                                             _counted(len(report.elsewhere), "other record") if report.elsewhere else "")
+                            if part)
+        console.print(f"what today's masking would mask stands in {what}. Where it stands, never what:")
+        for found in report.runs:
+            how = f"{found['recorded'] or 'recorded'} {_when(found['started_at'], seconds=False)}" if found["started_at"] else ""
+            label = f"  {escape(found['label'])}" if found["label"] else ""
+            console.print(f"\n  run {found['run'][:8]}  {how}{label}{_standing(found)}")
+            places = []
+            for kind, count in found["places"].items():
+                step = found["first_step"].get(kind)
+                where = "" if step is None else f", from step {step}" if count > 1 else f", step {step}"
+                places.append(f"{KINDS[kind]}: {count}{where}")
+            console.print(f"      {' · '.join(places)}")
+            if found["replays_from"] is not None:
+                console.print(f"      a fork past step {found['replays_from']} gives its harness that answer again, "
+                              "with what it holds")
+        for found in report.elsewhere:
+            name = found["id"] if found["owner"] in ("scenario", "skill") else found["id"][:8]
+            if found["by_hand"]:
+                goes = f"; remove {', '.join(found['by_hand'])} by hand"
+            elif found["aside"] is None:
+                goes = "; no command removes it"
+            elif found["owner"] == "scenario":
+                goes = "; made from a run, or from a task file as a person wrote it"
+            else:
+                goes = ""
+            console.print(f"\n  {found['owner']} {escape(name)}  holds some in {_counted(found['places'], 'place')}"
+                          f"{escape(goes)}{_standing(found)}")
+    if report.unread:
+        console.print(f"\n[yellow]could not read {len(report.unread)}:[/yellow] " + "; ".join(escape(each) for each in report.unread[:5])
+                      + (f"; and {len(report.unread) - 5} more" if len(report.unread) > 5 else ""))
+    # What the trash takes: a thread with its run, a fork an experiment drew with that experiment.
+    for command in report.commands():
+        line = f"tuningfork trash {command['kind']} {' '.join(shlex.quote(each) for each in command['ids'])}{home}"
+        # On one line however long, as a command is copied.
+        console.print(f"\nset these {command['kind']}s aside:  {escape(line)}", soft_wrap=True)
+    if report.commands() or any(found.get("trashed") for found in [*report.runs, *report.elsewhere]):
+        purge = f"`tuningfork trash purge <id>{home}`"
+        console.print(f"[dim]then {escape(purge)} deletes one for good, with what is tied to it[/dim]", soft_wrap=True)
+    console.print(f"[dim]not read: {escape(NOT_READ)}[/dim]")
+    console.print(f"[dim]not found: {escape(NOT_FOUND)}[/dim]")
+    if report.older:
+        console.print("[dim]`serve` and `ui` no longer say this folder holds runs of an older tuningfork[/dim]")
+
+
+def _standing(found: dict) -> str:
+    """Why the trash takes no command for it now: in the trash already, or still running."""
+    if found.get("trashed"):
+        return "  [yellow](in the trash)[/yellow]"
+    if found.get("running"):
+        return "  [yellow](marked running: the trash refuses it for now)[/yellow]"
+    return ""
+
+
+def _older(store: Store, home: Optional[Path]) -> str | None:
+    """That the folder holds runs an older tuningfork recorded, which masked fewer keys: one
+    count, no recording read (`ops.scan.older`)."""
+    from tuningfork.ops.scan import older_note
+
+    return older_note(store, command=f"tuningfork scan{_home_option(store.home, home)}")
+
+
+def _print_older(said: str | None, *, indent: str = "  ") -> None:
+    if said:
+        console.print(f"{indent}[yellow]{escape(said)}[/yellow]", soft_wrap=True)
 
 
 @app.command()
@@ -5036,6 +5159,7 @@ def ui(
     store = Store(home or default_home())
     console.print(f"[bold]tuningfork[/bold] {__version__} — browsing {store.home}")
     _print_open_to_others(store.home)
+    _print_older(_older(store, home))
     console.print(f"  open http://{host}:{port}/_tuningfork/ui/")
     uvicorn.run(create_browse_app(store, host=host), host=host, port=port, log_level="warning")
 

@@ -241,7 +241,21 @@ CREATE TABLE IF NOT EXISTS token_streams (
 );
 CREATE INDEX IF NOT EXISTS token_streams_step ON token_streams(step_id, created_at);
 CREATE INDEX IF NOT EXISTS token_streams_sample ON token_streams(sample_id);
+
+-- What happened to the recordings folder itself, by name, and when: `opened`, the first time a
+-- tuningfork that keeps marks opened it, so that what is older was recorded by one that masked
+-- fewer keys; `scanned`, the last time it was read whole for what that one kept in clear
+-- (see tuningfork.ops.scan).
+CREATE TABLE IF NOT EXISTS marks (
+    name TEXT PRIMARY KEY,
+    at   REAL NOT NULL
+);
 """
+
+#: The first time a tuningfork that keeps marks opened the folder (`Store.mark`).
+OPENED = "opened"
+#: The last time the folder was read whole for what an older tuningfork kept in clear.
+SCANNED = "scanned"
 
 #: Roles of a launched run. `main` is a batch run's own conversation, and `fork` a fork's:
 #: a replay of a recorded run, live from one of its steps, which belongs to an experiment
@@ -681,6 +695,10 @@ class Store:
             self._conn.execute("PRAGMA secure_delete=ON")
             self._conn.executescript(SCHEMA)
             self._migrate()
+            # What the folder held before this was recorded by a tuningfork that masked fewer
+            # keys: `serve` and `ui` say so until it is scanned (`ops.scan.older`).
+            if self._conn.execute("SELECT 1 FROM marks WHERE name = ?", (OPENED,)).fetchone() is None:
+                self._conn.execute("INSERT OR IGNORE INTO marks (name, at) VALUES (?, ?)", (OPENED, time.time()))
             self._conn.commit()
 
     #: Columns added after a table first shipped. `CREATE TABLE IF NOT EXISTS` never alters
@@ -1753,6 +1771,104 @@ class Store:
                 )
             )
         return live
+
+    # --- marks, and the folder read whole -----------------------------------------------
+
+    def mark(self, name: str) -> float | None:
+        """When the folder was marked `name` (`OPENED`, `SCANNED`), if it was."""
+        with self._lock:
+            row = self._conn.execute("SELECT at FROM marks WHERE name = ?", (name,)).fetchone()
+        return row["at"] if row else None
+
+    def set_mark(self, name: str, at: float | None = None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO marks (name, at) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET at = excluded.at",
+                (name, time.time() if at is None else at),
+            )
+            self._conn.commit()
+
+    def older_than(self, at: float) -> tuple[int, int]:
+        """How many runs were started, and jobs made, before `at`, the trash's among them: one
+        count of each, no recording read."""
+        with self._lock:
+            (runs,) = self._conn.execute("SELECT COUNT(*) FROM runs WHERE started_at < ?", (at,)).fetchone()
+            (jobs,) = self._conn.execute("SELECT COUNT(*) FROM jobs WHERE created_at < ?", (at,)).fetchone()
+        return runs, jobs
+
+    def tables(self) -> list[str]:
+        """The store's own tables, by name."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+            return [row[0] for row in rows.fetchall()]
+
+    #: How many rows `table_rows` reads at a time.
+    PAGE = 500
+
+    def table_rows(self, table: str) -> Iterator[dict[str, Any]]:
+        """Every row of one of the store's tables, as it is stored, a page at a time in the order
+        of its rowid (`_rowid` in each): the folder read whole (`ops.scan`) without the store held
+        for the length of it."""
+        if table not in self.tables():
+            raise ValueError(f"no table {table!r} in the store")
+        after = -1
+        while True:
+            with self._lock:
+                page = self._conn.execute(
+                    f"SELECT rowid AS _rowid, * FROM {table} WHERE rowid > ? ORDER BY rowid LIMIT ?",
+                    (after, self.PAGE),
+                ).fetchall()
+            if not page:
+                return
+            for row in page:
+                yield dict(row)
+            after = page[-1]["_rowid"]
+
+    def message_blobs(self) -> list[str]:
+        """The blob of every message the tree holds, each once."""
+        with self._lock:
+            return [row[0] for row in self._conn.execute("SELECT DISTINCT message_blob FROM nodes").fetchall()]
+
+    def runs_holding(self, blobs: Iterable[str]) -> dict[str, tuple[int, int]]:
+        """Each run whose steps' requests hold one of the message `blobs`: how many of them, and
+        the first step whose request does. A message is held by every node of it, and by what
+        each node leads to: a step's request, and the harness's own request beside it — which a
+        run's head is."""
+        wanted = json.dumps(sorted(set(blobs)))
+        with self._lock:
+            # The nodes each message leads to, built once into a table of this connection's own:
+            # joined to the steps as a query, SQLite built them again for every step (found in
+            # review: 168 s for a prompt every run shares, against 0.06 s).
+            self._conn.execute("CREATE TEMP TABLE IF NOT EXISTS message_reach (id TEXT NOT NULL, blob TEXT NOT NULL)")
+            try:
+                self._conn.execute(
+                    """
+                    WITH RECURSIVE reached(id, blob) AS (
+                        SELECT id, message_blob FROM nodes WHERE message_blob IN (SELECT value FROM json_each(?))
+                        UNION SELECT nodes.id, reached.blob FROM nodes JOIN reached ON nodes.parent_id = reached.id
+                    )
+                    INSERT INTO temp.message_reach SELECT id, blob FROM reached
+                    """,
+                    (wanted,),
+                )
+                self._conn.execute("CREATE INDEX IF NOT EXISTS temp.message_reach_id ON message_reach(id)")
+                rows = self._conn.execute(
+                    """
+                    SELECT run_id, COUNT(DISTINCT blob), MIN(idx) FROM (
+                        SELECT steps.run_id, message_reach.blob, steps.idx FROM steps
+                          JOIN temp.message_reach ON message_reach.id = steps.request_node_id
+                        UNION ALL
+                        SELECT steps.run_id, message_reach.blob, steps.idx FROM steps
+                          JOIN temp.message_reach ON message_reach.id = steps.harness_request_node_id
+                    ) GROUP BY run_id
+                    """
+                ).fetchall()
+            finally:
+                self._conn.execute("DROP TABLE IF EXISTS temp.message_reach")
+                self._conn.commit()
+        return {run_id: (count, first) for run_id, count, first in rows}
 
     # --- servers ------------------------------------------------------------------
 
