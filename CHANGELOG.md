@@ -3,8 +3,8 @@
 ## 0.8.0 — macOS, and a scan of older recordings
 
 tuningfork runs on a Mac now, in a Linux VM. A recordings folder tuningfork makes is yours alone.
-Deleting from the trash also takes the folder a batch was laid out in, and reaches outside the
-recordings folder to the folders tuningfork marked as made for it. A new command,
+Deleting from the trash can now also take the folder a batch was laid out in, and reach outside
+the recordings folder to the folders tuningfork marked as made for it. A new command,
 `tuningfork scan`, looks through a recordings folder for what an older tuningfork kept in clear.
 A curl, MySQL or `docker login` command's later passwords are masked now, as its first is, and so
 is each value in the query of a server's address. `docs/setup.md` says what a recordings folder
@@ -24,15 +24,15 @@ holds, and how to share part of one.
   token: anything that reaches its port can read the recordings, as `SECURITY.md` says.
 - **Deleting for good takes the folder a batch or a set of forks was laid out in** (#60), once none
   of its launches is left and it holds nothing else, a batch's with the skill copy its runs were
-  given. Launch folders outside the recordings folder go now too. Outside it, tuningfork removes a
-  folder only where it marked the batch's or the forks' folder as made for this recordings folder,
-  and a copy of the recordings folder never removes the original's. A skill folder named by a
-  skill you added, a scenario or a run's task file stays where it is, and the deletion's preview
-  says so. What deleted rows held is overwritten, and the database's log emptied once no other
-  process is reading it. What nothing refers to any more but was written in the last two minutes,
-  which a recording in flight may still need, goes once those have passed: a running proxy sweeps
-  it, or the next deletion does. A job keeps its record of the work, and a chain its record and the
-  skills its links left, as before.
+  given. Outside the recordings folder, such a folder goes, and a launch's folder in it, only where
+  tuningfork marked it as made for this recordings folder. A copy of the recordings folder never
+  removes the original's launch or batch folders. A skill folder named by a skill you added, a
+  scenario or a run's task file stays where it is, and the deletion's preview says so. What deleted
+  rows held is overwritten, and the database's log emptied once no other process is reading it.
+  What nothing refers to any more but was written in the last two minutes, which a recording in
+  flight may still need, goes once those have passed: a running proxy sweeps it, or the next
+  deletion does. A job keeps its record of the work, and a chain its record and the skills its
+  links left, as before.
 - **`tuningfork scan`** (#61) reads a recordings folder, only when you run it, for where today's
   masking would mask something an older tuningfork kept in clear, run by run and never the key.
   It prints the `trash` commands that set those runs aside, and names what goes by hand. It
@@ -51,8 +51,7 @@ holds, and how to share part of one.
   `serve`'s first lines show it. `tuningfork scan` reads an address kept before the same way.
 - **What a recordings folder holds** (#63): a section of `docs/setup.md` says what each part of the
   folder holds, what is masked and what is kept as it was, who can read it, and the steps to share
-  part of one: copy it with `cp -a`, delete for good in the copy with nothing else open on it, and
-  remove the copy's launch folders and keys.
+  part of one.
 
 Changed:
 
