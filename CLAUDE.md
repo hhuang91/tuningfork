@@ -702,8 +702,11 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     scripts/                  tuningfork in a Linux VM from a checkout on Windows or a Mac:
                                tuningfork.ps1 for PowerShell, tuningfork for Git Bash, twins under
                                WSL — the distro only ever the one TUNINGFORK_WSL_DISTRO names
-                               (tests/test_wsl_wrapper.py); on a Mac, tuningfork goes through Lima,
-                               to the VM TUNINGFORK_LIMA_INSTANCE names (tests/test_lima_wrapper.py)
+                               (tests/test_wsl_wrapper.py); on a Mac, tuningfork goes by ssh, with
+                               the config Lima writes, to the VM TUNINGFORK_LIMA_INSTANCE names,
+                               where a watcher ends tuningfork as Ctrl-C would once nothing on the
+                               Mac reads it, and the Mac's TUNINGFORK_ settings go along, never a
+                               key or a token (tests/test_lima_wrapper.py)
 
 A request is never stored whole: messages live in the content-addressed tree and are
 rebuilt by `Store.rebuild_request`. What the store keeps of what happened — steps, samples and
@@ -777,7 +780,9 @@ than on a hardcoded assumption about which server is running.
 ## Conventions
 
 - Python 3.12+, managed with uv. Under WSL, keep the venv and the recordings on the Linux
-  file system, never under `/mnt/c`: DrvFs breaks SQLite's WAL locking.
+  file system, never under `/mnt/c`: DrvFs breaks SQLite's WAL locking. In a Lima VM, keep them
+  in the VM's own home, never on the Mac's folders Lima shows it: SQLite's locking is untried
+  there.
 - Nothing of one machine in a tracked file: real paths, hostnames, ports that serve something
   else, notes. Those go in untracked `*.local.md` files. A screenshot is a tracked file too.
 - The README is the front door, read by someone deciding in a few minutes whether to try

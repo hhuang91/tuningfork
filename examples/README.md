@@ -54,7 +54,8 @@ the model could read. (It sat there for a while; see the notes at the end.)
 
 You need [uv](https://docs.astral.sh/uv/) and git; uv fetches Python 3.12 or later itself if
 you don't have it. On Windows, work inside WSL, and keep the checkout in the Linux file
-system (`~/...`), not under `/mnt/c`: SQLite's locking does not work there.
+system (`~/...`), not under `/mnt/c`: SQLite's locking does not work there. On a Mac, work
+inside a Lima VM, in the VM's own home ([how](../docs/setup.md#on-macos)).
 
 ### 1. Install
 

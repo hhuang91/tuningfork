@@ -11,14 +11,15 @@
 # Under WSL it runs nothing until TUNINGFORK_WSL_DISTRO names the distro: with more than one
 # installed, the default one may not be the one meant. On a Mac it runs in the Lima VM that
 # TUNINGFORK_LIMA_INSTANCE names, `tuningfork` unless set, which sees the checkout where it is:
-# Lima shows a VM your home at the same path. macOS's own bash is 3.2: nothing newer here.
+# Lima shows a VM your home at the same path. A TUNINGFORK_ setting made on the Mac goes with
+# the command, but for a key or a token. macOS's own bash is 3.2: nothing newer here.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Run in the VM: one fixed script, the arguments after it, never read back as shell.
 script='export UV_PROJECT_ENVIRONMENT="$HOME/.local/share/tuningfork/venv"; '\
-'command -v uv >/dev/null || { echo "uv is not installed in this distro: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; exit 127; }; '\
+'command -v uv >/dev/null || { echo "uv is not installed in the Linux tuningfork runs in: install it there with  curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; exit 127; }; '\
 'if [ "${1:-}" = --run ]; then shift; exec uv run "$@"; fi; exec uv run tuningfork "$@"'
 
 if [ "$(uname -s)" = Darwin ]; then
@@ -26,7 +27,88 @@ if [ "$(uname -s)" = Darwin ]; then
         echo 'Lima is not installed: brew install lima, then make the VM as docs/setup.md says (On macOS)' >&2
         exit 127
     fi
-    exec limactl shell --workdir "$here" "${TUNINGFORK_LIMA_INSTANCE:-tuningfork}" bash -lc "$script" tuningfork "$@"
+    instance="${TUNINGFORK_LIMA_INSTANCE:-tuningfork}"
+    # What Lima knows of the VM: whether it runs and its ssh config, then a line for each
+    # folder it shows the VM, and where.
+    if ! known="$(limactl list "$instance" --format '{{.Status}}{{"\t"}}{{.SSHConfigFile}}{{range .Config.Mounts}}{{"\n"}}{{.Location}}{{"\t"}}{{.MountPoint}}{{end}}' 2>/dev/null)" \
+        || [ -z "$known" ]; then
+        echo "There is no Lima VM named $instance: make it as docs/setup.md says (On macOS), or name yours in TUNINGFORK_LIMA_INSTANCE" >&2
+        exit 2
+    fi
+    tab=$'\t' newline=$'\n'
+    IFS="$tab" read -r status config <<< "${known%%"$newline"*}"
+    # The VM must see the checkout where the Mac does: a folder Lima mounts at its own path.
+    shown=
+    while IFS="$tab" read -r location point; do
+        case "$here/" in "$location"/*) if [ "$point" = "$location" ]; then shown=yes; fi ;; esac
+    done <<< "${known#*"$newline"}"
+    if [ -z "$shown" ]; then
+        echo "The VM $instance does not see this checkout ($here): Lima shows it your home, so clone it there" >&2
+        exit 2
+    fi
+    if [ "$status" != Running ]; then
+        echo "The VM $instance is not running ($status): start it with  limactl start $instance" >&2
+        exit 2
+    fi
+    # A setting made on the Mac reaches tuningfork when its name starts TUNINGFORK_; nothing
+    # else of the Mac's environment does, its PATH least of all. Nor does a key or a token:
+    # on its way it would be on ssh's command line, which every account here can read with ps.
+    settings=()
+    for name in $(compgen -A variable TUNINGFORK_); do
+        case "$name" in
+            TUNINGFORK_LIMA_INSTANCE) ;;
+            *_KEY | *_TOKEN | *SECRET* | *PASSWORD*)
+                echo "$name is not passed to the VM: on ssh's command line, any account on this Mac could read it with ps (docs/setup.md, On macOS)." >&2 ;;
+            *) settings+=("$name=${!name}") ;;
+        esac
+    done
+    # In the VM a watcher runs tuningfork. When nothing on the Mac reads it any more (this
+    # script's ssh is gone, or the VM's terminal hung up) it does what Ctrl-C would, then more
+    # firmly: sshd gives the watcher a process group of its own, which tuningfork shares, and a
+    # signal to the group is what a terminal sends. Ctrl-C itself reaches the group from there.
+    watcher='import os, select, signal, subprocess, sys
+child = subprocess.Popen(sys.argv[1:])
+leads = os.getpgrp() == os.getpid()
+woken, wake = os.pipe()
+os.set_blocking(wake, False)
+signal.set_wakeup_fd(wake)
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+for number in (signal.SIGCHLD, signal.SIGHUP, signal.SIGTERM):
+    signal.signal(number, lambda number, frame: None)
+watched = select.poll()
+watched.register(1, 0)
+watched.register(woken, select.POLLIN)
+while child.poll() is None:
+    ready = dict(watched.poll())
+    heard = os.read(woken, 64) if woken in ready else b""
+    if 1 in ready or signal.SIGHUP in heard or signal.SIGTERM in heard:
+        for number in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
+            if number != signal.SIGKILL:
+                signal.signal(number, signal.SIG_IGN)
+            if leads:
+                os.killpg(0, number)
+            else:
+                child.send_signal(number)
+            try:
+                child.wait(10)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+        break
+code = child.wait()
+sys.exit(128 - code if code < 0 else code)'
+    remote="cd $(printf %q "$here") && exec env"
+    for part in ${settings[@]+"${settings[@]}"} python3 -c "$watcher" bash -lc "$script" tuningfork ${1+"$@"}; do
+        remote+=" $(printf %q "$part")"
+    done
+    # ssh itself, with the config Lima writes for it, never limactl shell: a limactl killed
+    # leaves its ssh running, and tuningfork in the VM with it. A terminal here, both ways, is
+    # one in the VM too, as limactl shell gives one.
+    terminal=-T
+    if [ -t 0 ] && [ -t 1 ]; then
+        terminal=-t
+    fi
+    exec ssh "$terminal" -F "$config" -o LogLevel=error "lima-$instance" "$remote"
 fi
 
 if [ -z "${TUNINGFORK_WSL_DISTRO:-}" ]; then

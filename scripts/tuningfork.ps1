@@ -23,7 +23,7 @@ if (-not $distro) {
 
 # Run in the distro: one fixed script, the arguments after it, never read back as shell.
 $script = 'export UV_PROJECT_ENVIRONMENT="$HOME/.local/share/tuningfork/venv"; ' +
-    'command -v uv >/dev/null || { echo "uv is not installed in this distro: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; exit 127; }; ' +
+    'command -v uv >/dev/null || { echo "uv is not installed in the Linux tuningfork runs in: install it there with  curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; exit 127; }; ' +
     'if [ "${1:-}" = --run ]; then shift; exec uv run "$@"; fi; exec uv run tuningfork "$@"'
 $passed = @($script, 'tuningfork') + @($args | ForEach-Object { "$_" })
 if ($PSVersionTable.PSVersion -lt [version]'7.3') {

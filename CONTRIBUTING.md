@@ -6,7 +6,8 @@ expected and what happened instead are as welcome as code.
 ## Setting up
 
 You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/) and git. On Windows, work
-inside WSL, with the checkout on the Linux file system rather than under `/mnt/c`.
+inside WSL, with the checkout on the Linux file system rather than under `/mnt/c`. On a Mac, work
+inside a Lima VM, with the checkout in the VM's own home ([how](docs/setup.md#on-macos)).
 
 ```bash
 git clone https://github.com/hhuang91/tuningfork.git
