@@ -58,7 +58,8 @@ does to keep that local:
   masked too, and so is each of tuningfork's own keys, when it is eight characters or more,
   without a space or a quote. That is a net, not a promise. Recordings hold what your harness
   sent and received — prompts, tool output, file contents — so read a recordings folder before
-  you share one.
+  you share one: [setup](docs/setup.md#before-you-share-one) says what to delete and where to
+  look.
 
 What it does **not** do:
 

@@ -737,7 +737,9 @@ and an unclosed SQLite connection fails the run at teardown after every test has
                                failing step to an approved edit, with its guide; find-the-file/,
                                a step where the model wavers: the runs behind the README's figure
     docs/                     what the README links to: setup.md (install, the server's flags and
-                               why, the harnesses, the sandbox, a task's format), commands.md
+                               why, the harnesses, the sandbox, a task's format, what a recordings
+                               folder holds: masked or kept as it was, who reads it, before
+                               sharing), commands.md
                                (every command by the question it answers), agents.md (the MCP
                                server, client by client), web-ui.md (the pages, pictured);
                                adapters/, one page per harness; images/, the pictures (hero.py
