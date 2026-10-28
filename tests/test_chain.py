@@ -20,7 +20,7 @@ from tuningfork.control import ControlClient
 from tuningfork.demo.mock import MockTurn
 from tuningfork.ops import Cancel, Cancelled, OperationError
 from tuningfork.ops.chain import execute_chain, get_chain, list_chains, prepare_chain
-from tests.helpers import FakeAgent, task_stack
+from tests.helpers import TWICE, FakeAgent, task_stack
 
 
 def self_improving(payload: dict) -> MockTurn:
@@ -200,7 +200,7 @@ class TestChain:
         from tuningfork.demo.task import CHECK
 
         key = "sk-" "tftoldkey4Q7xZ2mN8pL4vR6tY0a"
-        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        command = TWICE
         data = stack.spec.to_dict()
         data["evals"][0]["tuningfork"]["check"] = f"echo 'the key is {key}'; echo '{command}'; {CHECK}"
         stack.spec.path.write_text(json.dumps(data), encoding="utf-8")
@@ -211,7 +211,7 @@ class TestChain:
         sent = [payload for payload in stack.mock.requests
                 if str(payload["messages"][-1].get("content") or "").startswith("I ran my check")]
         assert len(sent) == 1 and key not in json.dumps(sent) and "<redacted>" in json.dumps(sent)
-        # Kept as it was told: masked again, the command's second password would fall too.
+        # Kept as it was told: masked again, the command's last password would fall too.
         assert "-pZq8xK3vN5wLp" in link.told["message"]
         assert stack.store.get_run(link.run_id).result["told"] == link.told
         assert stack.store.get_launch(link.launch_id).exit["told"] == link.told
@@ -222,11 +222,11 @@ class TestChain:
         stood, and so did a password the skill named, said bare in a line added. The copy it left,
         the next link's start, keeps them. What its harness was told, masked where the check ran,
         and its skill-editing calls, read from the store, are kept as they were masked: masked
-        again, a command's second password would fall too."""
+        again, a command's last password would fall too."""
         from tuningfork.demo.task import CHECK
 
         key = "sk-" "tfchainkey7Hq2Lm9Xw3Rv5Pz8B"
-        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        command = TWICE
         body = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW"
         private = f"-----BEGIN OPENSSH PRIVATE KEY-----\n{body}\nQyNTUxOQAAACDx2Jx7dGgHJ1s0kpk8q9fG1hX\n-----END OPENSSH PRIVATE KEY-----"
         blocked, named = "Hq8xK3vN5wLpQ7Tr", "Zq8xK3vN5wLpQ7Tq"
@@ -425,7 +425,7 @@ class TestWhoEdited:
 
     def test_a_told_turn_kept_masked_again_is_still_the_told_turn(self, tmp_path):
         """The harness is told the check's output masked once, where the check ran; the request that
-        carried it is kept masked again, which can mask more: a command's second password."""
+        carried it is kept masked again, which can mask more: a command's last password."""
         from tuningfork.harness.hermes import HermesAdapter
         from tuningfork.ops.chain import skill_edits
         from tuningfork.store.db import Store
@@ -442,7 +442,7 @@ class TestWhoEdited:
             record_launched(store, launch.id, {"model": "m", "messages": task},
                             response=as_response(text_message("Done.")))
             told = "I ran my check on what you produced. It failed.\n\n" + store.masking.value(
-                "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db")
+                TWICE)
             assert "-pZq8xK3vN5wLp" in told
             # The told turn in a process of its own, its conversation new: a thread.
             record_launched(store, launch.id, {"model": "m", "messages": [{"role": "user", "content": told}]},

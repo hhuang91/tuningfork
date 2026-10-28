@@ -363,7 +363,8 @@ def execute_check_along(
     record = {"states": states, "steps": plan.steps, "at": time.time()}
     run = store.get_run(plan.trial.run.id)
     # The result as it is stored, masked already, and the record beside it, made of what the check
-    # printed, masked where it ran: masked again, a command's second password would fall too.
+    # printed, masked where it ran: masked again, a password another mask brought within its
+    # command's reach would fall too.
     store.annotate_run(run.id, result=Masked({**(run.result or {}), ALONG: record}))
     return {"run": run.id, **record, "made": made_by_calls(record) or []}
 

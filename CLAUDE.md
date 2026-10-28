@@ -121,10 +121,13 @@ single forks out of a finished screen would choose which of them count.
 
 What an older tuningfork kept in clear — before 0.6.0, a key a stream sent in pieces in an
 answer's raw bytes, a server's errors, an imported chat, a check's output; in 0.6, the files
-written from an imported chat — is never masked again: a message's id is a digest of its content
+written from an imported chat; before 0.8, a command's passwords after its first, quoted, or on a
+line continued, and the query of a server's address — is never masked again: a message's id is a
+digest of its content
 and its parent's id, so masking one changes every id after it. A scan (`ops/scan.py`; `tuningfork
 scan`, the CLI's alone) reads the folder whole, only when a person asks, for where today's masking
 would mask something, run by run and never the key: every row but what a run is given (`GIVEN`),
+a server's address also as one is kept today (`ADDRESSES`, `config.without_credentials`),
 every blob a row names but a scenario's context — an answer's raw bytes also as its wire reads
 them back, a token stream as its tokens join — and the files written from recordings, where what
 they record says so: an import's chat and each skill it extracted (never one from a folder the
@@ -133,7 +136,8 @@ gone, the copy it kept, whichever that was), with what an approval kept beside i
 a chain's record, a refinement's but what a person gave it (`GIVEN_TO_A_REFINEMENT`, a proposal
 only a person made), a scenario's conversation and spec but `GIVEN_TO_A_SCENARIO`, in the trash
 too — a run's or a task file's alike, since nothing records which — and its copy of a skill where
-that is one of the skills read. What a mask took is looked for wherever else it stands, as are
+that is one of the skills read. What a mask took is looked for wherever else it stands — of an
+address, what reads as a key (`config.key_like`), never a word or a date its query held — as are
 tuningfork's own keys — never this process's variables, whose local defaults
 (`PGPASSWORD=postgres`) are words. Each finding carries what the trash takes to set it aside
 (`ScanReport.commands`: a thread with its run, a fork with its experiment; none in the
@@ -803,7 +807,15 @@ as it stands (`experiments.variant_onto`), each line it kept the file's, a key w
 and still masked; any other, a person's, is tested as given. No answer gives a digest (a field named
 `sha256` or `*_sha256`) of what it shows masked (`mcp.server._without_digests`): against one, a short
 key is guessed. Masking is not
-idempotent, and a fork matches a call masked once against a step stored masked once;
+idempotent, and a fork matches a call masked once against a step stored masked once. A step names
+the patterns that masked it (`config.patterns_digest`, kept in `maskings`), and a fork masks its
+call with them again (`replay.build_table`), so what a set of patterns masks never changes: a
+change of how masks fall is made in the patterns' text, as a command's every password is read from
+where the one before ends (`config.AGAIN`), or in `MASKING_VERSION`. A server's address is kept
+and shown masked whole before its host, and in each value of its query and its fragment, the rest
+as the patterns read it (`config.masked_address`, `without_credentials`): in the store, a probe's
+profile, the pages and the terminal — but a password whose part before an unescaped `?`, `#` or
+`/` is digits alone, which reads as a port and is kept as a host and port would be.
 `tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
 `tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file
 for it, and every answer an agent is given over MCP, but the files kept as they were

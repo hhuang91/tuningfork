@@ -272,7 +272,8 @@ def build_table(
         request = store.harness_request(recorded)
         digest = (recorded.params or {}).get("redaction")
         # A step masked as these patterns mask is keyed as it is stored: a call masked once by them
-        # reads so exactly, where masking it again can mask more (a command's second `-p`).
+        # reads so exactly, where masking it again can mask more (a password another mask brought
+        # within its command's reach).
         text = masked_request(request, wire, () if digest == today else patterns, volatile)
         if thread is not None:
             entries.setdefault(key_of(text), deque()).append(Served(recorded, thread))

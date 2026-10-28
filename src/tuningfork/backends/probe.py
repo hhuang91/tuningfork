@@ -24,7 +24,7 @@ from tuningfork.backends.base import (
     CapabilityResult,
     Support,
 )
-from tuningfork.config import server_root  # noqa: F401 - also imported from here
+from tuningfork.config import server_root, without_credentials  # noqa: F401 - server_root also imported from here
 from tuningfork.proxy.sse import ChunkAssembler, SSEParser
 
 WEATHER_TOOL = {
@@ -780,6 +780,36 @@ async def discover_model(ctx: ProbeContext) -> str | None:
     return entries[0].get("id") if entries else None
 
 
+def _as_shared(profile: BackendProfile, *addresses: str) -> BackendProfile:
+    """A profile as it is kept and shared: each address it was given, wherever it stands in it — an
+    error a refused call raised quotes the address the call went to, as httpx spells it — as an
+    address is shown (`config.masked_address`), and every text masked as the patterns read it and
+    wherever a value masking those addresses took stands: a refusal may quote the key it was given."""
+    from tuningfork.config import masked_address, redact
+
+    spellings = set(addresses)
+    for raw in addresses:
+        try:
+            spellings.add(str(httpx.URL(raw)))  # lower case, a default port dropped, …
+        except Exception:  # noqa: BLE001 - an address httpx cannot read is quoted as given
+            pass
+    shown = {raw: masked_address(raw) for raw in sorted(spellings, key=len, reverse=True)}
+    also = tuple(value for _, values in shown.values() for value in values)
+
+    def masked(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: masked(each) for key, each in value.items()}
+        if isinstance(value, list):
+            return [masked(each) for each in value]
+        if not isinstance(value, str):
+            return value
+        for raw, (kept, _) in shown.items():
+            value = value.replace(raw, kept)
+        return redact(value, also=also)
+
+    return BackendProfile.from_dict(masked(profile.to_dict()))
+
+
 async def probe_backend(
     base_url: str,
     *,
@@ -802,7 +832,7 @@ async def probe_backend(
             ctx.model = await discover_model(ctx) or ""
         if not ctx.model:
             raise RuntimeError(
-                f"no model id given and {root}/v1/models did not list one; pass --model"
+                f"no model id given and {without_credentials(root)}/v1/models did not list one; pass --model"
             )
 
         server, notes = await identify_server(ctx)
@@ -829,7 +859,7 @@ async def probe_backend(
         except Exception as exc:  # noqa: BLE001
             performance = {"error": f"{type(exc).__name__}: {exc}"}
 
-        return BackendProfile(
+        return _as_shared(BackendProfile(
             name=name or server,
             base_url=base_url,
             server=server,
@@ -838,7 +868,7 @@ async def probe_backend(
             capabilities=capabilities,
             performance=performance,
             notes=notes,
-        )
+        ), base_url, root)
     finally:
         if owned:
             await http.aclose()

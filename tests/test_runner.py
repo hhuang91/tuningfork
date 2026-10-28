@@ -24,7 +24,7 @@ from tuningfork.specs import (
     materialize_files,
     run_check,
 )
-from tests.helpers import as_response, record_launched, text_message, token_in
+from tests.helpers import TWICE, as_response, record_launched, text_message, token_in
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -416,8 +416,8 @@ class TestBatchRunner:
 
     def test_what_the_check_printed_is_kept_as_it_was_masked_where_it_ran(self, store, tmp_path):
         """Masked once, where the check ran, before it was cut: masked again as the run's result is
-        kept, a command's second password would fall too."""
-        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        kept, a command's last password would fall too."""
+        command = TWICE
         key = "sk-" "tfcheckprints4Q7xZ2mN8pL4vR6tY"
         spec, item = make_spec(tmp_path, check=f"echo '{command}'; echo 'key {key}'; exit 1")
         runner = make_runner(store, tmp_path, GOOD_REPORT)

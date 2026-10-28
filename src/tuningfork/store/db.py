@@ -1874,11 +1874,12 @@ class Store:
 
     def add_server(self, identity: dict[str, Any]) -> str:
         """Keep a server identity; return its id. The same identity gets the same id. Where it
-        was reached is kept without a user and password (`without_credentials`)."""
+        was reached is kept as an address is (`config.without_credentials`: without a user and
+        password, or its query's values), and masked as the store masks."""
         from tuningfork.config import without_credentials
 
         if isinstance(identity.get("upstream"), str):
-            identity = {**identity, "upstream": without_credentials(identity["upstream"])}
+            identity = {**identity, "upstream": self.masking.value(without_credentials(identity["upstream"]))}
         server_id = identity_id(identity)
         with self._lock:
             self._conn.execute(
@@ -2409,16 +2410,17 @@ class Store:
         unchanged, as a fork's is; else masked here, a held call not yet recorded, a wording a person
         typed, or a stored request with an arm's changes, masked again alike in every arm, so an
         A/B's two arms read apart only by their wording — its changes, variant and notes, and where
-        it sent its calls, without a user and password. Its settings are kept as given: they are the
-        test declared before sampling, read again to judge it, and a target read from masked
-        answers, masked again, could name no behaviour any of them shows."""
+        it sent its calls, kept as an address is (`config.without_credentials`). Its settings are
+        kept as given: they are the test declared before sampling, read again to judge it, and a
+        target read from masked answers, masked again, could name no behaviour any of them
+        shows."""
         from tuningfork.config import without_credentials
         from tuningfork.owners import current_owner
 
         masking = self.masking
         request = masking.value(request)
         changes, variant, notes = (masking.value(value) for value in (changes, variant, notes))
-        base_url = without_credentials(base_url) if base_url else base_url
+        base_url = masking.value(without_credentials(base_url)) if base_url else base_url
 
         experiment = Experiment(
             id=uuid.uuid4().hex,

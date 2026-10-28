@@ -33,7 +33,7 @@ from tuningfork.experiment import (
 )
 from tuningfork.analysis.tokens import TokenStream
 from tuningfork.config import REDACTED
-from tests.helpers import KEY, PROPS, SKILL, VARIANT, as_response, record_pilot, text_message
+from tests.helpers import KEY, PROPS, SKILL, TWICE, VARIANT, as_response, record_pilot, text_message
 
 UPSTREAM = "http://upstream.test"
 
@@ -420,11 +420,11 @@ class TestAMaskedContext:
 class TestATargetKeptAsDeclared:
     async def test_a_target_read_from_masked_answers_still_names_its_behaviour(self, store, mock_server, client):
         """Found in review: an experiment's settings were masked as they were stored, and a target keyed
-        from an answer masked once, masked again — a command's second password — named no behaviour."""
+        from an answer masked once, masked again — a command's last password — named no behaviour."""
         from tuningfork.analysis.distribution import target_by_key
         from tuningfork.analysis.normalize import DEFAULT_NORMALIZERS, outcome_for
 
-        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        command = TWICE
         mock_server.script(*[MockTurn(content=command)] * 4)
         checkpoint = load_checkpoint(store, record_pilot(store), 1)
         key = outcome_for(store.masking.of(as_response(text_message(command))).value, list(DEFAULT_NORMALIZERS)).key

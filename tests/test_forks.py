@@ -21,7 +21,7 @@ from tuningfork.ops import OperationError
 from tuningfork.ops.forks import execute_forks, prepare_fork
 from tuningfork.store.db import Store
 from tuningfork.demo.mock import MockTurn
-from tests.helpers import VARIANT, control_headers, tally_model, task_stack
+from tests.helpers import TWICE, VARIANT, control_headers, tally_model, task_stack
 
 
 @pytest.fixture
@@ -320,10 +320,10 @@ class TestToEnd:
         assert all(s.run_id and s.exclusion is None for s in samples)
 
     def test_a_forks_answer_at_its_step_is_kept_as_its_step_stored_it(self, stack, cli):
-        """Masked once, as the step was: masked again, a command's second password falls too, and the
+        """Masked once, as the step was: masked again, a command's last password falls too, and the
         sample reads another answer than the step."""
         source = stack.record()
-        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        command = TWICE
 
         def model(payload):
             if sum(message["role"] == "tool" for message in payload["messages"]) == 1:
@@ -753,18 +753,20 @@ class TestStoredMasks:
 
     def test_a_step_masked_as_these_patterns_mask_is_keyed_as_it_is_stored(self, store):
         """Found in review's fifth round: masking is not idempotent — one pass masks a command's
-        first `-p`, a second its next — so a step keyed by masking its stored request again parted
-        from a fork whose call was masked once, as the step was."""
-        from tests.helpers import record_pilot
+        first `-p` and a key, a second its last `-p`, which the key's mask brought near enough —
+        so a step keyed by masking its stored request again parted from a fork whose call was masked
+        once, as the step was."""
+        from tests.helpers import TWICE_KEY, record_pilot
         from tuningfork.config import DEFAULT_REDACTIONS, patterns_digest
         from tuningfork.replay import build_table, key_of
         from tuningfork.wire import get_wire
 
         today = {"redaction": patterns_digest(DEFAULT_REDACTIONS)}
-        read = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db\n"
+        read = TWICE + "\n"
         run = store.get_run(record_pilot(store, read=read, params=today))
         stored = store.rebuild_request(store.steps(run.id)[1])
-        call = json.loads(json.dumps(stored).replace("<redacted>", "Abcd1234X"))
+        call = json.loads(json.dumps(stored).replace("<redacted>", "Abcd1234X", 1).replace("<redacted>", TWICE_KEY, 1))
+        assert TWICE in json.dumps(call)
         table = build_table(store, run, 1)
         assert key_of(table.text(call, get_wire("openai-chat"))) == table.live_key
 

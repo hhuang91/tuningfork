@@ -10,7 +10,7 @@ import pytest
 
 from tuningfork.config import REDACTED, without_credentials
 from tuningfork.store.masking import Masked
-from tests.helpers import KEY, as_response, text_message
+from tests.helpers import KEY, TWICE, as_response, text_message
 from tests.test_store import request_with
 
 #: A backslash, as JSON's escapes begin.
@@ -19,8 +19,8 @@ BS = chr(92)
 #: Masked by the patterns only where a password's name stands before it.
 PASSWORD = "Tr0ub4dor3xyz"
 NAMED = f"log in with password={PASSWORD} please"
-#: A command whose second password only a second pass masks: masking is not idempotent.
-COMMAND = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+#: A command whose last password only a second pass masks: masking is not idempotent.
+COMMAND = TWICE
 
 
 def entries(*pieces: str) -> list[dict]:
@@ -216,7 +216,7 @@ class TestASample:
         assert PASSWORD not in json.dumps([store.sample_response(sample), sample.error, sample.outcome_label])
 
     def test_an_answer_given_masked_is_kept_as_it_is(self, store):
-        """Its outcome was read from it: masked again, a command's second password would fall too, and
+        """Its outcome was read from it: masked again, a command's last password would fall too, and
         a report recomputing the outcome from the store would read another answer."""
         masked = store.masking.of(as_response(text_message(COMMAND)))
         sample = store.add_sample(self.experiment(store).id, 0, seed=1, response=masked,
@@ -273,7 +273,7 @@ class TestTheRestOfTheStore:
         """A check's output, masked where the check ran, before it was cut: the rest of a run's
         result, and of its launch's exit, is masked as the store masks."""
         output = store.masking.value(COMMAND)
-        assert "-pZq8xK3vN5wLp" in output  # masked once, the second password stands
+        assert "-pZq8xK3vN5wLp" in output  # masked once, the last password stands
         step = store.record_step(request=request_with([text_message("hi")]))
         result = {"check_output": output, "told": {"message": output}, "label": f"api_key={KEY}"}
         store.annotate_run(step.run_id, result=store.masking.of(result, masked=("check_output", "told")))
@@ -603,10 +603,108 @@ class TestAnAddressKeptAndShown:
         (f"http://tuningfork:{KEY}@127.0.0.1:8081", f"http://{REDACTED}@127.0.0.1:8081"),
         (f"https://{KEY}@api.test/v1", f"https://{REDACTED}@api.test/v1"),
         ("http://127.0.0.1:8081", "http://127.0.0.1:8081"),
-        ("http://127.0.0.1:8081/v1?key=1", "http://127.0.0.1:8081/v1?key=1"),
+        ("http://127.0.0.1:8081/v1", "http://127.0.0.1:8081/v1"),
+        # With nothing to mask, kept as given: rebuilt, its `?` would go, and the scan would read it
+        # as an address kept before today's masking (`ops.scan`).
+        ("http://127.0.0.1:8081/v1?", "http://127.0.0.1:8081/v1?"),
     ])
     def test_what_stands_before_its_host_is_masked_whole(self, url, kept):
         assert without_credentials(url) == kept
+
+    @pytest.mark.parametrize("url, kept", [
+        (f"http://127.0.0.1:8081/v1?key={KEY}", f"http://127.0.0.1:8081/v1?key={REDACTED}"),
+        ("https://api.test/v1?api-version=2024-02-01&token=abc1", f"https://api.test/v1?api-version={REDACTED}"
+         f"&token={REDACTED}"),
+        (f"https://{KEY}@api.test/v1?key=1#{KEY}", f"https://{REDACTED}@api.test/v1?key={REDACTED}#{REDACTED}"),
+        ("https://api.test/v1?abc1&empty=", f"https://api.test/v1?{REDACTED}&empty="),
+        # A password holding `?`, `#` or `/` unescaped, which ends what reads as its host early.
+        ("http://user:pa?ss@127.0.0.1:8081/v1", f"http://{REDACTED}@127.0.0.1:8081/v1"),
+        ("http://user:pa#ss@127.0.0.1:8081/v1?key=abc1", f"http://{REDACTED}@127.0.0.1:8081/v1?key={REDACTED}"),
+        ("http://user:pa/ss@127.0.0.1:8081/v1", f"http://{REDACTED}@127.0.0.1:8081/v1"),
+        # Cut at the `@` after it, not at the last: one in its query is the query's.
+        ("http://user:pa?ss@127.0.0.1:8081/v1?email=a@b.c", f"http://{REDACTED}@127.0.0.1:8081/v1?email={REDACTED}"),
+        # An `@` in its query is no password's end (found in review: its host and a key were lost).
+        ("http://127.0.0.1:8081/v1?email=a@b.c", f"http://127.0.0.1:8081/v1?email={REDACTED}"),
+        ("http://127.0.0.1:8081/v1?user=me@example.com&key=abc1longer9",
+         f"http://127.0.0.1:8081/v1?user={REDACTED}&key={REDACTED}"),
+        ("http://127.0.0.1:8081/v1#me@x", f"http://127.0.0.1:8081/v1#{REDACTED}"),
+        # Nor where what follows that `@` reads as no host, though its "port" is no number.
+        ("http://host:bad/v1?user=me@x&key=abc1longer9", f"http://host:bad/v1?user={REDACTED}&key={REDACTED}"),
+        # Where a host follows, a path after it holding a query's `&`, `=` or `;` is that query's
+        # tail, masked whole (found in review: read as a path, a key there stood).
+        ("http://host:bad/v1?user=me@x/y&key=abc1longer9", f"http://{REDACTED}@x/{REDACTED}"),
+        ("http://host:bad/v1#me@x/y&key=abc1longer9", f"http://{REDACTED}@x/{REDACTED}"),
+        ("http://user:pa/ss@127.0.0.1:8081/a=b/v1", f"http://{REDACTED}@127.0.0.1:8081/{REDACTED}"),
+        ("http://user:pa#ss@127.0.0.1:8081/a=b/v1", f"http://{REDACTED}@127.0.0.1:8081/{REDACTED}"),
+        ("http://user:pa?ss@127.0.0.1:8081/a=b/v1", f"http://{REDACTED}@127.0.0.1:8081/{REDACTED}"),
+        ("http://user:Tr0ub/4dor@127.0.0.1:8081/v1;api_key=abc1longer9", f"http://{REDACTED}@127.0.0.1:8081/{REDACTED}"),
+        ("http://user:pa/ss@127.0.0.1:8081/v1&x", f"http://{REDACTED}@127.0.0.1:8081/{REDACTED}"),
+        # A password holding `?` and `@`: masked whole once, whatever case its scheme is written in.
+        ("http://user:pa?s@s@127.0.0.1:8081/v1", f"http://{REDACTED}@127.0.0.1:8081/v1"),
+        ("HTTP://user:pa?s@s@127.0.0.1:8081/v1", f"http://{REDACTED}@127.0.0.1:8081/v1"),
+        # An address that does not parse: what stands before the `@` of what reads as its host, and
+        # what follows its first `?` or `#`.
+        ("http://[::1:8081/v1?key=abc1", f"http://[::1:8081/v1?{REDACTED}"),
+        ("http://user:secret@[::1/v1", f"http://{REDACTED}@[::1/v1"),
+        ("http://user:secret@[zz]:8081/v1?k=abc1", f"http://{REDACTED}@[zz]:8081/v1?{REDACTED}"),
+    ])
+    def test_each_value_of_its_query_and_its_fragment_is_masked_whole(self, url, kept):
+        """Whatever the patterns would read in them: a key given there, short or long, would be kept
+        with every read of the server, and shown wherever its address is. Masked again, it reads
+        the same: the scan reads an address kept today as kept today."""
+        assert without_credentials(url) == kept and without_credentials(kept) == kept
+
+    @pytest.mark.parametrize("value, looked_for", [
+        *[(word, False) for word in ("sunshine", "password", "2024-02-01", "gpt-4o-mini", "chatcompletion",
+                                     "admin:sunshine", "12345678", "me@example.com",
+                                     "first.last@sub.example.co.uk", "s3cr3t@vault.internal")],
+        *[(key, True) for key in ("abc1longer9", "hunter2xyz", "tf:hunter2xyz", "Sup3rS3cr3t", "u:Sup3rS3cr3t",
+                                  "Q7bX2kLm9Zr4", "W3nT8vR2pL6x", "P@ssw0rd", "P@ss.word9", "q8Lz@x7.Rt2vNm")],
+    ])
+    def test_a_value_an_address_gave_is_looked_for_where_it_reads_as_a_key(self, value, looked_for):
+        """Masked whole in the address whatever it reads as, but a word or a date found elsewhere is
+        no key (`config.key_like`)."""
+        from tuningfork.config import key_like
+
+        assert key_like(value) is looked_for
+
+    @pytest.mark.parametrize("url, kept", [
+        (f"http://127.0.0.1:8081/{KEY}/v1", f"http://127.0.0.1:8081/{REDACTED}/v1"),
+        (f"http://127.0.0.1:8081/v1?{KEY}=", f"http://127.0.0.1:8081/v1?{REDACTED}="),
+        ("http://127.0.0.1:8081/v1;api_key=Q7bX2kLm9Zr4Tw8Y", f"http://127.0.0.1:8081/v1;api_key={REDACTED}"),
+    ])
+    def test_the_rest_of_it_is_masked_as_the_patterns_read_it(self, url, kept):
+        assert without_credentials(url) == kept
+
+    def test_what_masking_it_took_is_given_to_look_for_elsewhere(self):
+        from tuningfork.config import masked_address
+
+        kept, values = masked_address("https://u:Sup3rS3cr3t@api.test/v1?key=abc1longer9&n=1#frag")
+        assert kept == f"https://{REDACTED}@api.test/v1?key={REDACTED}&n={REDACTED}#{REDACTED}"
+        # Eight characters or more, as a mask's value is; the password alone too, which a refusal may quote.
+        assert set(values) == {"u:Sup3rS3cr3t", "Sup3rS3cr3t", "abc1longer9"}
+        # Never a mask already there (found in review: an address kept masked before gave the scan
+        # `<redacted>` to look for, and every mask in the folder read as a key).
+        kept, values = masked_address(f"http://{REDACTED}@127.0.0.1:8081/v1?x={REDACTED}xyz12345")
+        assert kept == f"http://{REDACTED}@127.0.0.1:8081/v1?x={REDACTED}" and values == ()
+
+    def test_a_server_is_kept_without_a_key_in_its_query(self, store):
+        server_id = store.add_server({"upstream": "http://127.0.0.1:8081/v1?token=abc1", "models": ["m"]})
+        assert store.server(server_id)["upstream"] == f"http://127.0.0.1:8081/v1?token={REDACTED}"
+
+    def test_a_server_s_address_is_masked_with_the_store_s_own_patterns(self, tmp_path):
+        """As the store masks what it keeps, with its one set of patterns, beside what an address
+        masks whole."""
+        from tuningfork.store.db import Store
+
+        with Store(tmp_path / "own", patterns=(r"(?P<secret>zebra-\d+)",)) as store:
+            server_id = store.add_server({"upstream": "http://127.0.0.1:8081/zebra-42/v1", "models": ["m"]})
+            experiment = store.create_experiment(
+                kind="resample", arm="original", run_id=None, step_idx=None, step_id=None,
+                request=request_with([text_message("hi")]), settings={},
+                base_url="http://127.0.0.1:8081/zebra-42/v1?key=abc1")
+            assert store.server(server_id)["upstream"] == f"http://127.0.0.1:8081/{REDACTED}/v1"
+            assert store.get_experiment(experiment.id).base_url == f"http://127.0.0.1:8081/{REDACTED}/v1?key={REDACTED}"
 
 
 class TestOnePatternSet:
@@ -757,6 +855,7 @@ class TestOneBoundary:
         "experiment/skill.py": "a skill found as storage masked it, and a wording sent masked alike",
         "launches.py": "a call's path predicted as the store masks, where no store is given",
         "breakpoints/engine.py": "a call's place predicted as the store masks, where no store is given",
+        "backends/probe.py": "a server's profile, written to be shared and never recorded: its errors quote the address",
     }
     MASKERS = {"redact", "redact_json", "redact_json_counted", "redact_json_found", "redact_stream",
                "redact_spans", "text_spans", "_masking", "Masking", "bytes_without_secrets"}

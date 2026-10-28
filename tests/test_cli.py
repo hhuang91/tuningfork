@@ -91,6 +91,18 @@ class TestResample:
         assert "read_file(path='data.csv')" in result.output
         assert "I will ask first." in result.output
 
+    def test_the_server_it_samples_from_is_shown_without_a_key(self, cli, home, served):
+        """As wherever an address is shown (`config.without_credentials`)."""
+        path, run_id = home
+        read = MockTurn(tool_calls=[{"name": "read_file", "arguments": {"path": "data.csv"}}])
+        served.script(read, read)
+
+        result = cli("resample", run_id[:8], "0", "-n", "2",
+                     "--base-url", "http://tf:Sup3rS3cr3t@upstream.test", "--home", str(path))
+
+        assert result.exit_code == 0, result.output
+        assert "from http://<redacted>@upstream.test" in result.output and "Sup3rS3cr3t" not in result.output
+
     def test_square_brackets_in_model_output_survive(self, cli, home, served):
         """The escaping bug: `[1, 2]` would otherwise be eaten as Rich markup."""
         path, run_id = home

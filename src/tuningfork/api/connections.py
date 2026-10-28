@@ -123,7 +123,7 @@ def connection_routes() -> list[Route]:
             protected_list, config_problem = [], error.message
         return JSONResponse({
             "server": {
-                # Read without the token: a user and password in either are masked.
+                # Read without the token: a key in either, its user and password or its query's, is masked.
                 "url": without_credentials(state.upstream.url),
                 "started_with": without_credentials(settings.upstream_base_url),
                 "identity": server,
@@ -152,7 +152,7 @@ def connection_routes() -> list[Route]:
                 "protected": protected_list,
                 **({"config_problem": config_problem} if config_problem else {}),
                 "restart": restart_command(settings, without_credentials(state.upstream.url)),
-                # Its upstream's user and password are shown masked: they are typed back to run it.
+                # A key in its upstream's address is shown masked: it is typed back to run it.
                 "restart_masked": without_credentials(state.upstream.url) != state.upstream.url,
             },
             "busy": busy,

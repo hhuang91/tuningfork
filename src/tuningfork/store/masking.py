@@ -1,8 +1,9 @@
 """What the store masks, and how: a write into the recordings folder's database and blobs masks
 what it is given here, once, with the store's one set of patterns — masking is not idempotent (a
-command's second `-p` falls only to a second pass), and a fork matches a call masked once against
-a step stored masked once. What a run is given is kept as it was given, since a fork runs it
-again: a launch's eval and variant, and a scenario's context (`Store.put_given`).
+password another mask brings within its command's reach falls only to a second pass), and a fork
+matches a call masked once against a step stored masked once. What a run is given is kept as it
+was given, since a fork runs it again: a launch's eval and variant, and a scenario's context
+(`Store.put_given`).
 
 A writer that must read a value as it will be stored first — an outcome computed from a
 sample's answer, so a report recomputing it from the store agrees — asks for it masked
@@ -50,7 +51,8 @@ class Masking:
         """`value` masked — text as text, anything else as the JSON it is written as — and every
         place a value `also` names stands. A `Masked` is kept as it is, and so are the fields of an
         object that `masked` names: masked where they were made — a check's output, before it was
-        cut — and masked again, a command's second password would fall too."""
+        cut — and masked again, a password another mask brought within its command's reach would
+        fall too."""
         if isinstance(value, Masked) or value is None:
             return value if isinstance(value, Masked) else Masked(None)
         if isinstance(value, str):
@@ -147,12 +149,12 @@ class Masking:
         hosted, or to a proposing model: every text in it, a key's too, masked as text is (`text`),
         and wherever a value any of those masks took stands, in that text or another — a password
         named in one field and bare in another. What the store keeps is masked once already, and
-        masked again it loses no more than a second command's password; what it keeps as given — a
-        launch's eval, a workspace's files, a skill — is masked here. Its numbers and its shape are
-        kept. A text a view splits — into numbered lines, pages, a diff — is shown so whole first,
-        with `lines` where its line numbers must hold: masked line by line, a private key's lines
-        each read as no key. A value JSON cannot write is read as the text it would be written as
-        (`default=str`), and masked so: an answer is written so."""
+        masked again it loses no more than a password another mask brought within its command's
+        reach; what it keeps as given — a launch's eval, a workspace's files, a skill — is masked
+        here. Its numbers and its shape are kept. A text a view splits — into numbered lines, pages,
+        a diff — is shown so whole first, with `lines` where its line numbers must hold: masked line
+        by line, a private key's lines each read as no key. A value JSON cannot write is read as the
+        text it would be written as (`default=str`), and masked so: an answer is written so."""
         also = tuple(also)
         strings: dict[str, Masked] = {}
 

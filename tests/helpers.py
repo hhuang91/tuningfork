@@ -34,6 +34,15 @@ from tuningfork.store.db import Step, Store
 #: A key the store masks whole, as `<redacted>`: what a step "masked as it was recorded" was given.
 KEY = "sk-a1B2c3D4e5F6g7H8i9J0"
 
+#: The key in `TWICE`'s comment, 363 characters: its mask is 10.
+TWICE_KEY = "sk-" + "Ab3dE6gH9jK2" * 30
+#: A command a second pass masks more of: masking is not idempotent. One pass masks its first
+#: password and the key in its comment, and leaves `-pZq8xK3vN5wLp`, more than the 300
+#: characters a command's flag is looked for in past the one before it (`config._SAME_COMMAND`);
+#: the key's mask shortens the command, so a second pass finds it within them and masks it too.
+#: Masked once it is 64 characters, and holds the password whole.
+TWICE = "mysql -uroot -pAbcd1234X --comment=" + TWICE_KEY + " -pZq8xK3vN5wLp db"
+
 #: Each launch's threads, as the proxy would track them, for harnesses that record directly.
 _THREADS: dict[str, LaunchThreads] = {}
 

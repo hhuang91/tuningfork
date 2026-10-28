@@ -547,11 +547,92 @@ class TestRedactionMasksKeysNotCode:
             ("token:", "x1"),
             # And each beginning of a private key without an end read up to 10,000 characters on.
             ("-----BEGIN PRIVATE " "KEY-----\nMIIEvQIBADANBgkqhkiG9w0\n", ""),
+            # A command's every password: commands on one line, none ending another, each named
+            # where the one before reads on — each read again from every name, a megabyte took hours.
+            ("mysql -uroot -pA1b2c3d4 -pB2c3d4e5 ", ""),
+            ("curl -u a:A1b2c3d4 https://a.test ", ""),
         ],
-        ids=["names-then-a-bracket", "names-joined", "key-beginnings"],
+        ids=["names-then-a-bracket", "names-joined", "key-beginnings", "passwords-of-mysql", "passwords-of-curl"],
     )
     def test_a_long_text_is_read_in_one_pass(self, unit, end):
         text = unit * (1_000_000 // len(unit)) + end
         started = time.perf_counter()
         redact_json(as_a_tool_result(text))
         assert time.perf_counter() - started < 4
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db",
+            "mysqldump -uroot -pAbcd1234X -pZq8xK3vN5wLp -pTh1rdPassw0rd db",
+            "curl -u alice:Abcd1234X https://a.test --next -u bob:Zq8xK3vN5wLp https://b.test",
+            "curl --user alice:Abcd1234X https://a.test --user=bob:Zq8xK3vN5wLp",
+            "docker login -u bob -p Abcd1234X -p Zq8xK3vN5wLp registry.test",
+        ],
+    )
+    def test_each_of_a_command_s_passwords_is_masked_in_one_pass(self, text):
+        """Not its first alone, which a second pass of masking took the next of: a step recorded so
+        held the rest in clear (`config.AGAIN`)."""
+        once = redact(text)
+        assert not [secret for secret in ("Abcd1234X", "Zq8xK3vN5wLp", "Th1rdPassw0rd") if secret in once]
+        assert redact(once) == once
+        assert json.dumps(redact_json(as_a_tool_result(text))).count(REDACTED) == once.count(REDACTED)
+
+    @pytest.mark.parametrize(
+        "text, kept",
+        [
+            # What follows each would read as a password, were it the same command's.
+            ("mysql -pAbcd1234X db; ssh -p2222 host", "ssh -p2222 host"),
+            ("mysqldump -pAbcd1234X db | nc -p4444 backup", "nc -p4444 backup"),
+            ("curl -u a:Abcd1234X https://a.test && docker run -u 1000:1000 img", "docker run -u 1000:1000 img"),
+            ("mysql -pAbcd1234X db\nssh -p2222 host", "ssh -p2222 host"),
+        ],
+    )
+    def test_a_command_s_passwords_end_where_it_does(self, text, kept):
+        assert redact(text).endswith(kept) and "Abcd1234X" not in redact(text)
+
+    @pytest.mark.parametrize(
+        "text, secret",
+        [
+            ("mysql -u root -p'S3cr3tPw!' app", "S3cr3tPw!"),
+            ('mysql -u root -p"S3cr3tPw" -p"Zq8xK3vN5wLp" app', "Zq8xK3vN5wLp"),
+            ("docker login -u me -p 'S3cr3tPw' registry.test", "S3cr3tPw"),
+            # A flag first on a line the one before continued, as a script writes a long command.
+            ("mysql -u root \\\n-pS3cr3tPw app", "S3cr3tPw"),
+            ("curl \\\n-u me:S3cr3tPw https://api.test", "S3cr3tPw"),
+            ("docker login -u me \\\n-p S3cr3tPw registry.test", "S3cr3tPw"),
+            # With Windows' line ends, the flag first on its line or indented.
+            ("mysql -u root \\\r\n-pS3cr3tPw app", "S3cr3tPw"),
+            ("mysql -u root \\\r\n  -pAbcd1234X \\\r\n  -pS3cr3tPw app", "S3cr3tPw"),
+        ],
+    )
+    def test_a_command_s_password_quoted_or_on_a_line_continued_is_masked(self, text, secret):
+        assert secret not in redact(text)
+        assert secret not in json.dumps(redact_json(as_a_tool_result(text)))
+
+    def test_a_line_continued_past_the_depth_json_is_read_to_is_still_read(self):
+        """Past `config.JSON_DEPTH`, a text keeps its escapes: a continuation reads as `\\`, `\\`,
+        `\\` and `n` there, as `_SAME_COMMAND` reads one (`_FLAG_START`)."""
+        for text in ("mysql -u root \\\n-pS3cr3tPw app", "mysql -u root \\\r\n-pS3cr3tPw app"):
+            for _ in range(4):
+                text = json.dumps(text)
+            assert "S3cr3tPw" not in redact(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        ['mysql -u root -p"$MYSQL_PWD" app', "mysql -u root -p'${DB_PASS}' app", "mysql -u root -p'' app"],
+    )
+    def test_a_quoted_variable_is_no_password(self, text):
+        assert redact(text) == text
+
+    def test_patterns_without_the_mark_mask_as_they_always_have(self):
+        """A step names the patterns that masked it, and a fork masks its call with them again
+        (`replay.build_table`): each set the store keeps must mask as it did when it was kept. The
+        mark is in the patterns' text, so a set without it is another set, by its digest too."""
+        from tuningfork.config import AGAIN, patterns_digest
+
+        before = tuple(pattern.replace(AGAIN, "") for pattern in DEFAULT_REDACTIONS)
+        assert before != DEFAULT_REDACTIONS and patterns_digest(before) != patterns_digest(DEFAULT_REDACTIONS)
+        command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        assert redact(command, before) == f"mysql -uroot -p{REDACTED} -pZq8xK3vN5wLp db"
+        assert redact(redact(command, before), before) == redact(command)
