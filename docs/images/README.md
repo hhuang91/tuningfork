@@ -42,9 +42,10 @@ is made from is made up in the script, about the example skill: no one's real co
 Four servers, each over the recordings its pictures show, and a browser:
 
 ```bash
-# Copies of the recordings, under /tmp, so that no path a page shows names you
-cp -a <find-the-file's recordings> /tmp/tuningfork-shots/find-the-file
-cp -a <the guide's recordings> /tmp/tuningfork-shots/guide
+# Copies of the recordings, under /tmp, so that no path a page shows names you; the `/.` copies
+# what a recordings folder holds where it is a link, which `serve` would otherwise write into
+cp -a <find-the-file's recordings>/. /tmp/tuningfork-shots/find-the-file
+cp -a <the guide's recordings>/. /tmp/tuningfork-shots/guide
 uv run tuningfork serve --home /tmp/tuningfork-shots/find-the-file --port 8801 --upstream http://127.0.0.1:8081
 uv run tuningfork serve --home /tmp/tuningfork-shots/guide --port 8802 --upstream http://127.0.0.1:8081
 # The demos, each in a new folder of its own under /tmp

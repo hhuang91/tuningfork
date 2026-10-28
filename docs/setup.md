@@ -623,23 +623,36 @@ in a Lima VM, run these steps there: in the distro's shell, or in the VM's
 (`limactl shell tuningfork`, then `cd ~`). With the checkout's wrapper, tuningfork is
 `~/.local/share/tuningfork/venv/bin/tuningfork` there.
 
-1. **Stop `serve` and any `tuningfork mcp` on the folder, and copy it two minutes or more after
-   anything was last recorded into it:** `cp -a ~/.tuningfork <copy>` (or the folder
-   `TUNINGFORK_HOME` or `--home` names), to a `<copy>` that does not exist yet, on the Linux file
-   system as the recordings themselves — under WSL in `~`, in a Lima VM on its own disk. A
-   deletion leaves what was written in the last two minutes, which a recording in flight may still
-   need, judged by each file's time. `cp -a` keeps the times; `cp -r` makes every file new, and a
-   deletion in its copy then leaves every blob and snapshot object it would take, until a later
-   deletion or a proxy serving the copy sweeps them.
+1. **Stop `serve` and any `tuningfork mcp` on the folder, and copy it, but for the folders runs
+   were launched in, two minutes or more after anything was last recorded into it:**
+
+   ```bash
+   rsync -a --copy-links --exclude=/batches/ --exclude=/forks/ ~/.tuningfork/ <copy>/
+   ```
+
+   Put the folder `TUNINGFORK_HOME` or `--home` names in place of `~/.tuningfork`, and a `<copy>`
+   that does not exist yet, on the Linux file system as the recordings themselves — under WSL in
+   `~`, in a Lima VM on its own disk. Where rsync is missing, `sudo apt-get install -y rsync` adds
+   it.
+   - **The copy shares nothing with the folder.** The `/` after the folder's name copies what it
+     holds even where the folder is a link, as one moved to a bigger disk is, and `--copy-links`
+     copies what each link in it leads to. A copy that kept a link would share what it leads to,
+     and deleting in the copy would delete it in the original.
+   - **It keeps each file's time.** A deletion leaves what was written in the last two minutes,
+     which a recording in flight may still need, judged by each file's time. A copy that made
+     every file new would keep every blob and snapshot object a deletion in it would take, until
+     a later deletion or a proxy serving the copy swept them.
+   - **It leaves out `batches/` and `forks/`**, each run's workspace and its harness's home. A
+     copy's runs name the original's launch folders, which a deletion in a copy never touches, so
+     a copy of them would stay whole, the deleted runs' included.
 2. **Delete for good, with nothing else open on the copy** — `serve`, `ui`, `tuningfork mcp` — so
    the database's log is emptied. `tuningfork trash run <id> --home <copy>` sets a run aside,
    `trash experiment`, `trash job`, `trash scenario` and `trash refinement` the others, and
    `trash empty --home <copy>` deletes for good all the trash holds, what was there before
    included. `tuningfork runs --home <copy>` lists the runs, and `tuningfork ui --home <copy>`
    shows everything, closed again before `trash empty`.
-3. **Delete its `batches/` and `forks/`** (`rm -rf <copy>/batches <copy>/forks`), and any folder
-   inside it that `--workdir` named. A copy's runs name the original's launch folders, which a
-   deletion in a copy never touches, so the copy's own stay whole, the deleted runs' included.
+3. **Delete any folder inside the copy that `--workdir` named** (`rm -rf <copy>/<folder>`). It
+   holds launch folders too, and step 1 leaves out only `batches/` and `forks/`.
 4. **Delete the keys from it:** `rm -f <copy>/.access-token <copy>/.mcp-token <copy>/.proposer-key`.
 5. **Look at what is left**, below. Only then send it, moving it first to Windows or the Mac if
    you send from there, and remove every copy once it is shared: unlike the recordings folder, a
