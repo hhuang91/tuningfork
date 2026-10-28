@@ -1,65 +1,67 @@
 # Changelog
 
-## 0.8.0 — macOS, deleting for good, and a scan of older recordings
+## 0.8.0 — macOS, and a scan of older recordings
 
-tuningfork runs on a Mac now, in a Linux VM. Deleting from the trash takes the folders tuningfork
-made for a run's launches, and a recordings folder tuningfork makes is yours alone. A new command,
-`tuningfork scan`, looks through a recordings folder for what an older tuningfork kept in clear.
-Every password of a curl, MySQL or `docker login` command is masked now, not only its first, and
-so is each value in the query of a server's address. `docs/setup.md` says what a recordings folder
-holds, and how to share part of one.
+tuningfork runs on a Mac now, in a Linux VM. A recordings folder tuningfork makes is yours alone,
+and deleting from the trash also reaches outside it, to the folders tuningfork laid launches out
+in and marked as made for it. A new command, `tuningfork scan`, looks through a recordings folder
+for what an older tuningfork kept in clear. A curl, MySQL or `docker login` command's later
+passwords are masked now, as its first is, and so is each value in the query of a server's
+address. `docs/setup.md` says what a recordings folder holds, and how to share part of one.
 
 - **macOS, in a Linux VM** (#62). tuningfork runs on a Mac inside a VM that Lima makes, as on
-  Windows it runs in WSL; `docs/setup.md` (*On macOS*) says how, from a run on an M1 MacBook Air.
+  Windows it runs in WSL. `docs/setup.md` (*On macOS*) says how, as tried on an M1 MacBook Air.
   From a checkout on the Mac, `scripts/tuningfork` runs any command in the VM, and Ctrl-C, a closed
   window or a killed wrapper stop it there too. `TUNINGFORK_` settings made on the Mac go along,
-  never a key or a token. On a Mac outside a VM, the sandbox points at the VM instead of saying to
-  install bubblewrap. The sandbox section gives the AppArmor profile Ubuntu 24.04 needs before
-  bubblewrap can make a sandbox. CI also runs the suite on arm64 Linux.
-- **A recordings folder tuningfork makes is yours alone** (mode 0700, #60), and so is each folder
-  it lays launches out in. `serve` and `ui` say when a folder made before can be opened by others,
-  and give the `chmod` that makes it yours; tuningfork never changes it by itself. Reads under
-  `/_tuningfork/` still need no token: anything that reaches the port can read the recordings, as
-  `SECURITY.md` says.
-- **Deleting for good takes the folders tuningfork made for a run's launches** (#60): in the
-  recordings folder, and wherever else tuningfork marked one as made for it. A copy of the
-  recordings folder never removes the original's. A batch's folder, or a set of forks', goes with
-  the skill copy its runs were given once none of its runs is left and nothing else is in it. A
-  path that a skill added, a scenario or a remaining run's task file names stays where it is, and
-  the deletion's preview says so. What deleted rows held is overwritten, and the database's log
-  emptied once no other process is reading it. What nothing refers to any more but was written in
-  the last two minutes, which a recording in flight may still need, goes once those have passed:
-  a running proxy sweeps it, or the next deletion does. A job keeps its record of the work, and a
-  chain its record and the skills its links left, as before.
+  but for one whose name says it is a key, a token, a secret or a password. On a Mac outside a VM,
+  the sandbox says to run tuningfork in a Linux VM, where it said to install bubblewrap. *The
+  sandbox* in `docs/setup.md` gives the AppArmor profile Ubuntu 24.04 needs before bubblewrap can
+  make a sandbox. CI also runs the suite on arm64 Linux.
+- **A recordings folder tuningfork makes is yours alone** (mode 0700, #60), and so are the folders
+  it launches runs in. `serve` and `ui` say when a folder made before can be opened by others, and
+  how to make it yours. tuningfork never changes it by itself. The web UI's reads still need no
+  token: anything that reaches its port can read the recordings, as `SECURITY.md` says.
+- **Deleting for good takes the folders tuningfork made for what it deletes** (#60), now outside
+  the recordings folder too, where tuningfork marked them as made for it: a run's launch folders,
+  and the folder a batch or a set of forks was laid out in, with the skill copy its runs were
+  given, once none of its launches is left and it holds nothing else. A copy of the recordings
+  folder never removes the original's. A skill folder named by a skill you added, a scenario or a
+  run's task file stays where it is, and the deletion's preview says so. What deleted rows held is
+  overwritten, and the database's log emptied once no other process is reading it. What nothing
+  refers to any more but was written in the last two minutes, which a recording in flight may
+  still need, goes once those have passed: a running proxy sweeps it, or the next deletion does. A
+  job keeps its record of the work, and a chain its record and the skills its links left, as
+  before.
 - **`tuningfork scan`** (#61) reads a recordings folder, only when you run it, for where today's
   masking would mask something an older tuningfork kept in clear, run by run and never the key.
   It prints the `trash` commands that set those runs aside, and names what goes by hand. It
-  changes no recording. The first time this version opens a folder, it notes when; after that,
-  `serve` and `ui` say in a line when the folder holds runs or jobs recorded before, until a scan
-  has read it or those are gone.
-- **Every password of a curl, MySQL or `docker login` command is masked** (#64), not only the
-  first after the command's name: curl's `-u` and `--user`, MySQL's `-p` (`mysql`, `mysqldump`,
-  `mysqladmin`, `mariadb`) and `docker login -p`. A MySQL or `docker login` password in quotes
-  (`-p'…'`) is masked as one without them is, and so is a password whose flag starts a line that a
-  `\` continued, with LF or CRLF line ends. Forks of runs recorded before still match their
+  changes no recording. The first time this version opens a folder, it notes when. After that,
+  `serve` and `ui` say in a line when the folder holds runs or jobs recorded before then, until a
+  scan has read it or those are gone.
+- **A curl, MySQL or `docker login` command's later passwords are masked as its first is** (#64):
+  curl's `-u` and `--user`, MySQL's `-p` (`mysql`, `mysqldump`, `mysqladmin`, `mariadb`) and
+  `docker login -p`, where only the first after the command's name was. A password is read after
+  a quote too (MySQL's `-p'…'` and `-p"…"`, `docker login -p '…'`), and so is a flag that starts a
+  line a `\` continued, with LF or CRLF line ends. Forks of runs recorded before still match their
   recordings.
-- **A server's address is masked in its query and its fragment** (#64), as its user and password
-  already were: each value of its query, and its fragment, whole, and a key the patterns read in
-  its path. This holds wherever the address is kept or shown: the store, the Connections page and
-  its restart command, `serve`'s first lines, the scoring and sampling lines, a protected
-  endpoint's refusal, and the profile `tuningfork probe` writes to be shared, its errors included.
-  `tuningfork scan` reads an address kept before the same way.
+- **A server's address is masked in its query and its fragment** (#64): each value of its query,
+  and its fragment, whole, and a key the patterns read in its path. This is how the store keeps a
+  server's address and an experiment's, and how the Connections page, its restart command and
+  `serve`'s first lines show it. `tuningfork scan` reads an address kept before the same way.
 - **What a recordings folder holds** (#63): a section of `docs/setup.md` says what each part of the
-  folder holds, what is masked and what is kept as it was, who can read it, and how to share part
-  of one: copy it, delete from the copy with nothing else open on it, and remove the copy's launch
-  folders and keys.
+  folder holds, what is masked and what is kept as it was, who can read it, and the steps to share
+  part of one: a copy made with `cp -a`, deleted from with nothing else open on it, its launch
+  folders and keys removed.
 
 Changed:
 
-- **The Connections page's restart hint** says a value in the upstream's query shows as
-  `<redacted>`, as its user and password do.
-- **`tuningfork probe`'s profile keeps its address masked**, where it kept a user and password as
-  given.
+- **`tokens --score`, the sampling plan that `resample`, `ab` and `refine screen` print, and a
+  protected endpoint's refusal show a server's address as the Connections page does**, where they
+  showed it as given.
+- **A `tuningfork probe` profile keeps its server's address as the Connections page shows it**, in
+  its errors too, and so does the line `probe` prints. Both kept it as given.
+- **The Connections page's restart hint** names a value in the upstream's query, beside its user
+  and password.
 
 A recordings folder made by an older tuningfork may hold what that version kept in clear: run
 `tuningfork scan` on it, or on a copy of it.
