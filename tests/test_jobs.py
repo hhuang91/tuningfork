@@ -533,10 +533,10 @@ class TestWhatAJobKeeps:
         assert saying.plan("said", {"said": f"api_key={KEY}"})["plan"] == {"said": f"api_key={REDACTED}"}
 
     def test_the_same_job_asked_again_is_found_though_its_parameters_are_masked(self, saying):
-        from tests.helpers import KEY
+        from tests.helpers import KEY, TWICE
 
-        # Masked once: masked again, its second password would fall too, and it would be another job.
-        said = f"api_key={KEY} mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+        # Masked once: masked again, its last password would fall too, and it would be another job.
+        said = f"api_key={KEY} {TWICE}"
         first = saying.submit("said", {"said": said, "delay": 30}, dedupe=True)
         again = saying.submit("said", {"said": said, "delay": 30}, dedupe=True)
         assert again["deduplicated"] and again["id"] == first["id"]

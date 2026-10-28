@@ -64,6 +64,12 @@ class TestTheList:
         assert refused.value.code == "protected_endpoint"
         assert str(machine_config_path()) in refused.value.hint  # where to change it
 
+    def test_a_refusal_shows_the_address_without_a_key(self):
+        protect_machine("localhost:1234")
+        with pytest.raises(ProtectedEndpoint) as refused:
+            check_endpoint("http://tf:Sup3rS3cr3t@localhost:1234/v1?key=abc1")
+        assert str(refused.value).startswith("http://<redacted>@localhost:1234/v1?key=<redacted> is a protected")
+
     @pytest.mark.parametrize(
         "url", ["http://127.0.0.1:8081", "http://192.168.1.5:1234", "https://localhost/v1"]
     )

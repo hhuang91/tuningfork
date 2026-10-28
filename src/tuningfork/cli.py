@@ -387,7 +387,7 @@ def probe(
 
 
 def _print_profile(profile: BackendProfile) -> None:
-    console.print(f"\n[bold]{profile.server}[/bold] at {profile.base_url}")
+    console.print(f"\n[bold]{escape(profile.server)}[/bold] at {escape(without_credentials(profile.base_url))}")
     console.print(f"model: {profile.model}")
     for note in profile.notes:
         console.print(f"  {note}")
@@ -1347,7 +1347,8 @@ def tokens(
             usage = prepared.checkpoint.step.usage or {}
             console.print(
                 f"[dim]scoring step {prepared.checkpoint.step.idx}'s answer "
-                f"({usage.get('completion_tokens') or '?'} tokens) on {escape(prepared.base_url)}…[/dim]"
+                f"({usage.get('completion_tokens') or '?'} tokens) "
+                f"on {escape(without_credentials(prepared.base_url))}…[/dim]"
             )
             for warning in prepared.warnings:
                 console.print(f"  [yellow]note[/yellow]      {escape(warning)}")
@@ -2684,7 +2685,8 @@ def _print_checkpoint(checkpoint, plan, base_url: str, per_arm: bool = False, ar
     step = checkpoint.step
     samples = f"{plan.n} samples{' per arm' if per_arm else ''}"
     console.print(
-        f"[bold]run {checkpoint.run.id[:8]} step {step.idx}[/bold] — {samples} from {base_url}"
+        f"[bold]run {checkpoint.run.id[:8]} step {step.idx}[/bold] — {samples} "
+        f"from {escape(without_credentials(base_url))}"
     )
     console.print(
         f"  context   {len(checkpoint.messages)} messages, {escape(checkpoint.describe())}"

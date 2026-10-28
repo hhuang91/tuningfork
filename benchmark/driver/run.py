@@ -618,7 +618,7 @@ class Bench:
                             if again != verdict:
                                 log(f"{skill}: {key} {run_id[:8]} {verdict} -> {again}: {tried.output.strip()[:160]!r}")
                                 # Kept as it is: the result as stored, and the check's output as
-                                # masked where it ran. Masked again, a second password would fall.
+                                # masked where it ran. Masked again, more could fall.
                                 store.annotate_run(run_id, result=Masked({
                                     **result, "passed": tried.passed, "check_output": tried.output[-2000:],
                                     "rescored_from": {"passed": result.get("passed"), "check_output": result.get("check_output"),

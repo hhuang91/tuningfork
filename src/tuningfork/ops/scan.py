@@ -46,6 +46,9 @@ from tuningfork.store.db import FORK, MAIN, OPENED, SCANNED, Store
 
 #: What a run is given, kept as it was given, since a fork runs it again: never read.
 GIVEN = frozenset({("launches", "eval"), ("launches", "variant")})
+#: Where a server's address is kept, as `config.without_credentials` keeps it today: masked whole
+#: before its host, and each value of its query and its fragment. One kept before held them.
+ADDRESSES = frozenset({("servers", "identity"), ("experiments", "base_url")})
 #: What a scenario's spec takes from the task of the run it was made of, as the task's file wrote
 #: it: its check, and the output and expectations it names. The rest of the spec is read.
 GIVEN_TO_A_SCENARIO = ("check", "expected_output", "expectations")
@@ -287,7 +290,8 @@ class _Reader:
                 continue
             kind = self._stream_kind(row, owner) if table == "token_streams" else _kind(table, column, owner[0])
             place = Place(*owner, kind=kind, step=number)
-            yield _Unit(("row", table, row["_rowid"], column), {place: None}, lambda value=value: value, self._text)
+            holds = self._address if (table, column) in ADDRESSES else self._text
+            yield _Unit(("row", table, row["_rowid"], column), {place: None}, lambda value=value: value, holds)
 
     def _owner(self, table: str, row: dict[str, Any]) -> tuple[tuple[str, str], int | None]:
         """Whose a row is, and at which step: a run's, where it names one; else its own."""
@@ -474,6 +478,23 @@ class _Reader:
     def _text(self, text: Any, also: tuple[str, ...]) -> tuple[int, frozenset[str]]:
         masked = self.masking.of(_as_text(text), also=also)
         return masked.made, masked.found
+
+    def _address(self, text: Any, also: tuple[str, ...]) -> tuple[int, frozenset[str]]:
+        """A server's address as it was kept — alone, or in its identity — as `_text` reads it, and
+        as an address is kept today (`config.masked_address`): what masking it so would mask, and
+        the values it would take that read as a key (`config.key_like`), looked for wherever else
+        they stand — never a word or a date a query held (found in review: every run naming the
+        `api-version` an address gave read as holding a key)."""
+        from tuningfork.config import key_like, masked_address
+
+        made, taken = self._text(text, also)
+        identity = _loaded(text)
+        address = identity.get("upstream") if isinstance(identity, dict) else text
+        if not isinstance(address, str):
+            return made, taken
+        masked, values = masked_address(address)
+        keys = frozenset(value for value in values if key_like(value))
+        return (max(made, 1), taken | keys) if masked != address else (made, taken)
 
     def _raw(self, wire: str | None, streamed: bool | None) -> Callable[[Any, tuple[str, ...]], tuple[int, frozenset[str]]]:
         """An answer's raw bytes: as text, and as its wire reads them back whole — a key a stream

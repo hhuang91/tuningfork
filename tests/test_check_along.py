@@ -25,7 +25,7 @@ from tuningfork.ops.inspect import (
 )
 from tuningfork.ops.tally import finding_words, shared_mistakes, tally_task
 from tuningfork.specs import CHECK_KEPT
-from tests.helpers import task_stack
+from tests.helpers import TWICE, task_stack
 from tests.test_tally import judged
 
 #: The task's check, naming what it finds: a report not written yet, or one without row_count.
@@ -302,10 +302,10 @@ def test_a_mistake_every_run_made_is_named_with_the_call_that_made_it(store):
 
 def test_the_check_along_a_run_is_kept_as_it_was_masked_where_it_ran(stack):
     """What it printed at each state is masked before a state keeps its end or its findings, and
-    kept so — masked again, a command's second password would fall too — and the lines it says
+    kept so — masked again, a command's last password would fall too — and the lines it says
     each call made are the masked ones."""
     key = "sk-" "tfalongkey4Q7xZ2mN8pL4vR6tY0a"
-    command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+    command = TWICE
     stack.item.tuningfork.check = f"echo 'login {command} with {key}'; {NAMING}"
     stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
     run = one_run(stack)
@@ -327,10 +327,10 @@ def test_a_state_whose_output_was_too_long_to_mask_whole_places_nothing(stack, m
 
 
 def test_the_check_along_a_run_leaves_its_result_as_it_was_kept(stack):
-    """Kept masked once: masked again with the record beside it, a command's second password would fall
+    """Kept masked once: masked again with the record beside it, a command's last password would fall
     too, as masking is not idempotent."""
     run = one_run(stack)
-    command = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+    command = TWICE
     stack.store.annotate_run(run.id, result={**run.result, "check_output": command})
     kept = stack.store.get_run(run.id).result["check_output"]
     check_along(stack.store, run.id)

@@ -12,6 +12,8 @@ from typer.testing import CliRunner
 from tuningfork.ops import imports, refine, trash
 from tuningfork.ops.common import OperationError
 
+from tests.helpers import TWICE
+
 SKILL = "---\nname: tally-report\ndescription: totals into report.json\n---\n\n# Tally report\n\nWrite the totals to report.json.\n"
 OTHER = "---\nname: csv-tidy\ndescription: tidy a CSV\n---\n\n# Tidy\n\nSort the rows.\n"
 SYSTEM = "You are Hermes, an agent.\n\n## Skills\n- tally-report: totals into report.json\n"
@@ -281,9 +283,9 @@ class TestTheRun:
 
 
 #: A key in each part of a chat a scenario or a skill is made of: said before the task, and in the
-#: skill the model read; and a command whose second password only a second masking takes.
+#: skill the model read; and a command whose last password only a second masking takes.
 CHAT_KEY = "sk-" "tfchatkey4Hq2Lm7Xw3Rv5Pz8Bq"
-COMMAND = "mysql -uroot -pAbcd1234X -pZq8xK3vN5wLp db"
+COMMAND = TWICE
 
 
 def chat_with_keys() -> str:
@@ -334,7 +336,7 @@ class TestWhatItKeepsBesideTheRun:
         # The SKILL.md as the step that read it holds it: an A/B and a refinement find it there.
         kept = skill.read_text(encoding="utf-8")
         assert REDACTED in kept and locate(store.rebuild_request(store.steps(run.id)[2]), kept)
-        # Read back as it was kept, masked once: masked again, a command's second password would fall too.
+        # Read back as it was kept, masked once: masked again, a command's last password would fall too.
         assert "-pZq8xK3vN5wLp" in json.dumps(imports.chat_of(store, run).messages)
         made = "".join(made_of(store, run.id, "from-the-chat").values())
         assert CHAT_KEY not in made and REDACTED in made and "-pZq8xK3vN5wLp" in made

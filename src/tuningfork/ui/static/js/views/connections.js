@@ -564,7 +564,7 @@ export async function connectionsView(root, _, scope) {
       h("p", { class: "hint" }, "These change only with a restart:"),
       command(proxy.restart),
       proxy.restart_masked
-        ? h("p", { class: "hint" }, "The upstream's user and password show as <redacted>. Type them back in before you run it.")
+        ? h("p", { class: "hint" }, "A key in the upstream's address, such as its user and password or a value in its query, shows as <redacted>. Type it back in before you run it.")
         : null,
     ]));
   }

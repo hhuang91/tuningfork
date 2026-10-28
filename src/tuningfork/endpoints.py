@@ -187,11 +187,13 @@ async def find_on_internet(url: str, *, timeout: float = 5.0) -> bool | None:
 def check_endpoint(url: str, *, home: Path | None = None, purpose: str = "tuningfork") -> str:
     """`url`, unless it would reach a protected endpoint — then a refusal saying how the
     list is changed."""
+    from tuningfork.config import without_credentials
+
     host, port = address(url)
     for endpoint, where in _sources(home):
         if endpoint.matches(host, port):
             raise ProtectedEndpoint(
-                f"{url} is a protected endpoint: {purpose} sends nothing there",
+                f"{without_credentials(url)} is a protected endpoint: {purpose} sends nothing there",
                 hint=(
                     f"{endpoint} is protected by {where}. If this server is meant for "
                     f"experiments, take it off the list there."

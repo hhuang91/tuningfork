@@ -487,7 +487,8 @@ def _last_user(request: dict[str, Any]) -> str:
 #: What a chain's record keeps of each link as it was masked where it was made: what its harness
 #: was told, masked where its check ran (`runner.MASKED_WHERE_MADE`); its skill-editing calls, read
 #: from the store as it keeps them; and the lines it changed in the skill, of each text masked
-#: whole (`_link`). Masked again, a command's second password would fall too.
+#: whole (`_link`). Masked again, a password another mask brought within its command's reach
+#: would fall too.
 LINK_MASKED = ("told", "edits", "diff")
 
 

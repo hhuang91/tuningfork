@@ -319,7 +319,7 @@ def create_app(
             )
         current = getattr(app.state, "server", None) or {}
         plan = {
-            # Shown, and read without the token: a user and password in it are masked.
+            # Shown, and read without the token: a key in it, its user and password or its query's, is masked.
             "url": without_credentials(url),
             "current": {"url": without_credentials(server_address.url), "server": current},
             "proposed": identity,
@@ -425,7 +425,7 @@ def create_app(
                 "status": "ok",
                 # What a client of another version checks before relying on a newer field.
                 "version": __version__,
-                # Read without the token: a user and password in either are masked.
+                # Read without the token: a key in either, its user and password or its query's, is masked.
                 "upstream": without_credentials(server_address.url),
                 "started_with": without_credentials(settings.upstream_base_url),
                 "max_inflight": gate.max_inflight,

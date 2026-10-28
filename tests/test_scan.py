@@ -16,6 +16,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from tuningfork.cli import app
+from tuningfork.config import REDACTED
 from tuningfork.ops.common import Cancel, Cancelled
 from tuningfork.ops.scan import NOT_RECORDED, OWNED, _Reader, older, older_note, scan
 from tuningfork.store.db import OPENED, SCANNED, Store
@@ -308,6 +309,88 @@ def test_a_key_tuningfork_holds_is_found_wherever_it_stands(tmp_path):
     with Store(home) as store:
         (found,) = scan(store).runs
     assert found["places"] == {"answers": 1}
+
+
+def test_a_key_in_a_server_s_address_kept_before_is_found(tmp_path, monkeypatch):
+    """An older tuningfork kept a server's address with its query as it was given — a server read,
+    an experiment sent there: masked whole today (`config.masked_address`), what it held is found
+    though no pattern reads it, and so is the value wherever else it stands, as a mask's is. Kept
+    today, nothing is."""
+    from tests.test_store import request_with
+
+    # Under a name no pattern reads as a secret's, and each its own, so neither is found as the
+    # other's value: the job names the server's alone.
+    address = "http://127.0.0.1:8081/v1?k={}"
+
+    def keep(home: Path) -> tuple[str, str, str]:
+        with Store(home, patterns=()) as store:
+            server = store.add_server({"upstream": address.format("Q7bX2kLm9Zr4"), "models": ["m"]})
+            experiment = store.create_experiment(kind="resample", arm="original", run_id=None, step_idx=None,
+                                                 step_id=None, request=request_with([text_message("hi")]),
+                                                 settings={}, base_url=address.format("W3nT8vR2pL6x"))
+            job = store.create_job(kind="server-check", lane="interactive", params={"said": "with Q7bX2kLm9Zr4"})
+        return server, experiment.id, job.id
+
+    with monkeypatch.context() as before:
+        before.setattr("tuningfork.config.without_credentials", lambda url: url)
+        server, experiment, job = keep(tmp_path / "older")
+    as_if_older(tmp_path / "older")
+    with Store(tmp_path / "older") as store:
+        found = {(each["owner"], each["id"]) for each in scan(store).elsewhere}
+    assert found == {("server", server), ("experiment", experiment), ("job", job)}
+    keep(tmp_path / "now")
+    with Store(tmp_path / "now") as store:
+        assert scan(store).elsewhere == []
+
+
+def test_an_address_kept_masked_before_makes_no_mask_a_key(tmp_path, monkeypatch):
+    """An address 0.6 or 0.7 kept had its user and password masked: today's masking takes the rest
+    of it, and gives the scan no mask to look for (found in review: every run holding a mask read
+    as holding a key)."""
+    home = tmp_path / "home"
+    run = older_folder(home, f"the key is {REDACTED} now")
+    with monkeypatch.context() as before:
+        before.setattr("tuningfork.config.without_credentials", lambda url: url)
+        with Store(home, patterns=()) as store:
+            server = store.add_server({"upstream": f"http://{REDACTED}@127.0.0.1:8081/v1?x=1", "models": ["m"]})
+    as_if_older(home)
+    with Store(home) as store:
+        report = scan(store)
+    assert [(each["owner"], each["id"]) for each in report.elsewhere] == [("server", server)]
+    assert report.runs == [] and run
+
+
+def test_a_word_or_a_date_an_address_held_is_looked_for_nowhere_else(tmp_path, monkeypatch):
+    """Masked whole in the address, as a query's values and a password are, but looked for
+    elsewhere only where it reads as a key (`config.key_like`): a run that names the same word or
+    date holds no key (found in review: both runs below read as holding one)."""
+    home = tmp_path / "home"
+    older_folder(home, "it is the sunshine state", "released on 2024-02-01", "write to me@example.com")
+    with monkeypatch.context() as before:
+        before.setattr("tuningfork.config.without_credentials", lambda url: url)
+        with Store(home, patterns=()) as store:
+            server = store.add_server({"upstream": "http://admin:sunshine@127.0.0.1:8081/v1?api-version=2024-02-01"
+                                                   "&user=me@example.com", "models": ["m"]})
+    as_if_older(home)
+    with Store(home) as store:
+        report = scan(store)
+    assert [(each["owner"], each["id"]) for each in report.elsewhere] == [("server", server)] and report.runs == []
+
+
+def test_a_value_in_an_address_the_patterns_read_is_looked_for_elsewhere(tmp_path, monkeypatch):
+    """Where the patterns find a key in an address kept before, its query's values are looked for
+    too, as wherever else a mask's value is."""
+    address = f"http://127.0.0.1:8081/{KEY}/v1?k=Q7bX2kLm9Zr4"
+    home = tmp_path / "home"
+    with monkeypatch.context() as before:
+        before.setattr("tuningfork.config.without_credentials", lambda url: url)
+        with Store(home, patterns=()) as store:
+            server = store.add_server({"upstream": address, "models": ["m"]})
+            job = store.create_job(kind="server-check", lane="interactive", params={"said": "with Q7bX2kLm9Zr4"})
+    as_if_older(home)
+    with Store(home) as store:
+        found = {(each["owner"], each["id"]) for each in scan(store).elsewhere}
+    assert found == {("server", server), ("job", job.id)}
 
 
 def test_a_run_s_label_is_said_masked_of_what_the_masks_took(cli, tmp_path):

@@ -221,3 +221,12 @@ def test_the_command_scores_then_shows(store, served, monkeypatch):
     assert shown.exit_code == 0, shown.output
     assert "scored · grammar · top 8" in shown.output and "rebuilt exactly" in shown.output
     assert "'count' 60% | 'row_count' 40%" in shown.output
+
+
+def test_the_server_it_scores_on_is_shown_without_a_key(store, served, monkeypatch):
+    monkeypatch.setattr("tuningfork.cli.console", Console(width=220))
+    run_id = record(store, served)
+    shown = CliRunner().invoke(app, ["tokens", run_id[:8], "0", "--score", "--base-url",
+                                     "http://tf:Sup3rS3cr3t@upstream.test", "--home", str(store.home)])
+    assert shown.exit_code == 0, shown.output
+    assert "on http://<redacted>@upstream.test" in shown.output and "Sup3rS3cr3t" not in shown.output

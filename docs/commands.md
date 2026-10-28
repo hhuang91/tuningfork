@@ -643,7 +643,9 @@ Looks for what an older tuningfork kept in clear: where in a recordings folder t
 would mask something, run by run — never the key itself. One before 0.6.0 kept a key in clear in
 an answer's raw bytes where a stream sent it in pieces, in a server's errors, an imported chat, a
 check's output, a job's results, and in every format its patterns missed; one of 0.6 in the files
-written from an imported chat.
+written from an imported chat; one before 0.8 in a command's passwords after its first
+(`mysql -p… -p…`), quoted (`-p'…'`) or on a line continued, and in the query of a server's
+address (`?key=…`).
 
 It reads the store's rows, the blobs they name, and the files tuningfork writes from what it
 recorded: an imported chat and each skill it extracted from it, a skill added from what a run's
@@ -654,9 +656,10 @@ is one of the skills read. It never reads what is kept as it was given: a launch
 workspace's snapshots, a scenario's inputs and any other copy of a skill, a skill a person
 brought, the wordings tried. One exception: a skill added from a run that is gone, as the copy
 that run kept, is read, since which copy it was is gone with the run. Besides what today's
-patterns read, it looks for tuningfork's own keys wherever they stand. It cannot find a key no
-pattern reads: the end of one a check's output was cut through, as 0.6 kept it, or the value of a
-variable named as a secret's, printed bare.
+patterns read, it looks for tuningfork's own keys wherever they stand, and reads a server's
+address as one is kept today, masked before its host and in its query. It cannot find a key no
+pattern reads elsewhere: the end of one a check's output was cut through, as 0.6 kept it, or the
+value of a variable named as a secret's, printed bare.
 
 Of a launched run whose answer holds a key, it names the step: a fork past it gives the harness
 that answer again. It changes no recording. It prints the `trash` commands that set what it found

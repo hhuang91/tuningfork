@@ -342,6 +342,47 @@ class TestProfile:
         assert not profile.supports(Capability.LOGPROBS)
         assert profile.performance["mean_total_ms"] is not None
 
+    async def test_a_profile_keeps_its_address_without_a_key(self, mock_server):
+        """A profile is written to be shared: a user and password in the address probed is kept
+        masked, as wherever an address is kept or shown (`config.without_credentials`)."""
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_server.app)) as client:
+            profile = await probe_backend("http://tf:Sup3rS3cr3t@upstream.test/v1", client=client,
+                                          include_prefix_cache=False, performance_rounds=1)
+        assert profile.base_url == "http://<redacted>@upstream.test/v1" and profile.model == "mock-model"
+
+    async def test_a_profile_keeps_what_a_refused_call_said_without_the_key(self, mock_server):
+        """A key the server refuses is just when a profile records errors, and each quotes the
+        address its call went to: the profile, written to be shared, keeps none of the key (found in
+        review). No model listed there, a probe says so of the address masked too."""
+        import json
+
+        def refusing(message: str) -> None:  # a probe reports a server's message verbatim
+            mock_server.responder = lambda payload: MockTurn(status=401, error={"error": {"message": message}})
+
+        async def kept(address: str) -> str:
+            profile = await probe_backend(address, client=client, include_prefix_cache=False, performance_rounds=1)
+            return json.dumps(profile.to_dict())
+
+        key = "sk-" "a1B2c3D4e5F6g7H8i9J0"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_server.app)) as client:
+            # A password no pattern reads as a key, a word, and shorter than a value looked for
+            # elsewhere: masked where its address stands, as given or as httpx spells it (found in
+            # review: an error quotes a host in lower case, and no `:80`), or not at all.
+            refusing(f"bad key {key}")
+            given = await kept("http://tf:hunt@upstream.test/v1")
+            spelled = await kept("http://tf:hunt@UPSTREAM.test:80/v1")
+            # And a password the refusal quotes back alone.
+            refusing("bad password hunter2xyz")
+            echoed = await kept("http://tf:hunter2xyz@upstream.test/v1")
+            # A query cuts the path each call is sent to: no model is listed there.
+            with pytest.raises(RuntimeError) as listed_none:
+                await probe_backend("http://upstream.test/v1?k=abc1longer9", client=client,
+                                    include_prefix_cache=False, performance_rounds=1)
+        for profile in (given, spelled, echoed):
+            assert "401" in profile and "<redacted>" in profile and "hunt" not in profile
+        assert "bad key" in given and key not in given + spelled and "bad password" in echoed
+        assert "abc1longer9" not in str(listed_none.value) and "k=<redacted>" in str(listed_none.value)
+
     async def test_permissive_catch_all_is_not_mistaken_for_lm_studio(self, mock_server):
         """A server that answers every path must not be fingerprinted from a 200 alone."""
         async with httpx.AsyncClient(

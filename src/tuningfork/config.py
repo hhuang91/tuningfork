@@ -224,9 +224,20 @@ _SECRET_FLAG = (
 )
 
 #: Text up to a command's flag: on the command's own line — a line continued with `\` stays one,
-#: as each level of escapes writes it — and not past `|`, `;` or `&&`, where another command
-#: starts (`curl … && docker run -u 1000:1000`).
-_SAME_COMMAND = r"(?:[^\n\\|;&]|&(?!&)|\\\n|\\\\\\n){0,300}?"
+#: a Windows line end too, as each level of escapes writes it — and not past `|`, `;` or `&&`,
+#: where another command starts (`curl … && docker run -u 1000:1000`).
+_SAME_COMMAND = r"(?:[^\n\\|;&]|&(?!&)|\\\r?\n|\\\\\\(?:r\\)?n){0,300}?"
+
+#: Where a command's flag stands: after a space, or first on a line the one before continued
+#: (`\`, a Windows line end too, as each level of escapes writes it) — looked behind for only
+#: where a flag's `-` follows.
+_FLAG_START = r"(?:[ \t]|(?=-)(?:(?<=\\\n)|(?<=\\\r\n)|(?<=\\\\\\n)|(?<=\\\\\\r\\n)))"
+
+#: Where a pattern's command ends and its flag starts (a comment, which matches nothing): after
+#: each match, what follows it is read again from where the secret ends, as often as it is found,
+#: so each of a command's passwords is masked and not its first alone (`mysql -pA -pB`). A
+#: pattern without it masks as it always has, as a step masked by it is read again (`_masked_spans`).
+AGAIN = "(?#again)"
 
 #: A type a declaration names before its value: `apiKey: string = …`, `API_KEY: &str = …`.
 _TYPED = r"(?::[ \t]*&?[A-Za-z_][A-Za-z0-9_.<>\[\]|,' ]{0,40}?[ \t]*(?==))?"
@@ -272,23 +283,25 @@ DEFAULT_REDACTIONS: tuple[str, ...] = (
     # that ran on to an END line in another string took the JSON between them.
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?=(?:\s|\\[nrt])*+(?:Proc-Type:|[A-Za-z0-9+/]{16}))"
     r"(?P<secret>(?:\\[nrt]|[A-Za-z0-9+/=\s:,]|-(?!----))++)",
-    # A password in a URL, in HTTP Basic credentials, curl's `-u`, MySQL's `-p`, `docker login`'s,
-    # requests' `auth=` (opening only where a string does, as a quoted value below, and holding no
-    # space), a `.netrc` line or an XML element; AWS's secret key — under a quoted
-    # name, quoted: a number in JSON is none — an Azure connection string or signature, and a Slack
-    # webhook's path.
+    # A password in a URL, in HTTP Basic credentials, curl's `-u`, MySQL's `-p`, `docker login`'s
+    # — each of a command's (`AGAIN`), quoted or not, its flag perhaps first on a line continued
+    # (`_FLAG_START`) — requests' `auth=` (opening only where a string does, as a quoted value
+    # below, and holding no space), a `.netrc` line or an XML element; AWS's secret key — under a
+    # quoted name, quoted: a number in JSON is none — an Azure connection string or signature, and
+    # a Slack webhook's path.
     r"://[^\s/:@\"'<>\\]*+:(?P<secret>" + _not_a_key(_URL_PASSWORD, numbers=False, password=True)
     + "[" + _URL_PASSWORD + "]++)@",
     r"[Bb]" + _WORD_START.format("[Bb]") + _either("asic") + r"[ \t]+(?P<secret>" + _not_a_key(_BASE64)
     + r"[A-Za-z0-9+/]{12,}+={0,2})(?![A-Za-z0-9+/=])",
-    r"[Cc]" + _WORD_START.format("[Cc]") + _either("url") + r"(?![A-Za-z0-9_])" + _SAME_COMMAND
-    + r"[ \t](?:-u|--user)[ \t=]+[\"']?[^\s:\"'\\]++:(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True)
-    + r"[^\s\"'\\]+)",
+    r"[Cc]" + _WORD_START.format("[Cc]") + _either("url") + r"(?![A-Za-z0-9_])" + AGAIN + _SAME_COMMAND
+    + _FLAG_START + r"(?:-u|--user)[ \t=]+[\"']?[^\s:\"'\\]++:(?P<secret>"
+    + _not_a_key(_ARGUMENT, numbers=False, password=True) + r"[^\s\"'\\]+)",
     r"[Mm]" + _WORD_START.format("[Mm]") + r"(?:" + _either("ysql") + r"(?:" + _either("dump") + "|" + _either("admin")
-    + r")?|" + _either("ariadb") + r")(?![A-Za-z0-9_])" + _SAME_COMMAND + r"[ \t]-p(?P<secret>"
-    + _not_a_key(_ARGUMENT, numbers=False, password=True) + r"[^\s\"'\\]{4,})",
-    r"[Dd]" + _WORD_START.format("[Dd]") + _either("ocker") + r"[ \t]+login(?![A-Za-z0-9_])" + _SAME_COMMAND
-    + r"[ \t]-p[ \t]+(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True) + r"[^\s\"'\\]{4,})",
+    + r")?|" + _either("ariadb") + r")(?![A-Za-z0-9_])" + AGAIN + _SAME_COMMAND + _FLAG_START
+    + r"-p[\"']?(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True) + r"[^\s\"'\\]{4,})",
+    r"[Dd]" + _WORD_START.format("[Dd]") + _either("ocker") + r"[ \t]+login(?![A-Za-z0-9_])" + AGAIN + _SAME_COMMAND
+    + _FLAG_START + r"-p[ \t]+[\"']?(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True)
+    + r"[^\s\"'\\]{4,})",
     r"[Aa]" + _WORD_START.format("[Aa]") + _either("uth") + r"[ \t]*=[ \t]*\([ \t]*(?P<u>[\"'])[^\"'\\]*(?P=u)[ \t]*,"
     r"[ \t]*(?P<q>[\"'])(?![,:;)\]}])(?P<secret>" + _not_a_key(_ARGUMENT, numbers=False, password=True) + "["
     + _ARGUMENT + r"]+)(?P=q)",
@@ -360,23 +373,120 @@ def server_root(base_url: str) -> str:
 
 
 def without_credentials(url: str) -> str:
-    """`url` as it is kept and shown: what stands before its host's `@` — a user and password,
-    or a token alone — masked whole, whatever the patterns would read in it."""
+    """`url` as it is kept and shown (`masked_address`)."""
+    return masked_address(url)[0]
+
+
+def masked_address(url: str) -> tuple[str, tuple[str, ...]]:
+    """A server's address as it is kept and shown, and the values masking it took that are masked
+    wherever else they stand (`_FOUND`): what stands before its host's `@` — a user and password,
+    or a token alone — masked whole, and so is each value of its query (`?key=…`) and its
+    fragment, whatever the patterns would read in them; the rest as the patterns read it (a key in
+    its path). A server's address needs none of them to name it, and a key given in one would
+    otherwise be kept with every server read. A password holding `?`, `#` or `/` unescaped ends
+    what reads as its host early, its "port" no number: all before the next `@` is masked whole,
+    where a host follows it. One whose part before that character is digits alone reads as a port,
+    and is kept as a host and port would be. Of an address that does not parse, what stands
+    before the `@` of what reads as its host is masked whole, and what follows its first `?` or
+    `#`. With nothing to mask, it is kept as given. Of a user and password, the password alone is
+    a value too: a server's refusal may quote it."""
     from urllib.parse import urlsplit, urlunsplit
 
+    taken: list[str] = []
     try:
         parts = urlsplit(url)
     except ValueError:
-        return redact(url)
-    if "@" not in parts.netloc:
-        return url
-    return urlunsplit(parts._replace(netloc=f"{REDACTED}@{parts.netloc.rpartition('@')[2]}"))
+        rebuilt = _unparsed(url, taken)
+    else:
+        scheme, _, rest = url.partition("//")
+        before, at, after = rest.partition("@")
+        host_end = len(re.split(r"[/?#]", after, maxsplit=1)[0])
+        if (parts.netloc and "@" not in parts.netloc and at and not _port_reads(parts)
+                and not re.search(r"[&=]", after[:host_end])):
+            # A host follows the `@`. A path after it holding a query's `&`, `=` or `;` is that
+            # query's tail, read as a path: masked whole too.
+            path_end = len(re.split(r"[?#]", after, maxsplit=1)[0])
+            if re.search(r"[&=;]", after[host_end:path_end]):
+                after = f"{after[:host_end]}/{REDACTED}{after[path_end:]}"
+            kept, found = masked_address(f"{scheme}//{after}")
+            if not re.match(rf"[^/]*//{re.escape(REDACTED)}@", kept):  # a password holding `@`: once
+                kept = kept.replace("//", f"//{REDACTED}@", 1)
+            return kept, tuple(_found(_users(before), found))
+        rebuilt = url
+        if "@" in parts.netloc or parts.query or parts.fragment:
+            before, at, host = parts.netloc.rpartition("@")
+            pieces = [_masked_value(each, taken) for each in parts.query.split("&")] if parts.query else []
+            taken += _users(before) if at else []
+            taken += [parts.fragment] if parts.fragment else []
+            rebuilt = urlunsplit(parts._replace(netloc=f"{REDACTED}@{host}" if at else host, query="&".join(pieces),
+                                                fragment=REDACTED if parts.fragment else ""))
+    masked, _, found = _masking(rebuilt, DEFAULT_REDACTIONS, ())
+    return masked, tuple(_found(taken, found))
+
+
+def _users(userinfo: str) -> list[str]:
+    """What stands before an address's `@`, and its password alone."""
+    return [userinfo, userinfo.partition(":")[2]]
+
+
+def _port_reads(parts: Any) -> bool:
+    """Whether what follows the last `:` of what reads as an address's host is a port."""
+    try:
+        parts.port
+    except ValueError:
+        return False
+    return True
+
+
+def _unparsed(url: str, taken: list[str]) -> str:
+    """An address that does not parse, as it is kept: what stands before the `@` of what reads as
+    its host masked whole, and what follows its first `?` or `#`; each added to `taken`."""
+    scheme, slashes, rest = url.partition("//") if "//" in url else ("", "", url)
+    user, at, _ = re.split(r"[/?#]", rest, maxsplit=1)[0].rpartition("@")
+    if slashes and at:
+        taken += _users(user)
+        rest = f"{REDACTED}@{rest[len(user) + 1:]}"
+    head = re.split(r"[?#]", rest, maxsplit=1)[0]
+    if head != rest:
+        taken.append(rest[len(head) + 1:])
+        rest = f"{head}{rest[len(head)]}{REDACTED}"
+    return f"{scheme}{slashes}{rest}"
+
+
+def _found(*values: Iterable[str]) -> list[str]:
+    """The values, each once, that a mask's value is: masked wherever else they stand. Never one a
+    mask stands in already — an address kept masked before — which would find every mask."""
+    return list(dict.fromkeys(value for each in values for value in each
+                              if _FOUND.fullmatch(value) and REDACTED not in value))
+
+
+def _masked_value(parameter: str, taken: list[str]) -> str:
+    """A query's `name=value`, its value masked whole and added to `taken`; one with no name,
+    masked whole."""
+    name, equals, value = parameter.partition("=")
+    if not equals:
+        taken += [name] if name else []
+        return REDACTED if name else name
+    taken += [value] if value else []
+    return f"{name}={REDACTED}" if value else parameter
 
 
 #: A value a mask took that is masked wherever else it stands in a step — its tokens, an error
 #: that quotes it, the strings of its answer (`also`): a key's length or more, and no quote,
 #: backslash or space, which no string's edge holds, so masking it never crosses one.
 _FOUND = re.compile(r"[^\"\\\s]{8,}")
+#: A value that reads as a key, as the patterns read a password: not a word, a date, a name or a
+#: number (`_not_a_key`), nor an email address — after its `@` a domain, its last label letters
+#: (a password holding an `@` and a dot, `P@ss.word9`, still reads as one).
+_KEY_LIKE = re.compile(_not_a_key(_ARGUMENT, numbers=True, password=True)
+                       + r"(?![^@\s]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\Z)[^\s\"'\\]{8,}")
+
+
+def key_like(value: str) -> bool:
+    """Whether `value` reads as a key, as the patterns read a password: where a mask took it
+    whole whatever it read as — an address's query values, its password — what is looked for
+    elsewhere."""
+    return _KEY_LIKE.fullmatch(value) is not None
 
 
 def redact(text: str, patterns: tuple[str, ...] = DEFAULT_REDACTIONS, also: Iterable[str] = ()) -> str:
@@ -422,14 +532,32 @@ def _found_spans(text: str, also: Iterable[str]) -> list[tuple[int, int]]:
 def _masked_spans(text: str, patterns: tuple[str, ...]) -> list[tuple[int, int]]:
     # A pattern with a `secret` group masks that group only — the `api_key=` before it stays,
     # so a redacted recording stays readable — and one without masks its whole match. One with
-    # several ways to a secret names each group `secret…`, and masks the one that matched.
+    # several ways to a secret names each group `secret…`, and masks the one that matched. One
+    # marked `AGAIN` reads its flag again from where each secret it masks ends.
     spans = []
     for pattern in patterns:
         compiled = re.compile(pattern)
-        groups = [name for name in compiled.groupindex if name.startswith("secret")]
-        for match in compiled.finditer(text):
-            spans.append(next((match.span(name) for name in groups if match.group(name) is not None), match.span()))
+        if AGAIN not in pattern:
+            spans += [_secret_span(match) for match in compiled.finditer(text)]
+            continue
+        # The next match is looked for past the last secret read again, not past the first: a
+        # command's every later name (`mysql -pA mysql -pB …`) would read the rest again, and a
+        # megabyte of them would take hours. Each match holds its secret, so each moves on.
+        again, at = re.compile(pattern.partition(AGAIN)[2]), 0
+        while (match := compiled.search(text, at)) is not None:
+            span = _secret_span(match)
+            spans.append(span)
+            while (more := again.match(text, span[1])) is not None and _secret_span(more)[1] > span[1]:
+                span = _secret_span(more)
+                spans.append(span)
+            at = max(span[1], match.end(), match.start() + 1)
     return spans
+
+
+def _secret_span(match: re.Match[str]) -> tuple[int, int]:
+    """Where a match's secret stands: its `secret…` group that matched, else the whole match."""
+    named = (name for name in match.re.groupindex if name.startswith("secret"))
+    return next((match.span(name) for name in named if match.group(name) is not None), match.span())
 
 
 def _merged(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
