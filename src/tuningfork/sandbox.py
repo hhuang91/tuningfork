@@ -249,19 +249,13 @@ class Sandbox:
                 if not any(_within(Path(entry), folder) for folder in hidden)
             )
         env.update({"HOME": str(HOME), "TMPDIR": "/tmp", "PWD": str(WORKSPACE)})
-        if self.clock and self.clock_library:
-            # The harness's clock calls go through libfaketime, started at the instant: its
-            # "today" is the same whichever day the launch is made. Monotonic clocks stay
-            # real, so its timeouts and tuningfork's timings do.
-            env["LD_PRELOAD"] = ":".join(filter(None, [self.clock_library, env.get("LD_PRELOAD")]))
-            env["FAKETIME"] = f"@{self.clock}"
-            env["FAKETIME_DONT_FAKE_MONOTONIC"] = "1"
         arguments = [self.executable, *_base_arguments(real_home)]
         for folder in hidden:
             arguments += ["--tmpfs", str(folder)]
         arguments += [
             "--bind", str(Path(home).resolve()), str(HOME),
             "--bind", str(Path(workspace).resolve()), str(WORKSPACE),
+            *self.clock_arguments(env.get("LD_PRELOAD")),
             "--chdir", str(WORKSPACE), "--",
         ]
         return LaunchSpec(
@@ -269,6 +263,39 @@ class Sandbox:
             env=env,
             cwd=Path(workspace),
         )
+
+    def clock_arguments(self, preload: str | None = None) -> list[str]:
+        """What bubblewrap is told for the pinned clock, or nothing: the harness's clock calls go
+        through libfaketime, loaded before any library `preload` names, started at the instant,
+        so its "today" is the same whichever day the launch is made. Monotonic clocks stay real,
+        so its timeouts and tuningfork's timings do. Set with --setenv, for the program inside
+        alone: in bubblewrap's own environment libfaketime would start in bubblewrap too and make
+        its semaphore in the machine's /dev/shm, which the harness, in a /dev of its own, could
+        not open — Claude Code's native binary stopped at once on arm64, naming a semaphore it had
+        not made — and which a launch killed would leave there. A plan first runs the harness's
+        `--version` with these (`ops.connections.clock_problem`)."""
+        if not (self.clock and self.clock_library):
+            return []
+        given = {
+            "LD_PRELOAD": ":".join(filter(None, [self.clock_library, preload])),
+            "FAKETIME": f"@{self.clock}",
+            "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+        }
+        return [part for name, value in given.items() for part in ("--setenv", name, value)]
+
+    def probe_arguments(self, home: str, *, pinned: bool = False) -> list[str]:
+        """What a plan runs a harness's `--version` after, to see whether it runs with the clock
+        pinned (`ops.connections.clock_problem`): the machine as it is, writable as it is, but a
+        /dev and processes of its own, as a launch has, and, `pinned`, the clock as a launch's
+        harness is given it. What libfaketime leaves in /dev/shm goes with it — run outside,
+        Claude Code's native binary left a semaphore there on arm64 — and so does every process
+        the harness started. Its throwaway `home` is shown where it is, and it starts there: one
+        made under /dev, where TMPDIR=/dev/shm puts it, would be hidden."""
+        return [
+            self.executable, "--die-with-parent", "--unshare-pid",
+            "--bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", home, home,
+            *(self.clock_arguments() if pinned else []), "--chdir", home, "--",
+        ]
 
     def check_command(
         self, command: str, *, workspace: Path, environment: dict[str, str],

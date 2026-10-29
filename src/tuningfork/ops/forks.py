@@ -15,7 +15,7 @@ from tuningfork.analysis.conditions import TIMED_OUT, fork_counted
 from tuningfork.ops.common import Cancel, Cancelled, OperationError, Progress, emit
 from tuningfork.ops.trash import refuse_trashed
 from tuningfork.ops.experiments import load
-from tuningfork.ops.launch import ProxyStatus, Setup, check_launchable, check_proxy, setup_of
+from tuningfork.ops.launch import ProxyStatus, Setup, check_clock, check_launchable, check_proxy, setup_of
 from tuningfork.store.db import Store
 
 
@@ -167,6 +167,7 @@ def prepare_fork(
                 hint=", or ".join(part for part in (remedy(unsandboxed), "fork a run launched without it") if part),
                 code="no_sandbox",
             )
+        check_clock(adapter, sandbox, hint=f"run {source_run.id[:8]} read that clock, so each of its forks must too")
     if skill is not None and not skill.exists() and not skill_commit:
         raise OperationError(f"the skill folder the run was given, {skill}, no longer exists")
     # Read once, here, for a check that runs a command: a list that cannot be read is refused

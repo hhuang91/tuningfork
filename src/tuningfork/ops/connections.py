@@ -7,7 +7,8 @@ home, so even that leaves nothing behind.
 
 Before a batch or a fork launches a harness, its `requirements` of the server are checked
 (`preflight`): a context too small for Hermes, or no `/v1/messages` for Claude Code, is
-refused before a launch is recorded, not found out from a failed run.
+refused before a launch is recorded, not found out from a failed run. So is a harness that
+cannot run with the clock pinned (`clock_problem`).
 
 Token work is held to the same check (`token_work`): scoring an answer, forking tokens and
 keeping each sample's tokens each need something a server check measures, and one the check
@@ -23,14 +24,17 @@ since a harness tuningfork launches carries none (`preflight`).
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Sequence
 
 from tuningfork.backends.formats import known_models
 from tuningfork.config import read_home_config, write_home_config
@@ -39,6 +43,13 @@ from tuningfork.ops.common import OperationError
 #: Harness version checks give up after this long: a harness that waits for input, or for
 #: a network, must not hang the page that asked.
 VERSION_TIMEOUT = 15.0
+#: How long a harness's `--version` may take, on the real clock and then with the clock pinned,
+#: before it counts as never answering: a plan that asks waits up to twice this, and what it finds
+#: is kept (`_ON_THE_CLOCK`).
+CLOCK_TIMEOUT = 10.0
+#: How long a harness found unable to run with the clock pinned is refused without asking again:
+#: a machine too busy to answer in time must not refuse a harness for the life of a `serve`.
+CLOCK_PROBLEM_KEPT = 300.0
 
 
 def overrides(home: Path | str) -> dict[str, str]:
@@ -147,12 +158,23 @@ class HarnessInfo:
         }
 
 
-def _version(path: str, problem: Any = None) -> tuple[str | None, str | None, str | None]:
+def _version(
+    path: str, problem: Any = None, *, timeout: float = VERSION_TIMEOUT,
+    inside: Callable[[str], Sequence[str]] | None = None,
+) -> tuple[str | None, str | None, str | None]:
     """A harness's `--version`, run where it can touch nothing real: a throwaway home, its
-    own config dirs pointed there, no input. Its first line, what went wrong running it, and
-    `problem`'s reading of what it printed (its adapter's `version_problem`): what answers
-    --version and still cannot launch — OpenClaw on a Node it does not support."""
-    with tempfile.TemporaryDirectory(prefix="tuningfork-detect-") as scratch:
+    own config dirs pointed there, no input; inside the command `inside` makes of that home, if
+    any. Its first line, what went wrong running it, and `problem`'s reading of what it printed
+    (its adapter's `version_problem`): what answers --version and still cannot launch — OpenClaw
+    on a Node it does not support. It runs in a session of its own, and what is left in its
+    process group goes with it, answered or not; inside bubblewrap, whose processes are its own
+    (`Sandbox.probe_arguments`), all it started: a harness hung with the clock pinned leaves
+    nothing running."""
+    with tempfile.TemporaryDirectory(prefix="tuningfork-detect-", ignore_cleanup_errors=True) as made:
+        # Without symlinks, for `inside` to show it where it is: bubblewrap makes a bind's
+        # destination before its new root is in place, and an absolute symlink on the way would
+        # lead out of it.
+        scratch = os.path.realpath(made)
         env = {
             "PATH": os.environ.get("PATH", ""),
             "HOME": scratch,
@@ -164,19 +186,42 @@ def _version(path: str, problem: Any = None) -> tuple[str | None, str | None, st
             "LANG": os.environ.get("LANG", "C.UTF-8"),
         }
         try:
-            done = subprocess.run(
-                [path, "--version"], cwd=scratch, env=env, stdin=subprocess.DEVNULL,
-                capture_output=True, text=True, timeout=VERSION_TIMEOUT,
-            )
-        except subprocess.TimeoutExpired:
-            return None, f"--version did not answer in {VERSION_TIMEOUT:g} s", None
+            with subprocess.Popen(
+                [*(inside(scratch) if inside else ()), path, "--version"], cwd=scratch, env=env,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                start_new_session=os.name == "posix",
+            ) as running:
+                try:
+                    stdout, stderr = running.communicate(timeout=timeout)
+                except BaseException as stopped:
+                    # Waited for, not read to the end: a process that left the session may hold
+                    # the pipes, and what it would print says nothing here.
+                    _end_session(running.pid)
+                    running.kill()
+                    running.wait()
+                    if isinstance(stopped, subprocess.TimeoutExpired):
+                        return None, f"--version did not answer in {timeout:g} s", None
+                    raise
+                _end_session(running.pid)
         except OSError as exc:
             return None, f"could not run it: {exc}", None
-    lines = [line.strip() for line in (done.stdout or done.stderr or "").splitlines() if line.strip()]
-    if done.returncode != 0:
-        return None, f"--version exited {done.returncode}: {lines[0] if lines else 'no output'}", None
-    said = problem(f"{done.stdout or ''}\n{done.stderr or ''}") if problem is not None else None
+    lines = [line.strip() for line in (stdout or stderr or "").splitlines() if line.strip()]
+    if running.returncode != 0:
+        return None, f"--version exited {running.returncode}: {lines[0] if lines else 'no output'}", None
+    said = problem(f"{stdout or ''}\n{stderr or ''}") if problem is not None else None
     return (lines[0] if lines else None), None, said
+
+
+def _end_session(leader: int) -> None:
+    """Every process still in the process group the session `leader` started: a --version has no
+    business leaving one running, and a harness hung with the clock pinned would never end by
+    itself. One that left for a session of its own is out of reach here; inside bubblewrap,
+    whose processes are its own, it ends with the sandbox. Where there are no sessions (not
+    POSIX), the program alone ends, as `subprocess` ends it."""
+    if os.name != "posix":
+        return
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(leader, signal.SIGKILL)
 
 
 #: The programs `launch_problem` found nothing wrong with, by path, mtime and the PATH they ran
@@ -209,6 +254,73 @@ def launch_problem(adapter: Any) -> str | None:
         _LAUNCHABLE.add(key)
         return None
     return said
+
+
+#: What `clock_problem` found, by the program, the clock's library and the PATH they ran with,
+#: each file as it was then, and until when it holds: what the harness's --version did with the
+#: clock pinned, where it answered on the real clock, kept `CLOCK_PROBLEM_KEPT`; None for one
+#: that answered with the clock pinned too, kept for good, or for one that did not answer on the
+#: real clock, which is not this check's to refuse, kept `CLOCK_PROBLEM_KEPT`. A batch's plan
+#: asks, and so does each fork's, and the web UI plans a form again at each change: a harness
+#: that hangs with the clock pinned would make each of them wait. A program or a library changed
+#: since, an update, is asked again.
+_ON_THE_CLOCK: dict[tuple[str, float, str, float, str], tuple[str | None, float]] = {}
+#: One question at a time: plans made at once wait for the first one's answer, rather than each
+#: starting the harness again. An answer kept is read without it.
+_ASKING_THE_CLOCK = threading.Lock()
+
+
+def _kept_answer(key: tuple[str, float, str, float, str]) -> tuple[str | None, float] | None:
+    found = _ON_THE_CLOCK.get(key)
+    return found if found is not None and time.monotonic() < found[1] else None
+
+
+def clock_problem(adapter: Any, sandbox: Any) -> str | None:
+    """Why this harness cannot run with the clock the sandbox pins (`Sandbox.clock`), or None:
+    its own `--version` answers on the real clock, but given libfaketime as the sandbox gives a
+    launch's harness (`Sandbox.clock_arguments`), it fails or never answers. Claude Code
+    2.1.281's native binary never answers on x86-64, the library merely loaded: each of its
+    runs would wait out its task's timeout. On arm64 it answers, and runs. The real clock is
+    asked first, with as long, so that the run with the library loaded is not the one that pays
+    for a cold start; a harness that fails there too is not this check's to refuse: its launch
+    says what is wrong. Both run in bubblewrap with a /dev of their own, as a launch does
+    (`Sandbox.probe_arguments`): what libfaketime leaves in /dev/shm goes with it — run outside,
+    Claude Code left a semaphore there on arm64 — and a refusal asked again every five minutes
+    must not leave one on the machine each time."""
+    executable = getattr(adapter, "executable", None)
+    if sandbox is None or not (sandbox.clock and sandbox.clock_library) or not executable:
+        return None
+    path = executable if os.sep in executable else shutil.which(executable)
+    library = sandbox.clock_library
+    try:
+        key = (
+            (str(Path(path).resolve()), Path(path).stat().st_mtime, library, Path(library).stat().st_mtime,
+             os.environ.get("PATH", ""))
+            if path else None
+        )
+    except OSError:
+        key = None
+    if key is None:
+        return None
+    found = _kept_answer(key)
+    if found is None:
+        with _ASKING_THE_CLOCK:
+            found = _kept_answer(key)
+            if found is None:
+                if _version(path, timeout=CLOCK_TIMEOUT, inside=sandbox.probe_arguments)[1] is not None:
+                    found = (None, time.monotonic() + CLOCK_PROBLEM_KEPT)
+                else:
+                    _, failed, _ = _version(
+                        path, timeout=CLOCK_TIMEOUT, inside=lambda home: sandbox.probe_arguments(home, pinned=True))
+                    found = (failed, float("inf") if failed is None else time.monotonic() + CLOCK_PROBLEM_KEPT)
+                _ON_THE_CLOCK[key] = found
+    failed = found[0]
+    if failed is None:
+        return None
+    return (
+        f"{adapter.name} cannot run with the clock pinned at {sandbox.clock}: its --version answers on the "
+        f"real clock, but with libfaketime loaded it {failed.removeprefix('--version ')}"
+    )
 
 
 def detect_harnesses(home: Path | str) -> list[HarnessInfo]:

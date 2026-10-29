@@ -170,3 +170,14 @@ def check_launchable(adapter: Any) -> None:
     said = launch_problem(adapter)
     if said:
         raise OperationError(said, field="harness")
+
+
+def check_clock(adapter: Any, sandbox: Any, *, hint: str) -> None:
+    """That the harness runs with the clock the sandbox pins, refused before a launch is
+    recorded if it does not (`ops.connections.clock_problem`): Claude Code's native binary on
+    x86-64, whose every run would hang until its task's timeout."""
+    from tuningfork.ops.connections import clock_problem
+
+    said = clock_problem(adapter, sandbox)
+    if said:
+        raise OperationError(said, hint=hint, field="harness")

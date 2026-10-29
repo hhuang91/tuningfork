@@ -466,6 +466,16 @@ every run of a validation. It uses libfaketime (`sudo apt install libfaketime`) 
 `LD_PRELOAD`, monotonic clocks left real; `TUNINGFORK_CLOCK_LIBRARY` names the library if it is
 elsewhere, and a plan warns when it is missing.
 
+Not every harness runs with the library loaded. Before a batch or a fork launches anything, its
+plan runs the harness's `--version` on the real clock and then with the clock pinned, and
+refuses a harness that answers only on the real clock. Claude Code 2.1.281's native binary is
+one on x86-64, where it never answers with the library loaded: run it on the real clock there.
+On arm64 it runs with the clock pinned, from tuningfork 0.8.1 on. Hermes Agent's `--version`
+answers with the library loaded, and so does OpenClaw's on arm64. The first plan to ask can wait
+up to 20 s, 10 s for each `--version`. Within one `tuningfork serve`, later plans reuse its
+answer: a refusal for five minutes, a pass until the harness or the library changes. A command
+run in the terminal asks again.
+
 ## A task
 
 A task spec is an `evals.json`, in the convention of Anthropic's skill-creator, with
