@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,25 @@ def folders(tmp_path: Path) -> tuple[Path, Path]:
     (root / "home").mkdir(parents=True)
     (root / "workspace").mkdir()
     return root / "home", root / "workspace"
+
+
+def bubblewrap_stand_in(tmp_path: Path) -> str:
+    """bubblewrap as the tests of the clock's probe need it, wherever the suite runs: what
+    follows `--` run as it is, given what each `--setenv` sets."""
+    program = tmp_path / "bwrap"
+    program.write_text(
+        '#!/bin/sh\nwhile [ "$1" != "--" ]; do\n'
+        '    if [ "$1" = "--setenv" ]; then export "$2=$3"; shift 3; else shift; fi\n'
+        'done\nshift\nexec "$@"\n',
+        encoding="utf-8")
+    program.chmod(0o755)
+    return str(program)
+
+
+def given_by_setenv(argv: Sequence[str]) -> dict[str, str]:
+    """What bubblewrap's command sets for the program it runs (`--setenv NAME VALUE`)."""
+    options = list(argv[:list(argv).index("--")])
+    return {options[at + 1]: options[at + 2] for at, part in enumerate(options) if part == "--setenv"}
 
 
 #: A check that says what it finds: run in a workspace, given the folder it should find empty
@@ -505,12 +525,17 @@ class TestTheClock:
         spec = LaunchSpec(argv=("hermes", "chat"), env={"PATH": "/usr/bin", "LD_PRELOAD": "/lib/other.so"}, cwd=workspace)
         pinned = Sandbox("/usr/bin/bwrap", "0.11.1", clock="2026-10-08 09:00:00", clock_library="/lib/libfaketime.so.1")
         wrapped = pinned.wrap(spec, home=home, workspace=workspace)
-        assert wrapped.env["FAKETIME"] == "@2026-10-08 09:00:00"
-        assert wrapped.env["LD_PRELOAD"] == "/lib/libfaketime.so.1:/lib/other.so"
-        assert wrapped.env["FAKETIME_DONT_FAKE_MONOTONIC"] == "1"
+        assert given_by_setenv(wrapped.argv) == {
+            "LD_PRELOAD": "/lib/libfaketime.so.1:/lib/other.so", "FAKETIME": "@2026-10-08 09:00:00",
+            "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+        }
+        # The harness's alone: in bubblewrap's own environment, libfaketime would start there too,
+        # its semaphore in a /dev the harness cannot see (Claude Code stopped at once on arm64).
+        assert "FAKETIME" not in wrapped.env and wrapped.env["LD_PRELOAD"] == "/lib/other.so"
         assert pinned.to_json()["clock"] == "2026-10-08 09:00:00"
         plain = Sandbox("/usr/bin/bwrap", "0.11.1")
-        assert "FAKETIME" not in plain.wrap(spec, home=home, workspace=workspace).env
+        unpinned = plain.wrap(spec, home=home, workspace=workspace)
+        assert given_by_setenv(unpinned.argv) == {} and "FAKETIME" not in unpinned.env
         assert "clock" not in plain.to_json()
 
     def test_the_persons_setting_pins_it_where_the_library_is(self, tmp_path, monkeypatch):
@@ -564,6 +589,131 @@ class TestTheClock:
             (note,) = data["notes"]
             assert note["level"] == "warning" and "libfaketime is not installed" in note["message"]
 
+    def test_a_harness_the_pinned_clock_stops_is_found_by_its_own_version(self, tmp_path, monkeypatch):
+        """On x86-64 Claude Code's native binary never makes its first call with libfaketime
+        loaded: it hangs. Its own --version, run with the clock a launch's harness gets, says so
+        before any run is launched, after the real clock's has answered. It says so too of one
+        that stops at once, as Claude Code did on arm64 while bubblewrap loaded the library. A
+        harness that fails without the clock too is not the clock's to refuse."""
+        from types import SimpleNamespace
+
+        import tuningfork.ops.connections as connections
+
+        monkeypatch.setattr(connections, "CLOCK_TIMEOUT", 1.0)
+        monkeypatch.setattr(connections, "_ON_THE_CLOCK", {})
+        library = tmp_path / "libfaketime.so.1"
+        library.write_bytes(b"")
+        bwrap = bubblewrap_stand_in(tmp_path)
+        pinned = Sandbox(bwrap, "0.11.1", clock="2026-10-08 09:00:00", clock_library=str(library))
+        asked = tmp_path / "asked"
+
+        def harness(name: str, body: str) -> SimpleNamespace:
+            program = tmp_path / name
+            program.write_text(f'#!/bin/sh\necho "{name} ${{FAKETIME:-real}}" >> \'{asked}\'\n{body}', encoding="utf-8")
+            program.chmod(0o755)
+            return SimpleNamespace(name=name, executable=str(program))
+
+        def runs_of(name: str) -> list[str]:
+            return [line.split(" ", 1)[1] for line in asked.read_text(encoding="utf-8").splitlines()
+                    if line.split(" ", 1)[0] == name]
+
+        hangs = harness("hangs", '[ -n "$FAKETIME" ] && exec sleep 30\necho 1.0\n')
+        stops = harness("stops", '[ -n "$FAKETIME" ] && { echo "sem_open failed" >&2; exit 1; }\necho 1.0\n')
+        runs = harness("runs", "echo 1.0\n")
+        broken = harness("broken", "exit 3\n")
+
+        assert connections.clock_problem(hangs, pinned) == (
+            "hangs cannot run with the clock pinned at 2026-10-08 09:00:00: its --version answers on the real "
+            "clock, but with libfaketime loaded it did not answer in 1 s")
+        assert runs_of("hangs") == ["real", "@2026-10-08 09:00:00"]
+        assert ("its --version answers on the real clock, but with libfaketime loaded it exited 1"
+                in connections.clock_problem(stops, pinned))
+        assert connections.clock_problem(runs, pinned) is None
+        # Broken without the clock too: its launch says what is wrong, and the clock is not asked.
+        assert connections.clock_problem(broken, pinned) is None
+        assert runs_of("broken") == ["real"]
+
+        # Asked once, each: the plans that follow wait for nothing, and quote their own instant.
+        before = asked.read_text(encoding="utf-8")
+        later = Sandbox(bwrap, "0.11.1", clock="2027-01-01 00:00:00", clock_library=str(library))
+        assert "pinned at 2027-01-01 00:00:00" in connections.clock_problem(hangs, later)
+        assert connections.clock_problem(runs, later) is None
+        assert asked.read_text(encoding="utf-8") == before
+        # No clock pinned, nothing asked.
+        assert connections.clock_problem(hangs, Sandbox("/usr/bin/bwrap", "0.11.1")) is None
+        assert connections.clock_problem(hangs, None) is None
+        assert asked.read_text(encoding="utf-8") == before
+        # Five minutes on, a refusal is asked again, and so is a harness that did not answer on
+        # the real clock either: a machine too busy to answer once must not refuse a harness, or
+        # spare it, for the life of a serve. A clean answer is kept.
+        for key, (failed, until) in list(connections._ON_THE_CLOCK.items()):
+            connections._ON_THE_CLOCK[key] = (failed, until - connections.CLOCK_PROBLEM_KEPT - 1)
+        assert connections.clock_problem(hangs, pinned) and connections.clock_problem(runs, pinned) is None
+        assert connections.clock_problem(broken, pinned) is None
+        assert runs_of("hangs") == ["real", "@2026-10-08 09:00:00"] * 2 and runs_of("runs") == ["real", "@2026-10-08 09:00:00"]
+        assert runs_of("broken") == ["real"] * 2
+
+    def test_the_clock_is_asked_once_at_a_time_and_leaves_nothing_running(self, tmp_path, monkeypatch):
+        """The web UI plans a form again at each change: plans made at once wait for the first
+        one's answer rather than each starting the harness again, and a harness that hangs with
+        the clock pinned is ended, with everything it started."""
+        import threading
+        from types import SimpleNamespace
+
+        import tuningfork.ops.connections as connections
+
+        monkeypatch.setattr(connections, "CLOCK_TIMEOUT", 1.0)
+        monkeypatch.setattr(connections, "_ON_THE_CLOCK", {})
+        library = tmp_path / "libfaketime.so.1"
+        library.write_bytes(b"")
+        pinned = Sandbox(bubblewrap_stand_in(tmp_path), "0.11.1", clock="2026-10-08 09:00:00", clock_library=str(library))
+        asked, marker = tmp_path / "asked", "41.25"
+        program = tmp_path / "hangs"
+        program.write_text(
+            f"#!/bin/sh\necho x >> '{asked}'\n[ -n \"$FAKETIME\" ] && {{ sleep {marker} & exec sleep 30; }}\necho 1.0\n",
+            encoding="utf-8")
+        program.chmod(0o755)
+        hangs = SimpleNamespace(name="hangs", executable=str(program))
+
+        said: list[str | None] = []
+        plans = [threading.Thread(target=lambda: said.append(connections.clock_problem(hangs, pinned))) for _ in range(3)]
+        for plan in plans:
+            plan.start()
+        for plan in plans:
+            plan.join(timeout=30)
+        assert len(said) == 3 and all(said)
+        assert asked.read_text(encoding="utf-8").count("x") == 2
+
+        def running(entry: Path) -> bool:
+            try:
+                return entry.name.isdigit() and marker.encode() in (entry / "cmdline").read_bytes()
+            except OSError:
+                return False
+
+        assert [entry.name for entry in Path("/proc").iterdir() if running(entry)] == []
+
+    def test_the_batch_plan_refuses_a_harness_the_pinned_clock_stops(self, tmp_path, mock_server, monkeypatch):
+        """Refused before any run is launched, in the words its own --version gave, with how to
+        run it anyway: every run would end before its first call, or hang until its timeout."""
+        import tuningfork.ops.connections as connections
+        from tuningfork.ops.batch import prepare_batch
+        from tuningfork.sandbox import CLOCK
+
+        with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+            stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+            monkeypatch.setattr(
+                tuningfork.sandbox, "for_launches",
+                lambda hide, **_: (Sandbox("/usr/bin/bwrap", "0.11.1", clock="2026-10-08 09:00:00", clock_library="/lib/x.so"), None),
+            )
+            monkeypatch.setattr(connections, "clock_problem", lambda adapter, sandbox: (
+                f"{adapter.name} cannot run with the clock pinned at {sandbox.clock}"))
+            with pytest.raises(OperationError) as refused:
+                prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                              model="m", harness="fake", n=1)
+            assert refused.value.message == "fake cannot run with the clock pinned at 2026-10-08 09:00:00"
+            assert refused.value.hint == f"unset {CLOCK} to run it on the real clock"
+            assert refused.value.field == "harness"
+
     def test_a_launch_reads_the_pinned_clock(self, sandboxed, tmp_path):
         from tuningfork.sandbox import clock_library
 
@@ -578,4 +728,122 @@ class TestTheClock:
         done = subprocess.run(list(wrapped.argv), env=wrapped.env, cwd=wrapped.cwd, capture_output=True, text=True, timeout=60)
         assert done.returncode == 0, done.stderr
         assert done.stdout.strip() == "Thursday, October 08, 2026"
+
+    def test_a_killed_launch_leaves_nothing_of_the_clock_on_the_machine(self, sandboxed, tmp_path):
+        """libfaketime is the harness's alone: in bubblewrap's own environment it would start
+        there too, outside the sandbox's /dev, and leave its semaphore in the machine's /dev/shm
+        whenever a launch is killed — a run cut at its task's timeout, a batch stopped."""
+        import contextlib
+        import signal
+        import threading
+
+        from tuningfork.sandbox import clock_library
+
+        library = clock_library()
+        if library is None:
+            pytest.skip("libfaketime is not installed here")
+        home, workspace = folders(tmp_path)
+        spec = LaunchSpec(argv=("sh", "-c", "date; exec sleep 30"), env={"PATH": os.environ.get("PATH", "")}, cwd=workspace)
+        pinned = Sandbox(sandboxed.executable, sandboxed.version, clock="2026-10-08 09:00:00", clock_library=library)
+        wrapped = pinned.wrap(spec, home=home, workspace=workspace)
+        before = set(os.listdir("/dev/shm"))
+        running = subprocess.Popen(list(wrapped.argv), env=wrapped.env, cwd=wrapped.cwd, stdout=subprocess.PIPE,
+                                   text=True, start_new_session=True)
+
+        def end() -> None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(running.pid, signal.SIGKILL)
+
+        # A launch that never prints must not hold the suite.
+        guard = threading.Timer(30, end)
+        guard.start()
+        try:
+            started = running.stdout.readline()
+        finally:
+            guard.cancel()
+            end()
+            running.wait()
+            running.stdout.close()
+        assert "Oct" in started and "2026" in started
+        # libfaketime names what it leaves by its process, and other launches make entries too.
+        assert [name for name in set(os.listdir("/dev/shm")) - before if name.endswith(f"_{running.pid}")] == []
+
+    def test_what_the_probe_leaves_in_dev_shm_goes_with_it(self, sandboxed, tmp_path, monkeypatch):
+        """A harness given libfaketime can leave its semaphore in /dev/shm — run outside
+        bubblewrap, Claude Code's native binary did on arm64 — or hang and be ended, and a
+        refusal is asked again every five minutes. The probe gives libfaketime to the harness
+        alone, in bubblewrap with a /dev of its own, as a launch does: nothing it left there
+        stays on the machine, nor anything of libfaketime's own."""
+        from types import SimpleNamespace
+
+        import tuningfork.ops.connections as connections
+        from tuningfork.sandbox import clock_library
+
+        library = clock_library()
+        if library is None:
+            pytest.skip("libfaketime is not installed here")
+        monkeypatch.setattr(connections, "CLOCK_TIMEOUT", 1.0)
+        monkeypatch.setattr(connections, "_ON_THE_CLOCK", {})
+        started: list[int] = []
+
+        class Started(subprocess.Popen):
+            """Each process the probe starts, by its pid: libfaketime names what it leaves by it,
+            and launches running beside the suite make and remove entries of their own."""
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                started.append(self.pid)
+
+        monkeypatch.setattr(connections.subprocess, "Popen", Started)
+        left = Path("/dev/shm") / f"sem.faketime_sem_tuningfork-test-{os.getpid()}"
+        made = tmp_path / "made"
+
+        def harness(name: str, body: str) -> SimpleNamespace:
+            program = tmp_path / name
+            program.write_text(f'#!/bin/sh\n[ -n "$FAKETIME" ] || {{ echo 1.0; exit 0; }}\n{body}', encoding="utf-8")
+            program.chmod(0o755)
+            return SimpleNamespace(name=name, executable=str(program))
+
+        stops = harness("stops", f"touch '{left}' && echo stops >> '{made}'\necho 'sem_open failed' >&2\nexit 1\n")
+        hangs = harness("hangs", f"echo hangs >> '{made}'\nexec sleep 30\n")
+        pinned = Sandbox(sandboxed.executable, sandboxed.version, clock="2026-10-08 09:00:00", clock_library=library)
+        before = set(os.listdir("/dev/shm"))
+        assert left.name not in before
+        try:
+            assert "with libfaketime loaded it exited 1" in (connections.clock_problem(stops, pinned) or "")
+            assert "with libfaketime loaded it did not answer in 1 s" in (connections.clock_problem(hangs, pinned) or "")
+            assert made.read_text(encoding="utf-8") == "stops\nhangs\n" and len(started) == 4
+            new = set(os.listdir("/dev/shm")) - before
+            assert left.name not in new
+            assert [name for name in new if name.endswith(tuple(f"_{pid}" for pid in started))] == []
+        finally:
+            left.unlink(missing_ok=True)
+
+    def test_the_probe_shows_the_harness_its_home_wherever_it_is_made(self, sandboxed, tmp_path, monkeypatch):
+        """The probe's /dev is its own, which would hide a throwaway home made under /dev, where
+        TMPDIR=/dev/shm puts it: a harness whose --version needs its home would fail on the real
+        clock too, and go unrefused. Its home is shown where it is, and it starts there."""
+        import shutil
+        import tempfile
+        from types import SimpleNamespace
+
+        import tuningfork.ops.connections as connections
+
+        monkeypatch.setattr(connections, "_ON_THE_CLOCK", {})
+        library = tmp_path / "libfaketime.so.1"
+        library.write_bytes(b"")
+        program = tmp_path / "needs-home"
+        program.write_text(
+            '#!/bin/sh\n[ -d "$HOME" ] && [ "$(pwd)" = "$HOME" ] || { echo "no home" >&2; exit 9; }\n'
+            '[ -n "$FAKETIME" ] && exit 1\necho 1.0\n',
+            encoding="utf-8")
+        program.chmod(0o755)
+        pinned = Sandbox(sandboxed.executable, sandboxed.version, clock="2026-10-08 09:00:00", clock_library=str(library))
+        under_dev = tempfile.mkdtemp(prefix="tuningfork-test-", dir="/dev/shm")
+        monkeypatch.setattr(tempfile, "tempdir", under_dev)
+        try:
+            said = connections.clock_problem(SimpleNamespace(name="needs-home", executable=str(program)), pinned)
+        finally:
+            shutil.rmtree(under_dev, ignore_errors=True)
+        assert said is not None and "with libfaketime loaded it exited 1" in said
 

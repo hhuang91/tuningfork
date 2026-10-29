@@ -171,10 +171,10 @@ def prepare_batch(
     from tuningfork.control import default_proxy
     from tuningfork.harness import ADAPTERS
     from tuningfork.ops.connections import adapter_for, cached_prompts_warning, check_harness
-    from tuningfork.ops.launch import check_launchable, check_proxy
+    from tuningfork.ops.launch import check_clock, check_launchable, check_proxy
     from tuningfork.paths import host_path
     from tuningfork.runner import lookalike_skill_files
-    from tuningfork.sandbox import FROM_ENV, for_launches, recorded_hiding, remedy, turned_off as sandbox_turned_off
+    from tuningfork.sandbox import CLOCK, FROM_ENV, for_launches, recorded_hiding, remedy, turned_off as sandbox_turned_off
     from tuningfork.specs import SpecError, check_env_sources, check_kind, load_spec, missing_files
 
     if harness not in ADAPTERS:
@@ -325,6 +325,11 @@ def prepare_batch(
         notes.append(Note(
             "warning", f"{sandbox.clock_problem}: each run's date is the day it is made, which the model reads",
         ))
+    check_clock(
+        adapter, sandbox,
+        hint=f"the runs are set up as run {(setup.run or '')[:8]} was, so they must read its clock too"
+        if setup is not None and setup.clock else f"unset {CLOCK} to run it on the real clock",
+    )
     # Read once, here, for a check that runs a command: a list that cannot be read is refused
     # before a run is launched, and every run is judged with the same.
     sources = check_env_sources(store.home) if check_kind(item.tuningfork.check) == "shell" else []

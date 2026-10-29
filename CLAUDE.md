@@ -475,11 +475,20 @@ system would otherwise read; a check sees them empty too, but for its own task's
 its scripts and keys belong. `TUNINGFORK_SANDBOX=off` turns it off — the suite's `conftest.py` does, and
 `tests/test_sandbox.py` turns it back on where bubblewrap can run. `TUNINGFORK_CLOCK=YYYY-MM-DD
 HH:MM:SS` starts every launch's clock at that instant (libfaketime under `LD_PRELOAD`, monotonic
-clocks left real): the harness reads the same date whichever day a run is made — the model
+clocks left real; set for the harness alone, `Sandbox.clock_arguments`: in bubblewrap's own
+environment libfaketime would start in bubblewrap too and make its semaphore in the machine's
+/dev/shm, which the harness, in a /dev of its own, could not open — Claude Code's native binary
+stopped at once on arm64, naming a semaphore it had not made — and which a launch killed would
+leave there): the harness reads the same date whichever day a run is made — the model
 reads it, and at a knife edge it decides — a fork reads its source's, as does every run of a
 validation, the launch records it, and a plan warns where the library is missing
-(`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere). The normalizer masks the sandbox's paths as it
-masks a launch's own (`NORMALIZER_VERSION` 3).
+(`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere) and refuses a harness whose own `--version`
+answers on the real clock but fails or never answers with it loaded
+(`ops.connections.clock_problem`: asked one plan at a time, the real clock first, then the clock
+as a launch's harness is given it, each in bubblewrap with a /dev of its own, in a session ended
+with everything in it; a clean answer kept for the program and library, a refusal for five
+minutes. Claude Code 2.1.281's native binary hangs on x86-64; on arm64 it runs). The normalizer
+masks the sandbox's paths as it masks a launch's own (`NORMALIZER_VERSION` 3).
 
 Live breakpoints talk to a running proxy (`--proxy`, or `TUNINGFORK_PROXY`, default :8787):
 

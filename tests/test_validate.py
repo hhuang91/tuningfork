@@ -277,7 +277,8 @@ def test_the_fresh_runs_run_where_the_checkpoints_run_ran_and_read_its_date(stac
     """A fork runs as its source did: in the sandbox only if its source was, its clock starting
     where its source's did. So do a validation's fresh runs, whatever this process says: found
     in review, a batch took the instant this process pins (`TUNINGFORK_CLOCK`) and the sandbox
-    wherever it runs, so its fresh runs could read another date, and other paths, than its forks."""
+    wherever it runs, so its fresh runs could read another date, and other paths, than its forks.
+    A harness that cannot run on that clock is refused for every part, before any runs."""
     import tuningfork.sandbox
     from tuningfork.sandbox import CLOCK, FROM_ENV, NOT_INSTALLED, SWITCH, TURNED_OFF, Sandbox
 
@@ -340,6 +341,25 @@ def test_the_fresh_runs_run_where_the_checkpoints_run_ran_and_read_its_date(stac
         assert batch.value.code == fork.value.code == "no_sandbox"
         assert batch.value.message == f"run {made.run_id[:8]} ran in the sandbox, so the runs set up as it was must: {reason}"
         return batch.value.hint, fork.value.hint
+
+    # A harness that cannot run on the clock the run read (Claude Code's native binary on x86-64,
+    # which never makes its first call with libfaketime loaded) is refused for every part, before
+    # any runs, as a batch of it would be: no validation whose every run is left out.
+    import tuningfork.ops.connections as connections
+
+    monkeypatch.setattr(tuningfork.sandbox, "for_launches", sandbox_here)
+    pinned = validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    monkeypatch.setattr(connections, "clock_problem", lambda adapter, sandbox: (
+        f"{adapter.name} cannot run with the clock pinned at {sandbox.clock}" if sandbox.clock else None))
+    with pytest.raises(OperationError) as batch:
+        prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                      model="m", harness="fake", n=1, setup=pinned.setup)
+    with pytest.raises(OperationError) as fork:
+        validate.prepare_validate(stack.store, made.id, proposal.id, n=1, runs=1, proxy_url=stack.url)
+    assert batch.value.message == fork.value.message == "fake cannot run with the clock pinned at 2026-10-08 09:00:00"
+    assert batch.value.hint == f"the runs are set up as run {made.run_id[:8]} was, so they must read its clock too"
+    assert fork.value.hint == f"run {made.run_id[:8]} read that clock, so each of its forks must too"
+    monkeypatch.setattr(connections, "clock_problem", lambda adapter, sandbox: None)
 
     assert refused_for(NOT_INSTALLED) == ("install bubblewrap", "install bubblewrap, or fork a run launched without it")
     assert refused_for(TURNED_OFF) == (f"turn it on again (unset {SWITCH})",
