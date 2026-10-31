@@ -472,10 +472,10 @@ pinned, and refuses a harness that answers only on the real clock. Tried on x86-
 2.1.281's native binary never answers with the build Ubuntu 26.04 ships, a 2024 snapshot of
 libfaketime's source, so a plan refuses it. With libfaketime 0.9.10, the build Ubuntu 24.04
 ships, Claude Code runs with the clock pinned, on x86-64 and on arm64, from tuningfork 0.8.1 on.
-Hermes Agent's `--version` and OpenClaw's answer with either build. The first plan to ask can
-wait up to 20 s, 10 s for each `--version`. Within one `tuningfork serve`, later plans reuse its
-answer: a refusal for five minutes, a pass until the harness or the library changes. A command
-run in the terminal asks again.
+Hermes Agent's `--version` and OpenClaw's answer with either build (the snapshot tried on x86-64
+only). The first plan to ask can wait up to 20 s, 10 s for each `--version`. Within one
+`tuningfork serve`, later plans reuse its answer: a refusal for five minutes, a pass until the
+harness or the library changes. A command run in the terminal asks again.
 
 Where a plan refuses Claude Code for the clock and `dpkg-query -W libfaketime` shows the
 snapshot's version, `0.9.10+2024-06-05…`, name a 0.9.10 build with `TUNINGFORK_CLOCK_LIBRARY`.
@@ -489,7 +489,8 @@ export TUNINGFORK_CLOCK_LIBRARY="$HOME/libfaketime-0.9.10/usr/lib/x86_64-linux-g
 
 Keep the library out of `/tmp`, which every launch sees empty. On arm64, download
 `libfaketime_0.9.10-2.1_arm64.deb` instead; its library is under `aarch64-linux-gnu`. Set the
-variable where `TUNINGFORK_CLOCK` is set: for the web UI, before `tuningfork serve` starts.
+variable in the environment tuningfork runs in: for the web UI, before `tuningfork serve` starts.
+A fork reads it too, though its clock comes from the run it forks.
 
 ## A task
 
