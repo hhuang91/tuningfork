@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.8.1 — Claude Code with a pinned clock
+
+With a pinned clock (`TUNINGFORK_CLOCK`), Claude Code's native binary could not run: it stopped
+at once or never answered (#65). The clock now reaches the harness alone. Claude Code 2.1.281
+runs with it where libfaketime is Ubuntu 24.04's build, 0.9.10-2.1, on arm64 and on x86-64. A
+harness whose `--version` answers only on the real clock, as Claude Code 2.1.281's does with the
+build Ubuntu 26.04 ships (tried on x86-64), is now refused before anything launches. The refusal
+says how to name another build of libfaketime.
+
+- **The clock goes to the harness alone** (#68). Its variables were in bubblewrap's own
+  environment, so bubblewrap loaded libfaketime too. With 0.9.10-2.1, Claude Code then stopped at
+  once with a `sem_open` error. Now bubblewrap gives the variables to the harness alone. A launch
+  killed while it ran, such as a run cut at its timeout, no longer leaves a semaphore in the
+  machine's `/dev/shm`.
+- **A harness whose `--version` answers only on the real clock is refused before anything
+  launches** (#68, #69). A batch's or a fork's plan finds one by running the harness's
+  `--version` on the real clock, then with the clock pinned. The refusal names the library and
+  says how to name another build (`TUNINGFORK_CLOCK_LIBRARY`). Tried on x86-64, Claude Code
+  2.1.281 never answers with the build Ubuntu 26.04 ships, a 2024 snapshot of libfaketime's
+  source, so a plan refuses it. The first plan to ask can wait up to 20 s. Within one
+  `tuningfork serve`, later plans reuse its answer: a refusal for five minutes, a pass until the
+  harness or the library changes. A command run in the terminal asks again.
+- **How to name another build** (#69). *A pinned clock* in `docs/setup.md` says when and how.
+  Where a plan refuses Claude Code for the clock and `dpkg-query -W libfaketime` shows the
+  snapshot's version, `0.9.10+2024-06-05…`, unpack Ubuntu 24.04's package in your home with the
+  three commands the section gives, and name its library with `TUNINGFORK_CLOCK_LIBRARY`. Keep the
+  library out of `/tmp`, which every launch sees empty.
+
 ## 0.8.0 — macOS, and a scan of older recordings
 
 tuningfork runs on a Mac now, in a Linux VM. A recordings folder tuningfork makes is yours alone.
