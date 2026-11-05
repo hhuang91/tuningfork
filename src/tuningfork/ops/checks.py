@@ -210,10 +210,11 @@ def prepare_check_trial(
         written.append({"path": entry["path"], "content": entry.get("content", "")})
     from tuningfork.sandbox import for_launches, recorded_hiding, turned_off
 
-    # As a launch's check runs: a shell check can run what the model left in the workspace.
+    # As a launch's check runs: a shell check can run what the model left in the workspace. On the
+    # machine's clock, as every check runs: there is no pinned clock to try.
     hid, mine = recorded_hiding(recorded_sandbox, task=Path(spec_dir).resolve() if spec_dir else None)
     sandbox, unsandboxed = (
-        for_launches([store.home, *hid], own=[store.home, *mine]) if kind == "shell" else (None, None)
+        for_launches([store.home, *hid], own=[store.home, *mine], clock=None) if kind == "shell" else (None, None)
     )
     return CheckTrialPlan(
         check=check, run=found, commit=commit, reply=reply or "", files=written,

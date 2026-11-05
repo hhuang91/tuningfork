@@ -70,15 +70,35 @@ def folders(tmp_path: Path) -> tuple[Path, Path]:
 
 def bubblewrap_stand_in(tmp_path: Path) -> str:
     """bubblewrap as the tests of the clock's probe need it, wherever the suite runs: what
-    follows `--` run as it is, given what each `--setenv` sets."""
+    follows `--` run as it is, given what each `--setenv` sets — LD_PRELOAD as PRELOADED: the
+    libraries the tests name are none, and this machine's own loader would say so."""
     program = tmp_path / "bwrap"
     program.write_text(
         '#!/bin/sh\nwhile [ "$1" != "--" ]; do\n'
-        '    if [ "$1" = "--setenv" ]; then export "$2=$3"; shift 3; else shift; fi\n'
+        '    if [ "$1" = "--setenv" ]; then\n'
+        '        if [ "$2" = LD_PRELOAD ]; then export "PRELOADED=$3"; else export "$2=$3"; fi\n'
+        '        shift 3\n'
+        '    else shift; fi\n'
         'done\nshift\nexec "$@"\n',
         encoding="utf-8")
     program.chmod(0o755)
     return str(program)
+
+
+def clock_reader(tmp_path: Path, body: str) -> tuple[str, str]:
+    """`date` as a plan runs it to read a launch's clock back (`Sandbox.unpinned`), wherever the
+    suite runs: `body`, given what bubblewrap's stand-in set — `FAKETIME`, `PRELOADED`."""
+    program = tmp_path / "date"
+    program.write_text(f"#!/bin/sh\n{body}", encoding="utf-8")
+    program.chmod(0o755)
+    return str(program), "+%Y-%m-%d %H:%M:%S"
+
+
+#: What the stand-in `date` says where the loader skipped the library, as glibc's loader says it.
+SKIPPED = (
+    "echo \"ERROR: ld.so: object '$PRELOADED' from LD_PRELOAD cannot be preloaded (invalid ELF header): "
+    "ignored.\" >&2\necho '2026-11-05 11:47:17'\n"
+)
 
 
 def given_by_setenv(argv: Sequence[str]) -> dict[str, str]:
@@ -538,11 +558,14 @@ class TestTheClock:
         assert given_by_setenv(unpinned.argv) == {} and "FAKETIME" not in unpinned.env
         assert "clock" not in plain.to_json()
 
-    def test_the_persons_setting_pins_it_where_the_library_is(self, tmp_path, monkeypatch):
+    def test_the_persons_setting_pins_it_where_the_library_is(self, tmp_path, monkeypatch, elsewhere):
         from tuningfork.sandbox import CLOCK, CLOCK_LIBRARY, Status
 
-        monkeypatch.setattr(tuningfork.sandbox, "status", lambda: Status("/usr/bin/bwrap", "0.11.1"))
-        library = tmp_path / "libfaketime.so.1"
+        tmp = Path(os.path.realpath(tmp_path))
+        bwrap = bubblewrap_stand_in(tmp)
+        monkeypatch.setattr(tuningfork.sandbox, "status", lambda: Status(bwrap, "0.11.1"))
+        monkeypatch.setattr(tuningfork.sandbox, "CLOCK_READER", clock_reader(tmp, 'echo "${FAKETIME#@}"\n'))
+        library = tmp / "libfaketime.so.1"
         library.write_bytes(b"")
         monkeypatch.setenv(CLOCK, "2026-10-08 09:00:00")
         monkeypatch.setenv(CLOCK_LIBRARY, str(library))
@@ -552,20 +575,154 @@ class TestTheClock:
         # A fork gives its source's clock, or none, whatever the person set now.
         assert for_launches([], clock=None)[0].clock is None
         assert for_launches([], clock="2026-01-05 09:00:00")[0].clock == "2026-01-05 09:00:00"
+        # Named from where tuningfork runs, or from the home: made whole, since a launch loads it
+        # from a folder of its own.
+        monkeypatch.chdir(tmp)
+        monkeypatch.setenv(CLOCK_LIBRARY, "libfaketime.so.1")
+        assert for_launches([])[0].clock_library == str(library)
+        monkeypatch.setenv("HOME", str(tmp))
+        monkeypatch.setenv(CLOCK_LIBRARY, "~/libfaketime.so.1")
+        assert for_launches([])[0].clock_library == str(library)
         # Without the library the runs keep the real clock, and the plans can say so.
-        monkeypatch.setenv(CLOCK_LIBRARY, str(tmp_path / "missing.so"))
+        monkeypatch.setenv(CLOCK_LIBRARY, str(tmp / "missing.so"))
         monkeypatch.setattr(tuningfork.sandbox, "CLOCK_LIBRARIES", ())
         unpinned, _ = for_launches([])
         assert unpinned.clock is None and "libfaketime is not installed" in unpinned.clock_problem
-        # Not an instant: the real clock, and why.
-        monkeypatch.setenv(CLOCK, "tomorrow")
-        odd, _ = for_launches([])
-        assert odd.clock is None and "not an instant" in odd.clock_problem
+        # Not an instant, or a day the calendar lacks, which libfaketime would move to another
+        # while the launch recorded this one: the real clock, and why.
+        for odd_one in ("tomorrow", "2026-02-30 09:00:00"):
+            monkeypatch.setenv(CLOCK, odd_one)
+            odd, _ = for_launches([])
+            assert odd.clock is None and "not an instant" in odd.clock_problem
         # Off, or unset: the real clock, nothing to say.
         monkeypatch.setenv(CLOCK, "off")
         assert for_launches([])[0].clock_problem is None
         monkeypatch.delenv(CLOCK)
         assert for_launches([])[0].clock is None
+
+    def test_a_library_that_would_not_pin_a_launchs_clock_leaves_the_real_clock_and_says_why(self, tmp_path, monkeypatch):
+        """The loader skips a library it cannot load and runs the harness anyway, on the real
+        clock: one under /tmp, which every launch sees empty, one in a folder hidden from
+        launches, one built for another processor. The harness's --version answers all the same,
+        so the plan looks at the library's path, then reads the clock back from `date`, run as a
+        launch is run. A path a launch cannot load it from, the loader's skip, or a read of
+        another instant leaves the real clock, said, as where the library is missing, and no
+        launch records a clock it did not read. A `date` that reads no instant, or never answers,
+        says nothing: the harness's own --version decides."""
+        from tuningfork.sandbox import CLOCK, CLOCK_LIBRARY, FROM_ENV, Status, _kept_from_launches
+
+        monkeypatch.setattr(tuningfork.sandbox, "_UNANSWERED", {})
+        tmp = Path(os.path.realpath(tmp_path))
+        (tmp / "tools").mkdir()
+        bwrap = bubblewrap_stand_in(tmp / "tools")
+        monkeypatch.setattr(tuningfork.sandbox, "status", lambda: Status(bwrap, "0.11.1"))
+        monkeypatch.setattr(tuningfork.sandbox, "TMP", tmp / "tmp")
+        library = tmp / "lib" / "libfaketime.so.1"
+        library.parent.mkdir()
+        library.write_bytes(b"\x7fELF")
+        monkeypatch.setenv(CLOCK, "2026-10-08 09:00:00")
+        monkeypatch.setenv(CLOCK_LIBRARY, str(library))
+        ran: list[list[str]] = []
+        run = subprocess.run
+
+        def recorded(argv: Sequence[str], **kwargs) -> subprocess.CompletedProcess:
+            ran.append(list(argv))
+            return run(argv, **kwargs)
+
+        monkeypatch.setattr(tuningfork.sandbox.subprocess, "run", recorded)
+
+        def reading(body: str, *, hide: Sequence[Path] = (), clock: str | None = FROM_ENV) -> Sandbox:
+            monkeypatch.setattr(tuningfork.sandbox, "CLOCK_READER", clock_reader(tmp / "tools", body))
+            return for_launches(hide, clock=clock)[0]
+
+        def unpinned(why: str, at: str = "2026-10-08 09:00:00") -> str:
+            return f"the clock cannot be pinned at {at}: {why}; runs keep the real clock"
+
+        # Read back as the pinned instant, a second or two on: pinned.
+        hidden = tmp / "recordings"
+        hidden.mkdir()
+        pinned = reading('echo "2026-10-08 09:00:02"\n', hide=[hidden])
+        assert pinned.clock == "2026-10-08 09:00:00" and pinned.clock_problem is None
+        # Run as a launch is: /tmp its own, the folders kept from launches hidden, the clock its alone.
+        (asked,) = ran
+        options = asked[:asked.index("--")]
+        assert asked[asked.index("--") + 1:] == [str(tmp / "tools" / "date"), "+%Y-%m-%d %H:%M:%S"]
+        assert {("--tmpfs", "/tmp"), ("--tmpfs", str(hidden))} <= set(zip(options, options[1:]))
+        assert given_by_setenv(asked) == {
+            "LD_PRELOAD": str(library), "FAKETIME": "@2026-10-08 09:00:00", "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+        }
+
+        # Skipped by the loader: the runs keep the real clock, said in the loader's words, and
+        # their launches are given no clock and record none.
+        skipped = reading(SKIPPED)
+        assert (skipped.clock, skipped.clock_library) == (None, None)
+        assert skipped.clock_problem == unpinned(f"a launch cannot load libfaketime from {library} (invalid ELF header)")
+        assert "clock" not in skipped.to_json()
+        home, workspace = folders(tmp)
+        launch = skipped.wrap(LaunchSpec(argv=("sh",), env={"PATH": "/usr/bin:/bin"}, cwd=workspace), home=home, workspace=workspace)
+        assert given_by_setenv(launch.argv) == {}
+        # A fork's instant, its source's, is read back the same way.
+        assert reading(SKIPPED, clock="2026-01-05 09:00:00").clock_problem == unpinned(
+            f"a launch cannot load libfaketime from {library} (invalid ELF header)", at="2026-01-05 09:00:00")
+
+        # Where a launch sees it empty, the folder that hides it, said from its path alone, no
+        # date run: /tmp, named by the library or by a link to it there; a folder hidden from
+        # launches; another person's home.
+        ran.clear()
+        under = tmp / "tmp" / "libfaketime.so.1"
+        under.parent.mkdir()
+        under.write_bytes(b"\x7fELF")
+        link = tmp / "lib" / "link.so"
+        link.symlink_to(under)
+        for named in (under, link):
+            monkeypatch.setenv(CLOCK_LIBRARY, str(named))
+            assert reading(SKIPPED).clock_problem == unpinned(
+                f"libfaketime, at {under}, is under {tmp / 'tmp'}, which every launch sees empty")
+        kept = hidden / "libfaketime.so.1"
+        kept.write_bytes(b"\x7fELF")
+        monkeypatch.setenv(CLOCK_LIBRARY, str(kept))
+        assert reading(SKIPPED, hide=[hidden]).clock_problem == unpinned(
+            f"libfaketime, at {kept}, is under {hidden}, which every launch sees empty")
+        mine, other = Path("/home/me"), Path("/home/other/lib/libfaketime.so.1")
+        assert _kept_from_launches(other, [], mine) == Path("/home/other")
+        assert _kept_from_launches(mine / "lib" / "libfaketime.so.1", [], mine) is None
+        # The person's home a link to /home/me2: a launch is shown it at /home/me alone. The path
+        # as resolved goes with the home as resolved; named by its target, it is kept from launches.
+        target = Path("/home/me2/lib/libfaketime.so.1")
+        assert _kept_from_launches(target, [], Path("/home/me2")) is None
+        assert _kept_from_launches(target, [], mine) == Path("/home/me2")
+        # A path LD_PRELOAD splits, at a space or a colon, where the loader would quote a part.
+        spaced = tmp / "my libs" / "libfaketime.so.1"
+        spaced.parent.mkdir()
+        spaced.write_bytes(b"\x7fELF")
+        monkeypatch.setenv(CLOCK_LIBRARY, str(spaced))
+        assert reading(SKIPPED).clock_problem == unpinned(
+            f"LD_PRELOAD splits libfaketime's path, {spaced}, at its space or colon")
+        assert ran == []
+        monkeypatch.setenv(CLOCK_LIBRARY, str(library))
+
+        # Loaded, and another instant read, however date ended: a library that pins nothing.
+        nothing_pinned = unpinned(
+            f"date, run as a launch is run with libfaketime from {library}, did not read that instant")
+        assert reading("echo '2026-11-05 11:47:17'\n").clock_problem == nothing_pinned
+        assert reading("echo '2026-11-05 11:47:17'\nexit 1\n").clock_problem == nothing_pinned
+        # A date that reads no instant (it fails, or prints something else), or never answers, says
+        # nothing, and the clock stays: the harness's own --version decides (a library that stops
+        # every program, say).
+        for nothing in ("echo \"date: version 'GLIBC_2.99' not found\" >&2\nexit 1\n", "echo 'no clock here'\n"):
+            assert reading(nothing).clock == "2026-10-08 09:00:00"
+        monkeypatch.setattr(tuningfork.sandbox, "PROBE_TIMEOUT", 1.0)
+        ran.clear()
+        assert reading("exec sleep 30\n").clock == "2026-10-08 09:00:00"
+        # Not tried again for five minutes: the web UI plans a form again at each change. Its path
+        # is still looked at: a plan that hides its folder says so.
+        assert reading("exec sleep 30\n").clock == "2026-10-08 09:00:00" and len(ran) == 1
+        assert reading("exec sleep 30\n", hide=[library.parent]).clock_problem == unpinned(
+            f"libfaketime, at {library}, is under {library.parent}, which every launch sees empty")
+        # No date to read it with: nothing said either.
+        monkeypatch.setattr(tuningfork.sandbox, "_UNANSWERED", {})
+        monkeypatch.setattr(tuningfork.sandbox, "CLOCK_READER", (str(tmp / "nowhere"), "+%Y-%m-%d %H:%M:%S"))
+        assert for_launches([])[0].clock == "2026-10-08 09:00:00"
 
     def test_the_batch_plan_says_it_or_warns(self, tmp_path, mock_server, monkeypatch):
         from tuningfork.ops.batch import prepare_batch
@@ -588,6 +745,73 @@ class TestTheClock:
             assert "clock" not in data["sandbox"]
             (note,) = data["notes"]
             assert note["level"] == "warning" and "libfaketime is not installed" in note["message"]
+
+    def test_a_batch_whose_launches_would_not_load_the_library_runs_on_the_real_clock(self, tmp_path, mock_server, monkeypatch):
+        """As where the library is missing: the plan says why — here, a library kept in the
+        task's folder, which every launch sees empty — and its runs keep the real clock and
+        record it, none recorded as pinned while it read the day it was made."""
+        from tuningfork.ops.batch import prepare_batch
+        from tuningfork.sandbox import CLOCK, CLOCK_LIBRARY, Status, _within
+
+        with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+            stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+            tools = Path(os.path.realpath(tmp_path)) / "tools"
+            tools.mkdir()
+            bwrap = bubblewrap_stand_in(tools)
+            monkeypatch.setattr(tuningfork.sandbox, "status", lambda: Status(bwrap, "0.11.1"))
+            monkeypatch.setattr(tuningfork.sandbox, "TMP", Path("/nowhere-tmp"))
+            # In the task's folder, said from its path alone: no date is run.
+            library = tools / "libfaketime.so.1"
+            library.write_bytes(b"\x7fELF")
+            monkeypatch.setenv(CLOCK, "2026-10-08 09:00:00")
+            monkeypatch.setenv(CLOCK_LIBRARY, str(library))
+            data = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                                 model="m", harness="fake", n=1).to_json()
+            assert data["sandbox"] is not None and "clock" not in data["sandbox"]
+            task = stack.spec.directory.resolve()
+            assert _within(library, task)
+            assert [note for note in data["notes"] if "clock" in note["message"]] == [{
+                "level": "warning",
+                "message": f"the clock cannot be pinned at 2026-10-08 09:00:00: libfaketime, at {library}, is under "
+                           f"{task}, which every launch sees empty; runs keep the real clock: each run's date is the "
+                           "day it is made, which the model reads",
+            }]
+
+    def test_a_library_that_stops_every_program_is_left_to_the_harnesss_own_version(
+        self, tmp_path, tmp_path_factory, mock_server, monkeypatch, elsewhere,
+    ):
+        """A `date` that fails before reading an instant, the library loaded, is no sign that the
+        loader skipped it: the clock stays pinned, and the harness's own --version decides. A
+        library built against a newer C library stops every program, the harness too, and the
+        plan is refused, as before."""
+        import tuningfork.ops.connections as connections
+        from tuningfork.ops.batch import prepare_batch
+        from tuningfork.sandbox import CLOCK, CLOCK_LIBRARY, Status
+
+        with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+            stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+            # Outside the task's folder, which every launch of a batch sees empty.
+            tools = tmp_path_factory.mktemp("clock-tools")
+            bwrap = bubblewrap_stand_in(tools)
+            monkeypatch.setattr(tuningfork.sandbox, "status", lambda: Status(bwrap, "0.11.1"))
+            stops = "echo \"date: version 'GLIBC_2.99' not found (required by $PRELOADED)\" >&2\nexit 1\n"
+            monkeypatch.setattr(tuningfork.sandbox, "CLOCK_READER", clock_reader(tools, stops))
+            library = tools / "libfaketime.so.1"
+            library.write_bytes(b"\x7fELF")
+            monkeypatch.setenv(CLOCK, "2026-10-08 09:00:00")
+            monkeypatch.setenv(CLOCK_LIBRARY, str(library))
+            asked: list[str | None] = []
+
+            def harness_check(adapter, sandbox) -> str:
+                asked.append(sandbox.clock)
+                return f"{adapter.name} cannot run with the clock pinned at {sandbox.clock}"
+
+            monkeypatch.setattr(connections, "clock_problem", harness_check)
+            with pytest.raises(OperationError) as refused:
+                prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                              model="m", harness="fake", n=1)
+            assert refused.value.message == "fake cannot run with the clock pinned at 2026-10-08 09:00:00"
+            assert asked == ["2026-10-08 09:00:00"]
 
     def test_a_harness_the_pinned_clock_stops_is_found_by_its_own_version(self, tmp_path, monkeypatch):
         """With the libfaketime Ubuntu 26.04 ships, tried on x86-64, Claude Code's native binary
@@ -729,6 +953,81 @@ class TestTheClock:
         done = subprocess.run(list(wrapped.argv), env=wrapped.env, cwd=wrapped.cwd, capture_output=True, text=True, timeout=60)
         assert done.returncode == 0, done.stderr
         assert done.stdout.strip() == "Thursday, October 08, 2026"
+
+    def test_a_plan_reads_the_clock_back_from_a_launch(self, sandboxed, monkeypatch):
+        """Where a launch loads the library, its `date` reads the pinned instant. A library in a
+        folder hidden from launches, or under /tmp, is said to be from its path; a file that is
+        not a library, the loader skips, as `date` shows. Either way the harness would run on the
+        real clock: the plan says so, and its runs keep the real clock."""
+        import shutil
+        import tempfile
+
+        from tuningfork.sandbox import CLOCK, CLOCK_LIBRARY, clock_library
+
+        library = clock_library()
+        if library is None:
+            pytest.skip("libfaketime is not installed here")
+        monkeypatch.setenv(CLOCK, "2026-10-08 09:00:00")
+        monkeypatch.setenv(CLOCK_LIBRARY, library)
+        pinned, _ = for_launches([])
+        assert pinned.clock == "2026-10-08 09:00:00" and pinned.clock_problem is None
+
+        def unpinned(hide: Sequence[Path] = ()) -> str:
+            sandbox, _ = for_launches(hide)
+            assert sandbox.clock is None
+            return sandbox.clock_problem
+
+        folder = Path(library).parent.resolve()
+        assert f"is under {folder}, which every launch sees empty; runs keep the real clock" in unpinned([folder])
+        # Not a library, outside /tmp and every hidden folder, wherever this checkout is.
+        monkeypatch.setenv(CLOCK_LIBRARY, "/etc/passwd")
+        assert unpinned().startswith(
+            "the clock cannot be pinned at 2026-10-08 09:00:00: a launch cannot load libfaketime from /etc/passwd "
+            "(invalid ELF header)")
+        made = tempfile.mkdtemp(prefix="tuningfork-test-", dir="/tmp")
+        try:
+            copy = Path(made) / "libfaketime.so.1"
+            shutil.copy(library, copy)
+            monkeypatch.setenv(CLOCK_LIBRARY, str(copy))
+            assert f"libfaketime, at {copy}, is under /tmp, which every launch sees empty" in unpinned()
+        finally:
+            shutil.rmtree(made, ignore_errors=True)
+
+    def test_a_fork_of_a_pinned_run_whose_launch_would_not_load_the_library_reads_the_real_clock(
+        self, sandboxed, tmp_path, mock_server, monkeypatch,
+    ):
+        """A fork is given its source's clock. Where its launch would not load the library, it is
+        not refused: its plan says that the forks read today's date where the recording read the
+        pinned one, and the fork records no clock."""
+        from tuningfork.sandbox import CLOCK, CLOCK_LIBRARY, clock_library
+
+        library = clock_library()
+        if library is None:
+            pytest.skip("libfaketime is not installed here")
+        monkeypatch.setenv(CLOCK, "2026-10-08 09:00:00")
+        monkeypatch.setenv(CLOCK_LIBRARY, library)
+        with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+            sandbox, _ = for_launches([stack.store.home, stack.tmp / "batches"])
+            assert sandbox.clock == "2026-10-08 09:00:00"
+            runner = BatchRunner(
+                stack.store, FakeAgent(), base_url=f"{stack.url}/v1", model="m",
+                workdir=stack.tmp / "batches", settle=0.1, sandbox=sandbox,
+            )
+            (source,) = runner.run(stack.spec, stack.item, 1).outcomes
+            recorded = stack.store.get_launch(stack.store.get_run(source.run_id).launch_id)
+            assert recorded.settings["sandbox"]["clock"] == "2026-10-08 09:00:00"
+            # Not a library, outside /tmp and every hidden folder, wherever this checkout is.
+            monkeypatch.setenv(CLOCK_LIBRARY, "/etc/passwd")
+            plan, (fork,) = stack.fork(source.run_id, "write_file")
+            assert plan.sandbox is not None and plan.sandbox.clock is None
+            assert plan.warnings == [
+                "the clock cannot be pinned at 2026-10-08 09:00:00: a launch cannot load libfaketime from "
+                "/etc/passwd (invalid ELF header); runs keep the real clock: the forks read today's date where "
+                "the recording read 2026-10-08 09:00:00",
+            ]
+            assert fork.usable and fork.reached
+            launch = stack.store.get_launch(stack.store.get_run(fork.run_id).launch_id)
+            assert "clock" not in launch.settings["sandbox"]
 
     def test_a_killed_launch_leaves_nothing_of_the_clock_on_the_machine(self, sandboxed, tmp_path):
         """libfaketime is the harness's alone: in bubblewrap's own environment it would start
