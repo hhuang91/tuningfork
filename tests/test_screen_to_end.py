@@ -333,7 +333,7 @@ def test_the_original_is_forked_once_a_refinement_and_a_quick_look_forks_the_pro
     # The terminal reads it as a look too: no "n=0 an arm", no "against the original's 0/0".
     from tuningfork.cli import app
 
-    shown = CliRunner().invoke(app, ["refine", "show", made.id, "--home", str(stack.store.home)], env={"COLUMNS": "220"})
+    shown = CliRunner().invoke(app, ["refine", "show", made.id, "--home", str(stack.store.home)])
     assert shown.exit_code == 0, shown.output
     assert f"quick look at 1 proposal, {QUICK_N} forks each" in shown.output and "rates only, no verdict" in shown.output
     assert f"quick look — {QUICK_N}/{QUICK_N} forks passed: rates, never a verdict; the original's 0/4 drawn before" in shown.output

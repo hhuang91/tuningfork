@@ -96,9 +96,13 @@ def test_connections_show_says_why_when_the_machines_config_cannot_be_read(tmp_p
     machine = tmp_path / "config" / "tuningfork" / "config.json"
     machine.parent.mkdir(parents=True)
     machine.write_text('{"protected": [', encoding="utf-8")
-    shown = CliRunner().invoke(app, ["connections", "show", "--proxy", "http://127.0.0.1:9"], env={"COLUMNS": "400"})
+    shown = CliRunner().invoke(app, ["connections", "show", "--proxy", "http://127.0.0.1:9"])
     assert shown.exit_code == 1, shown.output
-    assert "cannot be read" in shown.output and "fix the file" in shown.output
+    # Read with its whitespace collapsed: the refusal is one line naming the config's path,
+    # under pytest's temp folder, and the suite's 220-column console (`wide_console`) breaks
+    # it at whichever space that path's length brings to the edge.
+    said = " ".join(shown.output.split())
+    assert "cannot be read" in said and "fix the file" in said
     assert not isinstance(shown.exception, OperationError)
 
 

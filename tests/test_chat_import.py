@@ -485,16 +485,16 @@ def test_a_person_imports_from_the_terminal(store, tmp_path):
     path = tmp_path / "session.jsonl"
     path.write_text(export(conversation(("tally-report", SKILL))), encoding="utf-8")
     runner = CliRunner()
-    looked = runner.invoke(app, ["import", str(path), "--dry-run", "--home", str(store.home)], env={"COLUMNS": "160"})
+    looked = runner.invoke(app, ["import", str(path), "--dry-run", "--home", str(store.home)])
     assert looked.exit_code == 0, looked.output
     assert "hermes-export" in looked.output and "tally-report (loaded by a call; in context from step 1)" in looked.output
     assert "nothing recorded" in looked.output and store.runs(limit=10) == []
-    done = runner.invoke(app, ["import", str(path), "--home", str(store.home)], env={"COLUMNS": "160"})
+    done = runner.invoke(app, ["import", str(path), "--home", str(store.home)])
     assert done.exit_code == 0, done.output
     (run,) = store.runs(limit=10)
     assert f"imported as run {run.id[:8]}" in done.output
     # Read back, it says what the file lacked where the tools would be.
-    shown = runner.invoke(app, ["timeline", run.id[:8], "--home", str(store.home)], env={"COLUMNS": "160"})
+    shown = runner.invoke(app, ["timeline", run.id[:8], "--home", str(store.home)])
     assert shown.exit_code == 0 and "no tools recorded: Hermes's export keeps none" in shown.output, shown.output
 
 
@@ -1045,18 +1045,18 @@ def test_a_scenario_of_a_run_from_the_terminal(store, tmp_path):
     run = store.get_run("as it happened").id
     runner = CliRunner()
     looked = runner.invoke(app, ["scenario", run[:8], "from-a-run", "--reply-contains", "report.json", "--dry-run",
-                                 "--home", str(store.home)], env={"COLUMNS": "200"})
+                                 "--home", str(store.home)])
     assert looked.exit_code == 0, looked.output
     assert "starts     at message 3" in looked.output and "nothing written" in looked.output
     assert "first      step 1's call, which the chat answered: skill_view(name='tally-report')" in looked.output
     assert not scenarios.folder(store.home, "from-a-run").exists()
     worded = runner.invoke(app, ["scenario", run[:8], "in-my-words", "--prompt", "Summarize inputs/data.csv.",
-                                 "--home", str(store.home)], env={"COLUMNS": "200"})
+                                 "--home", str(store.home)])
     assert worded.exit_code == 0, worded.output
     assert "starts     at message 3 (yours: Summarize inputs/data.csv.)" in worded.output
     assert scenarios.read_scenario(store.home, "in-my-words").spec["evals"][0]["prompt"] == "Summarize inputs/data.csv."
     done = runner.invoke(app, ["scenario", run[:8], "from-a-run", "--reply-contains", "report.json",
-                               "--home", str(store.home)], env={"COLUMNS": "200"})
+                               "--home", str(store.home)])
     assert done.exit_code == 0, done.output
     assert "scenario from-a-run made" in done.output
     assert scenarios.read_scenario(store.home, "from-a-run").spec["evals"][0]["tuningfork"]["check"] == {"reply_contains": "report.json"}
@@ -1074,11 +1074,11 @@ def test_a_scenario_from_the_terminal(store, tmp_path):
     path.write_text(chat_with_earlier_turns(), encoding="utf-8")
     runner = CliRunner()
     looked = runner.invoke(app, ["import", str(path), "--scenario", "from-cli", "--reply-contains", "report.json",
-                                 "--dry-run", "--home", str(store.home)], env={"COLUMNS": "200"})
+                                 "--dry-run", "--home", str(store.home)])
     assert looked.exit_code == 0, looked.output
     assert "scenario   from-cli: starts at message 3" in looked.output and "continuing 2 message(s)" in looked.output
     done = runner.invoke(app, ["import", str(path), "--scenario", "from-cli", "--reply-contains", "report.json",
-                               "--home", str(store.home)], env={"COLUMNS": "200"})
+                               "--home", str(store.home)])
     assert done.exit_code == 0, done.output
     assert "scenario from-cli made" in done.output
     spec = scenarios.read_scenario(store.home, "from-cli").spec

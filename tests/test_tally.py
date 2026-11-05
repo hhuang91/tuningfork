@@ -116,7 +116,7 @@ def test_a_check_that_printed_more_than_a_verdict_keeps_says_so_wherever_it_is_r
     assert group["cut"] == 1 and group["failed"] == 2
     assert any("1 failed run(s) whose check printed more than the last 2,000 characters" in line
                for line in compact.tally_lines(compact.tally(tally_task(store, "t/1").to_json())))
-    printed = CliRunner().invoke(app, ["tally", "--task", "t/1", "--home", str(store.home)], env={"COLUMNS": "200"})
+    printed = CliRunner().invoke(app, ["tally", "--task", "t/1", "--home", str(store.home)])
     assert "whose check printed more than the last 2,000 characters" in printed.output, printed.output
     assert check_said(result).startswith("… booked twice: delivery ") and check_said({"passed": False, "check_output": "x"}) == "x"
     trial = try_check(store, check, files=[{"path": "a.txt", "content": "x"}]).to_json()
@@ -147,7 +147,7 @@ def test_what_is_not_there_is_refused(store):
 
 def test_a_person_reads_it_in_the_terminal(store):
     meeting(store)
-    printed = CliRunner().invoke(app, ["tally", "--task", "t/1", "--home", str(store.home)], env={"COLUMNS": "120"})
+    printed = CliRunner().invoke(app, ["tally", "--task", "t/1", "--home", str(store.home)])
     assert printed.exit_code == 0, printed.output
     lines = printed.output.splitlines()
     assert any("failed 4 of 5 judged" in line for line in lines)
