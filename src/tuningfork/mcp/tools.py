@@ -1134,7 +1134,8 @@ def start_refinement(context: Context, args: RefinementArgs, who: dict[str, Any]
         target_rules=args.target_rules or None, target_check=args.target_check, created_by=who,
     )
     data = made.to_json()
-    source = data.get("source") or {}
+    # An open one given back, recorded before what its run was given was, is told it too.
+    source = refine.shown_source(context.store, made) or {}
     by_check = data["target"].get("kind") == "check"
     lines = [
         f"refinement {made.id[:8]} at run {made.run_id[:8]} step {made.step_idx}, toward: "
@@ -1173,8 +1174,9 @@ def start_refinement(context: Context, args: RefinementArgs, who: dict[str, Any]
         # The target's evidence, said when it is accepted too: how it splits the recorded runs there.
         lines.extend(f"the target, against the answers recorded at step {seen.get('step')}: {line}"
                      for line in split_lines(seen["split"]))
-    if source and not source.get("matches"):
-        lines.append("note: the skill's file has changed since this run was given it; proposals edit the run's copy")
+    said = refine.source_note(source, made.run_id)
+    if said:
+        lines.append(f"note: {said}")
     return Answer({"refinement": compact.short(made.id), "run": compact.short(made.run_id), "step": made.step_idx,
                    "target": data["target"].get("description"), "skill": made.skill}, lines)
 
@@ -1209,6 +1211,9 @@ def show_refinement(context: Context, args: RefinementRef) -> Answer:
              f"{len(shown['screens'])} screen(s); target: {data['target']}"]
     if found.get("trashed_at"):
         lines.append("it is in the trash: it takes no new proposals, screens or validations until the person restores it")
+    said = refine.source_note(found.get("source"), found["run"])
+    if said:
+        lines.append(f"note: {said}")
     for screen in shown["screens"][:1]:
         lines += compact.screen_lines(compact.screen(screen["report"]))
     if shown["validations"]:

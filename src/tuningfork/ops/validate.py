@@ -158,11 +158,6 @@ def surviving_screen(store: Store, refinement: Any, proposal: Any) -> dict[str, 
     return found
 
 
-def _others(tree: dict[str, str]) -> dict[str, str]:
-    """A skill folder's files but its SKILL.md — the file the edit replaces."""
-    return {path: digest for path, digest in tree.items() if path != "SKILL.md"}
-
-
 def prepare_validate(
     store: Store,
     refinement_ref: str,
@@ -187,7 +182,7 @@ def prepare_validate(
     from tuningfork.ops.experiments import load
     from tuningfork.ops.forks import prepare_to_end, servers_warning
     from tuningfork.runner import eval_record
-    from tuningfork.specs import SpecError, hash_tree, load_spec, missing_files
+    from tuningfork.specs import SpecError, hash_tree, kept_alike, load_spec, missing_files
 
     if n < MINIMUM:
         raise OperationError(f"at least {MINIMUM} forks an arm", code="bad_params", field="n")
@@ -231,13 +226,43 @@ def prepare_validate(
     source = refine.source_skill(store, run)
     if source is None:
         raise OperationError("the spec names no skill folder holding a SKILL.md", field="spec")
-    if text_sha256(refine._text(source)) != refinement.data["baseline"]["sha256"]:
+    from tuningfork.ops.experiments import given_files, skill_given
+
+    text_differs = text_sha256(refine._text(source)) != refinement.data["baseline"]["sha256"]
+    snapshot = given_files(store, run)
+    others_differ = bool(snapshot) and refine._others(kept_alike(hash_tree([source.parent]))) != refine._others(snapshot)
+    recorded = refinement.data.get("source") or {}
+    # The folder held what the run had when the refinement started, as its record shows: a difference
+    # now is a change since then, whatever the run was given. One recorded before the other files
+    # were (`others_match`) shows its SKILL.md alone, so other files differing now prove nothing.
+    held_at_start = recorded.get("matches") is True and (recorded.get("others_match") is True or not others_differ)
+    if (text_differs or others_differ) and not held_at_start:
+        # What the run was given decides the words: another text than the folder holds is said as
+        # that, never as an edit made since (issue #55); and where the run's record cannot tell, that
+        # the folder does not hold it.
+        found = skill_given(store, run, source.parent)
+        if found.kind == "other":
+            raise OperationError(
+                f"run {run.id[:8]} was given another skill text than {source.parent} holds — {found.words}: the edit "
+                "was made to that text, which the folder does not hold",
+                hint="to tune that text, refine a run of a scenario of the run that keeps a copy of what it had "
+                     "(`tuningfork scenario`, or Make a scenario… on the run's page), whose task file needs a held-out "
+                     "eval to approve an edit", code="drifted", field="refinement",
+            )
+        if found.kind == "unknown":
+            raise OperationError(
+                f"{source} does not hold the text the edit was made to, the text run {run.id[:8]} had" if text_differs
+                else f"the skill folder's other files are not those run {run.id[:8]} had ({source.parent})",
+                hint="refine again from a run of the skill as it is now", code="drifted", field="refinement",
+            )
+    if text_differs:
+        # Already other when the refinement started: changed since the run, not since the refinement.
+        since = "the refinement started" if recorded.get("matches") is True or not recorded else f"run {run.id[:8]} was given it"
         raise OperationError(
-            f"{source} has changed since the refinement started: the edit was made to the skill as it was",
+            f"{source} has changed since {since}: the edit was made to the skill as it was",
             hint="refine again from a run of the skill as it is now", code="drifted", field="refinement",
         )
-    snapshot = (run.parity or {}).get("skill_snapshot") or {}
-    if snapshot and _others(hash_tree([source.parent])) != _others(snapshot):
+    if others_differ:
         raise OperationError(
             f"the skill folder's other files have changed since the checkpoint's run ({source.parent})",
             hint="refine again from a run of the skill as it is now", code="drifted", field="refinement",

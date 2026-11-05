@@ -2,7 +2,8 @@
 // there, or a folder named by its path — and, making one of a run, a copy of what the run had,
 // kept in the scenario's own folder. Where the run says which folder it is (its task's own, or
 // the one named when its chat was imported), the folder is shown, greyed, and not chosen — but
-// for one whose SKILL.md has changed since the run, offered beside the others. The scenario's
+// for one that has changed since the run, offered beside the others, and for one the run was
+// never given, offered beside a copy of what it had, which is chosen to begin with. The scenario's
 // editor and Make a scenario choose it with this one picker, as they choose a check with
 // `checkPicker`.
 
@@ -40,8 +41,10 @@ export function skillNameOf(path) {
  * copy      a copy of what the run had can be kept: `{ where }`, the folder it is kept in. The
  *           choice to begin with, then
  * fixed     `{ path, why }`: the run says which folder it is — shown, greyed, nothing to choose; with
- *           `changed` (and `label`, its choice's name), its SKILL.md is no longer what the run had:
- *           the folder is the choice to begin with, and the others are offered beside it
+ *           `changed` (and `label`, its choice's name), it no longer holds what the run had: the
+ *           folder is the choice to begin with, and the others are offered beside it; with `given`,
+ *           the run was given another text than it holds: a copy of what the run had is the choice
+ *           to begin with, where there is one, and the folder is offered beside it
  * onChange  `({ kind, path, skill })` for each change: "known", "path" or "copy"; `skill` the
  *           name a listed skill goes by
  * The element, `value()`, `note` — under the field, for what the path resolves to — `setBase(folder)`,
@@ -54,7 +57,9 @@ export function skillPicker({ skills = [], path = "", resolved = null, relative 
   // A relative path is a folder in the scenario's own, and shows as the file words it: the
   // scenario's folder before it, not the full path the Skills page lists it by.
   const listed = !path || fullPath(path) ? known.find((each) => each.folder === resolved || each.folder === path) : null;
-  let kind = fixed ? "fixed" : listed ? "known" : path ? "path" : copy ? "copy" : known.length ? "known" : "path";
+  let kind = fixed ? (fixed.given && copy ? "copy" : "fixed") : listed ? "known" : path ? "path" : copy ? "copy"
+    : known.length ? "known" : "path";
+  const offered = Boolean(fixed && (fixed.changed || fixed.given));
   let chosen = listed || null;
   let typed = listed ? "" : path || "";
   let base = null;
@@ -99,12 +104,12 @@ export function skillPicker({ skills = [], path = "", resolved = null, relative 
   });
 
   const choices = [
-    ...(fixed?.changed ? [["fixed", fixed.label || "The run's folder, as it is now"]] : []),
+    ...(offered ? [["fixed", fixed.label || "The run's folder, as it is now"]] : []),
     ...(copy ? [["copy", "A copy of what the run had"]] : []),
     ["known", "Existing skill"],
     ["path", "Path to skill"],
   ];
-  const radios = fixed && !fixed.changed ? null : h("div", { class: "controls", role: "radiogroup", "aria-label": "Skill folder" }, choices.map(([choice, label]) =>
+  const radios = fixed && !offered ? null : h("div", { class: "controls", role: "radiogroup", "aria-label": "Skill folder" }, choices.map(([choice, label]) =>
     h("label", { class: "check" },
       h("input", {
         type: "radio", name: `skill-from-${name}`, value: choice, checked: kind === choice, disabled: !editable,

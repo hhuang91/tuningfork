@@ -187,7 +187,15 @@ done, where each run starts, made fresh by its model, past where it stops, after
 The skill is the folder the person names, the import named or a launched run's task's (an approval
 writes there), else a copy in the scenario's own folder (`skill/<name>/`: the copy the run kept, or
 the SKILL.md the model read, given frontmatter where its harness showed none) — never the run's own
-copy, which its A/Bs read. The check is the person's, else a launched run's task's own, what it reads
+copy, which its A/Bs read. Where that folder no longer holds what a launched run had — whole folders
+compared, as every copy keeps them (`experiments.differs_from_given`, `specs.kept_alike`) — what
+the run was given decides (`experiments.skill_given`; a fork, its source's): what the folder held
+then (`parity.skill_as_task`), the folder changed since, which the scenario takes, saying so;
+another text — a chain's later link given a skill the link before changed, `batch --skill` or
+`--skill-dir` with a text of its own, a validation's runs of an edit — which it keeps a copy of,
+the folder offered beside it, saying what the run was given and never
+that its task's file changed (the person's choice, issue #55); or, where an older run's record
+cannot tell, the folder taken, said to differ. The check is the person's, else a launched run's task's own, what it reads
 from the task's folder (`$TUNINGFORK_SPEC_DIR/…`) copied beside the spec; the inputs are a launched
 run's workspace as the scenario's first call stands in it, from the snapshots, else the files the
 conversation's calls name are listed for the person to add; the eval is named by the scenario, a
@@ -220,8 +228,9 @@ plan's `taken`). A new scenario's page and
 Make a scenario name the skill alike (`ui/static/js/skillpick.js`): the scenario's name, the
 harness (of a run), the skill's name, then its folder — an existing skill the Skills page lists, or
 a path, a relative one shown after the scenario's own folder it is taken from, and of a run a copy
-of what it had — each greyed where the run says it, but a folder whose SKILL.md has changed since
-the run, offered beside a copy of what the run had (`copy_skill`). A scenario's input files go into
+of what it had — each greyed where the run says it, but a folder that has changed since the run,
+offered beside a copy of what the run had (`copy_skill`), and one the run was never given, offered
+beside the copy, which is chosen to begin with (`skill_dir_given`). A scenario's input files go into
 it only once it is saved, each at a path in the workspace the person can change.
 
 A shell check runs in the run's workspace with `$TUNINGFORK_REPLY` (a file holding the final
@@ -361,7 +370,9 @@ verdicts leave. Every part is set up as the checkpoint's run was, as its forks a
 sandbox and clock; an MCP server, recorded by name only, reaches none of them, and the plan
 says so once.
 It is refused when the skill's file, its other files or the training eval
-changed since the checkpoint's run, and unless the proposal survived its latest complete
+changed since the checkpoint's run, or the run was given another text than the skill's folder holds
+— said in those words, as the refinement says it from its start (`refine.source_differences`,
+`source_note`, and `shown_source` wherever one recorded before is shown or started again) — and unless the proposal survived its latest complete
 screen (`validate.latest_screen`: a screen of more proposals, or one run to the end, can undo
 an earlier survival). Its record, `refinements/<id>/validations/<vid>.json`, is
 what the gate reads (`analysis/validation.py`, G0–G8, each check with its counts and rule

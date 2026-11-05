@@ -37,6 +37,21 @@ def start(stack, run_id, step="write_file", **target):
     return refine.create(stack.store, run_id, step, **(target or {"target_rules": RULES}))
 
 
+def run_of(stack, **options) -> str:
+    """One run of a batch of the task, with `prepare_batch`'s options: another skill folder or file."""
+    plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                         model="m", harness="fake", n=1, **options)
+    (outcome,) = execute_batch(stack.store, plan).outcomes
+    return outcome.run_id
+
+
+def older(parity: dict, stack, run_id: str) -> None:
+    """The run's parity as an older tuningfork recorded it."""
+    with stack.store._lock:
+        stack.store._conn.execute("UPDATE runs SET parity = ? WHERE id = ?", (json.dumps(parity), run_id))
+        stack.store._conn.commit()
+
+
 def test_a_record_written_once_is_there_whole_or_not_at_all(tmp_path):
     # Cut off half-written (a crash, a Ctrl-C, a value that will not serialize), a record read
     # as made. Found in review: a truncated approval.json refused every later approval, and
@@ -59,8 +74,89 @@ class TestCreate:
         assert made.baseline_text() == (stack.tmp / "skills-src" / "tally-report" / "SKILL.md").read_text()
         assert made.data["source"]["path"].endswith("skills-src/tally-report/SKILL.md")
         assert made.data["source"]["matches"] is True
+        assert {key: made.data["source"][key] for key in ("origin", "given", "others_match")} == {
+            "origin": None, "given": None, "others_match": True}
+        assert refine.source_note(made.data["source"], run_id) is None
         assert made.target["kind"] == "rules" and made.data["created_by"] == {"via": "person"}
         assert (stack.store.home / "refinements" / made.id / "refinement.json").is_file()
+
+    def test_a_run_given_another_folder_says_so_from_the_start(self, stack):
+        """Issue #55: a run of `batch --skill-dir <folder>` records the folder it was given
+        (`parity.skill_dir`) and whether it held what the task's folder held then
+        (`parity.skill_as_task`). A refinement of it says the run was given another text where it
+        was, never that the task's file has changed since; a copy that held the task's text, the
+        task's folder edited since, is said to have changed since; and an older run, whose record
+        says neither, is said to differ."""
+        import shutil
+
+        theirs = stack.tmp / "skills-src" / "tally-report"
+        mine = stack.tmp / "elsewhere" / "tally-report"
+        shutil.copytree(theirs, mine)
+        plain = stack.store.get_run(run_of(stack))
+        assert (plain.parity["skill_dir"], plain.parity["skill_as_task"]) == (str(theirs.resolve()), True)
+        # The task's folder in a repository: what is in a dot-folder, which a chain's copy of a
+        # link's skill leaves out, never tells a copy from the folder (`specs.kept_alike`).
+        (theirs / ".git").mkdir()
+        (theirs / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        alike = run_of(stack, skill_dir=mine)
+        assert stack.store.get_run(alike).parity["skill_dir"] == str(mine.resolve())
+        assert stack.store.get_run(alike).parity["skill_as_task"] is True
+        assert start(stack, alike).data["source"]["origin"] is None  # a copy of the task's, as it is
+        # Held the task's text then, the task's folder edited since: changed since, never another text.
+        had = (theirs / "SKILL.md").read_bytes()
+        (theirs / "SKILL.md").write_bytes(had + b"\nAn edit approved since.\n")
+        since = start(stack, alike, target_match="row_count").data["source"]
+        assert (since["origin"], since["given"]) == ("task", None)
+        assert refine.source_note(since, alike).startswith("the skill's file has changed since this run was given it")
+        (theirs / "SKILL.md").write_bytes(had)
+
+        (mine / "SKILL.md").write_text(had.decode("utf-8") + "\nIts own line.\n", encoding="utf-8")
+        run_id = run_of(stack, skill_dir=mine)
+        source = start(stack, run_id).data["source"]
+        assert source["matches"] is False and (source["origin"], source["given"]) == ("other", f"another folder, {mine.resolve()}")
+        assert refine.source_note(source, run_id).startswith(f"run {run_id[:8]} was given another skill text")
+        # Recorded before a run kept what it was given: said to differ, never to have changed.
+        older({key: value for key, value in stack.store.get_run(run_id).parity.items()
+               if key not in ("skill_dir", "skill_as_task")}, stack, run_id)
+        unknown = start(stack, run_id, target_match="row_count").data["source"]
+        assert unknown["origin"] == "unknown"
+        assert refine.source_note(unknown, run_id) == ("the skill's file does not hold the text this run had: proposals "
+                                                       "edit the run's copy")
+        # A file of its own beside the same SKILL.md: the folder still differs, and says so.
+        (mine / "SKILL.md").write_bytes(had)
+        (mine / "notes.md").write_text("a file the task's folder never held\n", encoding="utf-8")
+        run_id = run_of(stack, skill_dir=mine)
+        source = start(stack, run_id).data["source"]
+        assert source["matches"] is True and source["others_match"] is False and source["origin"] == "other"
+
+    def test_a_fork_of_a_run_given_another_text_answers_for_its_source(self, stack):
+        """A fork replays its source and is given its source's copy of the skill, recording neither
+        what the source was given nor a copy of its own: a refinement of it says what its source
+        was given (found in review)."""
+        variant = stack.tmp / "variant.md"
+        variant.write_text((stack.tmp / "skills-src" / "tally-report" / "SKILL.md").read_text(encoding="utf-8")
+                           + "\nIts own line.\n", encoding="utf-8")
+        source = run_of(stack, skill_file=str(variant))
+        _, (fork,) = stack.fork(source, "write_file")
+        assert stack.store.get_run(fork.run_id).parity.get("fork_of") == source
+        made = start(stack, fork.run_id).data["source"]
+        assert (made["origin"], made["given"]) == ("other", f"{variant} as its SKILL.md")
+
+    def test_a_refinement_recorded_before_says_what_its_run_was_given_where_it_is_shown(self, stack):
+        """One recorded before the refinement kept what its run was given: its view finds it, and
+        writes nothing (issue #55: the refinement of a chain's later link said its file changed)."""
+        variant = stack.tmp / "variant.md"
+        variant.write_text((stack.tmp / "skills-src" / "tally-report" / "SKILL.md").read_text(encoding="utf-8")
+                           + "\nIts own line.\n", encoding="utf-8")
+        run_id = run_of(stack, skill_file=str(variant))
+        made = start(stack, run_id)
+        record = stack.store.home / "refinements" / made.id / "refinement.json"
+        data = json.loads(record.read_text(encoding="utf-8"))
+        data["source"] = {key: data["source"][key] for key in ("path", "sha256", "matches")}
+        record.write_text(json.dumps(data), encoding="utf-8")
+        shown = refine.view(stack.store, made.id)["refinement"]["source"]
+        assert (shown["origin"], shown["given"]) == ("other", f"{variant} as its SKILL.md")
+        assert "origin" not in json.loads(record.read_text(encoding="utf-8"))["source"]
 
     def test_the_same_checkpoint_and_target_give_back_the_open_one(self, stack):
         run_id = a_run(stack)

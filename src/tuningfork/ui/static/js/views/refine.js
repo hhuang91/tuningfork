@@ -284,10 +284,7 @@ export async function refinementView(root, [id], scope) {
             onPurged: () => { location.hash = "#/trash"; },
           })
         : null,
-      found.source && !found.source.matches
-        ? h("div", { class: "banner banner-warn" }, h("strong", null, "The skill's own file has changed since this run was given it. "),
-            "Proposals edit the run's copy, which is what the model saw here.")
-        : null,
+      sourceBanner(found.source, found.run),
       found.status === "closed" ? h("div", { class: "banner" }, h("strong", null, "Closed. "), "It takes no more proposals or tests, and what it holds is kept.") : null,
       approvalBanner(),
       running.map((job) => h("div", { class: "banner" },
@@ -1120,6 +1117,37 @@ export async function refinementView(root, [id], scope) {
           h("td", { class: "faint", title: when(screen.created_at) }, ago(screen.created_at)));
       })))));
   }
+}
+
+/** What the refinement's record of the skill's own folder (`source`) says to know, or nothing: the
+ *  run was given another text than the folder holds (`ops.refine.source_differences`), the file
+ *  changed since, or its other files did. Never the file changed, where the run was given another
+ *  text (found in review, issue #55: it sent a person looking for an edit nobody made). */
+function sourceBanner(source, runId) {
+  if (!source) return null;
+  if (source.origin === "other") {
+    return h("div", { class: "banner banner-warn" },
+      h("strong", null, "This run was given another skill text than the task's folder holds: "), `${source.given}. `,
+      "Proposals edit the run's copy, which is what the model saw here. The task's folder does not hold that text, so no "
+      + "proposal can get full test runs or be approved. To tune it, ",
+      h("a", { href: `#/runs/${runId}/scenario` }, "make a scenario of the run"),
+      " that keeps a copy of what it had, and refine a run of that scenario. Its task file needs a held-out task before "
+      + "an edit can be approved.");
+  }
+  // Where the run's record cannot tell how it came to differ, it is said to differ, never to have changed.
+  const known = source.origin !== "unknown";
+  if (!source.matches) {
+    return h("div", { class: "banner banner-warn" }, h("strong", null, known
+      ? "The skill's own file has changed since this run was given it. " : "The skill's own file does not hold the text this run had. "),
+    "Proposals edit the run's copy, which is what the model saw here.");
+  }
+  if (source.others_match === false) {
+    return h("div", { class: "banner banner-warn" }, h("strong", null, known
+      ? "The skill folder's other files have changed since this run was given them. "
+      : "The skill folder's other files are not the ones this run had. "),
+    "Proposals edit the run's copy, and no proposal can get full test runs against the folder as it is.");
+  }
+  return null;
 }
 
 /** A stage's form, folded but where the page opens on its stage: its title the line that opens

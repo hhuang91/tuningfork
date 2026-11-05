@@ -3705,9 +3705,12 @@ def _print_refinement(found: dict) -> None:
     console.print(f"              {escape(_shown_path(Path(found['baseline']['path'])))}", soft_wrap=True)
     source = found.get("source")
     if source:
+        from tuningfork.ops.refine import source_note
+
         console.print(f"  its file    {escape(_shown_path(Path(source['path'])))}", soft_wrap=True)
-        if not source["matches"]:
-            console.print("              [yellow]changed since the run was given it: proposals edit the run's copy[/yellow]")
+        said = source_note(source, found["run"])
+        if said:
+            console.print(f"              [yellow]{escape(said)}[/yellow]", soft_wrap=True)
     console.print(f"  target      {escape(found['target'].get('description') or '')}", soft_wrap=True)
     console.print("              [dim]declared before anything was proposed[/dim]")
     if found.get("normalizers"):
@@ -3825,7 +3828,8 @@ def refine_start(
         )
     except OperationError as error:
         _refuse(error)
-    _print_refinement(made.to_json())
+    # An open one given back, recorded before what its run was given was, is shown with it.
+    _print_refinement({**made.to_json(), "source": refine.shown_source(store, made)})
     console.print(
         f"\nnext: ask for proposals — or give your own wording — then screen them:\n"
         f"  tuningfork refine propose {made.id[:8]} --builtin\n"
