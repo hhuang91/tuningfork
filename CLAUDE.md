@@ -482,8 +482,13 @@ stopped at once with libfaketime 0.9.10, naming a semaphore it had not made — 
 killed would leave there): the harness reads the same date whichever day a run is made — the model
 reads it, and at a knife edge it decides — a fork reads its source's, as does every run of a
 validation, the launch records it, and a plan warns where the library is missing
-(`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere) and refuses a harness whose own `--version`
-answers on the real clock but fails or never answers with it loaded
+(`TUNINGFORK_CLOCK_LIBRARY` names it elsewhere) or would not pin a launch's clock, its runs
+keeping the real clock, recorded so — the loader skips a library it cannot load (under /tmp, in a
+folder hidden from launches, built for another processor) and runs the harness anyway, so the
+library's path is looked at, then `date` run as a launch is run, and the loader's skip or a read
+of another instant says so (`Sandbox.unpinned`; a `date` that reads no instant or never answers
+says nothing, one that never answered skipped for five minutes) — and refuses a harness whose own
+`--version` answers on the real clock but fails or never answers with it loaded
 (`ops.connections.clock_problem`: asked one plan at a time, the real clock first, then the clock
 as a launch's harness is given it, each in bubblewrap with a /dev of its own, in a session ended
 with everything in it; a clean answer kept for the program and library, a refusal for five

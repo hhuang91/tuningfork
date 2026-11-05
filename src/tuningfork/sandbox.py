@@ -20,7 +20,10 @@ then sees its own folders.
 The clock a launch reads can be pinned too (`TUNINGFORK_CLOCK`, an instant): libfaketime
 under `LD_PRELOAD`, so the harness's "today" is the same whichever day a run is made — the
 model reads the date in its prompt, and at a knife edge the date decides — and a fork's is
-its source's.
+its source's. A plan first looks at the library's path, then reads the clock back from `date`,
+run as a launch is run: where a launch would not read the pinned instant (the library skipped,
+or loaded and faking nothing), the runs keep the real clock, and the plan says so
+(`Sandbox.unpinned`).
 """
 
 from __future__ import annotations
@@ -30,7 +33,9 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Sequence
@@ -78,11 +83,24 @@ CLOCK_LIBRARIES = (
 #: ships, a 2024 snapshot (tried on x86-64), and runs with 0.9.10, Ubuntu 24.04's.
 ANOTHER_LIBRARY = f"name another build of libfaketime with {CLOCK_LIBRARY} (docs/setup.md, A pinned clock)"
 CLOCK_FORMAT = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+#: An instant as `CLOCK` names it, and as a plan reads a launch's clock back.
+INSTANT = "%Y-%m-%d %H:%M:%S"
+#: What a plan runs as a launch is run, to see that the clock is pinned there (`Sandbox.unpinned`):
+#: a program every Linux has, reading the time through the C library, where libfaketime takes it.
+CLOCK_READER = ("date", f"+{INSTANT}")
+#: The loader's words for a library it skipped: it runs the program anyway, on the real clock.
+NOT_PRELOADED = re.compile(r"from LD_PRELOAD cannot be preloaded \((.*)\): ignored")
 #: `for_launches`' default for `clock`: what the person set.
 FROM_ENV = "from the environment"
 
 #: A probe gives up after this long: bubblewrap that hangs must not hang a batch's plan.
 PROBE_TIMEOUT = 10.0
+#: How long a library whose `date` did not answer goes unasked (`_UNANSWERED`): the web UI
+#: plans a form again at each change, and each plan would wait for it again.
+UNANSWERED_KEPT = 300.0
+#: The libraries `Sandbox.unpinned` found `date` not answering with, by bubblewrap, path and
+#: modification time, and until when that holds.
+_UNANSWERED: dict[tuple[str, str, float], float] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,20 +135,27 @@ def hidden_by_the_person() -> list[Path]:
 
 def pinned_clock() -> tuple[str | None, str | None]:
     """The instant the person pinned every launch's clock at (`CLOCK`), or None — and, if
-    what they set is not an instant, why it is not used."""
+    what they set is not an instant, why it is not used: a day the calendar lacks among them,
+    which libfaketime would move to another while the launch recorded the one named."""
     given = os.environ.get(CLOCK, "").strip()
     if not given or given.lower() == "off":
         return None, None
-    if not CLOCK_FORMAT.match(given):
+    try:
+        datetime.strptime(given, INSTANT)
+        instant = bool(CLOCK_FORMAT.match(given))
+    except ValueError:
+        instant = False
+    if not instant:
         return None, f"{CLOCK} is {given!r}, not an instant like 2026-01-05 09:00:00: runs keep the real clock"
     return given, None
 
 
 def clock_library() -> str | None:
     """libfaketime, where it is here: the path the person named (`CLOCK_LIBRARY`), else the
-    usual places."""
+    usual places. A path named from the home or from where tuningfork runs is made whole: a
+    launch loads it from a folder of its own, where it would name another file or none."""
     given = os.environ.get(CLOCK_LIBRARY, "").strip()
-    for candidate in ([given] if given else CLOCK_LIBRARIES):
+    for candidate in ([os.path.abspath(os.path.expanduser(given))] if given else CLOCK_LIBRARIES):
         if Path(candidate).is_file():
             return candidate
     return None
@@ -277,7 +302,8 @@ class Sandbox:
         its semaphore in the machine's /dev/shm, which the harness, in a /dev of its own, could
         not open — Claude Code's native binary stopped at once with libfaketime 0.9.10, naming a
         semaphore it had not made — and which a launch killed would leave there. A plan first
-        runs the harness's `--version` with these (`ops.connections.clock_problem`)."""
+        runs `date` with these, as a launch is run (`unpinned`), and then the harness's
+        `--version` (`ops.connections.clock_problem`)."""
         if not (self.clock and self.clock_library):
             return []
         given = {
@@ -300,6 +326,64 @@ class Sandbox:
             "--bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", home, home,
             *(self.clock_arguments() if pinned else []), "--chdir", home, "--",
         ]
+
+    def unpinned(self) -> str | None:
+        """Why a launch would read the real clock though this sandbox pins it, or None. The
+        loader skips a library it cannot load and runs the program anyway, on the real clock, and
+        the check of the harness's own `--version` (`ops.connections.clock_problem`) cannot tell:
+        every run would read the real date while recorded as pinned. A library in a folder every
+        launch sees empty, or named by a path LD_PRELOAD splits, is said to be from its path. Any
+        other is tried: `date`, run as a launch is run — the folders kept from launches hidden, the
+        clock given as a launch's harness is given it — and the loader's skip says why (a library
+        built for another processor, say), as does a read of another instant, however `date` ended
+        (one that loads and pins nothing). Nothing else is said: with no `date`, or one that reads
+        no instant or never answers, the harness's own `--version` decides — a library that loads
+        and stops every program is that check's to refuse. A library `date` did not answer with is
+        not tried again for five minutes; its path is still looked at."""
+        if not (self.clock and self.clock_library):
+            return None
+        library = self.clock_library
+        real_home = Path.home()
+        hidden = hideable(self.hide, real_home=real_home)
+        for form, home in ((Path(library), real_home), (Path(os.path.realpath(library)), real_home.resolve())):
+            folder = _kept_from_launches(form, hidden, home)
+            if folder is not None:
+                return f"libfaketime, at {form}, is under {folder}, which every launch sees empty"
+        if any(mark in library for mark in " :"):
+            return f"LD_PRELOAD splits libfaketime's path, {library}, at its space or colon"
+        reader = shutil.which(CLOCK_READER[0])
+        try:
+            asked = (self.executable, library, Path(library).stat().st_mtime)
+        except OSError:
+            return None
+        if reader is None or time.monotonic() < _UNANSWERED.get(asked, 0.0):
+            return None
+        arguments = [self.executable, *_base_arguments(real_home)]
+        for folder in hidden:
+            arguments += ["--tmpfs", str(folder)]
+        arguments += [*self.clock_arguments(), "--chdir", "/", "--", reader, *CLOCK_READER[1:]]
+        try:
+            done = subprocess.run(
+                arguments, capture_output=True, text=True, timeout=PROBE_TIMEOUT, stdin=subprocess.DEVNULL,
+                env={"PATH": os.environ.get("PATH", "")},
+            )
+        except subprocess.TimeoutExpired:
+            _UNANSWERED[asked] = time.monotonic() + UNANSWERED_KEPT
+            return None
+        except OSError:
+            return None
+        skipped = NOT_PRELOADED.search(done.stderr or "")
+        if skipped:
+            return f"a launch cannot load libfaketime from {library} ({skipped.group(1)})"
+        # An instant read is read, however `date` ended: one outside the window is not pinned.
+        read = next((line.strip() for line in (done.stdout or "").splitlines() if line.strip()), "")
+        try:
+            late = datetime.strptime(read, INSTANT) - datetime.strptime(self.clock, INSTANT)
+        except ValueError:
+            return None
+        if timedelta(0) <= late <= timedelta(seconds=PROBE_TIMEOUT):
+            return None
+        return f"date, run as a launch is run with libfaketime from {library}, did not read that instant"
 
     def check_command(
         self, command: str, *, workspace: Path, environment: dict[str, str],
@@ -368,8 +452,9 @@ def for_launches(
     keeps from every launch; the folders the person names (`HIDE`) are hidden with them, and
     so are `own`, tuningfork's own folders, which no check is shown either. `clock` is the
     instant every launch starts at: the person's setting (`CLOCK`) unless given — a fork
-    gives its source's, None where the source had none. Wanted and not possible, the sandbox
-    says why (`clock_problem`) and runs on the real clock."""
+    gives its source's, None where the source had none. Wanted and not possible — libfaketime
+    missing, or one that would not pin a launch's clock (`Sandbox.unpinned`) — the sandbox says
+    why (`clock_problem`) and runs on the real clock, which its launches record."""
     found = status()
     if not found.available or found.executable is None:
         return None, found.reason
@@ -383,10 +468,17 @@ def for_launches(
         problem = (f"the clock cannot be pinned at {wanted}: libfaketime is not installed "
                    f"(or name it with {CLOCK_LIBRARY}); runs keep the real clock")
         wanted = None
-    return Sandbox(
+    sandbox = Sandbox(
         found.executable, found.version, folders, clock=wanted, clock_library=library, clock_problem=problem,
         own=mine,
-    ), None
+    )
+    unpinned = sandbox.unpinned()
+    if unpinned:
+        sandbox = replace(
+            sandbox, clock=None, clock_library=None,
+            clock_problem=f"the clock cannot be pinned at {wanted}: {unpinned}; runs keep the real clock",
+        )
+    return sandbox, None
 
 
 def mount_point(home: Path) -> Path:
@@ -454,6 +546,20 @@ def recorded_hiding(recorded: dict[str, Any] | None, *, task: Path | None) -> tu
         return hidden, [Path(folder) for folder in recorded.get("own") or []]
     theirs = {folder.resolve() for folder in hidden_by_the_person()}
     return hidden, [folder for folder in hidden if folder != task and folder.resolve() not in theirs]
+
+
+def _kept_from_launches(path: Path, hidden: Sequence[Path], home: Path) -> Path | None:
+    """The folder every launch sees empty that holds `path`, if one does (`_base_arguments`):
+    `/tmp`, a folder `hidden` from launches, or a home under /home but the person's own, `home`.
+    A path as named goes with the home as named, and as resolved with the home as resolved: a
+    home that is a link is shown to a launch where the link is, and only there."""
+    for folder in (TMP, *hidden):
+        if _within(path, folder):
+            return folder
+    if _within(path, Path("/home")) and not _within(path, home):
+        inside = path.relative_to("/home").parts
+        return Path("/home", inside[0]) if len(inside) > 1 else Path("/home")
+    return None
 
 
 def holds_kept(folder: Path | str) -> bool:

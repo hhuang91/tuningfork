@@ -464,7 +464,12 @@ The harness puts the date in the model's prompt, and at a knife edge the date de
 harness reads the same date whichever day a run is made, and a fork reads its source's, as does
 every run of a validation. It uses libfaketime (`sudo apt install libfaketime`) under
 `LD_PRELOAD`, monotonic clocks left real; `TUNINGFORK_CLOCK_LIBRARY` names the library if it is
-elsewhere, and a plan warns when it is missing.
+elsewhere. A library a launch cannot load is skipped, and the harness runs all the same, on the
+real clock: one under `/tmp`, in a folder the sandbox hides, or built for another processor. So
+every plan looks at the library's path, then runs `date` as a launch is run, with the clock
+pinned. It warns when a launch could not load the library from that path, or `date` reads another
+instant, as it warns when the library is missing. Either way, the runs keep the real clock, and
+none is recorded as pinned.
 
 Not every harness runs with every build of the library. Before a batch or a fork launches
 anything, its plan runs the harness's `--version` on the real clock and then with the clock
@@ -473,9 +478,10 @@ pinned, and refuses a harness that answers only on the real clock. Tried on x86-
 libfaketime's source, so a plan refuses it. With libfaketime 0.9.10, the build Ubuntu 24.04
 ships, Claude Code runs with the clock pinned, on x86-64 and on arm64, from tuningfork 0.8.1 on.
 Hermes Agent's `--version` and OpenClaw's answer with either build (the snapshot tried on x86-64
-only). The first plan to ask can wait up to 20 s, 10 s for each `--version`. Within one
-`tuningfork serve`, later plans reuse its answer: a refusal for five minutes, a pass until the
-harness or the library changes. A command run in the terminal asks again.
+only). The first plan to ask can wait up to 30 s: 10 s for `date`, then 10 s for each
+`--version`. Within one `tuningfork serve`, later plans reuse the `--version` answers: a refusal
+for five minutes, a pass until the harness or the library changes. For five minutes, they also
+skip a `date` that never answered. A command run in the terminal asks again.
 
 Where a plan refuses Claude Code for the clock and `dpkg-query -W libfaketime` shows the
 snapshot's version, `0.9.10+2024-06-05…`, name a 0.9.10 build with `TUNINGFORK_CLOCK_LIBRARY`.
@@ -487,10 +493,11 @@ dpkg-deb -x libfaketime_0.9.10-2.1_amd64.deb ~/libfaketime-0.9.10
 export TUNINGFORK_CLOCK_LIBRARY="$HOME/libfaketime-0.9.10/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1"
 ```
 
-Keep the library out of `/tmp`, which every launch sees empty. On arm64, download
-`libfaketime_0.9.10-2.1_arm64.deb` instead; its library is under `aarch64-linux-gnu`. Set the
-variable in the environment tuningfork runs in: for the web UI, before `tuningfork serve` starts.
-A fork reads it too, though its clock comes from the run it forks.
+Keep the library out of `/tmp` and the folders the sandbox hides, which every launch sees empty.
+On arm64, download `libfaketime_0.9.10-2.1_arm64.deb` instead; its library is under
+`aarch64-linux-gnu`. Set the variable in the environment tuningfork runs in: for the web UI,
+before `tuningfork serve` starts. A fork reads it too, though its clock comes from the run it
+forks.
 
 ## A task
 
