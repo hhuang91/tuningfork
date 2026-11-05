@@ -530,7 +530,7 @@ class TestTheClock:
             "FAKETIME_DONT_FAKE_MONOTONIC": "1",
         }
         # The harness's alone: in bubblewrap's own environment, libfaketime would start there too,
-        # its semaphore in a /dev the harness cannot see (Claude Code stopped at once on arm64).
+        # its semaphore in a /dev the harness cannot see (Claude Code stopped at once with 0.9.10).
         assert "FAKETIME" not in wrapped.env and wrapped.env["LD_PRELOAD"] == "/lib/other.so"
         assert pinned.to_json()["clock"] == "2026-10-08 09:00:00"
         plain = Sandbox("/usr/bin/bwrap", "0.11.1")
@@ -590,11 +590,11 @@ class TestTheClock:
             assert note["level"] == "warning" and "libfaketime is not installed" in note["message"]
 
     def test_a_harness_the_pinned_clock_stops_is_found_by_its_own_version(self, tmp_path, monkeypatch):
-        """On x86-64 Claude Code's native binary never makes its first call with libfaketime
-        loaded: it hangs. Its own --version, run with the clock a launch's harness gets, says so
-        before any run is launched, after the real clock's has answered. It says so too of one
-        that stops at once, as Claude Code did on arm64 while bubblewrap loaded the library. A
-        harness that fails without the clock too is not the clock's to refuse."""
+        """With the libfaketime Ubuntu 26.04 ships, tried on x86-64, Claude Code's native binary
+        hangs. Its own --version, run with the clock a launch's harness gets, says so before any
+        run is launched, after the real clock's has answered, naming the library. It says so too
+        of one that stops at once, as Claude Code did with 0.9.10 while bubblewrap loaded the
+        library. A harness that fails without the clock too is not the clock's to refuse."""
         from types import SimpleNamespace
 
         import tuningfork.ops.connections as connections
@@ -624,9 +624,9 @@ class TestTheClock:
 
         assert connections.clock_problem(hangs, pinned) == (
             "hangs cannot run with the clock pinned at 2026-10-08 09:00:00: its --version answers on the real "
-            "clock, but with libfaketime loaded it did not answer in 1 s")
+            f"clock, but with libfaketime loaded from {library} it did not answer in 1 s")
         assert runs_of("hangs") == ["real", "@2026-10-08 09:00:00"]
-        assert ("its --version answers on the real clock, but with libfaketime loaded it exited 1"
+        assert (f"its --version answers on the real clock, but with libfaketime loaded from {library} it exited 1"
                 in connections.clock_problem(stops, pinned))
         assert connections.clock_problem(runs, pinned) is None
         # Broken without the clock too: its launch says what is wrong, and the clock is not asked.
@@ -697,7 +697,7 @@ class TestTheClock:
         run it anyway: every run would end before its first call, or hang until its timeout."""
         import tuningfork.ops.connections as connections
         from tuningfork.ops.batch import prepare_batch
-        from tuningfork.sandbox import CLOCK
+        from tuningfork.sandbox import ANOTHER_LIBRARY, CLOCK
 
         with task_stack(tmp_path, mock_server, monkeypatch) as stack:
             stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
@@ -711,7 +711,8 @@ class TestTheClock:
                 prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
                               model="m", harness="fake", n=1)
             assert refused.value.message == "fake cannot run with the clock pinned at 2026-10-08 09:00:00"
-            assert refused.value.hint == f"unset {CLOCK} to run it on the real clock"
+            assert refused.value.hint == f"{ANOTHER_LIBRARY}, or unset {CLOCK} to run it on the real clock"
+            assert "name another build of libfaketime with TUNINGFORK_CLOCK_LIBRARY" in refused.value.hint
             assert refused.value.field == "harness"
 
     def test_a_launch_reads_the_pinned_clock(self, sandboxed, tmp_path):
@@ -770,10 +771,10 @@ class TestTheClock:
 
     def test_what_the_probe_leaves_in_dev_shm_goes_with_it(self, sandboxed, tmp_path, monkeypatch):
         """A harness given libfaketime can leave its semaphore in /dev/shm — run outside
-        bubblewrap, Claude Code's native binary did on arm64 — or hang and be ended, and a
-        refusal is asked again every five minutes. The probe gives libfaketime to the harness
-        alone, in bubblewrap with a /dev of its own, as a launch does: nothing it left there
-        stays on the machine, nor anything of libfaketime's own."""
+        bubblewrap, Claude Code's native binary did — or hang and be ended, and a refusal is
+        asked again every five minutes. The probe gives libfaketime to the harness alone, in
+        bubblewrap with a /dev of its own, as a launch does: nothing it left there stays on the
+        machine, nor anything of libfaketime's own."""
         from types import SimpleNamespace
 
         import tuningfork.ops.connections as connections
@@ -810,8 +811,8 @@ class TestTheClock:
         before = set(os.listdir("/dev/shm"))
         assert left.name not in before
         try:
-            assert "with libfaketime loaded it exited 1" in (connections.clock_problem(stops, pinned) or "")
-            assert "with libfaketime loaded it did not answer in 1 s" in (connections.clock_problem(hangs, pinned) or "")
+            assert f"loaded from {library} it exited 1" in (connections.clock_problem(stops, pinned) or "")
+            assert f"loaded from {library} it did not answer in 1 s" in (connections.clock_problem(hangs, pinned) or "")
             assert made.read_text(encoding="utf-8") == "stops\nhangs\n" and len(started) == 4
             new = set(os.listdir("/dev/shm")) - before
             assert left.name not in new
@@ -845,5 +846,5 @@ class TestTheClock:
             said = connections.clock_problem(SimpleNamespace(name="needs-home", executable=str(program)), pinned)
         finally:
             shutil.rmtree(under_dev, ignore_errors=True)
-        assert said is not None and "with libfaketime loaded it exited 1" in said
+        assert said is not None and f"with libfaketime loaded from {library} it exited 1" in said
 

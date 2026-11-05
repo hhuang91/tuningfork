@@ -152,7 +152,7 @@ def prepare_fork(
     if setup.sandbox:
         # What it replays names the sandbox's paths, and what the model saw was the same
         # home and folder: a fork of it runs there too, or not at all.
-        from tuningfork.sandbox import for_launches, recorded_hiding, remedy
+        from tuningfork.sandbox import ANOTHER_LIBRARY, for_launches, recorded_hiding, remedy
 
         # And its clock starts where its source's did, so its live steps read the
         # recording's date; a source made on the real clock forks on the real clock. It is
@@ -167,7 +167,9 @@ def prepare_fork(
                 hint=", or ".join(part for part in (remedy(unsandboxed), "fork a run launched without it") if part),
                 code="no_sandbox",
             )
-        check_clock(adapter, sandbox, hint=f"run {source_run.id[:8]} read that clock, so each of its forks must too")
+        check_clock(
+            adapter, sandbox, hint=f"run {source_run.id[:8]} read that clock, so each of its forks must too: {ANOTHER_LIBRARY}",
+        )
     if skill is not None and not skill.exists() and not skill_commit:
         raise OperationError(f"the skill folder the run was given, {skill}, no longer exists")
     # Read once, here, for a check that runs a command: a list that cannot be read is refused

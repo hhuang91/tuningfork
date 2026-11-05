@@ -73,6 +73,10 @@ CLOCK_LIBRARIES = (
     "/usr/lib/faketime/libfaketime.so.1",
     "/usr/local/lib/faketime/libfaketime.so.1",
 )
+#: What a plan refused for the clock says to try (`ops.launch.check_clock`): not every harness
+#: runs with every build. Claude Code's native binary never answers with the one Ubuntu 26.04
+#: ships, a 2024 snapshot (tried on x86-64), and runs with 0.9.10, Ubuntu 24.04's.
+ANOTHER_LIBRARY = f"name another build of libfaketime with {CLOCK_LIBRARY} (docs/setup.md, A pinned clock)"
 CLOCK_FORMAT = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 #: `for_launches`' default for `clock`: what the person set.
 FROM_ENV = "from the environment"
@@ -271,9 +275,9 @@ class Sandbox:
         so its timeouts and tuningfork's timings do. Set with --setenv, for the program inside
         alone: in bubblewrap's own environment libfaketime would start in bubblewrap too and make
         its semaphore in the machine's /dev/shm, which the harness, in a /dev of its own, could
-        not open — Claude Code's native binary stopped at once on arm64, naming a semaphore it had
-        not made — and which a launch killed would leave there. A plan first runs the harness's
-        `--version` with these (`ops.connections.clock_problem`)."""
+        not open — Claude Code's native binary stopped at once with libfaketime 0.9.10, naming a
+        semaphore it had not made — and which a launch killed would leave there. A plan first
+        runs the harness's `--version` with these (`ops.connections.clock_problem`)."""
         if not (self.clock and self.clock_library):
             return []
         given = {
@@ -288,9 +292,9 @@ class Sandbox:
         pinned (`ops.connections.clock_problem`): the machine as it is, writable as it is, but a
         /dev and processes of its own, as a launch has, and, `pinned`, the clock as a launch's
         harness is given it. What libfaketime leaves in /dev/shm goes with it — run outside,
-        Claude Code's native binary left a semaphore there on arm64 — and so does every process
-        the harness started. Its throwaway `home` is shown where it is, and it starts there: one
-        made under /dev, where TMPDIR=/dev/shm puts it, would be hidden."""
+        Claude Code's native binary left a semaphore there — and so does every process the
+        harness started. Its throwaway `home` is shown where it is, and it starts there: one made
+        under /dev, where TMPDIR=/dev/shm puts it, would be hidden."""
         return [
             self.executable, "--die-with-parent", "--unshare-pid",
             "--bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", home, home,

@@ -174,7 +174,9 @@ def prepare_batch(
     from tuningfork.ops.launch import check_clock, check_launchable, check_proxy
     from tuningfork.paths import host_path
     from tuningfork.runner import lookalike_skill_files
-    from tuningfork.sandbox import CLOCK, FROM_ENV, for_launches, recorded_hiding, remedy, turned_off as sandbox_turned_off
+    from tuningfork.sandbox import (
+        ANOTHER_LIBRARY, CLOCK, FROM_ENV, for_launches, recorded_hiding, remedy, turned_off as sandbox_turned_off,
+    )
     from tuningfork.specs import SpecError, check_env_sources, check_kind, load_spec, missing_files
 
     if harness not in ADAPTERS:
@@ -327,8 +329,8 @@ def prepare_batch(
         ))
     check_clock(
         adapter, sandbox,
-        hint=f"the runs are set up as run {(setup.run or '')[:8]} was, so they must read its clock too"
-        if setup is not None and setup.clock else f"unset {CLOCK} to run it on the real clock",
+        hint=f"the runs are set up as run {(setup.run or '')[:8]} was, so they must read its clock too: {ANOTHER_LIBRARY}"
+        if setup is not None and setup.clock else f"{ANOTHER_LIBRARY}, or unset {CLOCK} to run it on the real clock",
     )
     # Read once, here, for a check that runs a command: a list that cannot be read is refused
     # before a run is launched, and every run is judged with the same.

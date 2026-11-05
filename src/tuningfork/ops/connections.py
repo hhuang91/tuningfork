@@ -278,15 +278,18 @@ def _kept_answer(key: tuple[str, float, str, float, str]) -> tuple[str | None, f
 def clock_problem(adapter: Any, sandbox: Any) -> str | None:
     """Why this harness cannot run with the clock the sandbox pins (`Sandbox.clock`), or None:
     its own `--version` answers on the real clock, but given libfaketime as the sandbox gives a
-    launch's harness (`Sandbox.clock_arguments`), it fails or never answers. Claude Code
-    2.1.281's native binary never answers on x86-64, the library merely loaded: each of its
-    runs would wait out its task's timeout. On arm64 it answers, and runs. The real clock is
-    asked first, with as long, so that the run with the library loaded is not the one that pays
-    for a cold start; a harness that fails there too is not this check's to refuse: its launch
-    says what is wrong. Both run in bubblewrap with a /dev of their own, as a launch does
-    (`Sandbox.probe_arguments`): what libfaketime leaves in /dev/shm goes with it — run outside,
-    Claude Code left a semaphore there on arm64 — and a refusal asked again every five minutes
-    must not leave one on the machine each time."""
+    launch's harness (`Sandbox.clock_arguments`), it fails or never answers. That depends on
+    the build: tried on x86-64, Claude Code 2.1.281's native binary never answers with the one
+    Ubuntu 26.04 ships, a 2024 snapshot, the library merely loaded, and each of its runs would
+    wait out its task's timeout; with 0.9.10, Ubuntu 24.04's, it answers, and runs. So the
+    refusal names the library, and a plan's hint says how to name another
+    (`sandbox.ANOTHER_LIBRARY`). The real clock is asked first, with as long, so that the run
+    with the library loaded is not the one that pays for a cold start; a harness that fails
+    there too is not this check's to refuse: its launch says what is wrong. Both run in
+    bubblewrap with a /dev of their own, as a launch does (`Sandbox.probe_arguments`): what
+    libfaketime leaves in /dev/shm goes with it — run outside, Claude Code left a semaphore
+    there — and a refusal asked again every five minutes must not leave one on the machine
+    each time."""
     executable = getattr(adapter, "executable", None)
     if sandbox is None or not (sandbox.clock and sandbox.clock_library) or not executable:
         return None
@@ -319,7 +322,7 @@ def clock_problem(adapter: Any, sandbox: Any) -> str | None:
         return None
     return (
         f"{adapter.name} cannot run with the clock pinned at {sandbox.clock}: its --version answers on the "
-        f"real clock, but with libfaketime loaded it {failed.removeprefix('--version ')}"
+        f"real clock, but with libfaketime loaded from {library} it {failed.removeprefix('--version ')}"
     )
 
 
