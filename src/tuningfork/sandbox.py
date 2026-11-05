@@ -210,11 +210,24 @@ def _probe(executable: str | None, real_home: str) -> Status:
 
 def home_conflict(real_home: str | Path) -> str | None:
     """Why the person's own home rules the sandbox out, if it does: a launch's home is seen
-    where it is, and the person's — where the harness and its tools live — would be hidden."""
+    where it is, and the person's — where the harness and its tools live — would be hidden. A
+    home that is a link is shown where it leads too (`_home_arguments`), and a launch's home
+    goes where /home leads (`_homes`), so those places count."""
     home = PurePosixPath(real_home)
-    if home == HOME or HOME in home.parents or home in HOME.parents:
-        return f"your home, {home}, is where a launch's home would go ({HOME})"
+    launches = dict.fromkeys((HOME, PurePosixPath(_homes()) / HOME.relative_to("/home")))
+    for form in dict.fromkeys((home, PurePosixPath(os.path.realpath(real_home)))):
+        for launch in launches:
+            if form == launch or launch in form.parents or form in launch.parents:
+                leads = f" leads to {form}, which" if form != home else ""
+                goes = f"{HOME}, which leads to {launch}" if launch != HOME else f"{HOME}"
+                return f"your home, {home},{leads} is where a launch's home would go ({goes})"
     return None
+
+
+def _homes() -> Path:
+    """Where /home leads, which every launch sees empty (`--tmpfs /home` follows a link): Fedora
+    Silverblue's leads to /var/home."""
+    return Path("/home").resolve()
 
 
 def _base_arguments(real_home: Path) -> list[str]:
@@ -225,8 +238,23 @@ def _base_arguments(real_home: Path) -> list[str]:
         "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
         "--tmpfs", "/home",
     ]
-    if PurePosixPath("/home") in PurePosixPath(real_home).parents:
-        arguments += ["--ro-bind", str(real_home), str(real_home)]
+    home = Path(real_home)
+    return arguments + _home_arguments(home, home.resolve(), _homes())
+
+
+def _home_arguments(home: Path, target: Path, homes: Path) -> list[str]:
+    """How the person's `home` is shown, `target` the folder it leads to and `homes` where /home
+    leads, which every launch sees empty: that folder where it is, if `homes` holds it, and a
+    link to it at the home's path, where that path, under /home or `homes`, would not lead there
+    by itself — a home that is a link shown as one, as on the machine. Shown at the link's path by
+    a mount of its own, it would show every folder in it that a launch is kept from, which is
+    hidden where it is."""
+    arguments: list[str] = []
+    if PurePosixPath(homes) in PurePosixPath(target).parents:
+        arguments += ["--ro-bind", str(target), str(target)]
+    base = next((each for each in (Path("/home"), homes) if PurePosixPath(each) in PurePosixPath(home).parents), None)
+    if base is not None and homes / home.relative_to(base) != target:
+        arguments += ["--symlink", str(target), str(home)]
     return arguments
 
 
@@ -345,8 +373,8 @@ class Sandbox:
         library = self.clock_library
         real_home = Path.home()
         hidden = hideable(self.hide, real_home=real_home)
-        for form, home in ((Path(library), real_home), (Path(os.path.realpath(library)), real_home.resolve())):
-            folder = _kept_from_launches(form, hidden, home)
+        for form in dict.fromkeys(Path(each) for each in (library, os.path.realpath(library))):
+            folder = _kept_from_launches(form, hidden, (real_home, real_home.resolve()))
             if folder is not None:
                 return f"libfaketime, at {form}, is under {folder}, which every launch sees empty"
         if any(mark in library for mark in " :"):
@@ -548,15 +576,15 @@ def recorded_hiding(recorded: dict[str, Any] | None, *, task: Path | None) -> tu
     return hidden, [folder for folder in hidden if folder != task and folder.resolve() not in theirs]
 
 
-def _kept_from_launches(path: Path, hidden: Sequence[Path], home: Path) -> Path | None:
+def _kept_from_launches(path: Path, hidden: Sequence[Path], homes: Sequence[Path]) -> Path | None:
     """The folder every launch sees empty that holds `path`, if one does (`_base_arguments`):
-    `/tmp`, a folder `hidden` from launches, or a home under /home but the person's own, `home`.
-    A path as named goes with the home as named, and as resolved with the home as resolved: a
-    home that is a link is shown to a launch where the link is, and only there."""
+    `/tmp`, a folder `hidden` from launches, or a home under /home but the person's own, `homes`:
+    as named and as resolved, both shown to a launch, a home that is a link leading where it does
+    (`_home_arguments`)."""
     for folder in (TMP, *hidden):
         if _within(path, folder):
             return folder
-    if _within(path, Path("/home")) and not _within(path, home):
+    if _within(path, Path("/home")) and not any(_within(path, home) for home in homes):
         inside = path.relative_to("/home").parts
         return Path("/home", inside[0]) if len(inside) > 1 else Path("/home")
     return None

@@ -467,7 +467,9 @@ its home as `/home/user` and works in `/home/user/project`, the same in every ru
 a few digits of a launch's own folder name were seen to change what the model did; the
 rest of the machine read-only, `/tmp` and its processes its own, and the recordings folder,
 the runs' folder and the spec's folder empty inside; its check runs there too, the spec's
-folder shown to it. A launch records its sandbox, a fork of
+folder shown to it. Where the person's home is a link, it is shown as one, to the folder it
+leads to (`sandbox._home_arguments`, which knows where /home leads): shown at the link's path by a
+mount of its own, it would show what is hidden in it. A launch records its sandbox, a fork of
 a sandboxed run is refused without one, and a batch's plan warns when there is none.
 `TUNINGFORK_SANDBOX_HIDE` names folders every launch sees empty besides tuningfork's own, as
 PATH is written — a benchmark's folder of tasks, whose checks and keys an agent given the file
