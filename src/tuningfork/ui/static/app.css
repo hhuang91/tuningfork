@@ -579,7 +579,7 @@ textarea.field {
   resize: vertical;
   tab-size: 2;
 }
-.field:disabled { opacity: 0.45; }
+.field:disabled { opacity: 0.45; cursor: not-allowed; }
 /* What a run says, shown as a field greyed like a disabled one, its text still to be copied. */
 .field.field-fixed { opacity: 0.45; cursor: default; }
 .field-changed { border-color: var(--change); box-shadow: 0 0 0 1px var(--change); }

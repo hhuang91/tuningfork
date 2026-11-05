@@ -49,18 +49,25 @@ export async function batchView(root, _, scope) {
   const task = h("select", { class: "field", name: "eval" },
     h("option", { value: prefill.eval || "" }, prefill.eval ? `task ${prefill.eval}` : "its first task"));
   const anotherSpec = () => replace(task, h("option", { value: "" }, "its first task"));
-  // A task file by its path is the scenario's alternative, on the same line: open only while no
-  // scenario is chosen, greyed while one is.
+  // A task file by its path is the scenario's alternative, on the same line. Whichever is filled
+  // in greys the other: a scenario chosen, the path; a path typed, the scenarios (found in use: a
+  // skill's Run it… filled the path in and left the scenarios open beside it, as if both counted).
   // Both read the field's help out with them: it says the two are alternatives.
   const scenarioSelect = h("select", { class: "field", name: "scenario", id: "batch-scenario", "aria-describedby": "batch-scenario-help" },
     h("option", { value: "" }, "— no scenario —"),
     scenarios.map((each) => h("option", { value: each.name, selected: each.name === prefill.scenario }, each.name)));
   const specInput = input("spec", {
-    value: prefill.spec, placeholder: "/path/to/evals.json", oninput: anotherSpec,
+    value: prefill.spec, placeholder: "/path/to/evals.json",
+    oninput: () => {
+      choose();
+      anotherSpec();
+    },
     "aria-label": "Task file, by its path", "aria-describedby": "batch-scenario-help",
   });
+  // A scenario chosen wins, as the form reads them: only a link can fill in both.
   const choose = () => {
     specInput.disabled = scenarioSelect.value !== "";
+    scenarioSelect.disabled = !specInput.disabled && specInput.value.trim() !== "";
   };
   scenarioSelect.addEventListener("change", () => {
     choose();
@@ -84,7 +91,7 @@ export async function batchView(root, _, scope) {
       h("div", { class: "form-field wide" },
         h("label", { class: "form-label", for: "batch-scenario" }, "Scenario"),
         h("div", { class: "field-or" }, scenarioSelect, h("span", { class: "or" }, "or"), specInput),
-        h("span", { class: "form-help", id: "batch-scenario-help" }, "A scenario is a task file kept in the recordings folder. With none chosen, name a task file (an evals.json) on the proxy's machine by its path.")),
+        h("span", { class: "form-help", id: "batch-scenario-help" }, "A scenario is a task file kept in the recordings folder. With none chosen, name a task file (an evals.json) on the proxy's machine by its path. Clear the path to choose a scenario.")),
       field("Task in the file", task, { help: "A task file can hold several tasks. Each run does this one.", wide: true }),
       field("Run as", h("select", { class: "field", name: "mode" },
         h("option", { value: "batch" }, "a batch: every run given the skill fresh"),

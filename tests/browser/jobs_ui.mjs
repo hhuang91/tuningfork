@@ -472,7 +472,15 @@ try {
   check(await page.eval(`(() => { const options = document.querySelector('.plan-form [name="eval"]').options;
     return options.length === 1 && options[0].value === "" && options[0].textContent === "its first task"; })()`),
     "another spec typed in puts the task list back to its first");
+  // A path typed greys the scenarios beside it, as a scenario chosen greys the path (found in
+  // use: a skill's Run it… filled the path in, the scenarios left open as if both counted).
+  const scenarioGreyed = `(() => { const scenario = document.querySelector('.plan-form [name="scenario"]');
+    return scenario.disabled && Number(getComputedStyle(scenario).opacity) < 1; })()`;
+  check(await page.eval(scenarioGreyed), "a task file's path typed in, the scenarios beside it are greyed out");
+  await page.type(`document.querySelector('.plan-form [name="spec"]')`, "");
+  check(await page.eval(`!document.querySelector('.plan-form [name="scenario"]').disabled`), "the path cleared, the scenarios open");
   await page.type(`document.querySelector('.plan-form [name="spec"]')`, specPath);
+  check(await page.eval(scenarioGreyed), "the path typed back, the scenarios greyed again");
   await planShows(page, "tally-lab/1");
   await startButtonReady(page, "Start the runs");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "2");

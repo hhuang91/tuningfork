@@ -294,11 +294,14 @@ export async function skillView(root, [name]) {
 
 /** A skill's ways in: run it again — from a scenario that names it, else from the spec its
  *  runs were launched from — or make a scenario for it, with its name and folder filled in
- *  where its folder is known, else of one of the runs it was in. */
+ *  where its folder is known, else of one of the runs it was in. A folder counts only while its
+ *  SKILL.md is there: a run of a spec naming one without is refused, and a scenario has no
+ *  skill to copy (Run it… had led to a refusal, "the spec's skill folder … does not exist"). */
 function waysIn(skill) {
   if (live.mode !== "live") return null;
-  const folder = skill.folders[0]?.path;
-  const spec = skill.folders.flatMap((each) => each.specs)[0];
+  const held = skill.folders.filter((each) => each.exists);
+  const folder = held[0]?.path;
+  const spec = held.flatMap((each) => each.specs)[0];
   const run = (scenario, label) =>
     h("a", { class: "btn btn-small", href: `#/batch${query({ scenario })}`, "data-control": true, title: `Run a task: scenario ${scenario}` }, label);
   return h("div", { class: "actions" },
@@ -308,7 +311,8 @@ function waysIn(skill) {
     folder
       ? h("a", { class: "btn btn-small", href: `#/scenarios/new${query({ skill: skill.name, skill_dir: folder })}`, "data-control": true }, "Make a scenario for it…")
       : h("a", { class: "btn btn-small", href: "#/scenarios?from=run", "data-control": true,
-          title: "Its folder is not known: a scenario of one of the runs it was in keeps the SKILL.md the model read" }, "Make a scenario of one of its runs…"));
+          title: `${skill.folders.length ? "Its folder holds no SKILL.md now" : "Its folder is not known"}: a scenario of one of the runs it was in keeps the SKILL.md the model read` },
+        "Make a scenario of one of its runs…"));
 }
 
 /** A version's name on this page: its number in order of first run, its fingerprint beside it —
