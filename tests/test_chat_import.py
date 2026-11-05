@@ -948,6 +948,11 @@ def test_a_task_folder_changed_since_the_run_can_give_way_to_a_copy_of_what_it_h
     task_skill = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
     had = task_skill.read_bytes()
     assert not imports.scenario_choices(stack.store, source.run_id)["skill_dir_changed"]
+    # The whole folder, not its SKILL.md alone: a file added since counts (issue #55).
+    added = task_skill.parent / "notes.md"
+    added.write_text("a file the run never had\n", encoding="utf-8")
+    assert imports.scenario_choices(stack.store, source.run_id)["skill_dir_changed"]
+    added.unlink()
     task_skill.write_bytes(had + b"\nAn edit approved since.\n")
     choices = imports.scenario_choices(stack.store, source.run_id)
     assert choices["skill_dir_from"] == "task" and choices["skill_dir_changed"] and choices["can_copy"]
@@ -962,6 +967,98 @@ def test_a_task_folder_changed_since_the_run_can_give_way_to_a_copy_of_what_it_h
     with pytest.raises(OperationError) as both:
         imports.prepare_scenario(stack.store, source.run_id, "both", copy_skill=True, skill_dir=str(task_skill.parent))
     assert both.value.field == "skill_dir"
+
+
+def test_a_scenario_of_a_run_given_a_file_as_its_skill_keeps_a_copy_of_it(stack):
+    """Issue #55: a run of `batch --skill <file>` was given that file as its SKILL.md, which its
+    task's folder never held. A scenario of it keeps a copy of what it had, and says what the run
+    was given; its form offers the task's folder beside the copy. Never that the task's file has
+    changed since the run, which it has not."""
+    from tests.helpers import FakeAgent
+    from tuningfork.ops import scenarios
+    from tuningfork.runner import BatchRunner
+
+    stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+    task_skill = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+    variant = stack.tmp / "variant.md"
+    variant.write_text(task_skill.read_text(encoding="utf-8") + "\nA line the task's file never held.\n", encoding="utf-8")
+    runner = BatchRunner(stack.store, FakeAgent(), base_url=f"{stack.url}/v1", model="m", workdir=stack.tmp / "batches",
+                         settle=0.1, skill_file=variant)
+    (outcome,) = runner.run(stack.spec, stack.item, 1).outcomes
+    given = f"{variant} as its SKILL.md"
+    choices = imports.scenario_choices(stack.store, outcome.run_id)
+    assert (choices["skill_dir"], choices["skill_dir_given"]) == (str(task_skill.parent), given)
+    assert not choices["skill_dir_changed"] and choices["can_copy"]
+    planned = imports.prepare_scenario(stack.store, outcome.run_id, "given-a-file")
+    assert planned.own_skill and not any("changed since" in said for said in [*planned.warnings, *planned.notes])
+    said = f"run {outcome.run_id[:8]} was given another skill text than {task_skill.parent} holds — {given}"
+    assert any(note.startswith(said) for note in planned.notes)
+    # Asked for, as the form asks for the copy it chose: the plan says why all the same (found in review).
+    asked = imports.prepare_scenario(stack.store, outcome.run_id, "given-asked", copy_skill=True)
+    assert asked.own_skill and any(note.startswith(said) for note in asked.notes)
+    imports.make_scenario(stack.store, planned)
+    kept = scenarios.folder(stack.store.home, "given-a-file") / "skill" / "tally-report" / "SKILL.md"
+    assert kept.read_bytes() == variant.read_bytes()
+
+
+def test_a_scenario_of_a_run_given_another_folder_keeps_what_it_had_all_of_it(stack):
+    """Issue #55: a run of `batch --skill-dir <folder>` given the task's SKILL.md and a file of its
+    own (as a chain's link is, where the link before added one) is offered a copy of what it had,
+    which keeps that file; one given the folder with another file as its SKILL.md names both. A
+    copy that held the task's text, the task's folder edited since, is said to have changed since;
+    an older run, whose record says neither, to differ."""
+    import shutil
+
+    from tests.helpers import FakeAgent
+    from tuningfork.ops import scenarios
+    from tuningfork.runner import BatchRunner
+
+    stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+    theirs = stack.tmp / "skills-src" / "tally-report"
+    mine = stack.tmp / "elsewhere" / "tally-report"
+    shutil.copytree(theirs, mine)
+
+    def run_of(**options) -> str:
+        runner = BatchRunner(stack.store, FakeAgent(), base_url=f"{stack.url}/v1", model="m",
+                             workdir=stack.tmp / "batches", settle=0.1, skill_file=options.pop("skill_file", None))
+        (outcome,) = runner.run(stack.spec, stack.item, 1, **options).outcomes
+        return outcome.run_id
+
+    alike = run_of(skill_dir=mine)  # the task's text, given from another folder
+    (mine / "notes.md").write_text("a file the task's folder never held\n", encoding="utf-8")
+    added = run_of(skill_dir=mine)
+    choices = imports.scenario_choices(stack.store, added)
+    assert choices["skill_dir_given"] == f"another folder, {mine.resolve()}" and not choices["skill_dir_changed"]
+    planned = imports.prepare_scenario(stack.store, added, "with-its-file")
+    imports.make_scenario(stack.store, planned)
+    assert (scenarios.folder(stack.store.home, "with-its-file") / "skill" / "tally-report" / "notes.md").is_file()
+    # Another file as its SKILL.md, in a copy of that folder: both named.
+    variant = stack.tmp / "variant.md"
+    variant.write_text("---\nname: tally-report\ndescription: d\n---\nIts own words.\n", encoding="utf-8")
+    both = imports.scenario_choices(stack.store, run_of(skill_dir=mine, skill_file=variant))
+    assert both["skill_dir_given"] == f"{variant} as its SKILL.md, in a copy of another folder, {mine.resolve()}"
+
+    # The copy that held the task's text: the task's folder edited since is said to have changed.
+    task_skill = theirs / "SKILL.md"
+    had = task_skill.read_bytes()
+    task_skill.write_bytes(had + b"\nAn edit approved since.\n")
+    since = imports.scenario_choices(stack.store, alike)
+    assert since["skill_dir_changed"] and since["skill_dir_given"] is None
+    as_now = imports.prepare_scenario(stack.store, alike, "as-now")
+    assert not as_now.own_skill and any("has changed since run" in warning for warning in as_now.warnings)
+    task_skill.write_bytes(had)
+    # Recorded before a run kept what it was given: the folder taken, said to differ, never to have changed.
+    run = stack.store.get_run(added)
+    with stack.store._lock:
+        stack.store._conn.execute("UPDATE runs SET parity = ? WHERE id = ?", (json.dumps(
+            {key: value for key, value in run.parity.items() if key not in ("skill_dir", "skill_as_task")}), added))
+        stack.store._conn.commit()
+    unknown = imports.scenario_choices(stack.store, added)
+    assert unknown["skill_dir_changed"] and unknown["skill_dir_given"] is None
+    taken = imports.prepare_scenario(stack.store, added, "unknown")
+    assert not taken.own_skill and any(warning.startswith(f"{theirs} does not hold what run {added[:8]} had")
+                                       for warning in taken.warnings)
+    assert not any("changed since" in warning for warning in taken.warnings)
 
 
 def test_a_launched_runs_check_is_shown_masked_and_given_to_a_scenario_as_written(stack):

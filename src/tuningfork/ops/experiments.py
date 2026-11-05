@@ -160,6 +160,113 @@ def recorded_skill_file(run: Run) -> Path | None:
     return candidate if candidate and candidate.is_file() else None
 
 
+@dataclass(frozen=True, slots=True)
+class Given:
+    """What a launched run was given in place of its task's skill folder (`skill_given`):
+    "task", what that folder held then; "other", another text, `words` saying which; "unknown",
+    nothing it recorded says."""
+
+    kind: str
+    words: str | None = None
+
+
+def skill_given(store: Store, run: Run, folder: Path) -> Given:
+    """What a launched run — a fork, its source — was given in place of `folder`, its task's
+    skill folder. Known where the batch recorded whether its copy held what the folder held then
+    (`parity.skill_as_task`); else from the path it was given: a file as its SKILL.md (`batch
+    --skill`, a validation's runs: `parity.skill_file`), another folder (`batch --skill-dir`, a
+    chain's start: `parity.skill_dir`), or for a chain's link the folder the link before it left,
+    read back from the chain's record — "other", though the copy may have held the folder's text
+    then. Found in review (issue #55): a chain's second link was said to have found its task's
+    file changed since it was given it, a file it was never given."""
+    run = _given_by(store, run)
+    parity = run.parity or {}
+    as_task = parity.get("skill_as_task")
+    if as_task is True:
+        return Given("task")
+    launch = store.get_launch(run.launch_id) if run.launch_id else None
+    chain = ((launch.settings or {}).get("chain") if launch is not None else None) or {}
+    record = _chain_record(store, chain.get("id")) if chain.get("id") else None
+    given = parity.get("skill_dir") or (_link_given(record, chain.get("link")) if record is not None else None)
+    other = bool(given) and not _same_folder(given, folder)
+    if parity.get("skill_file"):
+        within = f", in a copy of {_folder_words(record, given)}" if other else ""
+        return Given("other", f"{parity['skill_file']} as its SKILL.md{within}")
+    if other:
+        return Given("other", _folder_words(record, given))
+    if as_task is False:
+        # The task's own folder, its copy hashed otherwise than the folder (a folder linked into it,
+        # which a copy takes whole and the hashes never enter): nothing says which text it had.
+        return Given("unknown")
+    return Given("task") if given else Given("unknown")
+
+
+def _given_by(store: Store, run: Run) -> Run:
+    """The run whose skill a run was given: a fork's source, which it replays and whose copy of
+    the skill it was given (`parity.fork_of`); else the run itself."""
+    source = (run.parity or {}).get("fork_of")
+    found = store.get_run(source) if source and not (run.parity or {}).get("skill_snapshot") else None
+    return found if found is not None else run
+
+
+def _folder_words(record: dict[str, Any] | None, given: str) -> str:
+    """A folder a run was given, in words: the link of a chain that left it, or its start."""
+    if record is not None:
+        for link in record.get("links") or []:
+            if link.get("left") and _same_folder(link["left"], given):
+                return f"the folder link {link.get('index')} of chain {str(record['id'])[:8]} left, {link['left']}"
+        if record.get("skill_start") and _same_folder(record["skill_start"], given):
+            return f"the folder chain {str(record['id'])[:8]} started from, {record['skill_start']}"
+    return f"another folder, {given}"
+
+
+def _chain_record(store: Store, chain: str) -> dict[str, Any] | None:
+    from tuningfork.ops.chain import get_chain
+
+    try:
+        return get_chain(store, chain)
+    except OperationError:
+        return None
+
+
+def _link_given(record: dict[str, Any], index: Any) -> str | None:
+    """The folder a chain's link `index` was given, as the chain ran: the one the last link
+    before it that left one left, else the folder the chain started from."""
+    if not isinstance(index, int):
+        return None
+    left = [link.get("left") for link in record.get("links") or []
+            if isinstance(link.get("index"), int) and link["index"] < index and link.get("left")]
+    return left[-1] if left else record.get("skill_start")
+
+
+def _same_folder(one: str | Path, other: str | Path) -> bool:
+    return Path(one).resolve() == Path(other).resolve()
+
+
+def given_files(store: Store, run: Run) -> dict[str, str]:
+    """The hashes the batch kept of the copy of the skill a launched run — a fork, its source —
+    was given (`parity.skill_snapshot`), as every copy keeps them (`specs.kept_alike`); {} where
+    none were kept."""
+    from tuningfork.specs import kept_alike
+
+    return kept_alike((_given_by(store, run).parity or {}).get("skill_snapshot") or {})
+
+
+def differs_from_given(store: Store, run: Run, folder: Path) -> bool | None:
+    """Whether `folder` no longer holds what the launched run was given, any of its files — its
+    SKILL.md, or another file a chain's link added, say — by the hashes the batch kept of the
+    copy (`given_files`); None where it kept none, or a file of the folder cannot be read."""
+    from tuningfork.specs import hash_tree, kept_alike
+
+    kept = given_files(store, run)
+    if not kept:
+        return None
+    try:
+        return kept_alike(hash_tree([folder])) != kept
+    except OSError:
+        return None
+
+
 def kept_skills(run: Run) -> dict[str, Path]:
     """Each skill a run kept a copy of, by name, with its SKILL.md: every one an imported chat
     showed (`parity.skill_dirs`), else the one a batch run was given."""

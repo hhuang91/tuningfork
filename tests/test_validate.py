@@ -66,13 +66,15 @@ def stack(tmp_path, mock_server, monkeypatch, request):
         yield built
 
 
-def screened(stack, n: int = 5, harness_options=None):
+def screened(stack, n: int = 5, harness_options=None, before=None, **batch):
     """A run of the training task, a refinement at its write step, the keys fix proposed, and
-    a complete screen it survived."""
+    a complete screen it survived; `before`, what happens between the run and the refinement."""
     plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
-                         model="m", harness="fake", n=1, harness_options=harness_options)
+                         model="m", harness="fake", n=1, harness_options=harness_options, **batch)
     execute_batch(stack.store, plan)
     (run,) = stack.store.runs(limit=5, task_id="tally-report/1")
+    if before is not None:
+        before(run)
     made = refine.create(stack.store, run.id, "write_file", target_rules=RULES)
     proposal = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="the check reads row_count",
                                    proposer={"via": "person"})
@@ -172,7 +174,7 @@ def test_refused_before_anything_runs_when_what_it_would_measure_has_changed(sta
     source = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
     original = source.read_bytes()
     source.write_text(source.read_text(encoding="utf-8") + "\nOne more line.\n", encoding="utf-8")
-    assert refused().code == "drifted"
+    assert refused().code == "drifted" and refused().message.startswith(f"{source} has changed since the refinement started")
     source.write_bytes(original.replace(b"\n", b"\r\n"))  # line endings alone are no change
     validate.prepare_validate(stack.store, made.id, proposal.id, proxy_url=stack.url)
     source.write_bytes(original)
@@ -194,6 +196,96 @@ def test_refused_before_anything_runs_when_what_it_would_measure_has_changed(sta
     refine.close(stack.store, made.id)
     assert refused().code == "closed"
     assert len(stack.store.runs(limit=500)) == runs
+
+
+def test_an_edit_of_a_run_given_another_text_is_refused_as_that_never_as_a_change(stack):
+    """Issue #55: a run of `batch --skill <file>` was given that file as its SKILL.md, which the
+    task's folder never held. Its refinement says so from its start; an edit of it survives its
+    screen, and validating it is refused in those words — never as the skill's file having changed
+    since the refinement started, which it has not — pointing to a scenario that keeps the text."""
+    source = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+    had = source.read_bytes()
+    variant = stack.tmp / "variant.md"
+    variant.write_text(source.read_text(encoding="utf-8") + "\nA line the task's file never held.\n", encoding="utf-8")
+    made, proposal = screened(stack, skill_file=str(variant))
+    assert made.data["source"]["matches"] is False and made.data["source"]["given"] == f"{variant} as its SKILL.md"
+    with pytest.raises(OperationError) as refused:
+        validate.prepare_validate(stack.store, made.id, proposal.id, proxy_url=stack.url)
+    assert refused.value.code == "drifted" and source.read_bytes() == had
+    assert refused.value.message == (
+        f"run {made.run_id[:8]} was given another skill text than {source.parent} holds — {variant} as its SKILL.md: "
+        "the edit was made to that text, which the folder does not hold")
+    assert "scenario" in refused.value.hint and "changed since" not in refused.value.message
+
+
+def test_a_change_after_the_refinement_started_is_said_so_whatever_the_run_was_given(stack):
+    """The folder held what the run had when the refinement started, as its record shows: a change
+    after that is said as one, however little the run's own record says of what it was given — an
+    older run's would read as unknown, and the folder said not to hold the text (found in review)."""
+    made, proposal = screened(stack)
+    assert (made.data["source"]["matches"], made.data["source"]["others_match"]) == (True, True)
+    run = stack.store.get_run(made.run_id)
+    with stack.store._lock:
+        stack.store._conn.execute("UPDATE runs SET parity = ? WHERE id = ?", (json.dumps(
+            {key: value for key, value in run.parity.items() if key not in ("skill_dir", "skill_as_task")}), run.id))
+        stack.store._conn.commit()
+    source = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+    source.write_bytes(source.read_bytes() + b"\nAn edit approved since.\n")
+    with pytest.raises(OperationError) as refused:
+        validate.prepare_validate(stack.store, made.id, proposal.id, proxy_url=stack.url)
+    assert refused.value.message == f"{source} has changed since the refinement started: the edit was made to the skill as it was"
+
+
+def test_an_older_refinement_of_a_run_given_an_added_file_is_refused_as_given(stack):
+    """A refinement recorded before `others_match` was shows its SKILL.md alone matched when it
+    started, which proves nothing of the other files: a run given the task's SKILL.md and a file of
+    its own (`batch --skill-dir`, as a chain's link given a file the link before added) is refused as
+    given another text, never as the folder's other files having changed (found in review)."""
+    import shutil
+
+    theirs = stack.tmp / "skills-src" / "tally-report"
+    mine = stack.tmp / "elsewhere" / "tally-report"
+    shutil.copytree(theirs, mine)
+    (mine / "notes.md").write_text("a file the task's folder never held\n", encoding="utf-8")
+    made, proposal = screened(stack, skill_dir=mine)
+    assert (made.data["source"]["matches"], made.data["source"]["others_match"]) == (True, False)
+    record = stack.store.home / "refinements" / made.id / "refinement.json"
+    data = json.loads(record.read_text(encoding="utf-8"))
+    data["source"] = {key: data["source"][key] for key in ("path", "sha256", "matches")}
+    record.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(OperationError) as refused:
+        validate.prepare_validate(stack.store, made.id, proposal.id, proxy_url=stack.url)
+    assert refused.value.message.startswith(
+        f"run {made.run_id[:8]} was given another skill text than {theirs} holds — another folder, {mine.resolve()}")
+
+
+def test_a_file_already_changed_when_the_refinement_started_is_said_as_changed_since_the_run(stack):
+    """A refinement started after its task's file changed since the run is refused as changed since
+    the run was given it — not since the refinement started, which it was not. Where the run's
+    record and the refinement's are older than what a run was given was kept, the folder is said
+    not to hold the text the edit was made to, never to have changed (found in review, issue #55)."""
+    source = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+    had = source.read_bytes()
+    made, proposal = screened(stack, before=lambda run: source.write_bytes(had + b"\nAn edit approved since.\n"))
+    assert (made.data["source"]["matches"], made.data["source"]["origin"]) == (False, "task")
+
+    def refused() -> OperationError:
+        with pytest.raises(OperationError) as error:
+            validate.prepare_validate(stack.store, made.id, proposal.id, proxy_url=stack.url)
+        return error.value
+
+    assert refused().message == (f"{source} has changed since run {made.run_id[:8]} was given it: the edit was made "
+                                 "to the skill as it was")
+    run = stack.store.get_run(made.run_id)
+    with stack.store._lock:
+        stack.store._conn.execute("UPDATE runs SET parity = ? WHERE id = ?", (json.dumps(
+            {key: value for key, value in run.parity.items() if key not in ("skill_dir", "skill_as_task")}), run.id))
+        stack.store._conn.commit()
+    record = stack.store.home / "refinements" / made.id / "refinement.json"
+    data = json.loads(record.read_text(encoding="utf-8"))
+    data["source"] = {key: data["source"][key] for key in ("path", "sha256", "matches")}
+    record.write_text(json.dumps(data), encoding="utf-8")
+    assert refused().message == f"{source} does not hold the text the edit was made to, the text run {made.run_id[:8]} had"
 
 
 def test_a_spec_with_no_held_out_task_is_warned_and_can_never_pass_the_gate(stack):
