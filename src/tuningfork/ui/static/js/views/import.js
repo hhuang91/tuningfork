@@ -106,7 +106,7 @@ export async function importView(root, _params, scope) {
   }
 
   function sessionsView(sessions) {
-    return panel("Which session?", h("div", { class: "stack", style: { gap: "6px" } },
+    return panel("Which session?", h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
       h("p", { class: "hint" }, `The file holds ${plural(sessions.length, "session")}: a run is one conversation.`),
       sessions.map((found) => h("label", { class: "target-choice" },
         h("input", { type: "radio", name: "session", value: found.id,
@@ -481,7 +481,7 @@ function scenarioPlan(plan) {
       : plan.check.reply_contains !== undefined ? ["the final reply holds ", h("span", { class: "mono" }, JSON.stringify(plan.check.reply_contains))]
         : plan.check.reply_matches !== undefined ? ["the final reply matches ", h("span", { class: "mono" }, `/${plan.check.reply_matches}/`)]
           : h("span", { class: "mono" }, JSON.stringify(plan.check));
-  return h("div", { class: "stack", style: { gap: "6px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
     kv([
       ["scenario", [h("span", { class: "mono" }, plan.name), h("span", { class: "muted" }, ", a task of its own on the Scenarios page")]],
       ["its skill", [h("span", { class: "mono" }, plan.skill), h("span", { class: "muted" }, plan.own_skill

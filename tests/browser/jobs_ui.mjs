@@ -1660,7 +1660,8 @@ try {
     const test = document.querySelector('.stage-panel[data-stage="test"]');
     const follows = (a, b) => !!a && !!b && Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     return {
-      order: stagePanels.map((panel) => panel.dataset.stage + ":" + panel.querySelector(".stage-num").textContent).join(",") === "propose:✓,test:✓,validate:3,approve:4"
+      // A stage done shows a tick, drawn (an svg), where the others show their number.
+      order: stagePanels.map((panel) => { const num = panel.querySelector(".stage-num"); return panel.dataset.stage + ":" + (num.querySelector("svg.icon") ? "done" : num.textContent); }).join(",") === "propose:done,test:done,validate:3,approve:4"
         && follows(document.querySelector(".evidence-panel"), stagePanels[0])
         && follows(test.querySelector(".proposal-list"), test.querySelector(".screen-panel"))
         && follows(test.querySelector(".screen-panel"), test.querySelector(".table-wrap"))

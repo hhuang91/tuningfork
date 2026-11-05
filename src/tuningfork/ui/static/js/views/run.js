@@ -238,7 +238,7 @@ function aboutRun({ run, launch, threads }) {
         : null,
       threads.length
         ? h("div", null, h("div", { class: "label" }, "Other conversations its harness had in this run"),
-            h("div", { class: "stack", style: { gap: "4px" } }, threads.map((thread) =>
+            h("div", { class: "stack", style: { gap: "var(--space-1)" } }, threads.map((thread) =>
               h("a", { href: `#/runs/${thread.run_id}` }, chip(thread.role, "muted"),
                 ` ${short(thread.run_id)} · ${plural(thread.steps, "step")}`,
                 thread.after !== null ? h("span", { class: "muted small" }, ` · after step ${thread.after}${thread.placed === "time" ? ", by when it began" : ""}`) : null))))

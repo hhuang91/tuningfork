@@ -9,7 +9,7 @@
 // The subset a skill is written in: frontmatter, headings, paragraphs, emphasis, code, lists
 // (nested, numbered, tasks), block quotes, tables, rules.
 
-import { append, h } from "./dom.js";
+import { append, h, icon } from "./dom.js";
 
 const FENCE = /^(\s{0,3})(`{3,}|~{3,})\s*([^`\s]*)/;
 const HEADING = /^\s{0,3}(#{1,6})(?:\s+(.*?))?\s*#*\s*$/;
@@ -196,7 +196,7 @@ function itemView(body, loose) {
   // A tight item's first paragraph is its text, not a paragraph of its own.
   if (!loose && children[0]?.tagName === "P") children.splice(0, 1, ...children[0].childNodes);
   return h("li", { class: task ? "md-task" : null },
-    task ? h("span", { class: "md-box", "aria-label": task[1] === " " ? "not done" : "done" }, task[1] === " " ? "☐ " : "☑ ") : null,
+    task ? h("span", { class: "md-box", role: "img", "aria-label": task[1] === " " ? "not done" : "done" }, icon(task[1] === " " ? "square" : "square-check")) : null,
     children);
 }
 

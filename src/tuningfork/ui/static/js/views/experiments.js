@@ -309,7 +309,7 @@ function nextSteps(experiment) {
 }
 
 function armView(arm, label, tone) {
-  return h("div", { class: "stack", style: { gap: "4px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-1)" } },
     h("span", null, h("span", { class: "muted" }, `${label}  `), arm.rate ? rateBar(arm.rate, tone) : h("span", { class: "muted" }, "no fork counts")),
     arm.timeouts ? h("span", { class: "small muted" }, `${plural(arm.timeouts, "fork")} timed out, counted as ${arm.timeouts === 1 ? "a failure" : "failures"}, as the approval checks count them`) : null,
     arm.exclusions.length
@@ -335,7 +335,7 @@ function toEndView(experiment) {
       h("div", { class: ["verdict-block", tone] },
         targetLine("the task's check passes", "set by the task, before any fork ran"),
         h("div", { class: "verdict-big" }, headline),
-        h("div", { class: "stack", style: { gap: "4px" } },
+        h("div", { class: "stack", style: { gap: "var(--space-1)" } },
           armView(result.original, "original", undefined), armView(result.variant, "variant", "change")),
         result.p_value === null ? null : h("div", { class: "mono small", title: "Fisher's exact test" }, `p = ${formatP(result.p_value)}, α = ${result.alpha}`)),
       h("p", { class: "hint" }, "Steps before this one were answered from the recording in every fork, so both wordings share the history written under the original. From here, each ran live with its own wording."),

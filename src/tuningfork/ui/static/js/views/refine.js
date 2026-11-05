@@ -9,7 +9,7 @@
 
 import { api, enc, query } from "../api.js";
 import { guard } from "../auth.js";
-import { ago, capital, chip, crumbs, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when } from "../dom.js";
+import { ago, capital, chip, crumbs, h, icon, kv, loading, panel, plural, pretty, rateBar, replace, short, when } from "../dom.js";
 import { cacheField, field, formError, input, numberOf, planForm, samplingChoices, seedField, textArea } from "../forms.js";
 import { ACTIVE } from "../jobs.js";
 import { live } from "../live.js";
@@ -426,7 +426,7 @@ export async function refinementView(root, [id], scope) {
         class: ["stage", stage.done && "done", stage.key === now && "current"],
         "aria-current": stage.key === now ? "step" : null,
       },
-      h("span", { class: "stage-num", "aria-hidden": "true" }, stage.done ? "✓" : String(index + 1)),
+      h("span", { class: "stage-num", "aria-hidden": "true" }, stage.done ? icon("check") : String(index + 1)),
       h("span", { class: "stage-body" },
         // The tick, in words, for a screen reader; the current stage is `aria-current`.
         stage.done ? h("span", { class: "visually-hidden" }, "Done: ") : null,
@@ -445,7 +445,7 @@ export async function refinementView(root, [id], scope) {
   function drawStageHeads(stages, now) {
     for (const stage of stages) {
       const part = stagePanels[stage.key];
-      part.num.textContent = stage.done ? "✓" : String(part.n);
+      part.num.replaceChildren(stage.done ? icon("check") : String(part.n));
       part.done.textContent = stage.done ? "Done: " : "";
       part.element.classList.toggle("done", stage.done);
       part.element.classList.toggle("current", stage.key === now);
@@ -609,7 +609,7 @@ export async function refinementView(root, [id], scope) {
     const packet = evidence.packet;
     const answers = packet.answers_here || {};
     const runs = packet.runs_here || {};
-    return h("div", { class: "stack", style: { gap: "8px" } },
+    return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
       kv([
         // The original's answers only — the recorded one, a resample, the screens' original arms —
         // never a proposal's: why the step is refined, not whether an edit worked.
@@ -1132,7 +1132,7 @@ function stageForm(title, body, { className, meta = null } = {}) {
 
 /** A validation's gate, check by check: each with its reason, and what it cannot see. */
 function gateList(gate) {
-  return h("div", { class: "stack", style: { gap: "4px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-1)" } },
     h("ul", { class: "gate-list" }, gate.checks.map((check) => h("li", { class: check.passed ? "met" : "unmet" },
       chip(check.passed ? "met" : "not met", check.passed ? "ok" : "bad"), " ",
       h("strong", null, `${check.id} `), check.name,
@@ -1152,7 +1152,7 @@ function armNotes(arm) {
 
 function validatePreview(plan) {
   const screen = plan.screen || {};
-  return h("div", { class: "stack", style: { gap: "8px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     kv([
       ["proposal", h("span", { class: "mono" }, short(plan.proposal))],
       ["its test", screen.target ? `beat the original in test ${short(screen.screen)}: ${screen.target.successes}/${screen.target.total} against the original's ${screen.baseline.successes}/${screen.baseline.total}` : null],
@@ -1285,7 +1285,7 @@ function changedLines(before, after) {
 }
 
 function proposePreview(plan) {
-  return h("div", { class: "stack", style: { gap: "8px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     plan.remote
       ? h("div", { class: "banner banner-warn" }, h("strong", null, "Not this machine. "), `${plan.sends}.`)
       : null,
@@ -1321,7 +1321,7 @@ function screenToEndPreview(plan) {
       ? `${original.reused} of its ${plan.n} forks drawn before, by this refinement's earlier tests; ${original.drawn} drawn now`
       : `${plural(original.drawn, "fork")} drawn now`;
   }
-  return h("div", { class: "stack", style: { gap: "8px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     kv([
       ["forks from", from],
       ["what you count", plan.target],
@@ -1342,7 +1342,7 @@ function screenPreview(plan) {
   const power = plan.power || {};
   const base = power.baseline;
   const minutes = plan.estimate?.worst_minutes;
-  return h("div", { class: "stack", style: { gap: "8px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     kv([
       ["step", h("span", { class: "mono" }, `run ${short(plan.checkpoint.run_id)}, step ${plan.checkpoint.step}`)],
       ["what it should do", plan.target],

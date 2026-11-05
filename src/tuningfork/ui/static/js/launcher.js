@@ -81,7 +81,7 @@ export async function launcher() {
     batch ? h("div", { class: "launch-row" },
       h("div", null, h("strong", null, "Run a task"), h("p", { class: "form-help" }, batch.summary)),
       h("a", { class: "btn", href: "#/batch", "data-control": true }, "Open the form")) : null,
-    atStep.length ? h("div", { class: "stack", style: { gap: "8px" } },
+    atStep.length ? h("div", { class: "stack", style: { gap: "var(--space-2)" } },
       h("strong", null, "At a step of a recorded run"),
       h("div", { class: "form-grid" },
         field("What", kindSelect), field("Run", runSelect, { wide: true }), field("Step", stepSelect)),

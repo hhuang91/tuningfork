@@ -254,7 +254,7 @@ export async function connectionsView(root, _, scope) {
         : h("p", { class: "muted small" }, `Nothing is measured on this server yet. “${LABELS.testServer}”, at the top of the page, measures it.`),
       // What the check rules out is greyed wherever it is offered, saying the same.
       ruledOut.length
-        ? h("div", { class: "stack", style: { gap: "4px" } },
+        ? h("div", { class: "stack", style: { gap: "var(--space-1)" } },
             h("div", { class: "label" }, "Greyed out on this server"),
             ruledOut.map((reason) => h("div", { class: "small warn-text" }, `${reason}.`)))
         : null,
@@ -364,7 +364,7 @@ export async function connectionsView(root, _, scope) {
   }
 
   function switchPreview(plan) {
-    return h("div", { class: "stack", style: { gap: "8px" } },
+    return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
       plan.differences.length
         ? h("table", { class: "table" },
             h("thead", null, h("tr", null, h("th", null, "what"), h("th", null, "now"), h("th", null, "after"))),
@@ -531,7 +531,7 @@ export async function connectionsView(root, _, scope) {
         .map((problem) => h("div", { class: "banner banner-warn" }, h("strong", null, "Cannot run here: "), problem)),
       pre.notes.map((note) => h("div", { class: "banner" }, note)),
       h("details", { class: "fold" }, h("summary", null, "Use another program"),
-        h("div", { class: "stack", style: { gap: "8px", marginTop: "8px" } },
+        h("div", { class: "stack", style: { gap: "var(--space-2)", marginTop: "var(--space-2)" } },
           program,
           h("div", { class: "form-actions" },
             h("button", { class: "btn btn-small", type: "button", "data-control": true, onclick: guard(() => save(program.value.trim() || null)) }, "Save"),

@@ -110,6 +110,42 @@ export function firstLine(text, limit = 120) {
 export const chip = (text, tone = "muted", title) =>
   h("span", { class: `chip tone-${tone}`, title }, text);
 
+// Icons, each a line drawing on a square of 20 units, in the colour of the text beside it (the
+// `.icon` rules in app.css): a tick, a cross, a box to tick, the theme's sun and moon. Never a
+// glyph from a font: those draw differently on every system, some as emoji.
+const SVG = "http://www.w3.org/2000/svg";
+const ICONS = {
+  check: [["path", { d: "M4.5 10.5 8 14l7.5-8" }]],
+  x: [["path", { d: "M5.5 5.5l9 9M14.5 5.5l-9 9" }]],
+  circle: [["circle", { cx: 10, cy: 10, r: 6 }]],
+  square: [["rect", { x: 3.5, y: 3.5, width: 13, height: 13, rx: 2.5 }]],
+  "square-check": [["rect", { x: 3.5, y: 3.5, width: 13, height: 13, rx: 2.5 }], ["path", { d: "M7 10.2l2.2 2.2L13.5 8" }]],
+  menu: [["path", { d: "M3.5 5.5h13M3.5 10h13M3.5 14.5h13" }]],
+  sun: [["circle", { cx: 10, cy: 10, r: 3.25 }],
+    ["path", { d: "M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7 6 6M14 14l1.3 1.3M4.7 15.3 6 14M14 6l1.3-1.3" }]],
+  moon: [["path", { d: "M15.8 12.3A6.6 6.6 0 0 1 7.7 4.2a6.6 6.6 0 1 0 8.1 8.1Z" }]],
+  system: [["circle", { cx: 10, cy: 10, r: 7 }], ["path", { d: "M10 3a7 7 0 0 1 0 14Z", class: "filled" }]],
+};
+
+/** An icon: decoration, hidden from a screen reader, unless `label` names it. */
+export function icon(name, { label, className } = {}) {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", "0 0 20 20");
+  svg.setAttribute("class", ["icon", className].filter(Boolean).join(" "));
+  if (label) {
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", label);
+  } else {
+    svg.setAttribute("aria-hidden", "true");
+  }
+  for (const [tag, attributes] of ICONS[name]) {
+    const part = document.createElementNS(SVG, tag);
+    for (const [key, value] of Object.entries(attributes)) part.setAttribute(key, String(value));
+    svg.append(part);
+  }
+  return svg;
+}
+
 export const loading = (what = "Loading…") => h("div", { class: "loading" }, what);
 
 export function failure(error, title = "Could not load this") {

@@ -324,7 +324,7 @@ function ownPanels(job) {
 function proposedView(result) {
   const accepted = result.accepted || [];
   const rejected = result.rejected || [];
-  return panel("What it proposed", h("div", { class: "stack", style: { gap: "8px" } },
+  return panel("What it proposed", h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     h("div", { class: "made" },
       h("a", { class: "btn btn-primary", href: `#/refine/${enc(result.refinement)}` }, "See them in the refinement"),
       h("span", { class: "muted small" }, `${plural(accepted.length, "proposal")} kept · ${result.model || "the server's default model"} at ${result.host}, ${Math.round(result.seconds)} s`)),
@@ -350,7 +350,7 @@ function validatedView(result) {
     ? h("span", null, "with the edit ", part.edit.rate ? rateBar(part.edit.rate) : "nothing counted",
         h("span", { class: "muted" }, " · the original "), part.original.rate ? rateBar(part.original.rate) : "nothing counted")
     : h("span", { class: "muted" }, "not run");
-  return panel("What it found", h("div", { class: "stack", style: { gap: "8px" } },
+  return panel("What it found", h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     kv([
       ["forks", arms(result.forward)],
       ["the task", arms(result.training)],
@@ -366,7 +366,7 @@ function validatedView(result) {
 function foundPanel(job, finding) {
   const made = madeLink(job);
   const bars = finding.bars.filter(([, rate]) => rate && rate.total);
-  return panel("What it found", h("div", { class: "stack", style: { gap: "8px" } },
+  return panel("What it found", h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     finding.caution
       ? h("div", { class: "banner banner-warn" }, finding.text)
       : h("div", { class: ["verdict-block", finding.tone] },
@@ -375,7 +375,7 @@ function foundPanel(job, finding) {
           finding.seen ? h("p", { class: "verdict-lines" }, finding.seen) : null,
           finding.lines?.length ? h("ul", { class: "verdict-lines" }, finding.lines.map((line) => h("li", null, line))) : null,
           bars.length
-            ? h("div", { class: "stack", style: { gap: "4px" } }, bars.map(([label, rate, tone, said]) =>
+            ? h("div", { class: "stack", style: { gap: "var(--space-1)" } }, bars.map(([label, rate, tone, said]) =>
                 h("span", null, h("span", { class: "muted" }, `${label}  `), said ? [outcome(said), " "] : null, rateBar(rate, tone))))
             : null),
     (finding.notes || []).map((note) => h("p", { class: "small warn-text" }, note)),
@@ -422,7 +422,7 @@ function madeView(job) {
   const made = report ? null : lead;
   const batch = job.kind === "batch" && job.status === "done" ? job.result || {} : {};
   const left = batch.not_counted || 0;
-  return [panel("What it made", h("div", { class: "stack", style: { gap: "8px" } },
+  return [panel("What it made", h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     report ? h("div", { class: "made" },
       h("a", { class: own ? "btn" : "btn btn-primary", href: `#/experiments/${report}` }, job.status === "done" && !own ? "See the result" : "Open the experiment"),
       h("span", { class: "muted small" }, experiments.length > 1 ? `experiments ${experiments.map(short).join(", ")}` : `experiment ${short(report)}`)) : null,

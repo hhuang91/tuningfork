@@ -35,7 +35,7 @@ export async function batchView(root, _, scope) {
     h("p", { class: "sub" }, "Each run starts in a fresh folder. In a batch every run gets the same skill. In a chain each run gets the skill the run before it left behind.")));
   if (live.mode !== "live") {
     replace(root, crumbs([["Scenarios", "#/scenarios"], ["Run a task"]]), head,
-      panel("From a terminal", h("div", { class: "stack", style: { gap: "8px" } },
+      panel("From a terminal", h("div", { class: "stack", style: { gap: "var(--space-2)" } },
         h("p", { class: "hint" }, "Starting runs needs a running proxy (tuningfork serve). Or:"),
         command(`tuningfork batch ${prefill.spec || "<evals.json>"} -n 5 --harness ${prefill.harness}`))));
     return;
@@ -156,7 +156,7 @@ export async function batchView(root, _, scope) {
 }
 
 function batchPreview(plan) {
-  return h("div", { class: "stack", style: { gap: "8px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     // How a run passes, first: what every number this batch produces will mean.
     h("div", { class: "check-command" },
       plan.check_kind === "shell"

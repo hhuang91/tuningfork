@@ -4,7 +4,7 @@
 // shows them.
 
 import { api } from "../api.js";
-import { ago, chip, command, h, loading, panel, plural, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, command, h, icon, loading, panel, plural, replace, short, verdict, when } from "../dom.js";
 import { kindLabel } from "../jobs.js";
 import { live } from "../live.js";
 import { LABELS } from "../words.js";
@@ -163,7 +163,7 @@ function setup(runs, scenarios, connections) {
   ];
   const done = items.filter((item) => item.done).length;
   const list = h("ol", { class: "checklist" }, items.map((item) => h("li", { class: item.done ? "done" : "todo" },
-    h("span", { class: "check-mark", "aria-label": item.done ? "done" : "to do" }, item.done ? "✓" : "○"),
+    h("span", { class: "check-mark", role: "img", "aria-label": item.done ? "done" : "to do" }, icon(item.done ? "check" : "circle")),
     h("div", null, h("strong", null, item.title), h("div", { class: "muted small" }, item.body)))));
   // The recommendation stays in sight when the finished checklist folds away.
   if (done === items.length) {
@@ -267,7 +267,7 @@ function mapView(terms) {
       s("text", { class: "map-sub", x: x + 12, y: y + 43 }, sub));
   });
   const lanes = LANES.map((text, row) => s("text", { class: `map-lane lane-${row}`, x: X0, y: Y0 + row * DY - 12 }, text));
-  return h("div", { class: "map" }, s("svg", { viewBox: "0 0 960 372", role: "img",
+  return h("div", { class: "map" }, s("svg", { viewBox: "0 0 960 372", role: "group",
     "aria-label": "How tuningfork's pieces relate: record a task, measure a step, improve the skill, and back to the skill" },
     s("defs", null, s("marker", { id: "map-arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" },
       s("path", { d: "M 0 0 L 10 5 L 0 10 z", class: "map-arrowhead" }))),

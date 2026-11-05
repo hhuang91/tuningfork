@@ -5,7 +5,7 @@
 
 import { api } from "./api.js";
 import { auth, guard, keep, onAuthChange, pickUpToken, setAuth } from "./auth.js";
-import { failure, h, replace, toast } from "./dom.js";
+import { failure, h, icon, replace, toast } from "./dom.js";
 import { kindLabel, madeLink, onPage } from "./jobs.js";
 import { live, start, subscribe } from "./live.js";
 import { leaving, place, unsaved } from "./nav.js";
@@ -343,7 +343,7 @@ function noteJobEnd(job) {
 // --- theme --------------------------------------------------------------------------------
 
 const THEMES = ["system", "light", "dark"];
-const THEME_ICONS = { system: "◐", light: "☀", dark: "☾" };
+const THEME_ICONS = { system: "system", light: "sun", dark: "moon" };
 
 function readTheme() {
   try {
@@ -357,7 +357,8 @@ function applyTheme(theme) {
   if (theme === "system") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = theme;
   const button = document.getElementById("theme");
-  button.textContent = THEME_ICONS[theme];
+  button.replaceChildren(icon(THEME_ICONS[theme]));
+  button.setAttribute("aria-label", `Theme: ${theme}`);
   button.title = `Theme: ${theme} (click to change)`;
   button.setAttribute("aria-label", button.title);
 }

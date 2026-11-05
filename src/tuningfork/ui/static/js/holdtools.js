@@ -36,7 +36,7 @@ function evidence(hold, scope) {
         h("summary", null, LABELS.advanced),
         h("div", { class: "form-grid" }, field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }))))],
     read: (form) => ({ hold: hold.id, n: numberOf(form, "n") ?? 10, concurrency: numberOf(form, "concurrency") ?? 1 }),
-    render: (plan) => h("div", { class: "stack", style: { gap: "6px" } },
+    render: (plan) => h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
       h("p", { class: "hint" }, `Sends the request held here ${plan.sampling.n} times through the proxy, ${plan.sampling.concurrency} at a time: what the model does at this call. Filed under the step it becomes; never recorded as a run.`),
       (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning))),
     startLabel: "Sample it",
@@ -56,7 +56,7 @@ function evidence(hold, scope) {
         return;
       }
       const sampled = found.result;
-      replace(result, h("div", { class: "stack", style: { gap: "8px" } },
+      replace(result, h("div", { class: "stack", style: { gap: "var(--space-2)" } },
         hold.phase === "response"
           ? h("p", { class: "hint" }, sampled.held_letter
               ? ["The answer held here is behaviour ", h("strong", null, sampled.held_letter), " below."]
@@ -73,7 +73,7 @@ function evidence(hold, scope) {
 }
 
 function hypotheses(hold, scope) {
-  const replies = h("div", { class: "stack", style: { gap: "10px" } });
+  const replies = h("div", { class: "stack", style: { gap: "var(--space-2-5)" } });
   const shown = new Set();
   const { element } = planForm({
     kind: "hold-console",

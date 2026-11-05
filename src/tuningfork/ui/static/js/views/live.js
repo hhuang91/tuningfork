@@ -630,7 +630,7 @@ function holdEditor(hold, { deciding, decided, tooLate }) {
       h("span", { class: "reason" }, reasonText(hold)),
       h("span", { class: "hold-where muted" }, where, hold.task_id ? ` · task ${hold.task_id}` : ""),
       h("span", { class: "timer pulse", title: "Time held", dataset: { since: hold.created_at } }, elapsed(hold.held_seconds))),
-    h("div", { class: "editor-tools", style: { padding: "10px 16px 0" } }, rawToggle, revert),
+    h("div", { class: "editor-tools", style: { padding: "var(--space-2-5) var(--space-4) 0" } }, rawToggle, revert),
     body,
     h("div", { class: "action-bar" }, continueButton, stepButton, dropButton, status),
   );

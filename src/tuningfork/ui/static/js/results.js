@@ -83,9 +83,9 @@ export function comparisonView(experiment) {
     parts.push(h("div", { class: ["verdict-block", target.significant ? "significant" : "not-significant"] },
       targetLine(target.description),
       h("div", { class: "verdict-big" }, shiftWords(target)),
-      h("div", { class: "stack", style: { gap: "4px" } },
-        h("span", null, h("span", { class: "muted" }, "original  "), rateBar(target.original)),
-        h("span", null, h("span", { class: "muted" }, "variant   "), rateBar(target.variant, "change"))),
+      h("div", { class: "stack", style: { gap: "var(--space-1)" } },
+        h("span", null, h("span", { class: "muted rate-label" }, "original"), rateBar(target.original)),
+        h("span", null, h("span", { class: "muted rate-label" }, "variant"), rateBar(target.variant, "change"))),
       h("div", { class: "mono small", title: "Fisher's exact test" }, `p = ${formatP(target.p_value)}, α = ${target.alpha}`)));
     parts.push(h("p", { class: "hint" }, "This A/B changed only this step. Everything before it still comes from the original wording, so treat the result as a lead, and confirm it with full runs."));
   } else {
@@ -801,7 +801,7 @@ export function tallyView(tally, { only = null } = {}) {
   const title = forks ? "What each wording's failed forks' checks said" : "What the failed runs' checks said";
   const failed = forks ? "failed forks" : "failed runs";
   return panel(title, [
-    ...groups.map((group) => h("div", { class: "stack", style: { gap: "6px", marginBottom: "12px" } },
+    ...groups.map((group) => h("div", { class: "stack", style: { gap: "var(--space-1-5)", marginBottom: "var(--space-3)" } },
       h("div", null, h("strong", null, group.label), h("span", { class: "muted small" }, `  failed ${group.failed} of ${group.judged} judged`)),
       group.failed && group.findings.length
         ? h("div", { class: "table-wrap" }, h("table", { class: "table" },

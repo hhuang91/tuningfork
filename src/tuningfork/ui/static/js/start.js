@@ -41,7 +41,7 @@ export function startPanel(step, { go = null, work = {} } = {}) {
   const run = step.run;
   const here = `#/runs/${run.id}/${step.idx}`;
   if (live.mode !== "live") {
-    return workBox(h("div", { class: "stack", style: { gap: "8px" } },
+    return workBox(h("div", { class: "stack", style: { gap: "var(--space-2)" } },
       h("p", { class: "hint" }, "Starting work needs a running proxy (tuningfork serve). From a terminal:"),
       command(`tuningfork resample ${short(run.id)} ${step.idx} -n 20`),
       command(`tuningfork ab ${short(run.id)} ${step.idx} --variant SKILL.v2.md --target-match '<regex>'`),
@@ -272,7 +272,7 @@ function forkingTakes(estimate) {
 function forkingPreview(plan) {
   const power = plan.power || {};
   const estimate = plan.estimate || {};
-  return h("div", { class: "stack", style: { gap: "8px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     kv([
       ["step", checkpointLine(plan)],
       ["forks from", h("span", null, h("span", { class: "mono" }, `stream ${short(plan.base.id)}`),
@@ -390,7 +390,7 @@ function resampleForm(step, work = {}) {
       if (logprobs !== null) params.logprobs = logprobs;
       return params;
     },
-    render: (plan) => h("div", { class: "stack", style: { gap: "8px" } },
+    render: (plan) => h("div", { class: "stack", style: { gap: "var(--space-2)" } },
       kv([
         ["step", checkpointLine(plan)],
         ["samples", `${plural(plan.sampling.n, "sample")}, ${plan.sampling.concurrency} at a time`],
@@ -513,7 +513,7 @@ function forkLines(plan) {
 
 function toEndPreview(plan) {
   const arm = plan.original;
-  return h("div", { class: "stack", style: { gap: "8px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     kv([
       ...forkLines(arm),
       ["forks", `${plural(plan.forks, "fork")}${plan.variant ? ` (${plan.n} for each wording)` : ""}, ${plan.concurrency} at a time`],
@@ -562,7 +562,7 @@ function forkForm(step) {
       n: numberOf(form, "n") ?? 1,
       concurrency: numberOf(form, "concurrency") ?? 1,
     }),
-    render: (plan) => h("div", { class: "stack", style: { gap: "8px" } },
+    render: (plan) => h("div", { class: "stack", style: { gap: "var(--space-2)" } },
       kv([...forkLines(plan), ["forks", `${plural(plan.n, "fork")}, ${plan.concurrency} at a time`],
         ["stops", HOLDS.find(([value]) => value === plan.hold)?.[1]]]),
       (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
@@ -575,7 +575,7 @@ function forkForm(step) {
 
 function abPreview(plan) {
   const spans = plan.spans || [];
-  return h("div", { class: "stack", style: { gap: "8px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     kv([
       ["step", checkpointLine(plan)],
       ["swaps", h("span", null, `the original, found in ${plural(spans.length, "place")} in this step's context, for your variant`)],

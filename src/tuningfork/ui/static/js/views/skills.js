@@ -191,7 +191,7 @@ async function runForm(asked) {
 
 /** What adding it would do, as `ops.addskill` planned it: nothing is written yet. */
 function addPlan(plan) {
-  return h("div", { class: "stack", style: { gap: "6px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
     kv([
       ["name", h("span", { class: "mono" }, plan.name)],
       ["kept", plan.kind === "folder" ? "where it is: nothing copied" : "as a copy in the recordings folder"],
@@ -346,7 +346,7 @@ function folderPanel(folder, named) {
     ? chip("no SKILL.md there", "warn")
     : folder.version ? chip(`its SKILL.md is ${named(folder.version)}`, "accent", "Runs have been given exactly this text")
       : chip("its SKILL.md has not been run yet", "warn", "No run has been given this text: run a task to measure it");
-  return panel("Its own folder", h("div", { class: "stack", style: { gap: "6px" } },
+  return panel("Its own folder", h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
     folder.added ? addedLine(folder.added) : null,
     h("div", null, h("span", { class: "mono" }, folder.path), " ", status),
     folder.windows ? h("div", { class: "muted small" }, "From Windows: ", h("span", { class: "mono" }, folder.windows)) : null,

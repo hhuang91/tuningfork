@@ -46,7 +46,7 @@ export async function scenariosView(root, _, scope) {
                 h("td", { class: "mono" }, scenario.skill_name || "—"),
                 h("td", { class: "num" }, String(scenario.evals)),
                 h("td", null, scenario.results.length
-                  ? h("div", { class: "stack", style: { gap: "4px" } }, scenario.results.slice(0, 3).map((result) =>
+                  ? h("div", { class: "stack", style: { gap: "var(--space-1)" } }, scenario.results.slice(0, 3).map((result) =>
                       h("div", { class: "scenario-result" },
                         h("span", { class: "muted small mono" }, `${result.task_id} · ${result.harness || "?"}${result.skill_file ? " · variant" : ""}`),
                         result.passed ? rateBar(result.passed) : h("span", { class: "muted small" }, "no verdict"))))
@@ -235,7 +235,7 @@ function byUpload() {
  *  written yet. */
 function importPlan(plan) {
   const mono = (text) => h("span", { class: "mono" }, text);
-  return h("div", { class: "stack", style: { gap: "6px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
     kv([
       ["scenario", [mono(plan.name), h("span", { class: "muted" }, ` — scenarios/${plan.name}/evals.json`)]],
       ["from", mono(plan.source)],
@@ -372,7 +372,7 @@ export async function scenarioView(root, [name], scope) {
   });
   const evalsEl = h("div", { class: "stack" });
   const previewEl = h("pre", { class: "code spec-preview" });
-  const checkedEl = h("div", { class: "stack", style: { gap: "6px" } });
+  const checkedEl = h("div", { class: "stack", style: { gap: "var(--space-1-5)" } });
   const status = h("div");
   // Whether what is on the page is saved: said beside Save, and again with every change.
   const saveState = h("span", { class: "save-state" });
@@ -494,7 +494,7 @@ export async function scenarioView(root, [name], scope) {
 
   function evalEditor(item, index) {
     const options = item.tuningfork;
-    const files = h("div", { class: "stack", style: { gap: "6px" } });
+    const files = h("div", { class: "stack", style: { gap: "var(--space-1-5)" } });
     // Made once a task: the folder typed for uploads stays as the rows are drawn again.
     let uploads = null;
     const drawFiles = () => replace(files, item.files.map((entry, position) => fileRow(item, entry, position, drawFiles)), uploads);
@@ -511,7 +511,7 @@ export async function scenarioView(root, [name], scope) {
             changed();
           },
         }), normalizer)));
-    return panel(`Task ${item.id || index + 1}`, h("div", { class: "stack", style: { gap: "10px" } },
+    return panel(`Task ${item.id || index + 1}`, h("div", { class: "stack", style: { gap: "var(--space-2-5)" } },
       h("div", { class: "form-grid" },
         field("Id", bind(input(`id-${index}`, { value: item.id }), (v) => (item.id = v))),
         field("Preloaded skills", bind(input(`skills-${index}`, { value: options.skills.join(", "), placeholder: "none" }),
@@ -656,7 +656,7 @@ export async function scenarioView(root, [name], scope) {
       redraw();
       changed();
     }
-    return h("div", { class: "stack", style: { gap: "6px" } },
+    return h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
       zone, chooser, folders,
       h("div", { class: "form-grid" },
         field("Into the workspace folder", into, { help: "Where in each run's workspace uploaded files go: data puts rows.csv at data/rows.csv. Each file's own path can be changed after." }),

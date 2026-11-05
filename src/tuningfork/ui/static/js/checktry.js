@@ -28,7 +28,7 @@ export function checkPicker({ check = null, own = null, editable = true, onChang
   const value = () => ({ kind, text: kind === "shell" ? shell : kind === "own" || kind === "none" ? "" : reply });
   // The check as a spec holds it — what a trial tries.
   const written = () => (kind === "own" ? own : kind === "shell" ? shell : kind === "none" ? null : { [kind]: reply });
-  const body = h("div", { class: "stack", style: { gap: "6px" } });
+  const body = h("div", { class: "stack", style: { gap: "var(--space-1-5)" } });
   const testerSlot = h("div");
   let opened = null;
   const changed = () => {
@@ -125,7 +125,7 @@ export function checkTester({ check, task, files, scope, runs = null,
   let rows = 0;
 
   const runSelect = h("select", { class: "field", name: "trial_run" }, h("option", { value: "" }, "Loading the task's runs…"));
-  const fileList = h("div", { class: "stack", style: { gap: "8px" } });
+  const fileList = h("div", { class: "stack", style: { gap: "var(--space-2)" } });
   const addFile = (path = "", content = "") => {
     const index = rows++;
     const row = h("div", { class: "file-row file-text" },
@@ -172,7 +172,7 @@ export function checkTester({ check, task, files, scope, runs = null,
         .filter((entry) => entry.path);
       return { check: current, reply: textOf(element, "trial_reply"), files: given };
     },
-    render: (plan) => h("div", { class: "stack", style: { gap: "6px" } },
+    render: (plan) => h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
       h("p", { class: "hint" }, describe(plan)),
       plan.unsandboxed
         ? h("div", { class: "banner banner-warn" },

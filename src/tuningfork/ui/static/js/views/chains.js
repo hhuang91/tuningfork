@@ -74,7 +74,7 @@ function linkView(link) {
     : chip("no verdict", "muted", link.exclusion || undefined);
   const changed = (link.changed || []).map((path) => path.split("/").slice(1).join("/") || path);
   const hunks = link.diff?.hunks || [];
-  return h("div", { class: "stack", style: { gap: "6px", marginBottom: "14px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-1-5)", marginBottom: "var(--space-3-5)" } },
     h("div", null, h("strong", null, `Link ${link.index}  `), verdictChip,
       link.usable === false && link.exclusion !== "timed out"
         ? [" ", chip("not counted", "warn", link.exclusion || undefined)] : null,
