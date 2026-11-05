@@ -210,9 +210,45 @@ class TestTheCommand:
             assert refused.value.code == "sandbox_tmp" and str(venv / "python") in str(refused.value)
             assert "TUNINGFORK_SANDBOX=off" in refused.value.hint
 
-    def test_a_person_whose_home_is_where_a_launchs_goes_runs_without_it(self):
+    def test_a_person_whose_home_is_where_a_launchs_goes_runs_without_it(self, tmp_path, monkeypatch):
         assert home_conflict("/home/user") and home_conflict("/home/user/x") and home_conflict("/home")
         assert home_conflict("/home/someone") is None
+        # A home that is a link is shown where it leads too, so that place counts.
+        linked = tmp_path / "home"
+        linked.symlink_to("/home/user/x")
+        assert home_conflict(linked) == f"your home, {linked}, leads to /home/user/x, which is where a launch's home would go (/home/user)"
+        # Where /home is a link (Fedora Silverblue's leads to /var/home), a launch's home goes there.
+        monkeypatch.setattr(tuningfork.sandbox, "_homes", lambda: Path("/var/home"))
+        assert home_conflict("/var/home/user") == (
+            "your home, /var/home/user, is where a launch's home would go (/home/user, which leads to /var/home/user)")
+        assert home_conflict("/var/home/someone") is None
+
+    def test_a_home_that_is_a_link_is_shown_as_one(self):
+        """As on the machine: the folder it leads to where it is, if /home holds it, which every
+        launch sees empty, and the link at the home's path, unless that path leads there by
+        itself — where /home is itself a link (Fedora Silverblue's leads to var/home). Shown at
+        the link's path by a mount of its own, a home showed what was hidden in it."""
+        from tuningfork.sandbox import _home_arguments
+
+        def shown(home: str, target: str, homes: str = "/home") -> list[str]:
+            return _home_arguments(Path(home), Path(target), Path(homes))
+
+        # Not a link: as before.
+        assert shown("/home/me", "/home/me") == ["--ro-bind", "/home/me", "/home/me"]
+        assert shown("/root", "/root") == []
+        # A link to a folder under /home, or elsewhere (an NFS home), or under a folder that is one.
+        assert shown("/home/me", "/home/me2") == ["--ro-bind", "/home/me2", "/home/me2", "--symlink", "/home/me2", "/home/me"]
+        assert shown("/home/me", "/nfs/home/me") == ["--symlink", "/nfs/home/me", "/home/me"]
+        assert shown("/home/group/me", "/home/g2/me") == [
+            "--ro-bind", "/home/g2/me", "/home/g2/me", "--symlink", "/home/g2/me", "/home/group/me"]
+        # /home itself a link: the folder where it is, and no link, the home's path leading there,
+        # whether the home is named by /home or by where it leads; a home there that is a link.
+        assert shown("/home/me", "/var/home/me", "/var/home") == ["--ro-bind", "/var/home/me", "/var/home/me"]
+        assert shown("/var/home/me", "/var/home/me", "/var/home") == ["--ro-bind", "/var/home/me", "/var/home/me"]
+        assert shown("/var/home/me", "/var/home/me2", "/var/home") == [
+            "--ro-bind", "/var/home/me2", "/var/home/me2", "--symlink", "/var/home/me2", "/var/home/me"]
+        # A home elsewhere that leads into /home: the link is the machine's, the folder shown.
+        assert shown("/srv/me", "/home/me") == ["--ro-bind", "/home/me", "/home/me"]
 
     def test_turned_off_it_says_so(self, monkeypatch):
         monkeypatch.setenv(SWITCH, "off")
@@ -519,6 +555,54 @@ class TestInBubblewrap:
         result = run_check(f'judge && test ! -e "{recordings / ".access-token"}"', workspace, 60, sandbox=sandbox)
         assert result.passed and "judged" in result.output, result.output
 
+    def test_a_home_that_is_a_link_keeps_what_is_hidden_in_it_hidden(self, sandboxed, tmp_path, monkeypatch):
+        """Where the person's home is a link, to a folder under /home or elsewhere (an NFS home),
+        a launch and a check are shown it as one, leading to that folder, as on the machine: a
+        folder hidden in it is empty by every path, the link's too, and the rest of the home is
+        shown. Shown at the link's path by a mount of its own, a home showed what was hidden in it."""
+        import shutil
+        import tempfile
+
+        real_home, far = Path.home(), Path("/var/tmp").resolve()
+        if Path("/home") not in real_home.parents or not far.is_dir() or far == TMP or TMP in far.parents:
+            pytest.skip(f"the home, {real_home}, is not under /home, or /var/tmp is missing or under /tmp")
+        under = Path(tempfile.mkdtemp(prefix="tuningfork-test-", dir=real_home))
+        elsewhere = Path(tempfile.mkdtemp(prefix="tuningfork-test-", dir=far))
+        try:
+            for name, target in (("near", under / "real"), ("far", elsewhere / "real")):
+                (target / "recordings").mkdir(parents=True)
+                (target / "recordings" / "token").write_text("t", encoding="utf-8")
+                (target / "notes.txt").write_text("notes", encoding="utf-8")
+                link = under / f"{name}-link"
+                link.symlink_to(target)
+                monkeypatch.setenv("HOME", str(link))
+                # The folder at its resolved path, which a launch is shown: as named, under a home that
+                # is itself a link, it would not be there at all, and count none for that reason.
+                look = (f'echo "$(ls -A {link}/recordings | wc -l) $(ls -A {target.resolve()}/recordings | wc -l) '
+                        f'$(cat {link}/notes.txt)"')
+                sandbox = Sandbox(sandboxed.executable, sandboxed.version, hide=(target / "recordings",))
+                home, workspace = folders(tmp_path / name)
+                spec = LaunchSpec(argv=("sh", "-c", look), env={"PATH": "/usr/bin:/bin"}, cwd=workspace)
+                launch = sandbox.wrap(spec, home=home, workspace=workspace)
+                check, environment = sandbox.check_command(look, workspace=workspace, environment={"PATH": "/usr/bin:/bin"})
+                for argv, env in ((list(launch.argv), launch.env), (check, environment)):
+                    done = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+                    assert (done.returncode, done.stdout.split()) == (0, ["0", "0", "notes"]), (name, done.stderr)
+            # A pinned clock's library named by the folder the home leads to, under /home: in the
+            # person's own home, which a launch is shown, so never said to be kept from launches —
+            # here a file that is not one, which the loader skips in its own words.
+            from tuningfork.sandbox import CLOCK, CLOCK_LIBRARY
+
+            named = (under / "real").resolve() / "notes.txt"
+            monkeypatch.setenv("HOME", str(under / "near-link"))
+            monkeypatch.setenv(CLOCK, "2026-10-08 09:00:00")
+            monkeypatch.setenv(CLOCK_LIBRARY, str(named))
+            said = for_launches([])[0].clock_problem or ""
+            assert f"a launch cannot load libfaketime from {named} (" in said, said
+        finally:
+            shutil.rmtree(under, ignore_errors=True)
+            shutil.rmtree(elsewhere, ignore_errors=True)
+
     def test_a_fork_runs_where_its_source_ran_or_not_at_all(self, sandboxed, tmp_path, mock_server, monkeypatch):
         with task_stack(tmp_path, mock_server, monkeypatch) as stack:
             sandbox, _ = for_launches([stack.store.home, stack.tmp / "batches"])
@@ -684,13 +768,13 @@ class TestTheClock:
         assert reading(SKIPPED, hide=[hidden]).clock_problem == unpinned(
             f"libfaketime, at {kept}, is under {hidden}, which every launch sees empty")
         mine, other = Path("/home/me"), Path("/home/other/lib/libfaketime.so.1")
-        assert _kept_from_launches(other, [], mine) == Path("/home/other")
-        assert _kept_from_launches(mine / "lib" / "libfaketime.so.1", [], mine) is None
-        # The person's home a link to /home/me2: a launch is shown it at /home/me alone. The path
-        # as resolved goes with the home as resolved; named by its target, it is kept from launches.
-        target = Path("/home/me2/lib/libfaketime.so.1")
-        assert _kept_from_launches(target, [], Path("/home/me2")) is None
-        assert _kept_from_launches(target, [], mine) == Path("/home/me2")
+        assert _kept_from_launches(other, [], [mine]) == Path("/home/other")
+        assert _kept_from_launches(mine / "lib" / "libfaketime.so.1", [], [mine]) is None
+        # The person's home a link to /home/me2: a launch is shown both, the link leading to the
+        # folder (`_home_arguments`), so a library named by either path is in the person's own.
+        homes = [mine, Path("/home/me2")]
+        assert _kept_from_launches(Path("/home/me2/lib/libfaketime.so.1"), [], homes) is None
+        assert _kept_from_launches(other, [], homes) == Path("/home/other")
         # A path LD_PRELOAD splits, at a space or a colon, where the loader would quote a part.
         spaced = tmp / "my libs" / "libfaketime.so.1"
         spaced.parent.mkdir()
