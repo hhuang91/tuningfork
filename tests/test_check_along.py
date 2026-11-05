@@ -90,12 +90,12 @@ def test_the_check_along_a_run_says_which_call_made_each_finding(stack):
 def test_it_is_run_from_the_terminal_once_a_run(stack):
     run = one_run(stack)
     home = str(stack.store.home)
-    printed = CliRunner().invoke(app, ["check-along", "--task", TASK, "--home", home], env={"COLUMNS": "200"})
+    printed = CliRunner().invoke(app, ["check-along", "--task", TASK, "--home", home])
     assert printed.exit_code == 0, printed.output
     assert f"step 1's call made: {WRONG}" in printed.output and "no report.json yet" not in printed.output
-    again = CliRunner().invoke(app, ["check-along", "--task", TASK, "--home", home], env={"COLUMNS": "200"})
+    again = CliRunner().invoke(app, ["check-along", "--task", TASK, "--home", home])
     assert again.exit_code == 0 and "run along before" in again.output and "nothing to run the check along" in again.output
-    tallied = CliRunner().invoke(app, ["tally", "--task", TASK, "--home", home], env={"COLUMNS": "200"})
+    tallied = CliRunner().invoke(app, ["tally", "--task", TASK, "--home", home])
     assert tallied.exit_code == 0 and "made by a call in 1 of 1 run(s)" in tallied.output
     neither = CliRunner().invoke(app, ["check-along", "--home", home])
     assert neither.exit_code == 1 and "give --task or --run" in neither.output
@@ -123,8 +123,7 @@ def test_it_says_when_the_check_cannot_run_in_the_sandbox(stack, monkeypatch):
     one_run(stack)
     monkeypatch.delenv(tuningfork.sandbox.SWITCH, raising=False)
     monkeypatch.setattr(tuningfork.sandbox, "for_launches", lambda hide, **_: (None, "bubblewrap is not installed"))
-    printed = CliRunner().invoke(app, ["check-along", "--task", TASK, "--home", str(stack.store.home)],
-                                 env={"COLUMNS": "200"})
+    printed = CliRunner().invoke(app, ["check-along", "--task", TASK, "--home", str(stack.store.home)])
     assert printed.exit_code == 0, printed.output
     assert "not sandboxed: bubblewrap is not installed" in printed.output
 
@@ -296,7 +295,7 @@ def test_a_mistake_every_run_made_is_named_with_the_call_that_made_it(store):
         assert "every run made «SKU-#: # in stock, the document leads to #»" in said
         assert "made:in stock, the document leads to" in said and toward in said, toolset
     # A person too.
-    printed = CliRunner().invoke(app, ["tally", "--task", "t/1", "--home", str(store.home)], env={"COLUMNS": "220"})
+    printed = CliRunner().invoke(app, ["tally", "--task", "t/1", "--home", str(store.home)])
     assert printed.exit_code == 0 and "made:in stock, the document leads to" in printed.output
 
 
