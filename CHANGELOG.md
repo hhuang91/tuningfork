@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.8.2 — a home that is a link, the pinned clock, and a run given another skill text
+
+This release closes a gap in what the sandbox hides, and fixes two places where tuningfork said or
+recorded something untrue. On a machine where your home under `/home`, or a folder between `/home`
+and it, is a link, launches could read the folders in your home that the sandbox keeps from them. A
+pinned clock whose library a launch could not load was recorded as pinned. And a scenario or
+refinement of a run that was given another skill text than its task's folder holds said the task's
+file had changed, which it had not. It closes #55 and #57.
+
+- **A home that is a link is shown to launches as a link** (#72). Where your home is named under
+  `/home` and it, or a folder between `/home` and it, is a link, as an NFS home is on some
+  machines, bubblewrap showed it at its path under `/home` by a mount of its own. A folder in your
+  home that launches are kept from is hidden at its resolved path, so through the link it stayed
+  readable in every launch, and in every check since 0.6.1: the recordings folder, the runs' folder
+  and a task's folder among them. Every earlier release did this. The home is now shown as a link
+  to the folder it leads to, so what is hidden in it is hidden through the link too. Any other home
+  under `/home` is shown as before. Where `/home` is itself a link, as on Fedora Silverblue, a home
+  named under it is shown where `/home` leads, as before. Now so is a home named under `/var/home`
+  itself, which launches did not see before (unit-tested, not tried where `/home` is a link). Where
+  your home leads to where a launch's own home goes, `/home/user`, launches there run without the
+  sandbox, and the plan says why, as for a home named there. Where your home was named under
+  `/home` and it, or a folder between `/home` and it, was a link, runs could read the keys kept in
+  a recordings folder in your home, as `~/.tuningfork` is by default. `serve` makes new access and
+  MCP tokens each time it starts. If you pinned them (`TUNINGFORK_TOKEN`, `TUNINGFORK_MCP_TOKEN`),
+  change them. Replace a proposer's key kept in `.proposer-key`, and set the new one with
+  `tuningfork connections proposer set --key-stdin`.
+- **A libfaketime a launch cannot load is treated as missing** (#71). The loader skips an
+  `LD_PRELOAD` library it cannot load and runs the harness anyway, on the real clock: one under
+  `/tmp`, which every launch sees empty, one in a folder the sandbox hides or in another person's
+  home, one built for another processor, or one named by a path with a space or a colon, at which
+  `LD_PRELOAD` splits. Such a run read today's date while its launch recorded the clock as pinned.
+  Every plan now looks at the library's path, then runs `date` as a launch is run, with the clock
+  pinned. Where a launch could not load the library from its path, or `date` reads another
+  instant, the plan warns, as it does when the library is missing, and the runs keep the real
+  clock, none recorded as pinned. A `date` that reads no instant, or never answers, leaves the
+  check of the harness's own `--version` to decide, as before. The first plan to ask can now wait
+  up to 30 s, 10 s of it for `date`. A `TUNINGFORK_CLOCK_LIBRARY` given relative, or from `~/`,
+  is made absolute. A `TUNINGFORK_CLOCK` naming a day the calendar lacks, such as `2026-02-30`, is
+  now not an instant, as `tomorrow` is not: the plan says so, and the runs keep the real clock.
+  libfaketime had moved it to another day while the launch recorded the one named.
+- **A run given another skill text is said to have been given one** (#74, #55). Some runs are
+  given another text than their task's folder holds: a chain's link after one that changed the
+  skill, a run of `batch --skill` or `--skill-dir` with a text of its own, and a validation's runs
+  of an edit. Scenarios and refinements of such a run said the task's file had changed since the
+  run was given it, and validation refused an edit of it for that reason. Each launched run but a
+  fork, which answers for its source, now records the folder its copy of the skill was made from,
+  and whether that held what its task's folder held then. Where the run was given another text,
+  tuningfork now says so, and which: in a scenario's plan and form, on a refinement's page, in
+  `refine start` and `refine show`, in MCP's `start_refinement` and `show_refinement`, and in
+  validation's refusal. Whole folders are compared now, so a file a link added counts. A scenario
+  of such a run keeps a copy of what it had by default, with the task's folder offered beside it.
+  To tune the task's folder instead, name it (`tuningfork scenario … --skill-dir <folder>`, or
+  *The task's folder, as it is now* on the form). To tune the text the run had, refine a run of
+  that scenario. Its task file needs a held-out eval before an edit can be approved. A folder that
+  changed since the run is said to have changed, as before. Where an older run's record cannot tell
+  which happened, the folder is said not to hold what the run had, never to have changed.
+- **A connections test no longer fails at some temp-folder lengths** (#73, #57). It failed where
+  pytest's temp folder was 12 to 21 characters long: the console broke its line inside the words
+  the test looked for. It now reads the output with its whitespace collapsed.
+
 ## 0.8.1 — Claude Code with a pinned clock
 
 With a pinned clock (`TUNINGFORK_CLOCK`), Claude Code's native binary could not run: it stopped
