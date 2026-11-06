@@ -181,7 +181,7 @@ function runsTree(plan) {
       { name: "reply.txt", note: "its final reply" },
     ],
   };
-  // A variant swapped in is the copy's SKILL.md: a change, in the legend's teal.
+  // A variant swapped in is the copy's SKILL.md: a change, in the legend's cyan.
   const variant = plan.skill_file
     ? [{ name: "SKILL.md", skill: true, role: chip(nameOf(plan.skill_file).replace(/\.md$/, ""), "change", "A saved wording, swapped in for the skill's SKILL.md"),
         note: "a variant, swapped in for its SKILL.md" }]

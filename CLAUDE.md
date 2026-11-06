@@ -894,17 +894,17 @@ than on a hardcoded assumption about which server is running.
   gate's, and a change in how often a task's check passes (an A/B or a screen run to the end).
   Any other significant result is the accent's colour, said in words with its direction —
   tuningfork is never told whether more of a behaviour is wanted. A rate is never green or red,
-  a pass rate included: its bar is the accent's (a variant's teal), the verdict it counts said in
+  a pass rate included: its bar is the accent's (a variant's cyan), the verdict it counts said in
   its label. One meaning a colour, the legend written beside the tokens in `app.css` and shown in
   a line on the Guide: amber (`warn`) a caution — not counted, unfinished, paused, held,
   something missing or gone wrong (a failed call or job is one, never a verdict's red); the
   accent what can be acted on, what is current or significant, and the model's own answer;
-  purple a skill's own words; teal (`change`, with a pencil) what a person or tuningfork changed
+  purple a skill's own words; cyan (`change`, with a pencil) what a person or tuningfork changed
   — an edit at a breakpoint, a variant swapped in — on chips, outlines and banners, never a
-  step's border; everything else grey, what is fine included (found, done, a file that matches,
-  every role but the assistant's). Red keeps only what every page means by it besides: a diff's
-  removed lines beside its green added ones, a button that deletes, a field or an action to put
-  right.
+  step's border, and kept off green (a pale teal fill had read as a pass); everything else grey,
+  what is fine included (found, done, a file that matches, every role but the assistant's). Red
+  keeps only what every page means by it besides: a diff's removed lines beside its green added
+  ones, a button that deletes, a field or an action to put right.
 - tuningfork's own endpoints (`/_tuningfork/`) answer only to a loopback Host, refuse
   cross-site state changes by Origin, and accept no state change without the access token
   (`api/guard.py`): a loopback port is reachable from any page in the user's browser. Keep new endpoints under

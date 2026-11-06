@@ -395,7 +395,7 @@ function writtenGroup({ position, token, own, letter, count, cluster, written })
   return fold;
 }
 
-/** One continuation's text: the token forced marked — teal where tuningfork forced it, as a
+/** One continuation's text: the token forced marked — cyan where tuningfork forced it, as a
  *  change is, grey where it was the run's own (`own`) — then each part the model wrote, named
  *  where it starts. The text is the model's, put on the page as text. How far its box was
  *  scrolled is kept (`scrolled`, by `id`), and given back when the page draws it again. */

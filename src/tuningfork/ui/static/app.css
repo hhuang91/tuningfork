@@ -10,11 +10,11 @@
      --warn        amber: a caution — not counted, unfinished, paused, held, something missing
                    or gone wrong.
      --accent      indigo: what can be acted on, what is current, a significant result, every
-                   rate's bar (a variant's is teal), and the model's own answer.
+                   rate's bar (a variant's is cyan), and the model's own answer.
      --skill       purple: a skill's own words.
-     --change      teal, with a pencil: what a person or tuningfork changed — an edit at a
+     --change      cyan, with a pencil: what a person or tuningfork changed — an edit at a
                    breakpoint, a variant swapped in. Chips, outlines and banners; never a step's
-                   border.
+                   border. Kept off green: a pale teal fill had read as a pass.
      the rest      grey, what is fine included: found, done, a file that matches, every role
                    but the assistant's.
 
@@ -40,8 +40,8 @@
   --accent-hover: #3443c9;
   --accent-soft: #e8eaff;
   --on-accent: #ffffff;
-  --change: #0b7471;
-  --change-soft: #dcf1ef;
+  --change: #197086;
+  --change-soft: #d4f2fc;
   --ok: #247a3a;
   --ok-soft: #e2f3e6;
   --bad: #c0302b;
@@ -225,8 +225,8 @@
     --accent-hover: #a2aaff;
     --accent-soft: #262a4d;
     --on-accent: #141412;
-    --change: #4cc3bb;
-    --change-soft: #17312f;
+    --change: #53bddc;
+    --change-soft: #0c313b;
     --ok: #62c27b;
     --ok-soft: #1b3122;
     --bad: #f07b72;
@@ -260,8 +260,8 @@
   --accent-hover: #a2aaff;
   --accent-soft: #262a4d;
   --on-accent: #141412;
-  --change: #4cc3bb;
-  --change-soft: #17312f;
+  --change: #53bddc;
+  --change-soft: #0c313b;
   --ok: #62c27b;
   --ok-soft: #1b3122;
   --bad: #f07b72;
@@ -815,7 +815,7 @@ details.setup-done > summary { padding: var(--space-3) var(--space-4); cursor: p
 /* Where a path sits: inside the recordings folder, that folder a chip and the rest after it. */
 .place { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); }
 .place .chip { font-family: var(--sans); }
-/* What an approval writes: the teal of a change, with its pencil, wherever a folder takes one. */
+/* What an approval writes: the cyan of a change, with its pencil, wherever a folder takes one. */
 .tree-writes { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--change); font-weight: var(--weight-semibold); }
 .tree-writes::before { content: ""; width: var(--icon-xs); height: var(--icon-xs); flex: none; background: currentColor; mask: var(--icon-pencil) center / contain no-repeat; }
 /* The path a run's agent sees a folder at: a line of its own under the note. */
@@ -863,7 +863,7 @@ details.setup-done > summary { padding: var(--space-3) var(--space-4); cursor: p
 .tree-fold[open] > summary { margin-bottom: var(--space-2); }
 
 /* Where things live: three places side by side, each a band of its own, the copies made from one
-   to the next drawn as arrows between them, and the one edit that comes back in the teal of a
+   to the next drawn as arrows between them, and the one edit that comes back in the cyan of a
    change. Narrower, the arrows shorten; narrow, one place after another, each box saying in its
    own words what its arrow said. */
 .where-things-live { container-type: inline-size; }
@@ -924,7 +924,7 @@ details.setup-done > summary { padding: var(--space-3) var(--space-4); cursor: p
 .wire-line { display: flex; align-items: center; }
 .wire-rule { flex: 1; border-top: var(--stroke-1-5) solid var(--control); }
 .wire-head { width: var(--space-2); height: var(--space-2); flex: none; fill: var(--control); }
-/* The one edit that comes back: the teal of a change, pointing home. */
+/* The one edit that comes back: the cyan of a change, pointing home. */
 .wire.is-back .wire-line { flex-direction: row-reverse; }
 .wire.is-back .wire-head { transform: rotate(180deg); fill: var(--change); }
 .wire.is-back .wire-rule { border-top-color: var(--change); }
@@ -2188,7 +2188,7 @@ details.panel[open] > summary:hover { border-radius: var(--radius-lg) var(--radi
 .fork-position { margin: var(--space-3) 0; }
 /* What a probe's continuations wrote, grouped by token: each position, then each token and the
    behaviours its continuations ended in, each continuation's text with the token forced
-   marked — teal where tuningfork forced it, as a change is; grey where it was the run's own. */
+   marked — cyan where tuningfork forced it, as a change is; grey where it was the run's own. */
 .written-position { display: flex; flex-direction: column; gap: var(--space-2-5); }
 .written-position + .written-position { margin-top: var(--space-3-5); padding-top: var(--space-3-5); border-top: 1px solid var(--border); }
 .written-head { margin-bottom: var(--space-1); }

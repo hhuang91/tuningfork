@@ -206,7 +206,7 @@ function runFolder(run, launch, ended) {
   const copy = launch.skill_copy;
   // A batch's copy is <batch>/skill-snapshot/<skill>, beside its run folders; a chain's link has
   // one of its own, skill-snapshot-<i>, made as it started from what the link before left. A
-  // variant swapped in is its SKILL.md: a change, in the legend's teal.
+  // variant swapped in is its SKILL.md: a change, in the legend's cyan.
   const beside = copy && parentOf(parentOf(copy)) === group;
   const link = beside ? /^skill-snapshot-(\d+)$/.exec(nameOf(parentOf(copy))) : null;
   const variant = run.skill_file

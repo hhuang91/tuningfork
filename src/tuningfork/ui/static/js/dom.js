@@ -273,7 +273,7 @@ export function rateText(rate) {
 }
 
 /** A rate as tuningfork always shows one: its count, with the interval drawn. In the accent, or
- *  teal (`change`) for a variant's: never a verdict's green or red, a pass rate included. */
+ *  cyan (`change`) for a variant's: never a verdict's green or red, a pass rate included. */
 export function rateBar(rate, tone = "accent") {
   const at = (x) => `${(x * 100).toFixed(2)}%`;
   return h(

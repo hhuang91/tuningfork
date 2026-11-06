@@ -5,7 +5,7 @@
 // run folder, workspace, and a copy of a skill. The Words page draws them in one diagram.
 //
 // One mark a meaning, as the colour legend in app.css has it: a dashed chip is a copy and nothing
-// else; the teal of a change, with a pencil, is what an approval writes; the skill's purple is the
+// else; the cyan of a change, with a pencil, is what an approval writes; the skill's purple is the
 // skill folder and its SKILL.md.
 
 import { chip, copyButton, h } from "./dom.js";
@@ -33,7 +33,7 @@ export function placeOf(path, home, { file = false } = {}) {
 /** A copy of a skill, marked as copies alone are: a dashed chip. */
 export const copyChip = (text = "copy of the skill", title = "A copy of a skill's files, kept at one moment") =>
   chip(text, "copy", title);
-/** What an approval writes, in the teal of a change, with its pencil. */
+/** What an approval writes, in the cyan of a change, with its pencil. */
 export const writes = (text) => h("span", { class: "tree-writes" }, text);
 /** The path a run's agent sees a folder at, on a line of its own. */
 export const seenAs = (path) => (path ? h("span", { class: "tree-seen" }, "seen as ", h("span", { class: "mono" }, path)) : null);
