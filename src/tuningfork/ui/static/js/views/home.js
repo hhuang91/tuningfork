@@ -4,7 +4,8 @@
 // shows them.
 
 import { api } from "../api.js";
-import { ago, chip, command, h, icon, loading, panel, plural, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, command, foldPanel, h, icon, loading, panel, plural, replace, short, verdict, when } from "../dom.js";
+import { whereThingsLive } from "../folders.js";
 import { kindLabel } from "../jobs.js";
 import { live } from "../live.js";
 import { LABELS } from "../words.js";
@@ -37,7 +38,8 @@ export async function homeView(root, _, scope) {
       panel("How the pieces fit", [
         mapView(terms),
         h("div", { class: "map-notes" },
-          h("p", null, h("strong", null, "Record. "), "A scenario is a task file kept here: a skill's tasks, each with its check. A batch starts the harness once for each run, in a fresh folder, and the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way, and a chat it already had can be imported as a run. Any run can become a scenario, whose runs continue its conversation."),
+          h("p", null, h("strong", null, "Record. "), "A scenario is a task file kept here: a skill's tasks, each with its check. A batch starts the harness once for each run, in a run folder of its own, and the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way, and a chat it already had can be imported as a run. Any run can become a scenario, whose runs continue its conversation. ",
+            h("a", { href: "#/words?place=recordings-folder" }, "Where things live"), " shows each folder tuningfork keeps, and what a run is given."),
           h("p", null, h("strong", null, "Measure. "), "At any step, an experiment sends the step's exact request again, with everything before it held fixed, and counts what the model does there. To judge each try by whether the whole run then passes, each sample is a fork of the run: replayed to the step, live after it, and judged by the task's check."),
           h("p", null, h("strong", null, "Improve. "), "A refinement declares what the model should do at a step, then tests small edits there against the original wording. An edit that beats the original gets full test runs, held-out tasks included, and is written back only when a person approves it: a new version of the skill, measured again from the top."),
           h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a test at a step, full test runs, each run inside `tuningfork serve`. A job is a record of the work. What it made, runs and experiments, is kept on its own."),
@@ -47,17 +49,32 @@ export async function homeView(root, _, scope) {
       lookUp(words)));
 }
 
-/** tuningfork's words on a page of their own, looked up as they are typed. */
+/** tuningfork's words on a page of their own, looked up as they are typed; above them, folded,
+ *  where the folders they name are and what goes between them. A folder's tree links here with
+ *  the place (`?place=`): the picture opens, the place marked. The look-up field stays in sight. */
 export async function wordsView(root, _, scope) {
   replace(root, loading());
   const words = await api.get("/glossary").catch(() => null);
-  const found = glossaryPanel(words, scope.query?.get("term") || "");
+  const term = scope.query?.get("term") || "";
+  const place = scope.query?.get("place") || "";
+  const found = glossaryPanel(words, term);
+  const diagram = whereThingsLive({ home: live.home });
+  const where = foldPanel("Where things live", diagram, { open: Boolean(place), className: "where-panel",
+    meta: h("span", { class: "muted" }, "your files, the recordings folder, what the agent sees") });
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Words"),
       h("p", { class: "sub" }, "tuningfork's own words, each as it means it here. The same list in a terminal: ",
         h("code", null, "tuningfork glossary [word]"), "."))),
-    found);
-  found.querySelector('input[type="search"]')?.focus({ preventScroll: true });
+    h("div", { class: "stack" }, where, found));
+  const box = place ? diagram.querySelector(`[data-place="${CSS.escape(place)}"]`) : null;
+  if (box) {
+    if (box.tagName === "DETAILS") box.open = true;
+    box.scrollIntoView({ block: "center" });
+    box.classList.add("flash");
+    setTimeout(() => box.classList.remove("flash"), 1600);
+  } else {
+    found.querySelector('input[type="search"]')?.focus({ preventScroll: true });
+  }
 }
 
 /** On the Guide, the way to the words with one typed. */
@@ -280,7 +297,7 @@ function mapView(terms) {
 const WORKFLOWS = [
   {
     question: "Does this skill work?",
-    answer: "A task run N times, each in a fresh workspace: a pass rate with its interval, kept apart for each version of the skill.",
+    answer: "A task run N times, each in a run folder of its own: a pass rate with its interval, kept apart for each version of the skill.",
     steps: ["Write a scenario: the task's prompt, its input files and its check", "Run a task… — the harness, and how many runs", "Each version's rate: on Runs, and on the skill's page"],
     cli: "tuningfork batch evals.json -n 8", href: "#/batch", go: "Run a task…",
   },

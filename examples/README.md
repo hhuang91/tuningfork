@@ -418,8 +418,8 @@ first terminal.
   memory files, and needs no API key.
 - **[bubblewrap](https://github.com/containers/bubblewrap)**, on Linux:
   `sudo apt install bubblewrap`. With it, every run tuningfork launches sees the same home and
-  folder, `/home/user` and `/home/user/project`, as an installation would; without it, each
-  run sees its own folders, whose names differ from run to run, and the model reads them. We
+  folder, `/home/user` and `/home/user/project`, as an installation would; without it, each run
+  sees its run folder at its real path, which differs from run to run, and the model reads it. We
   used 0.11.1.
 
 Everything stays on your machine: the model server, the proxy and the harness all listen on

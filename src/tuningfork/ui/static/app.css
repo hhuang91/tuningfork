@@ -187,6 +187,10 @@
   --stage-min: 180px;
   --rule-select-min: 150px;
   --map-min: 640px;
+  --wire-long: 136px;    /* where things live: the arrow from your files to the recordings folder */
+  --wire-short: 88px;    /* ... and from a run folder to what its agent sees */
+  --wire-long-narrow: 72px;
+  --wire-short-narrow: 48px;
   --empty-measure: 560px;
   --setup-measure: 620px;
   --editor-min: 260px;
@@ -386,7 +390,10 @@ body { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); min-
 .nav-group { margin: var(--space-3) var(--space-2-5) var(--space-1); color: var(--faint); font-size: var(--text-2xs); font-weight: var(--weight-bold); letter-spacing: var(--tracking-caps); text-transform: uppercase; }
 .nav-rule { margin: var(--space-2-5); border-top: 1px solid var(--border); }
 /* What needs a running proxy, where none runs: greyed, and still a link to the page that says so. */
-.side-nav a.nav-off { opacity: 0.5; }
+/* Greyed where no proxy runs, still a link to the page that says why: the faint text keeps its
+   contrast (found by the kit's axe gate on `tuningfork ui`); the icon greys further. */
+.side-nav a.nav-off { color: var(--faint); }
+.side-nav a.nav-off .icon { opacity: 0.6; }
 
 /* The status strip: the proxy, the server, the harnesses, and pausing it all. */
 .side-foot { display: flex; flex: none; align-items: flex-start; gap: var(--space-1-5); padding: var(--space-3); border-top: 1px solid var(--border); }
@@ -803,6 +810,145 @@ details.setup-done > summary { padding: var(--space-3) var(--space-4); cursor: p
 .diff-del-text { color: var(--bad); }
 .diff-add-text { color: var(--ok); }
 
+/* --- places on disk (js/folders.js): a folder as the tree it is, and where things live ------- */
+
+/* Where a path sits: inside the recordings folder, that folder a chip and the rest after it. */
+.place { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); }
+.place .chip { font-family: var(--sans); }
+/* What an approval writes: the teal of a change, with its pencil, wherever a folder takes one. */
+.tree-writes { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--change); font-weight: var(--weight-semibold); }
+.tree-writes::before { content: ""; width: var(--icon-xs); height: var(--icon-xs); flex: none; background: currentColor; mask: var(--icon-pencil) center / contain no-repeat; }
+/* The path a run's agent sees a folder at: a line of its own under the note. */
+.tree-seen { flex-basis: 100%; font-size: var(--text-xs); color: var(--muted); }
+
+/* A folder as its tree: each line a name, and what it is for beside it, the notes in one column
+   (one column a panel, where its trees share a measure; never more than nearly half the width,
+   a longer name wrapping). The guides are drawn on each line's pseudo-elements, so a reader hears
+   how the lists nest and never a box-drawing character. */
+/* A level's indent in characters, as `treeMeasure` counts it: the names' column is exact. */
+.folder-tree { --tree-indent: 3ch; container-type: inline-size; }
+.tree-root { font-family: var(--mono); font-size: var(--text-code); color: var(--muted); }
+.tree-lines, .tree-lines ul { list-style: none; margin: 0; padding: 0; }
+.tree-lines { margin-top: var(--space-1); font-family: var(--mono); font-size: var(--text-code); line-height: var(--leading-normal); }
+.tree-lines li { position: relative; padding-left: var(--tree-indent); }
+.tree-lines li::before, .tree-lines li::after {
+  content: "";
+  position: absolute;
+  left: var(--space-1-5);
+  border: 0 solid var(--control);
+}
+.tree-lines li::before { top: 0; height: calc(var(--space-0-5) + 0.75em); width: var(--space-2-5); border-left-width: 1px; border-bottom-width: 1px; }
+.tree-lines li:not(:last-child)::after { top: 0; bottom: 0; border-left-width: 1px; }
+.tree-row {
+  display: grid;
+  grid-template-columns: min(calc((var(--tree-chars) - var(--depth) * 3) * 1ch), 45%) minmax(0, 1fr);
+  column-gap: var(--space-4);
+  align-items: baseline;
+  padding-block: var(--space-0-5);
+}
+.tree-name { overflow-wrap: anywhere; }
+.tree-name.is-skill { color: var(--skill); }
+.tree-row.is-mark .tree-name { font-weight: var(--weight-semibold); color: var(--text); }
+.tree-note { font-family: var(--sans); font-size: var(--text-sm); line-height: var(--leading-snug); color: var(--muted); display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-0-5) var(--space-2); }
+.tree-note .chip, .tree-note .btn { flex: none; }
+@container (max-width: 420px) {
+  .tree-row { grid-template-columns: minmax(0, 1fr); row-gap: 0; padding-block: 0 var(--space-1-5); }
+}
+@media (max-width: 600px) { .tree-note .copy-windows { display: none; } }
+.folder-trees > * + * { margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--border); }
+.folder-trees-intro { margin: 0 0 var(--space-4); color: var(--muted); font-size: var(--text-sm); }
+.tree-also { margin: var(--space-2) 0 0; font-size: var(--text-sm); color: var(--muted); }
+/* A copy a scenario keeps, below the skill folder's tree: one line, opened for its own tree. */
+.tree-fold > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5) var(--space-2); font-size: var(--text-sm); color: var(--muted); }
+.tree-fold[open] > summary { margin-bottom: var(--space-2); }
+
+/* Where things live: three places side by side, each a band of its own, the copies made from one
+   to the next drawn as arrows between them, and the one edit that comes back in the teal of a
+   change. Narrower, the arrows shorten; narrow, one place after another, each box saying in its
+   own words what its arrow said. */
+.where-things-live { container-type: inline-size; }
+.where-grid {
+  --wire-1: var(--wire-long);
+  --wire-2: var(--wire-short);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--wire-1) minmax(0, 1.25fr) var(--wire-2) minmax(0, 0.9fr);
+  grid-template-areas:
+    "h-mine  .      h-rec   .      ."
+    "skill   w-copy batch   .      ."
+    "beside  .      w-inst  .      h-seen"
+    "task    w-in   run     w-seen sandbox"
+    ".       .      records .      .";
+  row-gap: var(--space-3);
+}
+.place-band { grid-row: 1 / -1; background: var(--panel-2); border-radius: var(--radius-lg); }
+.band-mine { grid-column: 1; }
+.band-rec { grid-column: 3; }
+/* What the agent sees starts where the copy goes into each run, its title just above the sandbox. */
+.band-seen { grid-column: 5; grid-row: 3 / -1; }
+.where-grid > :is(.place-head, .place-box, .place-beside, .place-kept) { margin-inline: var(--space-3); }
+.where-grid > .place-head { margin-top: var(--space-3); }
+.where-grid > .place-kept { margin-bottom: var(--space-3); }
+.place-head h3 { margin: 0; font-size: var(--text-md); }
+.place-head p { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--muted); }
+.place-box { align-self: start; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); }
+.place-box.is-skill-folder { border-color: var(--skill); box-shadow: 0 0 0 1px var(--skill); }
+/* The skill folder and the batch's copy, one height: the copy's arrow down to each run starts where both end. */
+.place-box:is(.is-skill-folder, [data-place="copy"]) { align-self: stretch; }
+/* Run folders: one drawn, the others stacked behind it. */
+.place-box.is-stack {
+  margin-right: calc(var(--space-3) + var(--space-2));
+  margin-bottom: var(--space-2);
+  box-shadow: var(--space-1) var(--space-1) 0 -1px var(--panel), var(--space-1) var(--space-1) 0 0 var(--border),
+    var(--space-2) var(--space-2) 0 -1px var(--panel), var(--space-2) var(--space-2) 0 0 var(--border);
+}
+.place-box h4 { margin: 0; font-size: var(--text-base); }
+.place-where { font-size: var(--text-code); color: var(--muted); margin-top: var(--space-0-5); overflow-wrap: anywhere; }
+.place-box p { margin: var(--space-2) 0 0; font-size: var(--text-sm); color: var(--muted); }
+.place-box p.place-aside { font-size: var(--text-xs); }
+.place-beside { font-size: var(--text-xs); color: var(--muted); }
+.place-beside p { margin: 0; }
+.place-kept > summary { cursor: pointer; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text); }
+.place-rows { display: grid; grid-template-columns: minmax(0, 1fr); margin: var(--space-2) 0 0; }
+.place-rows dt { font-size: var(--text-code); display: flex; flex-wrap: wrap; gap: var(--space-1-5); align-items: baseline; overflow-wrap: anywhere; }
+.place-rows dt .chip { font-family: var(--sans); }
+.place-rows dt.is-skill { color: var(--skill); font-weight: var(--weight-semibold); }
+.place-rows dd { margin: 0 0 var(--space-1-5); font-size: var(--text-sm); color: var(--muted); }
+.place-rows dd:last-child { margin-bottom: 0; }
+.place-rows.is-side { grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-1) var(--space-3); align-items: baseline; }
+.place-rows.is-side dd { margin: 0; }
+/* The place a link came for, marked a moment: as a looked-up word's row is. */
+:is(.place-box, .place-band, .place-kept).flash { background: var(--accent-soft); transition: background-color var(--duration-slow) var(--ease); }
+.wire-cell { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-2); }
+.wire { display: flex; flex-direction: column; gap: var(--space-1); padding-inline: var(--space-1-5); }
+.wire-label { font-size: var(--text-xs); color: var(--muted); text-align: center; line-height: var(--leading-snug); }
+.wire-line { display: flex; align-items: center; }
+.wire-rule { flex: 1; border-top: var(--stroke-1-5) solid var(--control); }
+.wire-head { width: var(--space-2); height: var(--space-2); flex: none; fill: var(--control); }
+/* The one edit that comes back: the teal of a change, pointing home. */
+.wire.is-back .wire-line { flex-direction: row-reverse; }
+.wire.is-back .wire-head { transform: rotate(180deg); fill: var(--change); }
+.wire.is-back .wire-rule { border-top-color: var(--change); }
+.wire.is-back .wire-label { color: var(--change); font-weight: var(--weight-semibold); }
+/* The copy installed in each run, down the recordings folder's own column. */
+.wire-cell.is-down-cell { flex-direction: row; justify-content: center; padding: 0; }
+.wire.is-down { flex-direction: row-reverse; align-items: stretch; gap: var(--space-2); padding: 0; }
+.wire.is-down .wire-line { flex-direction: column; }
+.wire.is-down .wire-rule { border-top: 0; border-left: var(--stroke-1-5) solid var(--control); min-height: var(--space-6); }
+.wire.is-down .wire-head { transform: rotate(90deg); }
+.wire.is-down .wire-label { align-self: center; text-align: left; }
+@container (max-width: 1050px) {
+  .where-grid { --wire-1: var(--wire-long-narrow); --wire-2: var(--wire-short-narrow); }
+}
+@container (max-width: 820px) {
+  .where-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "h-mine" "skill" "beside" "task" "h-rec" "batch" "w-inst" "run" "h-seen" "sandbox" "records";
+  }
+  .place-band, .wire-cell:not(.is-down-cell) { display: none; }
+  .where-grid > :is(.place-head, .place-box, .place-beside, .place-kept) { margin-inline: 0; }
+  .where-grid > .place-head { margin-top: var(--space-5); }
+}
+
 /* --- Markdown, as markdown.js builds it ---------------------------------------------------- */
 
 .markdown { font-size: var(--text-base); line-height: var(--leading-relaxed); overflow-wrap: anywhere; }
@@ -869,6 +1015,8 @@ pre.md-front { display: block; white-space: pre-wrap; }
 .chip.tone-warn { background: var(--warn-soft); color: var(--warn); }
 .chip.tone-skill { background: var(--skill-soft); color: var(--skill); }
 .chip.tone-faint { background: transparent; color: var(--faint); border: 1px dashed var(--border-strong); }
+/* A copy of a skill, and nothing else: dashed, its border as plain as a field's. */
+.chip.tone-copy { background: transparent; color: var(--muted); border: 1px dashed var(--control); }
 button.chip { border: 0; font-family: var(--sans); cursor: pointer; }
 button.chip:hover { filter: brightness(0.95); }
 .led-by { display: inline-flex; flex-wrap: wrap; gap: var(--space-1-5); }
@@ -1310,8 +1458,10 @@ pre.code { color: var(--muted); }
 .bp-form fieldset { margin: 0; padding: var(--space-2-5) var(--space-3) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .bp-form fieldset:disabled { opacity: 0.5; }
 .bp-form legend { padding: 0 var(--space-1); color: var(--muted); font-size: var(--text-xs); }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2) var(--space-2-5); align-items: start; }
-.form-field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-xs); color: var(--muted); }
+/* Columns that shrink with the page: a long value (a folder's path before its field) is cut where
+   its field says, never the page widened for it (found by the kit's responsive gate). */
+.form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2) var(--space-2-5); align-items: start; }
+.form-field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; font-size: var(--text-xs); color: var(--muted); }
 .form-field.wide { grid-column: 1 / -1; }
 /* A choice and the one field that stands in for it, on one line: a scenario, or a task file by its
    path — open only while nothing is chosen. On a narrow page the field wraps under the choice. */
@@ -1321,7 +1471,8 @@ pre.code { color: var(--muted); }
 .field-or > .or { flex: none; }
 .form-row { display: flex; align-items: center; gap: var(--space-2-5); font-size: var(--text-sm); }
 .form-row > label:first-child { color: var(--muted); }
-.check { display: inline-flex; align-items: center; gap: var(--space-1-5); white-space: nowrap; color: var(--text) !important; }
+/* A box and its words: the words wrap on a narrow page rather than widen it. */
+.check { display: inline-flex; align-items: center; gap: var(--space-1-5); max-width: 100%; color: var(--text) !important; }
 .form-error { margin: 0; color: var(--bad); font-size: var(--text-sm); }
 .bp-summary { margin: 0; font-size: var(--text-sm); color: var(--muted); }
 
@@ -1521,7 +1672,7 @@ pre.code { color: var(--muted); }
   main { padding: var(--space-4) var(--space-4) var(--space-16); }
   h1 { font-size: var(--text-2xl); }
   .h-sub, h1 .h-sub { font-size: var(--text-base); }
-  .form-grid { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
   .search { width: 100%; }
 }
 
@@ -1637,8 +1788,8 @@ pre.code { color: var(--muted); }
 .target-picker:disabled { opacity: 0.5; }
 .target-picker:disabled .target-choice { cursor: default; }
 .form-field.off .form-label { color: var(--faint); }
-/* How a person added a skill's folder, and the way to forget it. */
-.added-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5) var(--space-2-5); }
+/* How a person added a skill folder, and the way to forget it: above its tree. */
+.added-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5) var(--space-2-5); margin-bottom: var(--space-2); }
 .target-letters, .target-pattern { display: flex; flex-direction: column; gap: var(--space-1); margin-left: var(--space-6); }
 .target-letter {
   display: grid;

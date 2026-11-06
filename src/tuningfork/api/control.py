@@ -57,10 +57,13 @@ def control_routes(
     bus: EventBus,
     access: Access | None = None,
     jobs: Any = None,
+    home: str | None = None,
 ) -> list[Route]:
     def snapshot() -> dict[str, Any]:
         return {
             "live": True,
+            # The recordings folder: the pages show a path inside it from there.
+            "home": home,
             "paused": gate.paused,
             "inflight": gate.inflight,
             "breakpoints": [bp.to_json() for bp in engine.breakpoints()],

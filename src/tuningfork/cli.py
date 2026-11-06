@@ -144,7 +144,7 @@ def serve(
         help="Concurrent upstream requests. Keep at 1 when the server is shared; at least "
         "the --concurrency of any forks run through it.",
     ),
-    home: Optional[Path] = typer.Option(None, help="Where recordings are stored."),
+    home: Optional[Path] = typer.Option(None, help="The recordings folder, where tuningfork keeps what it records (default: TUNINGFORK_HOME, else ~/.tuningfork)."),
     jobs: int = typer.Option(
         1,
         "--jobs",
@@ -298,7 +298,7 @@ def token(
 @app.command("mcp")
 def mcp_server(
     home: Optional[Path] = typer.Option(
-        None, help="The recordings to read. Default: the running proxy's, else ~/.tuningfork."
+        None, help="The recordings folder to read. Default: the running proxy's, else ~/.tuningfork."
     ),
     proxy: Optional[str] = typer.Option(
         None, help="The proxy that runs jobs, recording into the same folder. Default: TUNINGFORK_PROXY."
@@ -552,7 +552,7 @@ def skills_command(
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """The skills these recordings know — from runs, scenarios, saved variants and
-    refinements — each with its tasks, runs and versions, and its own folder."""
+    refinements — each with its tasks, runs and versions, and its skill folder."""
     from tuningfork.ops.skills import skills
 
     found = skills(_store(home))
@@ -562,7 +562,7 @@ def skills_command(
     if not found:
         console.print("no skills yet — run a task (`tuningfork batch <spec.json>`), or make a scenario")
         return
-    table = Table("skill", "tasks", "runs", "versions", "latest run", "refinements", "its folder", box=None, pad_edge=False)
+    table = Table("skill", "tasks", "runs", "versions", "latest run", "refinements", "skill folder", box=None, pad_edge=False)
     for each in found:
         refinements = ", ".join(f"{count} {status}" for status, count in each.refinements.items() if count) or "-"
         folder = "-"
@@ -579,7 +579,7 @@ def skill_command(
     name: str = typer.Argument(..., help="The skill, as its tasks are named: <skill>/<eval id>."),
     text: Optional[str] = typer.Option(
         None, "--text", metavar="REF",
-        help="Print one text of it: a version's fingerprint, file (its own SKILL.md now), variant:<name> or history:<file>.",
+        help="Print one text of it: a version's fingerprint, file (the SKILL.md in its skill folder now), variant:<name> or history:<file>.",
     ),
     diff: Optional[tuple[str, str]] = typer.Option(
         None, "--diff", metavar="A B", help="Two texts of it, line by line, named as --text names one."
@@ -588,7 +588,7 @@ def skill_command(
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """One skill: each version with its pass rate under every condition it ran under and
-    what its text is known as; its own folder now, with the changelog and old versions an
+    what its text is known as; its skill folder now, with the changelog and old versions an
     approval keeps beside it; its saved variants and refinements."""
     from tuningfork.ops.skills import skill, skill_diff, skill_text
 
@@ -619,7 +619,11 @@ def skill_command(
     for folder in found.folders:
         now = (f"its SKILL.md is version {folder.version}" if folder.version
                else "its SKILL.md has not been run yet" if folder.text is not None else "[yellow]no SKILL.md there[/yellow]")
+        # What it is, as the skill's page says it: the skill folder, or a copy standing in for one.
+        what = (f"scenario {folder.scenario}'s copy, standing in for the skill folder" if folder.kind == "scenario"
+                else "tuningfork's copy, standing in for the skill folder" if folder.kind == "copy" else "the skill folder")
         console.print(f"  folder     {escape(_shown_path(folder.path))}", soft_wrap=True)
+        console.print(f"             {escape(what)}")
         console.print(f"             {now}")
         if folder.added is not None:
             console.print(f"             {escape(_added_words(folder.added))}", soft_wrap=True)
@@ -658,19 +662,19 @@ def skill_command(
 
 
 def _added_words(added: dict[str, Any]) -> str:
-    """How a person added a skill's folder (`ops.addskill.Added`), as the skill's page says it."""
+    """How a person added a skill folder (`ops.addskill.Added`), as the skill's page says it."""
     if added.get("kind") != "copy":
-        return "added: a folder on this machine, remembered where it is — approved edits are written to it"
+        return "you added it, where it is: approved edits are written to it"
     origin = added.get("origin") or {}
     upload = origin.get("upload") or {}
     source = (f"from run {str(origin['run'])[:8]}: {origin.get('how', '')}" if origin.get("run")
               else f"copied from {upload['from']}" if upload.get("from") else "uploaded")
-    return f"added: tuningfork's copy, {source} — approved edits are written to this copy, never back to where it came from"
+    return f"you added it, as a copy ({source}): approved edits are written to this copy, never back to where it came from"
 
 
 @app.command("add-skill")
 def add_skill_command(
-    folder: Optional[Path] = typer.Argument(None, help="The skill's folder, holding its SKILL.md."),
+    folder: Optional[Path] = typer.Argument(None, help="The skill folder, holding its SKILL.md."),
     copy: bool = typer.Option(
         False, "--copy", help="Keep a copy of the folder in the recordings folder, as an upload does: approvals write to the copy."
     ),
@@ -684,11 +688,11 @@ def add_skill_command(
 ) -> None:
     """Add a skill: a folder on this machine, remembered where it is — approvals write to it —
     or, with --copy or --run, a copy kept in the recordings folder, which approvals write to
-    instead. The Skills page then lists it, and a scenario can name its folder."""
+    instead. The Skills page then lists it, and a scenario can name its skill folder."""
     from tuningfork.ops import addskill
 
     if (folder is None) == (run is None):
-        _refuse(OperationError("name the skill's folder, or a run with --run", field="folder"))
+        _refuse(OperationError("name the skill folder, or a run with --run", field="folder"))
     store = _store(home)
     try:
         if run is not None:
@@ -716,7 +720,7 @@ def add_skill_command(
         addskill.execute_add(store, plan)
     except OperationError as error:
         _refuse(error)
-    console.print(f"\nadded: `tuningfork skill {escape(plan.name)}` shows it; a scenario names its folder to run it")
+    console.print(f"\nadded: `tuningfork skill {escape(plan.name)}` shows it; a scenario names its skill folder to run it")
 
 
 @app.command("forget-skill")
@@ -736,7 +740,7 @@ def forget_skill_command(
     if found["moved_to"]:
         console.print(f"forgot {escape(name)}: its copy is moved aside to {escape(found['moved_to'])}", soft_wrap=True)
     else:
-        console.print(f"forgot {escape(name)}: its folder stays where it is, {escape(found['path'])}", soft_wrap=True)
+        console.print(f"forgot {escape(name)}: its skill folder stays where it is, {escape(found['path'])}", soft_wrap=True)
 
 
 @app.command("glossary")
@@ -774,11 +778,6 @@ def glossary_command(
         for term in members:
             table.add_row(escape(term.term), escape(term.means))
         console.print(table)
-    if any(len({c.server_id for c in members}) > 1 for members in groups.values()):
-        console.print(
-            "[dim]server: which server answered — `tuningfork servers` says what each one "
-            "is; unknown means recorded before servers were.[/dim]"
-        )
 
 
 @app.command()
@@ -1629,7 +1628,7 @@ def import_chat(
         "refinement or --scenario studies when none is named.",
     ),
     skill_dir: Optional[list[Path]] = typer.Option(
-        None, "--skill-dir", help="A skill's folder, kept with the run in place of the SKILL.md the model read: "
+        None, "--skill-dir", help="A skill folder, kept with the run in place of the SKILL.md the model read: "
         "its scripts, templates and references too. Once for each skill that has one.",
     ),
     harness: Optional[str] = typer.Option(
@@ -1700,7 +1699,7 @@ def import_chat(
     for found in shown["skills"]:
         where = f"in context from step {found['step']}" if found["step"] is not None else "not in the conversation"
         how = SKILL_SOURCES.get(found["source"], found["source"]) + "; " if found["source"] else ""
-        kept = f"its folder {found['folder']}" if found["folder"] else "extracted from what the model read"
+        kept = f"its skill folder {found['folder']}" if found["folder"] else "extracted from what the model read"
         chosen = "  [bold]← studied unless another is named[/bold]" if found["name"] == shown["skill"] and len(shown["skills"]) > 1 else ""
         console.print(f"  skill      {escape(found['name'])} ({escape(how + where)}); kept: {escape(kept)}{chosen}")
     if not shown["skills"]:
@@ -1787,12 +1786,12 @@ def scenario_of_run(
     ),
     skill: Optional[str] = typer.Option(None, "--skill", help="Where the run kept or showed several skills, the one it studies."),
     skill_dir: Optional[Path] = typer.Option(
-        None, "--skill-dir", help="The skill's folder on this machine, which the scenario tunes: by default the folder "
-        "the run's skill came from, else a copy kept in the scenario's own folder.",
+        None, "--skill-dir", help="The skill folder on this machine, which the scenario tunes: by default the one "
+        "the run's skill came from, else a copy kept in the scenario's folder.",
     ),
     copy_skill: bool = typer.Option(
-        False, "--copy-skill", help="Keep a copy of what the run had, in the scenario's own folder, even where the "
-        "folder its skill came from is there: one changed since the run, say, whose old text the scenario studies.",
+        False, "--copy-skill", help="Keep a copy of what the run had, in the scenario's folder, even where its "
+        "skill folder is there: one changed since the run, say, whose old text the scenario studies.",
     ),
     harness: Optional[str] = typer.Option(
         None, "--harness", help="The harness the conversation was had with, where the run does not say (hermes, "
@@ -2254,7 +2253,7 @@ def batch(
         help="Use this file as the skill's SKILL.md in every run — to confirm an edit "
         "that won an A/B with full runs.",
     ),
-    workdir: Optional[Path] = typer.Option(None, help="Where run workspaces are created."),
+    workdir: Optional[Path] = typer.Option(None, help="Where the run folders are made (default: batches/ in the recordings folder)."),
     concurrency: int = typer.Option(
         1, help="Runs at once. The proxy's --max-inflight still caps calls reaching the server."
     ),
@@ -2269,7 +2268,7 @@ def batch(
     ),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
-    """Run a task N times through a headless harness, each in a fresh workspace and home."""
+    """Run a task N times through a headless harness, each in a run folder of its own."""
     from tuningfork.ops.batch import execute_batch, prepare_batch
     from tuningfork.specs import describe_check
 
@@ -2486,7 +2485,7 @@ def chain_run(
         help="Stop before a link once the links' model calls have taken this many seconds at the "
         "proxy: the same budget as another loop's.",
     ),
-    workdir: Optional[Path] = typer.Option(None, help="Where run workspaces are created."),
+    workdir: Optional[Path] = typer.Option(None, help="Where the run folders are made (default: batches/ in the recordings folder)."),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """Run a task N times in order, the skill carried forward: what the harness's own loop makes of it."""
@@ -3470,7 +3469,7 @@ def fork(
     base_url: Optional[str] = typer.Option(
         None, help="The proxy the harness talks to. Default: TUNINGFORK_PROXY + /v1."
     ),
-    workdir: Optional[Path] = typer.Option(None, help="Where fork workspaces are created."),
+    workdir: Optional[Path] = typer.Option(None, help="Where the forks' run folders are made (default: forks/ in the recordings folder)."),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """Replay a run up to a step, then let the model take over from there.
@@ -4413,7 +4412,7 @@ def refine_approve(
     ),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
-    """Approve a validated proposal: write it into the skill's own SKILL.md, in place.
+    """Approve a validated proposal: write it into the SKILL.md in the skill folder, in place.
 
     Shows the file, the diff and the gate, and writes nothing until the code it shows is
     typed. The file as it was, and a changelog entry, are kept beside the skill folder."""
@@ -4970,7 +4969,7 @@ def connections_show(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)
     elif sandbox:
         console.print(
             f"\n[bold]sandbox[/bold]   [yellow]none: {escape(str(sandbox.get('reason')))}[/yellow] — each launch "
-            "sees its own folders"
+            "sees its run folder at its real path"
         )
     check_env = found.get("check_env") or {}
     if check_env.get("problem"):
@@ -4978,7 +4977,7 @@ def connections_show(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)
     for source in check_env.get("sources") or []:
         console.print(f"  every check may also read {escape(', '.join(source['names']))}, named in "
                       f"{escape(source['path'])}")
-    console.print(f"\n[bold]proxy[/bold]     {escape(found['proxy']['home'])}")
+    console.print(f"\n[bold]proxy[/bold]     recordings folder {escape(found['proxy']['home'])}")
     if found["proxy"].get("config_problem"):
         console.print(f"  [yellow]{escape(found['proxy']['config_problem'])}[/yellow]. Nothing is sent anywhere "
                       "until it is fixed.")
@@ -5146,7 +5145,7 @@ def resume(proxy: Optional[str] = typer.Option(None, help=_PROXY_HELP)) -> None:
 
 @app.command()
 def ui(
-    home: Optional[Path] = typer.Option(None, help="Recordings to browse."),
+    home: Optional[Path] = typer.Option(None, help="The recordings folder to browse."),
     host: str = typer.Option("127.0.0.1", help="Bind address. Keep it local."),
     port: int = typer.Option(8788, "--port", "-p"),
 ) -> None:

@@ -26,7 +26,7 @@ from tuningfork.ops.common import OperationError
 from tuningfork.store.db import Run, Store
 
 #: The texts a diff compares, as a front end names them.
-REFS = "a version's fingerprint, `file` (its own SKILL.md now), `variant:<name>` or `history:<file>`"
+REFS = "a version's fingerprint, `file` (the SKILL.md in its skill folder now), `variant:<name>` or `history:<file>`"
 #: A refinement's proposal, saved as a variant (`ops.refine.add_proposal`).
 PROPOSAL = re.compile(r"r([0-9a-f]{8})-([0-9a-f]{8})")
 
@@ -118,6 +118,13 @@ class Folder:
     history: list[dict[str, Any]] = field(default_factory=list)
     #: How a person added it, where one did (`ops.addskill.Added`): a folder named, or a copy.
     added: dict[str, Any] | None = None
+    #: What it is (`_kind`): a folder on this machine (`folder`), tuningfork's copy of one a
+    #: person added (`copy`), or a copy kept with a scenario, standing in for the skill's folder
+    #: where that was not known (`scenario`, naming it).
+    kind: str = "folder"
+    scenario: str | None = None
+    #: `specs`, each with the scenario it is the task file of, where it is one.
+    named_by: list[dict[str, Any]] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         from tuningfork.paths import windows_form
@@ -126,7 +133,50 @@ class Folder:
             "path": str(self.path), "windows": windows_form(self.path), "exists": self.text is not None,
             "specs": self.specs, "text": self.text, "sha256": self.sha256, "version": self.version,
             "changelog": self.changelog, "history": self.history, "added": self.added,
+            "kind": self.kind, "scenario": self.scenario, "named_by": self.named_by,
         }
+
+
+def _inside(path: Path | str, folder: Path) -> Path | None:
+    """`path` from `folder`, where it is inside it; None where it is not."""
+    try:
+        return Path(path).resolve().relative_to(folder.resolve())
+    except (OSError, ValueError):
+        return None
+
+
+def _is_scenario_copy(home: Path, path: Path | str) -> bool:
+    """Whether a folder is a copy a scenario keeps of its skill, in its own folder."""
+    from tuningfork.ops.scenarios import root
+
+    inside = _inside(path, root(home))
+    return inside is not None and len(inside.parts) >= 2
+
+
+def _kind(home: Path, folder: Folder) -> tuple[str, str | None]:
+    """What a skill folder is: a copy a scenario keeps of the skill, standing in for its
+    folder (`scenarios/<name>/skill/<skill>/`), tuningfork's own copy of a skill a person
+    added, or a folder on this machine: one a task file names, or a person added where it is."""
+    from tuningfork.ops.scenarios import root
+
+    inside = _inside(folder.path, root(home))
+    if inside is not None and len(inside.parts) >= 2:
+        return "scenario", inside.parts[0]
+    if (folder.added or {}).get("kind") == "copy":
+        return "copy", None
+    return "folder", None
+
+
+def _named_by(home: Path, specs: list[str]) -> list[dict[str, Any]]:
+    """Each spec naming a folder, with the scenario whose task file it is, where it is one."""
+    from tuningfork.ops.scenarios import SPEC, root
+
+    named = []
+    for spec in specs:
+        inside = _inside(spec, root(home))
+        is_scenario = inside is not None and len(inside.parts) == 2 and inside.parts[1] == SPEC
+        named.append({"path": spec, "scenario": inside.parts[0] if is_scenario else None})
+    return named
 
 
 def _folder(path: Path, specs: list[str]) -> Folder:
@@ -219,6 +269,12 @@ def _folders(store: Store, name: str, runs: Iterable[Run]) -> list[Folder]:
             same = _folder(mine.path, [])
             own.append(same)
         same.added = mine.to_json()
+    for folder in own:
+        folder.kind, folder.scenario = _kind(store.home, folder)
+        folder.named_by = _named_by(store.home, folder.specs)
+    # The skill folder first, the copies scenarios keep in its place after: `file`, a text's
+    # ref, names the first, and a page leads with it.
+    own.sort(key=lambda folder: folder.kind == "scenario")
     return own
 
 
@@ -292,8 +348,7 @@ def _known(store: Store, name: str, folders: list[Folder]) -> dict[str, list[str
     known: dict[str, list[str]] = {}
     for folder in folders:
         if folder.sha256:
-            where = f" ({folder.path})" if len(folders) > 1 else ""
-            known.setdefault(folder.sha256, []).append(f"its own file now{where}")
+            known.setdefault(folder.sha256, []).append(_now(folder, several=len(folders) > 1))
         for old in folder.history:
             known.setdefault(old["sha256"], []).append(f"replaced by an approval: {old['name']}")
     for variant in _variants(store, name):
@@ -305,6 +360,14 @@ def _known(store: Store, name: str, folders: list[Folder]) -> dict[str, list[str
                  else f"saved variant {variant.name}")
         known.setdefault(text_sha256(text), []).append(label)
     return known
+
+
+def _now(folder: Folder, *, several: bool = False) -> str:
+    """What a folder's SKILL.md is known as while it holds a text: in the skill folder (its path
+    where the skill has several), or in the copy a scenario keeps in its place."""
+    if folder.kind == "scenario":
+        return f"in scenario {folder.scenario}'s copy now"
+    return "in its skill folder now" + (f" ({folder.path})" if several else "")
 
 
 def _versions(store: Store, runs: list[Run], known: dict[str, list[str]]) -> list[Version]:
@@ -465,7 +528,7 @@ def skills(store: Store) -> list[SkillSummary]:
             runs=len(runs.get(name, [])),
             versions=len({run.skill_version for run in runs.get(name, [])}),
             latest=max((run.started_at for run in runs.get(name, [])), default=None),
-            folders=list(folders.get(name, {})),
+            folders=sorted(folders.get(name, {}), key=lambda path: _is_scenario_copy(store.home, path)),
             scenarios=sorted(scenarios.get(name, [])),
             variants=variants.get(name, 0),
             refinements=refinements.get(name, {"open": 0, "approved": 0, "closed": 0}),
@@ -498,8 +561,8 @@ def _text_for(store: Store, name: str, ref: str, found: SkillDetail) -> tuple[st
         index = int(ref.split(":", 1)[1]) if ":" in ref and ref.split(":", 1)[1].isdigit() else 0
         folders = [folder for folder in found.folders if folder.text is not None]
         if index >= len(folders):
-            raise OperationError(f"skill {name} has no SKILL.md of its own to read", code="not_found", field="ref")
-        return f"its own file now ({folders[index].path})", folders[index].text or ""
+            raise OperationError(f"skill {name} has no skill folder with a SKILL.md to read", code="not_found", field="ref")
+        return f"{_now(folders[index])} ({folders[index].path})", folders[index].text or ""
     if ref.startswith("variant:"):
         variant = ref.split(":", 1)[1]
         return f"variant {variant}", read_variant(store.home, name, variant)

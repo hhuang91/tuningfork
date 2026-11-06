@@ -875,6 +875,15 @@ than on a hardcoded assumption about which server is running.
   before what it is not ("a lead, not a verdict"); the plain phrase first, the precise term after
   it, muted or in a tooltip; help under a field says what to type, why it matters goes in a
   tooltip; buttons are verb phrases, with an ellipsis only where a form opens.
+- A place on disk is shown, never only described: a folder is drawn as the tree it is, each line
+  with what it is for beside it (`folderTree` in `ui/static/js/folders.js`), the part of a path
+  inside the recordings folder shown from there. Their names are the glossary's, the same in
+  every front end but one: the *skill folder* (a batch copies it, an approval writes it), the
+  *recordings folder*, a *run folder* and its *workspace*, a *copy* of a skill (a batch's, a
+  scenario's, an import's, a refinement's, a skill added as a copy; a scenario's and an added one
+  stand in for a skill folder); and the *task file*, which the CLI and the docs call a spec. The
+  Words page draws them in one diagram, where things live (`whereThingsLive`); a folder's tree
+  links to it. Plain words had made "its own folder" of three different folders.
 - A page reads top to bottom in the order the work goes: what to do first, then what it made.
   What are alternatives, or run beside what is read, sit side by side — the two ways to propose
   an edit, the work on a run's step beside the run. On a narrow page alternatives stack, and the

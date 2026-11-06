@@ -110,10 +110,12 @@ class TestLiveControls:
         assert resumed["paused"] is False
         assert (await proxy_client.post(CHAT, json=request())).status_code == 200
 
-    async def test_status_says_this_is_a_live_proxy(self, proxy_client):
+    async def test_status_says_this_is_a_live_proxy(self, proxy_client, recorder):
         status = (await proxy_client.get(f"{API}/status")).json()
         assert status["live"] is True
         assert status["holds"] == []
+        # The recordings folder: a page shows a path inside it from there (`placeOf`).
+        assert status["home"] == str(recorder.store.home)
 
 
 
@@ -352,7 +354,7 @@ class TestBrowseMode:
             status = (await client.get(f"{API}/status")).json()
             runs = (await client.get(f"{API}/runs")).json()
             page = await client.get("/_tuningfork/ui/")
-        assert status["live"] is False
+        assert status["live"] is False and status["home"] == str(store.home)
         assert [run["id"] for run in runs] == [run_id]
         assert page.status_code == 200
 

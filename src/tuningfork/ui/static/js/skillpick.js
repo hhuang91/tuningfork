@@ -73,7 +73,7 @@ export function skillPicker({ skills = [], path = "", resolved = null, relative 
   const field = input(`skill_dir-${name}`, {
     value: typed, disabled: !editable,
     placeholder: relative ? "a folder in it, or a full path" : "e.g. C:\\Users\\you\\skills\\my-skill, or /home/you/skills/my-skill",
-    "aria-label": "Path to the skill's folder",
+    "aria-label": "Path to the skill folder",
   });
   const showPrefix = () => {
     prefix.hidden = !relative || !base || fullPath(field.value);
@@ -91,7 +91,7 @@ export function skillPicker({ skills = [], path = "", resolved = null, relative 
   });
 
   const select = h("select", { class: "field", name: `skill_known-${name}`, disabled: !editable, "aria-label": "Existing skill" },
-    h("option", { value: "", selected: !chosen }, known.length ? "— choose a skill —" : "— none listed with a folder —"),
+    h("option", { value: "", selected: !chosen }, known.length ? "— choose a skill —" : "— none listed with a skill folder —"),
     known.map((each, index) => h("option", { value: String(index), selected: each === chosen }, `${each.skill} — ${each.folder}`)));
   select.addEventListener("change", () => {
     chosen = select.value === "" ? null : known[Number(select.value)];
@@ -99,7 +99,7 @@ export function skillPicker({ skills = [], path = "", resolved = null, relative 
   });
 
   const choices = [
-    ...(fixed?.changed ? [["fixed", fixed.label || "The run's folder, as it is now"]] : []),
+    ...(fixed?.changed ? [["fixed", fixed.label || "Its skill folder, as it is now"]] : []),
     ...(copy ? [["copy", "A copy of what the run had"]] : []),
     ["known", "Existing skill"],
     ["path", "Path to skill"],
@@ -125,23 +125,22 @@ export function skillPicker({ skills = [], path = "", resolved = null, relative 
     }
     if (kind === "copy") {
       replace(body);
-      replace(help, "The copy the run kept of the skill's folder, else the SKILL.md its model read, kept in the scenario's own "
-        + `folder (${copy.where}): an approved edit is written to the copy, never back to where the run had it.`);
+      replace(help, "The copy of the skill the run kept, else the SKILL.md its model read, kept in the scenario's folder "
+        + `(${copy.where}). It stands in for the skill folder: an approved edit is written to the copy, never back to where the run had it.`);
       return;
     }
     if (kind === "known") {
       replace(body, select);
-      replace(help, "The skills the Skills page lists, each by a folder it knows: ",
+      replace(help, "The skills the Skills page lists, each by its skill folder: ",
         h("a", { href: "#/add-skill" }, "Add a skill…"), " there to list another. Each run gets a copy of the folder, "
         + "and an approved edit is written to it.");
       return;
     }
     replace(body, h("div", { class: "path-input" }, prefix, field));
     replace(help, relative
-      ? "The folder holding the skill's SKILL.md: a folder in this scenario's own, shown before it, or a full path (/… "
-        + "or C:\\…), taken as it is. Each run gets a copy, and an approved edit is written to it."
-      : "The folder holding the skill's SKILL.md on this machine, by its full path. Each run gets a copy, and an approved "
-        + "edit is written to it.");
+      ? "A folder inside this scenario's folder (its path shows before the field), or a full path (/… or C:\\…), taken "
+        + "as it is: the skill folder, holding its SKILL.md."
+      : "The skill folder's full path on this machine: the folder holding its SKILL.md.");
   }
   draw();
 

@@ -8,6 +8,12 @@ refinement. `tuningfork demo` serves it over made-up runs, with no GPU.
 The page changes nothing without the proxy's access token, which is in the address `serve`
 prints; `tuningfork token` prints it again.
 
+Where a page shows a folder, it draws the folder as the tree it is, each line with what it is for:
+a skill's page where its SKILL.md is kept, a run's page its run folder, a scenario's page the
+scenario's folder, and the forms that write files what they will write. The Words page draws the
+places together, *where things live*: your skill folder and task file, the recordings folder with a
+run folder in it, and the two paths each run's agent sees in the sandbox.
+
 ![The front page: where you left off, what is set up, and the loop from a skill to its next version](images/ui-guide.png)
 
 <table>

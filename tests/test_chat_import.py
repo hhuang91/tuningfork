@@ -595,7 +595,7 @@ class TestAScenarioOfAnImport:
         assert plan.cut == 3 and plan.prompt == "Summarize data.csv into report.json."
         assert plan.context.in_turn == [] and plan.context.before == [{"role": "user", "content": "Our data lives in data.csv; keep reports small."},
                                 {"role": "assistant", "content": "Understood: small reports."}]  # no reasoning sent back
-        assert any(f"the scenario keeps the copy run {result.run_id[:8]} kept, in its own folder" in warning
+        assert any(f"the scenario keeps the copy run {result.run_id[:8]} kept in the scenario's folder" in warning
                    for warning in plan.warnings)
         made = imports.make_scenario(store, plan)
         assert made.checked.ok and made.context == plan.context.before

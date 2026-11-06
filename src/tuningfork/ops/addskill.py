@@ -150,7 +150,7 @@ def _known_note(store: Store, name: str, path: Path | None = None) -> list[str]:
         return []
     if path is not None and str(path) in known.folders:
         return [f"{name} lists this folder already, as a spec names it: added, it stays listed whatever the spec does"]
-    return [f"a skill called {name} is known already: this becomes one more of its own folders, beside the "
+    return [f"a skill called {name} is known already: this becomes one more of its skill folders, beside the "
             "others the Skills page lists"]
 
 
@@ -383,7 +383,7 @@ def _checked_files(files: dict[str, bytes]) -> tuple[dict[str, bytes], list[str]
         kept[clean] = data
         total += len(data)
     if "SKILL.md" not in kept:
-        raise OperationError("no SKILL.md at the top of what was sent: a skill's folder holds one", field="files")
+        raise OperationError("no SKILL.md at the top of what was sent: a skill folder holds one", field="files")
     return kept, left_out
 
 
@@ -393,7 +393,7 @@ def _relative(text: str) -> str:
         raise OperationError("a file's path is text", field="files")
     parts = PurePosixPath(text.replace("\\", "/")).parts
     if not parts or any(part in ("", ".", "..") for part in parts) or text.startswith(("/", "\\")) or ":" in parts[0]:
-        raise OperationError(f"{text!r} is not a path inside a skill's folder", field="files")
+        raise OperationError(f"{text!r} is not a path inside a skill folder", field="files")
     return PurePosixPath(*parts).as_posix()
 
 

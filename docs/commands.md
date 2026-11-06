@@ -19,8 +19,9 @@ which gives them all. For a walk through them on a real task, see
 
 ## How commands name things
 
-- **Recordings.** Commands read and write `~/.tuningfork`, or the folder `TUNINGFORK_HOME` or
-  `--home` names.
+- **The recordings folder.** Commands read and write `~/.tuningfork`, or the folder
+  `TUNINGFORK_HOME` or `--home` names: what tuningfork records, and a run folder for each run it
+  starts. The web UI's Words page draws it beside your skill folder and task file.
 - **A running proxy.** The commands that control one — breakpoints, holds, jobs, connections,
   `pause` — find it at `TUNINGFORK_PROXY` (default `http://127.0.0.1:8787`), or `--proxy`.
 - **A run** is named by its id, a prefix of it, or its label (`tally-report/1#2cc8149f.7`).
@@ -167,7 +168,7 @@ Runs page has the same: **Import a chat…**.
 
 - `--session <id>` — from a file of several sessions, the one to import.
 - Every skill the conversation shows is kept with the run, its SKILL.md extracted from what the
-  model read; `--skill-dir <folder>`, once for each skill that has one, keeps the skill's own
+  model read; `--skill-dir <folder>`, once for each skill that has one, keeps the skill
   folder instead, its scripts and references too.
 - `--skill <name>` — where it shows several, the one studied when none is named. Otherwise an
   A/B, a refinement or a scenario names the one it studies when it starts (`ab --skill`,
@@ -206,11 +207,11 @@ prompt and everything before it each run's context.
   in is never sent that turn, and one starting after has it in its context as the chat had it,
   where a variant never reaches it. What it prints says the step each run's first call stands
   for, and the turn's steps it takes as done.
-- **The skill.** `--skill-dir <folder>` names the skill's own folder, which the scenario tunes.
-  By default it is the folder the run's skill came from — the one an import named, or a launched
-  run's task's — else a copy kept in the scenario's own folder (`skill/<name>/`): the copy the run
-  kept, or the SKILL.md the model read. Where that folder's SKILL.md has changed since the run,
-  the plan says so, and `--copy-skill` keeps the copy instead, to study the text the run had.
+- **The skill.** `--skill-dir <folder>` names the skill folder the scenario tunes. By default it
+  is the one the run's skill came from — the one an import named, or a launched run's task's —
+  else a copy kept in the scenario's folder (`skill/<name>/`), standing in for it: the copy the
+  run kept, or the SKILL.md the model read. Where that folder's SKILL.md has changed since the
+  run, the plan says so, and `--copy-skill` keeps the copy instead, to study the text the run had.
   `--skill <name>` chooses where the run shows several.
 - **The check.** `--check '<command>'` or `--reply-contains <text>`. A launched run's is its
   task's own by default, and what that check reads from the task's folder
@@ -228,9 +229,9 @@ prompt and everything before it each run's context.
 The web UI has the same, from a run's page (**Make a scenario…**) or from the Scenarios page
 (**From a run…**, which lists the runs to choose from, and imports a chat first where it is not
 a run yet). Its first fields are a new scenario's — its name, the harness, the skill's name and
-its folder — each greyed where the run says it: the harness it recorded, the skill where it had
-one, and the folder its task or its import named. Where that folder has changed since the run,
-it is offered beside the others instead; where the run has no folder of the skill's own, the
+its skill folder — each greyed where the run says it: the harness it recorded, the skill where it
+had one, and the skill folder its task file or its import named. Where that folder has changed
+since the run, it is offered beside the others instead; where the run names no skill folder, the
 folder is a copy of what the run had, an existing skill the Skills page lists, or a path. Then the form sets each run beside the chat,
 for the skill chosen: first what each run is
 given — its harness's own system prompt and tools (the chat's shown, never sent), the
@@ -503,10 +504,10 @@ counts.
 
 ### `refine approve`
 
-Writes a validated proposal into the skill's own `SKILL.md`, in place — the only thing in
+Writes a validated proposal into the `SKILL.md` in the skill folder, in place — the only thing in
 tuningfork that does. It shows the file it will write, what it keeps, the gate and the edit, and
 writes nothing until you type the code it shows. The old file goes into `<skill>.history/` and an
-entry into `<skill>.changelog.md`, beside the skill's folder and never inside it, since every run
+entry into `<skill>.changelog.md`, beside the skill folder and never inside it, since every run
 copies that folder. The file keeps its line endings and byte-order mark.
 
 - `--validation <id>` — the validation it stands on (by default the proposal's newest finished
@@ -525,9 +526,9 @@ closes one, keeping everything it holds.
 `skills` lists the skills the recordings know — from runs, scenarios, saved variants and
 refinements, and those added with `add-skill` — each with its tasks, runs and versions. `skill
 <name>` gives each version with its pass rate under every condition it ran under, and what its
-text is known as, the scenarios that run it, and how its folder was added, where it was; `--text
-<ref>` prints one text (a version's fingerprint, `file`, `variant:<name>` or `history:<file>`),
-and `--diff A B` compares two line by line.
+text is known as, the scenarios that run it, and how its skill folder was added, where it was;
+`--text <ref>` prints one text (a version's fingerprint, `file`, `variant:<name>` or
+`history:<file>`), and `--diff A B` compares two line by line.
 
 ### `add-skill`, `forget-skill`
 
@@ -537,10 +538,10 @@ folder instead (`skills/<name>/`, `--name` naming it), as the Skills page's uplo
 edit is then written to the copy, never back to where it came from. `--run <run>` keeps the skill a
 run had as such a copy — the copy the run kept of it, else the SKILL.md its model read — `--skill
 <name>` choosing where the run had several. `--dry-run` says what would be added. The Skills page
-then lists it, and a scenario names its folder to run it: on a scenario's page, its skill folder is
-an existing skill, chosen from those the Skills page lists, or a path. `forget-skill <name>` forgets one: a
-folder named stays where it is; a copy is moved aside whole, to `skills/.forgotten/`, never deleted,
-and not while a scenario runs from it.
+then lists it, and a scenario names its skill folder to run it: on a scenario's page, its skill
+folder is an existing skill, chosen from those the Skills page lists, or a path. `forget-skill
+<name>` forgets one: a folder named stays where it is; a copy is moved aside whole, to
+`skills/.forgotten/`, never deleted, and not while a scenario runs from it.
 
 ### `connections proposer show`, `connections proposer set`
 
@@ -624,18 +625,17 @@ it ends, printing its progress, and exits 1 unless it finished.
 ### `trash`
 
 `trash run <id>…` sets runs aside — and `trash experiment`, `trash job`, `trash scenario` and
-`trash refinement` the others — out of every list and every rate, with what is tied to them left
-in place, and no new work started on them. `trash list` shows what is there and what deleting
-each for good would remove; `trash restore <id>` brings items back. `trash purge <id>` deletes
-items for good with everything tied to them — a run's experiments and their samples, forks that
-replayed it, the folders tuningfork made for its launches, and its batch's folder with the skill
-copy it was given once none of the batch's runs is left — and `trash empty` deletes everything
-there. Neither can be undone. Outside the recordings folder, only folders tuningfork marked as
-made for it go, which earlier versions did not mark. What was written in the last two minutes
-goes once those have passed, swept by a running proxy or the next deletion. A job keeps its
-record of the work it did, a chain its record and the skill each link left (`chains/` in the
-recordings folder, and the chain's own folder, removed by hand), and a scenario or a skill made
-from a run what it took.
+`trash refinement` the others — out of every list and every rate, with what is tied to them left in
+place, and no new work started on them. `trash list` shows what is there and what deleting each for
+good would remove; `trash restore <id>` brings items back. `trash purge <id>` deletes items for
+good with everything tied to them — a run's experiments and their samples, forks that replayed it,
+its run folder and theirs, and its batch's folder with the copy of the skill it was given once none
+of the batch's runs is left — and `trash empty` deletes everything there. Neither can be undone.
+Outside the recordings folder, only folders tuningfork marked as made for it go, which earlier
+versions did not mark. What was written in the last two minutes goes once those have passed, swept
+by a running proxy or the next deletion. A job keeps its record of the work it did, a chain its
+record and the skill each link left (`chains/` in the recordings folder, and the chain's folder in
+`batches/`, removed by hand), and a scenario or a skill made from a run what it took.
 
 ### `scan`
 

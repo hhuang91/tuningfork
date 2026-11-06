@@ -7,6 +7,7 @@
 import { answered, api, enc, query } from "../api.js";
 import { guard } from "../auth.js";
 import { ago, chip, command, crumbs, h, kv, loading, numbered, panel, plural, rateBar, replace, short, toast, toggle, when } from "../dom.js";
+import { copyChip, folderTree, nameOf, parentOf, placeOf, treeMeasure, windowsCopy, writes } from "../folders.js";
 import { field, input, planForm } from "../forms.js";
 import { live } from "../live.js";
 import { markdownView } from "../markdown.js";
@@ -26,7 +27,7 @@ export async function skillsView(root) {
     found.length
       ? h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
           h("thead", null, h("tr", null, h("th", null, "skill"), h("th", { class: "num" }, "tasks"), h("th", { class: "num" }, "runs"),
-            h("th", { class: "num" }, "versions"), h("th", null, "refinements"), h("th", null, "latest run"), h("th", null, "its folder"))),
+            h("th", { class: "num" }, "versions"), h("th", null, "refinements"), h("th", null, "latest run"), h("th", null, "skill folder"))),
           h("tbody", null, found.map((each) =>
             h("tr", { class: "clickable", onclick: () => (location.hash = `#/skills/${enc(each.name)}`) },
               h("td", null, h("a", { class: "mono", href: `#/skills/${enc(each.name)}` }, each.name)),
@@ -37,7 +38,7 @@ export async function skillsView(root) {
               h("td", { class: "faint", title: when(each.latest) }, each.latest ? ago(each.latest) : "—"),
               h("td", { class: "mono small" }, each.added ? [chip(each.added === "copy" ? "added: a copy" : "added", "muted"), " "] : null,
                 each.folders[0] || h("span", {
-                  class: "faint", title: "No scenario or task names its folder: a run recorded live or imported keeps only the SKILL.md the model read",
+                  class: "faint", title: "No scenario or task file names its skill folder: a run recorded live or imported keeps only the SKILL.md the model read",
                 }, "not known"),
                 each.folders.length > 1 ? h("span", { class: "faint" }, ` +${each.folders.length - 1}`) : null)))))))
       : h("div", { class: "panel empty" }, h("h2", null, "No skills yet"),
@@ -103,7 +104,7 @@ function folderForm() {
       wide: true, help: "The folder holding its SKILL.md, on the machine tuningfork runs on. A Windows path is read as tuningfork will open it.",
     })),
     read: () => {
-      if (!path.value.trim()) throw Object.assign(new Error("Name the skill's folder."), { field: "path" });
+      if (!path.value.trim()) throw Object.assign(new Error("Name the skill folder."), { field: "path" });
       return { kind: "folder", path: path.value.trim() };
     },
     startLabel: "Add it",
@@ -112,7 +113,7 @@ function folderForm() {
 
 function uploadForm() {
   const picker = h("input", { class: "field", type: "file", name: "folder", webkitdirectory: true, multiple: true });
-  const name = input("name", { placeholder: "its folder's name" });
+  const name = input("name", { placeholder: "the skill folder's name" });
   const said = h("span", null, "The folder holding its SKILL.md: a repository's history and caches are left out.");
   // The chosen folder's files, read once chosen: sent with every plan, as they will be kept.
   let files = null;
@@ -125,7 +126,7 @@ function uploadForm() {
     const sent = chosen.filter((file) => !parts(file).some((part) => IGNORED.has(part)));
     replace(said, "reading…");
     files = await Promise.all(sent.map(async (file) => ({ path: parts(file).join("/"), data: await base64(file) })));
-    name.placeholder = cleaned(top) || "its folder's name";
+    name.placeholder = cleaned(top) || "the skill folder's name";
     replace(said, `${plural(files.length, "file")} from ${top}`
       + (chosen.length > sent.length ? `; ${chosen.length - sent.length} left out: a repository's history, caches` : ""));
     // Read: the form plans again.
@@ -135,9 +136,9 @@ function uploadForm() {
     ...ways,
     fields: h("div", { class: "form-grid" },
       field("Skill folder", picker, { help: said }),
-      field("Kept as", name, { help: "The name the copy is kept under: its folder's, by default." })),
+      field("Kept as", name, { help: "The name the copy is kept under: the skill folder's name, by default." })),
     read: () => {
-      if (!files) throw Object.assign(new Error("Choose the skill's folder."), { field: "folder" });
+      if (!files) throw Object.assign(new Error("Choose the skill folder."), { field: "folder" });
       return { kind: "upload", name: name.value.trim() || cleaned(top), files };
     },
     startLabel: "Upload it",
@@ -195,9 +196,18 @@ function addPlan(plan) {
     kv([
       ["name", h("span", { class: "mono" }, plan.name)],
       ["kept", plan.kind === "folder" ? "where it is: nothing copied" : "as a copy in the recordings folder"],
-      ["its folder", h("span", { class: "mono" }, plan.path)],
       ["files", plan.kind === "copy" ? `${plural(plan.files.length, "file")}, ${plan.bytes.toLocaleString()} bytes` : null],
     ]),
+    // Where it will be, as the tree it is: a folder remembered where it is, or tuningfork's copy
+    // beside the record of it, in the recordings folder.
+    folderTree({ path: parentOf(plan.path), home: live.home }, [
+      plan.kind === "copy" ? { name: `${nameOf(plan.path)}.json`, note: "the record of the skill you added" } : null,
+      plan.kind === "copy"
+        ? { name: `${nameOf(plan.path)}/`, mark: true, role: copyChip("stands in for the skill folder", STANDS_IN),
+            note: ["tuningfork's copy", writes("approvals write here, never back to where it came from")], children: [{ name: "SKILL.md", skill: true }] }
+        : { name: `${nameOf(plan.path)}/`, mark: true, role: chip("skill folder", "skill", SKILL_FOLDER),
+            note: ["remembered where it is", writes("approvals write here")], children: [{ name: "SKILL.md", skill: true }] },
+    ].filter(Boolean)),
     plan.warnings.map((warning) => h("div", { class: "banner banner-warn" }, warning)),
     plan.notes.map((note) => h("div", { class: "banner" }, note)));
 }
@@ -237,7 +247,7 @@ export async function skillView(root, [name]) {
       h("p", { class: "sub" }, skill.tasks.length ? `Tasks: ${skill.tasks.join(", ")}` : "No run has been given this skill yet.")),
       waysIn(skill)),
     h("div", { class: "stack" },
-      skill.folders.map((folder) => folderPanel(folder, versionName(skill))),
+      skill.folders.length ? foldersPanel(skill, versionName(skill), live.home) : null,
       panel("SKILL.md", viewer),
       versionsPanel(skill, (ref, against = "") => {
         state.shown = ref;
@@ -257,7 +267,7 @@ export async function skillView(root, [name]) {
 
   async function drawViewer() {
     if (!texts.length) {
-      replace(viewer, h("p", { class: "muted" }, "No text of this skill can be read: no run's snapshot, and no SKILL.md in its folder."));
+      replace(viewer, h("p", { class: "muted" }, "No text of this skill can be read: no copy a run kept, and no SKILL.md in its skill folder."));
       return;
     }
     const pick = (value, onChange, blank) => h("select", { class: "field", onchange: (event) => onChange(event.target.value) },
@@ -311,7 +321,7 @@ function waysIn(skill) {
     folder
       ? h("a", { class: "btn btn-small", href: `#/scenarios/new${query({ skill: skill.name, skill_dir: folder })}`, "data-control": true }, "Make a scenario for it…")
       : h("a", { class: "btn btn-small", href: "#/scenarios?from=run", "data-control": true,
-          title: `${skill.folders.length ? "Its folder holds no SKILL.md now" : "Its folder is not known"}: a scenario of one of the runs it was in keeps the SKILL.md the model read` },
+          title: `${skill.folders.length ? "Its skill folder holds no SKILL.md now" : "Its skill folder is not known"}: a scenario of one of the runs it was in keeps the SKILL.md the model read` },
         "Make a scenario of one of its runs…"));
 }
 
@@ -323,7 +333,12 @@ function versionName(skill) {
   return (fingerprint) => (numbers.has(fingerprint) ? `version ${numbers.get(fingerprint)} (${fingerprint})` : `version ${fingerprint}`);
 }
 
-/** Every text the page can show: its own file now, each version, each variant, each old
+/** What a folder's SKILL.md is called while it holds a text: in the skill folder, or in a copy a
+ *  scenario keeps (`ops.skills._now`). */
+const nowLabel = (folder) => (folder.kind === "scenario" ? `in scenario ${folder.scenario}'s copy now` : "in its skill folder now");
+const isNow = (label) => /^in (its skill folder|scenario \S+'s copy) now/.test(label);
+
+/** Every text the page can show: its skill folder's now, each version, each variant, each old
  *  version an approval kept. Those whose text is already here carry it. */
 function textChoices(skill) {
   const named = versionName(skill);
@@ -331,7 +346,7 @@ function textChoices(skill) {
   skill.folders.forEach((folder, index) => {
     if (folder.text === null) return;
     choices.push({ ref: index ? `file:${index}` : "file", text: folder.text,
-      label: `its own file now${skill.folders.length > 1 ? ` (${folder.path})` : ""}${folder.version ? ` — ${named(folder.version)}` : " — not run yet"}` });
+      label: `${nowLabel(folder)}${skill.folders.length > 1 && folder.kind !== "scenario" ? ` (${folder.path})` : ""}${folder.version ? ` — ${named(folder.version)}` : " — not run yet"}` });
   });
   for (const version of skill.versions) {
     if (version.text === null) continue;
@@ -345,22 +360,98 @@ function textChoices(skill) {
   return choices;
 }
 
-function folderPanel(folder, named) {
-  const status = folder.text === null
-    ? chip("no SKILL.md there", "warn")
-    : folder.version ? chip(`its SKILL.md is ${named(folder.version)}`, "accent", "Runs have been given exactly this text")
-      : chip("its SKILL.md has not been run yet", "warn", "No run has been given this text: run a task to measure it");
-  return panel("Its own folder", h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
+const SKILL_FOLDER = "The folder a batch copies the skill from, and approvals write to";
+const STANDS_IN = "A copy tuningfork keeps of the skill, what a run had or a folder uploaded, which approvals write in place of a skill folder";
+
+/** Where this skill's SKILL.md is kept: each folder drawn as the tree it sits in, with what each
+ *  line is for beside it, every tree's notes in one column. The skill folder leads; a copy a
+ *  scenario keeps in its place follows it, folded to a line saying whether its text is the skill
+ *  folder's (`folder.kind`, from `ops.skills._kind`). */
+function foldersPanel(skill, named, home) {
+  const many = skill.folders.length > 1;
+  const drawn = skill.folders.map((folder) => folderItems(folder, named));
+  const measure = treeMeasure(...drawn.map((each) => each.items));
+  const own = skill.folders.find((folder) => folder.kind !== "scenario");
+  return panel("Where its SKILL.md is kept", h("div", null,
+    h("p", { class: "folder-trees-intro" },
+      many ? "Each folder that holds this skill's SKILL.md, with the files beside it. " : "The folder that holds its SKILL.md, with the files beside it. ",
+      h("a", { href: "#/words?place=skill-folder" }, "Where things live"), many ? " shows what runs do with them." : " shows what runs do with it."),
+    h("div", { class: "folder-trees" }, skill.folders.map((folder, index) => {
+      const block = folderBlock(folder, drawn[index], home, measure);
+      if (folder.kind !== "scenario" || !own) return block;
+      const text = folder.text === null ? "no SKILL.md there"
+        : folder.sha256 === own.sha256 ? "the same text as the skill folder's"
+          : `${folder.version ? named(folder.version) : "a text not run yet"}, not the skill folder's text`;
+      return h("details", { class: "tree-fold" },
+        h("summary", null, copyChip(`scenario ${folder.scenario}'s copy`, STANDS_IN), h("span", null, text)), block);
+    }))),
+    { meta: many ? String(skill.folders.length) : null });
+}
+
+/** One folder's lines, as the tree it sits in: the task files beside it that name it, the folder
+ *  with its SKILL.md, and what approvals keep beside it. A scenario's copy is drawn in its
+ *  scenario's folder. */
+function folderItems(folder, named) {
+  const at = folder.path.replace(/\/+$/, "");
+  const leaf = nameOf(at);
+  const skillMd = {
+    name: "SKILL.md", skill: folder.text !== null,
+    note: folder.text === null ? chip("not there", "warn", "No SKILL.md can be read in this folder")
+      : folder.version ? chip(named(folder.version), "accent", "Runs have been given exactly this text")
+        : chip("not run yet", "warn", "No run has been given this text: run a task to measure it"),
+  };
+  if (folder.kind === "scenario") {
+    const marker = `/${folder.scenario}/`;
+    const root = at.slice(0, at.lastIndexOf(marker) + marker.length - 1);
+    return {
+      root, drawn: [`${root}/evals.json`],
+      items: [
+        { name: "evals.json", note: ["the task file of scenario ", h("a", { href: `#/scenarios/${enc(folder.scenario)}` }, folder.scenario)] },
+        { name: `${at.slice(root.length + 1)}/`, mark: true, role: copyChip("stands in for the skill folder", STANDS_IN),
+          note: [writes("approvals from this scenario's runs write here"), windowsCopy(folder.windows)], children: [skillMd] },
+      ],
+    };
+  }
+  const root = parentOf(at);
+  const beside = folder.named_by.filter((each) => parentOf(each.path) === root);
+  const replaced = folder.history.length === 1 ? "the text an approval replaced" : `${plural(folder.history.length, "text")} approvals replaced`;
+  return {
+    root, drawn: beside.map((each) => each.path),
+    items: [
+      ...beside.map((each) => ({ name: nameOf(each.path), note: `a task file: names ${leaf}/` })),
+      folder.kind === "copy" ? { name: `${leaf}.json`, note: "the record of the skill you added" } : null,
+      folder.kind === "copy"
+        ? { name: `${leaf}/`, mark: true, role: copyChip("stands in for the skill folder", STANDS_IN),
+            note: ["tuningfork's copy of a skill you added", writes("approvals write here, never back to where it came from"), windowsCopy(folder.windows)], children: [skillMd] }
+        : { name: `${leaf}/`, mark: true, role: chip("skill folder", "skill", SKILL_FOLDER),
+            note: ["each batch copies it as it starts", writes("approvals write here"), windowsCopy(folder.windows)], children: [skillMd] },
+      folder.changelog !== null ? { name: `${leaf}.changelog.md`, note: "what each approval changed, and why" } : null,
+      folder.history.length ? { name: `${leaf}.history/`, note: replaced } : null,
+    ].filter(Boolean),
+  };
+}
+
+/** One folder, drawn: how a person added it, its tree, and the task files elsewhere that name it. */
+function folderBlock(folder, drawn, home, measure) {
+  return h("div", null,
     folder.added ? addedLine(folder.added) : null,
-    h("div", null, h("span", { class: "mono" }, folder.path), " ", status),
-    folder.windows ? h("div", { class: "muted small" }, "From Windows: ", h("span", { class: "mono" }, folder.windows)) : null,
-    folder.specs.length ? h("div", { class: "muted small" }, `Named by ${plural(folder.specs.length, "task file")}: `,
-      h("span", { class: "mono" }, folder.specs.join(", "))) : null,
-    folder.changelog !== null || folder.history.length
-      ? h("div", { class: "muted small" }, "Beside it, written by approvals: ",
-          folder.changelog !== null ? "a changelog" : null, folder.changelog !== null && folder.history.length ? " and " : null,
-          folder.history.length ? plural(folder.history.length, "old version") : null, ".")
-      : null));
+    folderTree({ path: drawn.root, home }, drawn.items, { measure }),
+    alsoNamed(folder, drawn.drawn));
+}
+
+/** The task files that name a folder, other than those its tree draws: scenarios by name, any
+ *  other by its path. */
+function alsoNamed(folder, drawn) {
+  const rest = folder.named_by.filter((each) => !drawn.includes(each.path));
+  const scenarios = rest.filter((each) => each.scenario);
+  const files = rest.filter((each) => !each.scenario);
+  const list = (items, show) => items.map((each, index) => [index ? ", " : null, show(each)]);
+  return [
+    scenarios.length ? h("p", { class: "tree-also" }, `Also named by ${plural(scenarios.length, "scenario")}: `,
+      list(scenarios, (each) => h("a", { href: `#/scenarios/${enc(each.scenario)}` }, each.scenario))) : null,
+    files.length ? h("p", { class: "tree-also" }, `Also named by ${plural(files.length, "task file")}: `,
+      list(files, (each) => h("span", { class: "mono" }, each.path))) : null,
+  ];
 }
 
 /** How a person added the folder, and a way to forget it: a folder named stays where it is; a
@@ -371,10 +462,8 @@ function addedLine(added) {
     ? ["from run ", h("a", { class: "mono", href: `#/runs/${added.origin.run}` }, short(added.origin.run)), `: ${added.origin.how}`]
     : added.origin?.upload ? [added.origin.upload.from ? `copied from ${added.origin.upload.from}` : "uploaded"] : null;
   return h("div", { class: "added-line" },
-    chip(copy ? "added: tuningfork's copy" : "added: a folder on this machine", "muted"),
-    h("span", { class: "muted small" }, copy
-      ? [from ? [from, " — "] : null, "approved edits are written to this copy, never back to where it came from"]
-      : "remembered where it is: approved edits are written to it"),
+    chip(copy ? "you added it, as a copy" : "you added it, where it is", "muted"),
+    from ? h("span", { class: "muted small" }, from) : null,
     live.mode === "live" ? forgetButton(added) : null);
 }
 
@@ -401,7 +490,7 @@ function forgetButton(added) {
     button.disabled = true;
     try {
       const gone = await api.del(`/skills/added/${enc(added.name)}`);
-      toast(gone.moved_to ? `Forgot ${added.name}: its copy is moved aside to ${gone.moved_to}` : `Forgot ${added.name}: its folder stays where it is`,
+      toast(gone.moved_to ? `Forgot ${added.name}: its copy is moved aside to ${gone.moved_to}` : `Forgot ${added.name}: its skill folder stays where it is`,
         { timeout: 6000 });
       location.hash = "#/skills";
     } catch (error) {
@@ -426,7 +515,7 @@ function versionsPanel(skill, show) {
       h("tbody", null, skill.versions.map((version) => h("tr", null,
         h("td", null, h("div", null, h("strong", null, `version ${order.indexOf(version.fingerprint) + 1}`),
           " ", h("span", { class: "mono faint small", title: "A fingerprint of its files, as the Runs page names it" }, version.fingerprint)),
-          version.known_as.map((label) => h("div", null, chip(label, label.startsWith("its own file") ? "accent" : "skill")))),
+          version.known_as.map((label) => h("div", null, chip(label, isNow(label) ? "accent" : "skill")))),
         h("td", null, version.conditions.map((condition) => h("div", { class: "condition-rate" },
           h("span", { class: "muted small" }, [condition.task_id, condition.harness, condition.model].filter(Boolean).join(" · ")),
           condition.passed ? rateBar(condition.passed) : h("span", { class: "faint small" }, " no verdicts"),
@@ -435,7 +524,7 @@ function versionsPanel(skill, show) {
         h("td", { class: "faint small", title: `${when(version.first)} – ${when(version.latest)}` }, ago(version.latest)),
         h("td", { class: "row-actions" },
           version.text !== null ? h("button", { class: "btn btn-small", type: "button", onclick: () => show(version.fingerprint) }, "Show") : null,
-          version.text !== null && fileRef && !version.known_as.some((label) => label.startsWith("its own file"))
+          version.text !== null && fileRef && !version.known_as.some(isNow)
             ? h("button", { class: "btn btn-small btn-quiet", type: "button", onclick: () => show("file", version.fingerprint) }, "Compare with the file")
             : null))))))]);
 }
@@ -465,7 +554,7 @@ function refinementsPanel(skill) {
 function changelogPanels(skill) {
   return skill.folders.filter((folder) => folder.changelog !== null).map((folder) =>
     panel("Changelog", h("div", null,
-      h("p", { class: "hint" }, "Written beside the skill's folder by each approval: what changed, why, and the evidence it stood on."),
+      h("p", { class: "hint" }, "Written beside the skill folder by each approval: what changed, why, and the evidence it stood on."),
       h("details", { class: "fold" }, h("summary", null, h("span", { class: "fold-preview" }, `${folder.path}.changelog.md`)),
         markdownView(folder.changelog)))));
 }

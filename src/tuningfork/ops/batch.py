@@ -319,8 +319,8 @@ def prepare_batch(
     if sandbox is None and not sandbox_turned_off():
         notes.append(Note(
             "warning",
-            f"runs are not sandboxed: {unsandboxed}. Each sees its own folders, whose paths "
-            "differ from run to run, and the model reads them; and the task's check runs on this "
+            f"runs are not sandboxed: {unsandboxed}. Each sees its run folder at its real path, which "
+            "differs from run to run, and the model reads it; and the task's check runs on this "
             "machine itself, where it can run what the model wrote",
         ))
     if sandbox is not None and sandbox.clock_problem:

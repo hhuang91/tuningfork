@@ -159,7 +159,7 @@ def check_spec(data: Any, *, home: Path | str | None = None, name: str | None = 
             }
             checked.warnings.append(
                 f"the skill folder is a relative path: it is resolved against the scenario's "
-                f"own folder, {where}, so it needs the scenario's name first"
+                f"folder, {where}, so it needs the scenario's name first"
             )
         else:
             found = resolve_path(skill_dir, folder(home, name) if named else None)
@@ -716,7 +716,7 @@ def prepare_upload(home: Path | str, name: str, files: dict[str, bytes | Unsent]
             plan.skill = {f"{SKILL_FOLDER}/{own}/{sub}": each for sub, each in beside.tree(given).items()}
             data["tuningfork"]["skill_dir"] = f"{SKILL_FOLDER}/{own}"
             plan.skill_dir, plan.has_skill = f"{SKILL_FOLDER}/{own}", True
-            plan.notes.append(f"its skill folder, {given}, is copied into the scenario's own folder ({SKILL_FOLDER}/{own}/): "
+            plan.notes.append(f"its skill folder, {given}, is copied into the scenario's folder ({SKILL_FOLDER}/{own}/): "
                               "an approved edit is written to that copy, never back to yours")
         else:
             # Not in what was uploaded: a folder on this machine, where its path names one.

@@ -11,6 +11,7 @@ import { api, enc, query } from "../api.js";
 import { guard } from "../auth.js";
 import { ago, capital, chip, crumbs, h, icon, kv, loading, panel, plural, pretty, rateBar, replace, short, when } from "../dom.js";
 import { cacheField, field, formError, input, numberOf, planForm, samplingChoices, seedField, textArea } from "../forms.js";
+import { copyChip, folderTree, nameOf, parentOf, placeOf, writes } from "../folders.js";
 import { ACTIVE } from "../jobs.js";
 import { live } from "../live.js";
 import { formatP, screenTones } from "../results.js";
@@ -120,7 +121,7 @@ export async function refineStartForm(step) {
         here.map((each, index) => [index ? ", " : "", h("a", { href: `#/refine/${each.id}` }, `${short(each.id)} (${each.target?.description || "?"})`)]),
         ". The same choice opens that one again.")
     : null,
-  h("p", { class: "hint" }, "The skill as this run was given it is copied into the refinement, and every proposal edits that copy. The skill's own folder is never written."),
+  h("p", { class: "hint" }, "The skill as this run was given it is copied into the refinement, and every proposal edits that copy. The skill folder is written only when you approve one."),
   studies ? field("Skill", studies, { help: "The run kept several: the refinement edits the one chosen." }) : null,
   picker,
   // A target no answer at this step can express: what the run wrote, as the task's check reads it.
@@ -285,7 +286,7 @@ export async function refinementView(root, [id], scope) {
           })
         : null,
       found.source && !found.source.matches
-        ? h("div", { class: "banner banner-warn" }, h("strong", null, "The skill's own file has changed since this run was given it. "),
+        ? h("div", { class: "banner banner-warn" }, h("strong", null, "The SKILL.md in the skill folder has changed since this run was given it. "),
             "Proposals edit the run's copy, which is what the model saw here.")
         : null,
       found.status === "closed" ? h("div", { class: "banner" }, h("strong", null, "Closed. "), "It takes no more proposals or tests, and what it holds is kept.") : null,
@@ -303,8 +304,8 @@ export async function refinementView(root, [id], scope) {
       h("summary", { class: "panel-head" }, h("h2", null, "About this refinement"),
         h("span", { class: "muted small" }, `started by ${who(found.created_by)}, ${ago(found.created_at)}`)),
       h("div", { class: "panel-body" }, kv([
-        ["skill", h("span", null, h("span", { class: "mono" }, found.baseline.path), h("span", { class: "muted small" }, " — the run's copy"))],
-        ["its own file", found.source ? h("span", { class: "mono" }, found.source.path) : h("span", { class: "muted" }, "not known: the run's task named no skill folder")],
+        ["skill", h("span", null, placeOf(found.baseline.path, live.home, { file: true }), h("span", { class: "muted small" }, " — the run's copy"))],
+        ["skill folder", found.source ? placeOf(parentOf(found.source.path), live.home) : h("span", { class: "muted" }, "not known: no task file of this run names a skill folder holding a SKILL.md now")],
         ["written to", written ? h("span", null, h("span", { class: "mono" }, written.target),
           written.windows ? h("div", { class: "mono faint" }, written.windows) : null) : null],
         ["the file before", written ? h("span", { class: "mono" }, written.backup) : null],
@@ -373,7 +374,7 @@ export async function refinementView(root, [id], scope) {
     else validated = won.length ? "none yet" : "wait for a proposal that beat the original";
 
     let approved;
-    if (approval?.state === "applied") approved = "written to the skill's own file";
+    if (approval?.state === "applied") approved = "written to the skill folder";
     else if (approval) approved = "interrupted: see above";
     else if (pick) approved = `proposal ${short(pick)} is ready`;
     else approved = "waits for full test runs that pass the approval checks";
@@ -552,7 +553,7 @@ export async function refinementView(root, [id], scope) {
     };
     if (approval) {
       return approval.state === "applied"
-        ? verdictBox("tone-ok", `Approved: proposal ${short(approval.proposal)}, written to the skill's own file`, behind(approval.proposal))
+        ? verdictBox("tone-ok", `Approved: proposal ${short(approval.proposal)}, written to the skill folder`, behind(approval.proposal))
         : verdictBox("tone-warn", `The approval of proposal ${short(approval.proposal)} did not finish: see above`, behind(approval.proposal));
     }
     if (pick) return verdictBox("tone-ok", `Proposal ${short(pick)} passes the approval checks, and is ready to approve`, behind(pick));
@@ -946,7 +947,7 @@ export async function refinementView(root, [id], scope) {
     const pick = chosen();
     const record = pick ? validationOf(pick) : null;
     if (approval?.state === "applied") {
-      replace(approveLine, h("p", null, `Proposal ${short(approval.proposal)} is written to the skill's own file. About this refinement, at the foot of the page, says where.`));
+      replace(approveLine, h("p", null, `Proposal ${short(approval.proposal)} is written to the skill folder. About this refinement, at the foot of the page, says where.`));
     } else if (approval) {
       replace(approveLine, h("p", { class: "warn-text" }, "The approval did not finish: the banner above says what happened."));
     } else if (record) {
@@ -1035,23 +1036,29 @@ export async function refinementView(root, [id], scope) {
             { proposal: record.proposal, validation: record.id, confirm: code.value.trim(), ...extra });
           replace(approveEl);
           await reload();
-          replace(approveEl, h("div", { class: "approve-panel stack" }, h("h3", { class: "stage-part" }, "Written"), kv([
-            ["file", h("span", { class: "mono" }, done.target)],
-            ["the file before", h("span", { class: "mono" }, done.backup)],
-            ["changelog", h("span", { class: "mono" }, done.changelog)],
-          ])));
+          replace(approveEl, h("div", { class: "approve-panel stack" }, h("h3", { class: "stage-part" }, "Written"),
+            writesTree({ path: done.target, history: parentOf(done.backup), changelog: done.changelog }, { written: true, backup: done.backup })
+              || kv([
+                ["file", h("span", { class: "mono" }, done.target)],
+                ["the file before", h("span", { class: "mono" }, done.backup)],
+                ["changelog", h("span", { class: "mono" }, done.changelog)],
+              ])));
         } catch (failed) {
           write.disabled = false;
           replace(note, formError(failed));
         }
       }),
     },
+    h("div", { class: "label" }, "What it writes"),
+    writesTree(target, { endings: `${plan.line_endings} line endings${plan.bom ? " and a byte-order mark" : ""}` })
+      || kv([
+        ["writes", h("span", { class: "mono" }, target.path)],
+        ["keeps", `${plan.line_endings} line endings${plan.bom ? ", a byte-order mark" : ""}`],
+        ["the file before", h("span", { class: "mono" }, `${target.history}/`)],
+        ["changelog", h("span", { class: "mono" }, target.changelog)],
+      ]),
+    target.windows ? h("p", { class: "tree-also" }, "From Windows: ", h("span", { class: "mono" }, target.windows)) : null,
     kv([
-      ["writes", h("span", null, h("span", { class: "mono" }, target.path),
-        target.windows ? h("div", { class: "mono faint" }, target.windows) : null)],
-      ["keeps", `${plan.line_endings} line endings${plan.bom ? ", a byte-order mark" : ""}`],
-      ["the file before", h("span", { class: "mono" }, `${target.history}/`)],
-      ["changelog", h("span", { class: "mono" }, target.changelog)],
       ["on", h("span", null, "full test runs ", h("span", { class: "mono" }, short(plan.validation)),
         plan.validations.of_this_proposal > 1 ? h("span", { class: "muted" }, ` — ${plan.validations.meeting_the_gate} of its ${plan.validations.of_this_proposal} sets of full test runs pass the approval checks; the approval keeps them all`) : null)],
     ]),
@@ -1063,6 +1070,27 @@ export async function refinementView(root, [id], scope) {
     field("Type the code to write it", code, { help: "Anything else writes nothing." }),
     note,
     h("div", { class: "form-actions" }, write, cancelButton()));
+  }
+
+  /** What approving writes, or wrote, drawn as the tree it is: the SKILL.md in the skill folder,
+   *  and beside the folder, never inside it, the file before and the changelog. A target whose
+   *  history and changelog are not beside its folder is said in rows instead (null). */
+  function writesTree(target, { endings = null, written = false, backup = null } = {}) {
+    const folder = parentOf(target.path);
+    const parent = parentOf(folder);
+    if (parentOf(target.history) !== parent || parentOf(target.changelog) !== parent) return null;
+    // A folder in the recordings folder is tuningfork's copy, standing in for a skill folder.
+    const base = (live.home || "").replace(/\/+$/, "");
+    const copy = Boolean(base) && folder.startsWith(`${base}/`);
+    return folderTree({ path: parent, home: live.home }, [
+      { name: `${nameOf(folder)}/`, role: copy ? copyChip("stands in for the skill folder", "A copy tuningfork keeps of the skill, what a run had or a folder uploaded, which approvals write in place of a skill folder")
+          : chip("skill folder", "skill", "The folder a batch copies the skill from, and approvals write to"),
+        children: [{ name: nameOf(target.path), skill: true, mark: true,
+          note: written ? writes("written: the approved text") : [writes("the approved text is written here"), `its ${endings} kept`] }] },
+      { name: `${nameOf(target.history)}/`, note: written ? "the file before is kept here" : "the file before is kept here first",
+        children: written && backup ? [{ name: nameOf(backup), note: "the file before" }] : [] },
+      { name: nameOf(target.changelog), note: written ? "an entry added: what changed, why, and the evidence" : "an entry is added: what changed, why, and the evidence" },
+    ]);
   }
 
   function cancelButton() {

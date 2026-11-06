@@ -6,6 +6,7 @@
 import { api, enc } from "../api.js";
 import { ago, chip, copyButton, crumbs, foldPanel, h, importedRun, kv, loading, plural, recordedLive, replace, short, when } from "../dom.js";
 import { costOf } from "../cost.js";
+import { copyChip, folderTree, nameOf, parentOf, placeOf, seenAs } from "../folders.js";
 import { live } from "../live.js";
 import { timeline } from "../timeline.js";
 import { trashButton, trashedBanner } from "../trash.js";
@@ -164,12 +165,64 @@ function changedBanner({ steps }) {
   return h("div", { class: "banner banner-edit" }, h("strong", null, "tuningfork changed this run's history: "), `${parts.join("; ")}.`);
 }
 
-/** Where a launch's harness worked, as it saw it: the sandbox's own paths, the same in every
- *  run — or, with no sandbox, the machine as it is. */
+/** What a launch's harness saw of the machine: a sandbox, its run folder at the same two paths in
+ *  every run (its tree, below, says which), the rest read-only; or, with none, the machine as it is. */
 function sandboxWords(sandbox) {
-  if (!sandbox) return h("span", { class: "muted" }, "none: the harness saw the machine as it is");
-  return [h("span", { class: "mono" }, sandbox.workspace), h("span", { class: "muted" }, ", its home "),
-    h("span", { class: "mono" }, sandbox.home), h("span", { class: "muted" }, ` — ${sandbox.kind || "a sandbox"}, the rest of the machine read-only`)];
+  if (!sandbox) return h("span", { class: "muted" }, "none: the harness saw the machine as it is, its run folder at its real path");
+  return [sandbox.kind || "a sandbox", h("span", { class: "muted" }, ": its home/ and workspace/ at the same two paths in every run, the rest of the machine read-only")];
+}
+
+/** What the sandbox hid, in the folders' names: the recordings folder, and in it the folders a
+ *  run's task and its own run folders sit in; any other by its path. */
+function hiddenWords(hidden, home) {
+  const base = (home || "").replace(/\/+$/, "");
+  const whole = Boolean(base) && hidden.includes(base);
+  const inside = base ? hidden.filter((path) => path.startsWith(`${base}/`)).map((path) => path.slice(base.length + 1)) : [];
+  const others = hidden.filter((path) => !base || (path !== base && !path.startsWith(`${base}/`)));
+  const listed = (paths, suffix = "") => paths.map((path, index) => [index ? ", " : null, h("span", { class: "mono" }, `${path}${suffix}`)]);
+  return h("span", null,
+    whole ? "the recordings folder" : null,
+    inside.length ? [whole ? ", and in it " : "in the recordings folder, ", listed(inside, "/")] : null,
+    others.length ? [whole || inside.length ? "; " : null, listed(others)] : null);
+}
+
+/** Where a run tuningfork started happened, drawn as the tree it is: its run folder, the harness's
+ *  home and the workspace in it, each with the path the agent saw it at; and beside it in a
+ *  batch's folder, the copy of the skill every run of the batch was given. A copy kept elsewhere
+ *  (a fork's, from the run it replays) is named after the tree. */
+function runFolder(run, launch, ended) {
+  if (!launch?.workspace) return null;
+  const folder = parentOf(launch.workspace);
+  const group = parentOf(folder);
+  const seen = (path) => (launch.sandbox ? seenAs(path) : null);
+  const mine = {
+    name: `${nameOf(folder)}/`, mark: true, role: chip("this run", "accent"),
+    children: [
+      { name: "home/", note: ["the harness's home: its settings and logs, and the skill installed in it", seen(launch.sandbox?.home)] },
+      { name: "workspace/", note: ["the task's input files, then what the agent wrote", seen(launch.sandbox?.workspace)] },
+      ended ? { name: "reply.txt", note: "its final reply" } : null,
+    ].filter(Boolean),
+  };
+  const copy = launch.skill_copy;
+  // A batch's copy is <batch>/skill-snapshot/<skill>, beside its run folders; a chain's link has
+  // one of its own, skill-snapshot-<i>, made as it started from what the link before left. A
+  // variant swapped in is its SKILL.md: a change, in the legend's teal.
+  const beside = copy && parentOf(parentOf(copy)) === group;
+  const link = beside ? /^skill-snapshot-(\d+)$/.exec(nameOf(parentOf(copy))) : null;
+  const variant = run.skill_file
+    ? [{ name: "SKILL.md", skill: true, role: chip(nameOf(run.skill_file).replace(/\.md$/, ""), "change", "A saved wording, swapped in for the skill's SKILL.md"),
+        note: "a variant, swapped in for its SKILL.md" }]
+    : [];
+  const items = beside
+    ? [{ name: `${copy.slice(group.length + 1)}/`,
+        role: copyChip("copy of the skill", link ? (Number(link[1]) ? "Made as this link started, from the skill the link before left" : "Made as this link started, from the skill folder") : "Made as the batch started"),
+        note: link ? "this link was given this text" : "every run of the batch was given this text", children: variant }, mine]
+    : [mine];
+  return h("div", null,
+    h("div", { class: "label" }, "Its run folder"),
+    folderTree({ path: group, home: live.home }, items),
+    copy && !beside ? h("p", { class: "tree-also" }, "The copy of the skill it was given: ", placeOf(copy, live.home)) : null,
+    h("p", { class: "tree-also" }, h("a", { href: "#/words?place=run-folder" }, "Where things live"), " shows what every run is given."));
 }
 
 function aboutRun({ run, launch, threads }) {
@@ -210,20 +263,18 @@ function aboutRun({ run, launch, threads }) {
           ? `harness exit ${result.returncode ?? "—"} after ${result.duration_s ?? "—"} s`
           : null],
         ["cost", costOf({ run: run.id })],
-        ["workspace", launch?.workspace ? h("span", { class: "mono" }, launch.workspace) : null],
         ["sandbox", launch ? sandboxWords(launch.sandbox) : null],
         ["its clock", launch?.sandbox?.clock
           ? [h("span", { class: "mono" }, launch.sandbox.clock), h("span", { class: "muted" }, " — started there, whichever day the run was made")]
           : null],
-        ["hidden from it", launch?.sandbox?.hidden?.length
-          ? h("span", { class: "mono small" }, launch.sandbox.hidden.join(", "))
-          : null],
+        ["hidden from it", launch?.sandbox?.hidden?.length ? hiddenWords(launch.sandbox.hidden, live.home) : null],
         ["set up with", launch?.harness_settings && Object.keys(launch.harness_settings).length
           ? h("span", { class: "mono small" }, Object.entries(launch.harness_settings)
               .map(([key, value]) => `${key}=${typeof value === "object" ? JSON.stringify(value) : value}`).join(" · "))
           : null],
         ["run id", h("span", { class: "mono" }, run.id)],
       ]),
+      runFolder(run, launch, Boolean(result)),
       skills.length
         ? h("div", null, h("div", { class: "label" }, "Skill files when the run started"),
             kv(skills.map(([path, digest]) => [h("span", { class: "mono" }, path), h("span", { class: "mono faint" }, digest.slice(0, 16))])))
@@ -234,7 +285,7 @@ function aboutRun({ run, launch, threads }) {
       live.mode === "live" && !["subagent", "side", "thread"].includes(run.role)
         && (skills.length || run.imported?.skills?.length || run.recorded === "live")
         ? h("p", { class: "hint" }, h("a", { href: `#/add-skill?run=${run.id}`, "data-control": true }, "Keep its skill…"),
-            " — the copy it kept, or the SKILL.md its model read, added to Skills as a copy of tuningfork's own.")
+            " — the copy of the skill it kept, or the SKILL.md its model read, added to Skills as a copy.")
         : null,
       threads.length
         ? h("div", null, h("div", { class: "label" }, "Other conversations its harness had in this run"),

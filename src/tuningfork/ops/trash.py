@@ -305,7 +305,7 @@ def _refinement_goes(store: Store, refinement: Any) -> dict[str, Any]:
     notes = list(goes["notes"]) + _kept_note(_named(store, store.home.resolve()), [Path(refinement.folder).resolve()])
     if refinement.status == "approved":
         notes.append(f"refinement {refinement.id[:8]} is approved: its approval and the evidence kept in it go "
-                     "too; the skill's changelog and its old versions, beside the skill's folder, stay")
+                     "too; the skill's changelog and its old versions, beside the skill folder, stay")
     return {**goes, "refinements": 1, "variants": len(made.variants), "notes": notes}
 
 

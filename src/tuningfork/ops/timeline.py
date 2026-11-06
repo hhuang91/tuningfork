@@ -39,6 +39,8 @@ def run_json(run: Run) -> dict[str, Any]:
         "forked_from_run": run.forked_from_run,
         "forked_at_depth": run.forked_at_depth,
         "skill_hashes": run.skill_hashes,
+        # A variant swapped in for the skill's SKILL.md, by its file: the run page's tree marks it.
+        "skill_file": run.parity.get("skill_file"),
         "result": run.result or None,
         # Why every rate leaves its verdict out, where one does.
         "exclusion": exclusion_from(run.result) if (run.result or {}).get("usable") is False else None,
@@ -88,7 +90,11 @@ def launch_json(launch: Launch | None, masking: Masking) -> dict[str, Any] | Non
         "experiment_id": launch.experiment_id,
         # A scenario's run continues a conversation (`tuningfork.context`): how long, from which file.
         "context": {key: value for key, value in (settings.get("context") or {}).items() if key != "blob"} or None,
+        # Its run folder, drawn as the tree it is: the workspace, the harness's home beside it, and
+        # the copy of the skill it was given (a batch's, beside its run folders).
         "workspace": launch.workspace,
+        "home": launch.home,
+        "skill_copy": launch.skill_dir,
         "check": masking.text(described).value if described is not None else None,
         "check_kind": check_kind(check),
         # What the harness saw of the machine: the sandbox's paths, the folders hidden from it and

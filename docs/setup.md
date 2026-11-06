@@ -419,9 +419,9 @@ sudo apparmor_parser -r /etc/apparmor.d/bwrap
 Under WSL, bubblewrap works without it.
 
 The model reads `/home/user` and `/home/user/project`. Without the sandbox, each launch sees its
-own folders under the recordings folder, and a few digits of a fork's folder name were seen to
-decide whether the model wrote a file or only said it did: resampled at the same step, two forks
-whose requests differed only in that number wrote it 5 times in 20 and 20 times in 20.
+run folder at its real path in the recordings folder, and a few digits of a fork's folder name were
+seen to decide whether the model wrote a file or only said it did: resampled at the same step, two
+forks whose requests differed only in that number wrote it 5 times in 20 and 20 times in 20.
 
 Inside, the rest of the machine is read-only, `/tmp` and the process list are the launch's own,
 and the recordings folder and the task's spec folder are empty: the harness can read neither
@@ -519,7 +519,7 @@ tuningfork's own settings under a `tuningfork` key.
 }
 ```
 
-- **`skill_dir`** is the skill's folder, relative to the spec. Every run is given a copy of the
+- **`skill_dir`** is the skill folder, relative to the spec. Every run is given a copy of the
   whole folder, so keep anything the model should not read — an edited variant, a check
   script — outside it.
 - **`files`** are the task's input files, placed in each run's workspace: `{"path", "content"}`
@@ -587,7 +587,7 @@ read — and what tuningfork made of it.
 |---|---|
 | `tuningfork.db`, `blobs/` | Every call a harness made through the proxy and its answer, with the server's errors; runs and their results, experiments and their samples, jobs, the servers that answered, and what each launch was given |
 | `snapshots.git` | Each launched run's workspace at every call, and the skill it was given |
-| `batches/`, `forks/` | The folders runs were launched in, unless `--workdir` put them elsewhere: each run's workspace as it left it, and its harness's home — the harness's own record of the conversation, its logs and its settings — with the skill the runs were given |
+| `batches/`, `forks/` | Run folders, unless `--workdir` put them elsewhere: each run's workspace as it left it, and its harness's home — the harness's own record of the conversation, its logs and its settings — and, in a batch's folder, the copy of the skill it gave its runs |
 | `imports/` | Each imported chat, and the skills it showed |
 | `scenarios/` | Each scenario's task file, the conversation its runs continue, its input files, what its check reads from its task's folder, and its copy of a skill where it keeps one |
 | `skills/` | The skills you added: a record of each, and tuningfork's copy where it keeps one. Forgetting a skill moves its copy to `skills/.forgotten/` |
@@ -673,7 +673,7 @@ in a Lima VM, run these steps there: in the distro's shell, or in the VM's
      every file new would keep every blob and snapshot object a deletion in it would take, until
      a later deletion or a proxy serving the copy swept them.
    - **It leaves out `batches/` and `forks/`**, each run's workspace and its harness's home. A
-     copy's runs name the original's launch folders, which a deletion in a copy never touches, so
+     copy's runs name the original's run folders, which a deletion in a copy never touches, so
      a copy of them would stay whole, the deleted runs' included.
 2. **Delete for good, with nothing else open on the copy** — `serve`, `ui`, `tuningfork mcp` — so
    the database's log is emptied. `tuningfork trash run <id> --home <copy>` sets a run aside,
@@ -682,7 +682,7 @@ in a Lima VM, run these steps there: in the distro's shell, or in the VM's
    included. `tuningfork runs --home <copy>` lists the runs, and `tuningfork ui --home <copy>`
    shows everything, closed again before `trash empty`.
 3. **Delete any folder inside the copy that `--workdir` named** (`rm -rf <copy>/<folder>`). It
-   holds launch folders too, and step 1 leaves out only `batches/` and `forks/`.
+   holds run folders too, and step 1 leaves out only `batches/` and `forks/`.
 4. **Delete the keys from it:** `rm -f <copy>/.access-token <copy>/.mcp-token <copy>/.proposer-key`.
 5. **Look at what is left**, below. Only then send it, moving it first to Windows or the Mac if
    you send from there, and remove every copy once it is shared: unlike the recordings folder, a

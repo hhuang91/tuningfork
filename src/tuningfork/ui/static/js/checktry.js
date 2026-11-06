@@ -70,7 +70,7 @@ export function checkPicker({ check = null, own = null, editable = true, onChang
   function draw() {
     if (kind === "own") {
       return replace(body,
-        h("p", { class: "form-help" }, "The check the run's task had, as its task file words it, with any file it reads from the task's folder."),
+        h("p", { class: "form-help" }, "The check the run's task had, as its task file words it, with any file it reads from the task file's folder."),
         h("pre", { class: "code small" }, typeof own === "string" ? own : JSON.stringify(own)));
     }
     if (kind === "shell") {
@@ -83,7 +83,7 @@ export function checkPicker({ check = null, own = null, editable = true, onChang
         changed();
       });
       return replace(body,
-        h("p", { class: "form-help" }, "Runs as you, in the run's workspace — a fresh folder holding the task's input files, where the harness worked. It passes when it exits 0. $TUNINGFORK_REPLY names a file holding the agent's final reply, and $TUNINGFORK_SPEC_DIR the scenario's folder: a longer check can be a script there, where the agent cannot read it."),
+        h("p", { class: "form-help" }, "Runs as you, in the run's workspace, which holds the task's input files and what the harness wrote. It passes when it exits 0. $TUNINGFORK_REPLY names a file holding the agent's final reply, and $TUNINGFORK_SPEC_DIR the scenario's folder: a longer check can be a script there, where the agent cannot read it."),
         text);
     }
     if (kind === "reply_contains" || kind === "reply_matches") {

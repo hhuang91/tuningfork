@@ -10,6 +10,7 @@ import { answered, api, enc } from "../api.js";
 import { guard } from "../auth.js";
 import { checkPicker } from "../checktry.js";
 import { ago, chip, crumbs, firstLine, h, importedRun, kv, loading, panel, plural, rateBar, recordedLive, replace, short, toast, verdict, when } from "../dom.js";
+import { copyChip, folderTree, writes } from "../folders.js";
 import { field, formError, input, planForm, textArea } from "../forms.js";
 import { live } from "../live.js";
 import { leaving } from "../nav.js";
@@ -242,7 +243,7 @@ function importPlan(plan) {
       ["tasks", plan.tasks.length ? [mono(plan.tasks.map((id) => `${plan.skill_name}/${id}`).join(", ")),
         h("span", { class: "muted" }, ", each run filed under its own")] : null],
       ["skill folder", plan.skill_dir
-        ? [mono(plan.skill_dir), h("span", { class: "muted" }, plan.skill_copied ? " — a copy, kept in the scenario's own folder"
+        ? [mono(plan.skill_dir), h("span", { class: "muted" }, plan.skill_copied ? " — a copy, kept in the scenario's folder"
           : plan.has_skill ? " — kept where it is" : " — holds no SKILL.md")]
         : h("span", { class: "muted" }, "none named")],
       ["input files", plan.inputs.length ? mono(plan.inputs.join(", ")) : h("span", { class: "muted" }, "none")],
@@ -373,6 +374,7 @@ export async function scenarioView(root, [name], scope) {
   const evalsEl = h("div", { class: "stack" });
   const previewEl = h("pre", { class: "code spec-preview" });
   const checkedEl = h("div", { class: "stack", style: { gap: "var(--space-1-5)" } });
+  const folderEl = h("div");
   const status = h("div");
   // Whether what is on the page is saved: said beside Save, and again with every change.
   const saveState = h("span", { class: "save-state" });
@@ -384,7 +386,7 @@ export async function scenarioView(root, [name], scope) {
     crumbs([["Scenarios", "#/scenarios"], [isNew ? "new" : name]]),
     h("div", { class: "page-head" },
       h("div", null, h("h1", null, isNew ? "New scenario" : name),
-        h("p", { class: "sub" }, isNew ? "Saved as scenarios/<name>/evals.json in the recordings folder." : `scenarios/${name}/evals.json`)),
+        h("p", { class: "sub" }, isNew ? "A task file kept in the recordings folder, with its input files. Its folder is made when you save." : "A task file kept in the recordings folder, with its input files.")),
       editable ? h("div", { class: "actions" },
         saveState,
         h("button", { class: "btn", type: "button", "data-control": true, onclick: guard(() => save(false)) }, "Save"),
@@ -409,6 +411,7 @@ export async function scenarioView(root, [name], scope) {
           changed();
         } }, "Add a task") : null),
       h("div", { class: "stack sticky-col" },
+        panel(isNew ? "The scenario's folder, once saved" : "The scenario's folder", folderEl),
         panel("Before it runs", checkedEl),
         panel("The task file (evals.json), exactly as it will be saved", previewEl))));
 
@@ -451,6 +454,7 @@ export async function scenarioView(root, [name], scope) {
       replace(checkedEl, (loaded?.checked?.problems || []).map(problem), (loaded?.checked?.warnings || []).map(warning));
       picker.setBase(loaded?.checked?.folder);
       drawPath(loaded?.checked?.paths?.skill_dir, loaded?.checked?.wsl);
+      drawFolder(loaded?.checked?.folder, loaded?.checked?.paths?.skill_dir);
       return;
     }
     try {
@@ -460,9 +464,29 @@ export async function scenarioView(root, [name], scope) {
         found.warnings.map(warning));
       picker.setBase(found.folder);
       drawPath(found.paths?.skill_dir, found.wsl);
+      drawFolder(found.folder, found.paths?.skill_dir);
     } catch (error) {
       replace(checkedEl, formError(error));
     }
+  }
+
+  /** The scenario's folder, as the tree it is (or will be, once saved): its task file, the
+   *  conversation its runs continue, its input files, and the copy of the skill it keeps where the
+   *  skill folder was not known. A skill folder elsewhere is the picker's to say. */
+  function drawFolder(folder, skillDir) {
+    if (!folder) return replace(folderEl);
+    const shown = inputs.slice(0, 6);
+    const own = skillDir?.path && skillDir.path.startsWith(`${folder}/`) ? skillDir.path.slice(folder.length + 1) : null;
+    replace(folderEl, folderTree({ path: folder, home: live.home }, [
+      { name: "evals.json", note: "its task file: each task, its check, and the skill folder it names" },
+      loaded?.context ? { name: "context.json", note: "the conversation its runs continue" } : null,
+      { name: "inputs/", note: inputs.length ? `its input files, copied into each run's workspace: ${plural(inputs.length, "file")}` : "its input files, once you add some",
+        children: [...shown.map((file) => ({ name: file.path, note: `${file.size} bytes` })),
+          inputs.length > shown.length ? { name: "…", note: `and ${inputs.length - shown.length} more` } : null].filter(Boolean) },
+      own ? { name: `${own}/`, mark: true, role: copyChip("stands in for the skill folder", "A copy tuningfork keeps of the skill, what a run had or a folder uploaded, which approvals write in place of a skill folder"),
+        note: writes("approvals from its runs write here"),
+        children: [{ name: "SKILL.md", skill: Boolean(skillDir.has_skill_md), note: skillDir.has_skill_md ? null : chip("not there", "warn") }] } : null,
+    ].filter(Boolean)), h("p", { class: "tree-also" }, h("a", { href: "#/words?place=kept" }, "Where things live"), " shows what its runs are given."));
   }
 
   /** What the skill folder names, as tuningfork will open it; a folder holding a SKILL.md names

@@ -452,12 +452,29 @@ try {
 
   await page.eval(`location.hash = "#/runs/${launched}"`);
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "Run this task again…")`), "the run's way to run it again");
+  // Where it ran, as the tree it is (asked for by the user, 2026-11-05): its batch's folder in the
+  // recordings folder, the copy of the skill the batch gave its runs, and its own run folder
+  // marked, with the harness's home and the workspace in it.
+  await page.eval(`(() => { [...document.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent.includes("About this run")).open = true; return true; })()`);
+  await until(() => page.eval(`!!document.querySelector("details.fold-panel .folder-tree")`), "its run folder, drawn");
+  check(await page.eval(`(() => {
+    const tree = document.querySelector("details.fold-panel .folder-tree");
+    const names = [...tree.querySelectorAll(".tree-name")].map((name) => name.textContent).join();
+    return tree.querySelector(".tree-root .mono").textContent.startsWith("batches/")
+      && names === "skill-snapshot/tally-report/,0/,home/,workspace/,reply.txt" && tree.querySelector(".is-mark .tree-name").textContent === "0/";
+  })()`), "a launched run's page draws its run folder: the batch's copy of the skill, and its own folder with its home and workspace");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Run this task again…").click()`);
   await until(() => page.eval(`document.querySelector('.plan-form [name="harness"]')?.value === "fake"`), "the batch form, as the run was launched");
   await planShows(page, "tally-lab/1");
   check(await page.eval(`document.querySelector('.plan-form [name="scenario"]').value === "" && !document.querySelector('.plan-form [name="spec"]').disabled`),
     "a run's task file is named by its path, no scenario chosen, the path open to edit");
   check(await page.eval(`document.querySelector(".check-command pre")?.textContent.includes("row_count")`), "the check is shown whole, as the shell command it is");
+  check(await page.eval(`(() => {
+    const tree = document.querySelector(".plan-preview .folder-tree");
+    const names = [...tree.querySelectorAll(".tree-name")].map((name) => name.textContent);
+    return tree.querySelector(".tree-root .mono").textContent === "batches/<batch>/"
+      && names[0] === "skill-snapshot/tally-report/" && names.slice(-3).join() === "home/,workspace/,reply.txt";
+  })()`), "the plan draws where the runs go: the batch's copy of the skill, and a run folder for each run");
   check(await page.eval(`document.querySelector(".plan-preview > .stack > :first-child")?.classList.contains("check-command")`), "how a run passes comes first in the plan");
   check(await page.eval(`[...document.querySelector('.plan-form [name="eval"]').options].some((option) => option.textContent.includes(" — "))`),
     "the spec's task is offered by what it asks");
@@ -679,12 +696,12 @@ try {
     "before its first save a scenario says it is not saved, and takes no files");
   await page.type(`document.querySelector('[name="skill_name"]')`, "tally-scenario");
   // The skill folder: one the Skills page lists, or a path — a relative one shown after the
-  // scenario's own folder, where it is taken from.
+  // scenario's folder, where it is taken from.
   await page.eval(`document.querySelector('input[name="skill-from-editor"][value="path"]').click()`);
   await page.type(`document.querySelector('[name="skill_dir-editor"]')`, "skill");
   await until(() => page.eval(`(() => { const base = document.querySelector(".path-base");
     return !!base && !base.hidden && base.textContent === ${JSON.stringify(`${health.home}/scenarios/${scenarioName}/`)}; })()`), "the scenario's folder before a relative path");
-  check(true, "a relative skill folder is shown after the scenario's own folder, where it is taken from");
+  check(true, "a relative skill folder is shown after the scenario's folder, where it is taken from");
   await page.type(`document.querySelector('[name="skill_dir-editor"]')`, `${health.home}/lab-task/tally-report`);
   await until(() => page.eval(`(document.querySelector(".path-line.path-ok")?.textContent || "").includes("holds a SKILL.md")`), "the skill folder, resolved");
   check(await page.eval(`document.querySelector(".path-base").hidden && document.querySelector('[name="skill_name"]').value === "tally-scenario"`),
@@ -1789,8 +1806,17 @@ try {
   await page.click("Approve…", `document.querySelector(".validation")`);
   await until(() => page.eval(`!!document.querySelector(".approve-code strong")`), "the approval's plan");
   const code = await page.eval(`document.querySelector(".approve-code strong").textContent`);
-  check(await page.eval(`document.querySelector(".approve-panel").textContent.includes(${JSON.stringify(`${health.home}/lab-task/tally-report/SKILL.md`)})`),
-    "approving shows the file it writes");
+  // What approving writes, as the tree it is (asked for by the user, 2026-11-05: a path is never
+  // only a sentence): the SKILL.md in the skill folder, and beside the folder its old text and the
+  // changelog, the part inside the recordings folder shown from there.
+  check(await page.eval(`(() => {
+    const tree = document.querySelector(".approve-panel .folder-tree");
+    const names = [...tree.querySelectorAll(".tree-name")].map((name) => name.textContent).join();
+    const root = tree.querySelector(".tree-root");
+    return names === "tally-report/,SKILL.md,tally-report.history/,tally-report.changelog.md"
+      && tree.querySelector(".is-mark .tree-name").textContent === "SKILL.md"
+      && root.querySelector(".mono").textContent === "lab-task/" && root.querySelector(".chip").title === ${JSON.stringify(health.home)};
+  })()`), "approving shows what it writes as a tree: the SKILL.md in the skill folder, its old text and the changelog beside the folder");
   check(await page.eval(`[...document.querySelectorAll(".approve-panel .diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))`),
     "and the edit, as a line diff");
   await page.type(`document.querySelector('.approve-panel [name="confirm"]')`, "00000000");
@@ -1802,7 +1828,7 @@ try {
   await until(() => page.eval(`document.querySelector(".approve-panel h3")?.textContent === "Written"`), "the edit, written");
   const approved = await api(`/refinements/${made.id}`);
   check(approved.approval?.state === "applied" && approved.refinement.status === "approved",
-    "the typed code writes it: the skill's own file, its old text and a changelog beside its folder");
+    "the typed code writes it: the SKILL.md in the skill folder, its old text and a changelog beside the folder");
   const writtenView = await page.eval(`(() => {
     const block = document.querySelector(".evidence-panel .verdict-block");
     return {
@@ -1813,12 +1839,12 @@ try {
       about: document.querySelector("details.about-refinement").textContent,
     };
   })()`);
-  check(writtenView.headline === `Approved: proposal ${keysFix.id.slice(0, 8)}, written to the skill's own file` && writtenView.green,
+  check(writtenView.headline === `Approved: proposal ${keysFix.id.slice(0, 8)}, written to the skill folder` && writtenView.green,
     `and the page says so first, with the evidence it stood on (${writtenView.headline})`);
   check(writtenView.row === "approved,beat the original,passed the approval checks" && writtenView.card, `the approved proposal picked out, in the evidence and its card (${writtenView.row})`);
   check(writtenView.about.includes(`${health.home}/lab-task/tally-report/SKILL.md`), "About this refinement says where it wrote");
   const writtenStages = await stages();
-  check(writtenStages.endsWith("Approve: written to the skill's own file: done") && !writtenStages.includes(": current")
+  check(writtenStages.endsWith("Approve: written to the skill folder: done") && !writtenStages.includes(": current")
     && !(await page.eval(`!!document.querySelector('.stepper [aria-current="step"]')`)),
     `written, every stage is done and none is current (${writtenStages})`);
 
@@ -1946,6 +1972,18 @@ try {
     "a word looked up narrows the table, on the Words page the sidebar marks");
   await page.type(`document.querySelector('.panel input[type="search"]')`, "");
   check(await page.eval(`document.querySelectorAll(".glossary .term-row").length === ${words}`), `cleared, all ${words} words`);
+  // Above the words, where the folders they name are: folded away for a word looked up, opened
+  // with the place a folder's tree links to marked (asked for by the user, 2026-11-05).
+  check(await page.eval(`!document.querySelector("details.where-panel").open`), "a word looked up folds where things live away");
+  await page.eval(`location.hash = "#/words?place=run-folder"`);
+  await until(() => page.eval(`!!document.querySelector('.where-things-live [data-place="run-folder"].flash')`), "where things live, the run folder marked");
+  check(await page.eval(`(() => {
+    const diagram = document.querySelector(".where-things-live");
+    const places = [...diagram.querySelectorAll("[data-place]")].map((box) => box.dataset.place).join();
+    return places === "your-files,recordings-folder,seen,skill-folder,task-file,copy,run-folder,kept,sandbox"
+      && diagram.closest("details").open
+      && diagram.querySelector(".place-head .place-where").textContent === ${JSON.stringify(health.home)};
+  })()`), "the Words page draws where things live, the recordings folder by its path, and a link marks the place it names");
   // A word named on the Guide's address, as links made before the page had its own, lands there too.
   await page.eval(`location.hash = "#/guide?term=validation"`);
   await until(() => page.eval(`location.hash === "#/words?term=validation" && document.querySelector('.panel input[type="search"]')?.value === "validation"`), "a word named in the address");
@@ -1957,6 +1995,17 @@ try {
   await until(() => page.eval(`!!document.querySelector(".markdown .md-front")`), "its SKILL.md, rendered with its frontmatter as fields");
   check(await page.eval(`!!document.querySelector(".markdown h1") && document.querySelector(".markdown").textContent.includes("report.json")`), "the text, as Markdown");
   const skill = await api("/skills/tally-report");
+  // Its folders, each drawn as the tree it sits in: the skill folder approvals write leads, marked,
+  // and copies scenarios keep in its place follow (asked for by the user, 2026-11-05: three
+  // folders had each been "Its own folder").
+  check(await page.eval(`(() => {
+    const panel = [...document.querySelectorAll(".panel")].find((each) => each.querySelector("h2")?.textContent === "Where its SKILL.md is kept");
+    const first = panel?.querySelector(".folder-tree .is-mark");
+    const kinds = [...panel.querySelectorAll(".folder-tree .is-mark .chip")].map((chip) => chip.textContent);
+    return first?.querySelector(".tree-name").textContent === "tally-report/" && kinds[0] === "skill folder"
+      && kinds.slice(1).every((kind) => kind === "skill folder" || kind === "stands in for the skill folder")
+      && !document.querySelector("main").textContent.includes("Its own folder");
+  })()`), "the skill page draws each folder holding its SKILL.md as the tree it sits in, the skill folder first");
   // A skill is a way in: run it again from a scenario that names it, or make one with its folder filled in.
   const ways = await page.eval(`[...document.querySelectorAll(".page-head .actions a")].map((a) => a.textContent + "=" + a.getAttribute("href")).join(" | ")`);
   check(ways.includes("Make a scenario for it…=#/scenarios/new?skill=tally-report&skill_dir=")
@@ -2009,7 +2058,7 @@ try {
     && document.querySelector(".plan-box .label").textContent === "What will be added"`), "the plan says it is a folder the skill lists already, and what will be added");
   await page.click("Add it");
   await until(() => page.eval(`location.hash === "#/skills/tally-report" && !!document.querySelector(".added-line")`), "the skill's page, its folder marked added");
-  check(await page.eval(`document.querySelector(".added-line").textContent.includes("added: a folder on this machine")`), "its folder, marked added where it is");
+  check(await page.eval(`document.querySelector(".added-line").textContent.includes("you added it, where it is")`), "its folder, marked added where it is");
   // A folder uploaded from the browser: kept as tuningfork's copy.
   const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -2032,8 +2081,9 @@ try {
   rmSync(uploadRoot, { recursive: true, force: true });
   const helloSkill = await api("/skills/hello-skill");
   check(helloSkill.folders[0].added.kind === "copy" && helloSkill.folders[0].text.includes("Say hello.")
-    && await page.eval(`document.querySelector(".added-line").textContent.includes("never back to where it came from")`),
-    "an uploaded folder is kept as tuningfork's copy, and its page says approvals write to the copy");
+    && await page.eval(`document.querySelector(".added-line").textContent.includes("you added it, as a copy")
+      && document.querySelector(".folder-trees .is-mark").textContent.includes("never back to where it came from")`),
+    "an uploaded folder is kept as tuningfork's copy, and its tree says approvals write to the copy");
   // The skill a run had, kept under a name of its own: from the run's own page.
   await page.eval(`location.hash = "#/runs/${run.id}"`);
   await until(() => page.eval(`!!document.querySelector(".about-run")`), "the run's About");
@@ -2328,9 +2378,9 @@ try {
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
   await planShows(page, "data.csv");
   await page.eval(`document.querySelector('input[name="skill-from-run"][value="copy"]').click()`);
-  await planShows(page, "a copy kept in the scenario's own folder");
+  await planShows(page, "a copy kept in the scenario's folder");
   await page.eval(`document.querySelector('input[name="skill-from-run"][value="fixed"]').click()`);
-  await until(() => page.eval(`!(document.querySelector(".plan-preview")?.textContent || "").includes("a copy kept in the scenario's own folder")`),
+  await until(() => page.eval(`!(document.querySelector(".plan-preview")?.textContent || "").includes("a copy kept in the scenario's folder")`),
     "the task's folder chosen again");
   check(true, "the copy of what the run had is planned when chosen, and the task's folder again when chosen back");
   await startButtonReady(page, "Make the scenario");

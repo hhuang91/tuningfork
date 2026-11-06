@@ -46,13 +46,13 @@ Node is 22.
 
 ## Isolation
 
-A launch's `HOME` is its own folder, and OpenClaw keeps its state in `~/.openclaw` there: its
-config, the skills, and what it writes itself — `state/openclaw.sqlite`, links to its plugins'
-own skills in `plugin-skills/` — and `~/.cache/openclaw-<uid>`. So no real installation's
-settings, credentials, sessions or memory reach a run, and nothing of a run is left for the
-next. The child's environment is built from scratch: `PATH`, `LANG`, `LC_ALL`, `TERM`,
-`TMPDIR`, `USER` and the run's own `HOME`. Every `OPENCLAW_*` variable in the parent shell is
-dropped, so none can move the state or the config to a real installation.
+A launch's `HOME` is its run folder's `home/`, and OpenClaw keeps its state in `~/.openclaw` there:
+its config, the skills, and what it writes itself — `state/openclaw.sqlite`, links to its plugins'
+own skills in `plugin-skills/` — and `~/.cache/openclaw-<uid>`. So no real installation's settings,
+credentials, sessions or memory reach a run, and nothing of a run is left for the next. The child's
+environment is built from scratch: `PATH`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR`, `USER` and the run's
+own `HOME`. Every `OPENCLAW_*` variable in the parent shell is dropped, so none can move the state
+or the config to a real installation.
 
 The config tuningfork writes, `~/.openclaw/openclaw.json` (JSON5, so a comment line heads it):
 
