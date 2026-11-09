@@ -624,6 +624,13 @@ def hash_tree(roots: Iterable[Path]) -> dict[str, str]:
     return hashes
 
 
+def kept_alike(tree: dict[str, str]) -> dict[str, str]:
+    """A skill folder's hashes (`hash_tree`) as every copy of it keeps them: without what is in a
+    folder whose name starts with a dot, which a chain's copy of the skill a link left leaves out
+    (`chain._link`) — a task's `.git` would otherwise tell every later link's copy from the folder."""
+    return {path: digest for path, digest in tree.items() if not any(part.startswith(".") for part in Path(path).parts)}
+
+
 def fingerprint(hashes: dict[str, str]) -> str | None:
     """A short fingerprint of a skill's files from their hashes (`hash_tree`): the same for
     two folders whose files match byte for byte, and None for no files. How a run names the

@@ -178,22 +178,22 @@ def test_a_person_adds_and_forgets_a_skill_from_the_terminal(store, tmp_path):
     runner = CliRunner()
     home = ["--home", str(store.home)]
     mine = skill_folder(tmp_path)
-    looked = runner.invoke(app, ["add-skill", str(mine), "--dry-run", *home], env={"COLUMNS": "160"})
+    looked = runner.invoke(app, ["add-skill", str(mine), "--dry-run", *home])
     assert looked.exit_code == 0, looked.output
     assert "a folder on this machine, remembered where it is" in looked.output and "nothing added" in looked.output
     assert addskill.added(store.home) == []
-    done = runner.invoke(app, ["add-skill", str(mine), *home], env={"COLUMNS": "160"})
+    done = runner.invoke(app, ["add-skill", str(mine), *home])
     assert done.exit_code == 0 and "added: `tuningfork skill tally-report` shows it" in done.output, done.output
-    copied = runner.invoke(app, ["add-skill", str(mine), "--copy", "--name", "tally-copy", *home], env={"COLUMNS": "160"})
+    copied = runner.invoke(app, ["add-skill", str(mine), "--copy", "--name", "tally-copy", *home])
     assert copied.exit_code == 0 and "a copy kept in the recordings folder" in copied.output, copied.output
     # Its page in the terminal says how each was added, as the web page does.
-    shown = runner.invoke(app, ["skill", "tally-copy", *home], env={"COLUMNS": "200"})
+    shown = runner.invoke(app, ["skill", "tally-copy", *home])
     assert f"you added it, as a copy (copied from {mine})" in shown.output, shown.output
-    shown = runner.invoke(app, ["skill", "tally-report", *home], env={"COLUMNS": "200"})
+    shown = runner.invoke(app, ["skill", "tally-report", *home])
     assert "you added it, where it is" in shown.output, shown.output
-    both = runner.invoke(app, ["add-skill", *home], env={"COLUMNS": "160"})
+    both = runner.invoke(app, ["add-skill", *home])
     assert both.exit_code != 0 and "name the skill folder, or a run with --run" in both.output
-    forgot = runner.invoke(app, ["forget-skill", "tally-copy", *home], env={"COLUMNS": "160"})
+    forgot = runner.invoke(app, ["forget-skill", "tally-copy", *home])
     assert forgot.exit_code == 0 and "its copy is moved aside to" in forgot.output, forgot.output
     assert [each.name for each in addskill.added(store.home)] == ["tally-report"]
 

@@ -148,6 +148,71 @@ def source_skill(store: Store, run: Run) -> Path | None:
     return candidate if candidate is not None and candidate.is_file() else None
 
 
+def source_differences(store: Store, run: Run, source: Path, *, matches: bool) -> dict[str, Any]:
+    """What a refinement of `run` records of its skill's own folder beside `matches` (its SKILL.md
+    the text the model saw): `others_match`, whether the folder's other files are those the run
+    was given, by the hashes its batch kept (a validation refuses an edit where they are not); and
+    where either differs, `origin`, what the run was given in place of the folder
+    (`experiments.skill_given`: "task", its text then, changed since; "other", another text,
+    `given` saying which — a chain's later link, `batch --skill`; "unknown"). An edit of another
+    text can never be validated or approved, the folder not holding it: said when the refinement
+    starts, never as the file having changed (issue #55)."""
+    from tuningfork.ops.experiments import given_files, skill_given
+    from tuningfork.specs import hash_tree, kept_alike
+
+    kept = given_files(store, run)
+    try:
+        others = not kept or _others(kept_alike(hash_tree([source.parent]))) == _others(kept)
+    except OSError:
+        others = True
+    found = skill_given(store, run, source.parent) if not (matches and others) else None
+    return {"others_match": others, "origin": found.kind if found is not None else None,
+            "given": found.words if found is not None and found.kind == "other" else None}
+
+
+def shown_source(store: Store, refinement: Any) -> dict[str, Any] | None:
+    """A refinement's record of its skill's own folder (`source`) as it is shown — its view, `refine
+    start` given back an open one, MCP's start and show: one recorded before what its run was given
+    was (`origin`) is given that, found now and never written to the record (issue #55: a
+    refinement of a chain's later link said its task's file had changed)."""
+    source = (refinement.data or {}).get("source")
+    if not source or "origin" in source:
+        return source
+    run = store.get_run(refinement.run_id)
+    if run is None:
+        return source
+    return {**source, **source_differences(store, run, Path(source["path"]), matches=bool(source.get("matches")))}
+
+
+def _others(tree: dict[str, str]) -> dict[str, str]:
+    """A skill folder's files but its SKILL.md, the file an edit replaces."""
+    return {path: digest for path, digest in tree.items() if path != "SKILL.md"}
+
+
+def source_note(source: dict[str, Any] | None, run: str) -> str | None:
+    """What a refinement's record of its skill's own folder (`source`) says the person should
+    know, in the precise words the CLI and MCP print, or None: the run given another text than
+    the folder holds, the file changed since, or its other files — or, where the run's record
+    cannot tell which, that the folder does not hold what the run had."""
+    if not source:
+        return None
+    folder = Path(source["path"]).parent
+    if source.get("origin") == "other":
+        return (f"run {run[:8]} was given another skill text than {folder} holds — {source.get('given')}: proposals "
+                "edit the run's copy, which the folder does not hold, so none can be validated or approved; to tune that "
+                "text, refine a run of a scenario of this run that keeps a copy of what it had (`tuningfork scenario`, "
+                "or Make a scenario… on the run's page), whose task file needs a held-out eval to approve an edit")
+    known = source.get("origin") != "unknown"
+    if not source.get("matches"):
+        return ("the skill's file has changed since this run was given it" if known
+                else "the skill's file does not hold the text this run had") + ": proposals edit the run's copy"
+    if source.get("others_match") is False:
+        return ("the skill folder's other files have changed since this run was given them" if known
+                else "the skill folder's other files are not those this run had") + (
+            ": proposals edit the run's copy, and none can be validated against the folder as it is")
+    return None
+
+
 def _first_step_with(store: Store, run: Run, text: str) -> int | None:
     from tuningfork.experiment.skill import locate
 
@@ -359,7 +424,8 @@ def create(
     source_data = None
     if source is not None:
         source_sha = text_sha256(_text(source))
-        source_data = {"path": str(source), "sha256": source_sha, "matches": source_sha == baseline_sha}
+        source_data = {"path": str(source), "sha256": source_sha, "matches": source_sha == baseline_sha,
+                       **source_differences(store, checkpoint.run, source, matches=source_sha == baseline_sha)}
     for existing in list_refinements(store, run=checkpoint.run.id):
         if (existing.step_idx == checkpoint.step.idx and existing.target == declared_target.spec
                 and existing.data["baseline"]["sha256"] == baseline_sha):
@@ -811,7 +877,7 @@ def view(store: Store, reference: str, *, held_out: bool = False, masking: Any =
     packets = sorted(path.stem for path in (refinement.folder / "packets").glob("*.json")) \
         if (refinement.folder / "packets").is_dir() else []
     return {
-        "refinement": refinement.to_json(),
+        "refinement": {**refinement.to_json(), "source": shown_source(store, refinement)},
         "baseline": baseline,
         "proposals": items,
         "screens": found_screens,

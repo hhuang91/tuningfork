@@ -210,8 +210,12 @@ prompt and everything before it each run's context.
 - **The skill.** `--skill-dir <folder>` names the skill folder the scenario tunes. By default it
   is the one the run's skill came from — the one an import named, or a launched run's task's —
   else a copy kept in the scenario's folder (`skill/<name>/`), standing in for it: the copy the
-  run kept, or the SKILL.md the model read. Where that folder's SKILL.md has changed since the
-  run, the plan says so, and `--copy-skill` keeps the copy instead, to study the text the run had.
+  run kept, or the SKILL.md the model read. Where that folder has changed since the run, the plan
+  says so, and `--copy-skill` keeps the copy instead, to study the text the run had. A run that
+  was given another text than its task's skill folder holds — a chain's later link given a skill
+  the link before changed, a run of `batch --skill` or `--skill-dir` with a text of its own, a
+  validation's runs of an edit — keeps the copy by default, and the plan says what the run was
+  given; name the task's skill folder with `--skill-dir` to tune that one instead.
   `--skill <name>` chooses where the run shows several.
 - **The check.** `--check '<command>'` or `--reply-contains <text>`. A launched run's is its
   task's own by default, and what that check reads from the task's folder
@@ -231,7 +235,9 @@ The web UI has the same, from a run's page (**Make a scenario…**) or from the 
 a run yet). Its first fields are a new scenario's — its name, the harness, the skill's name and
 its skill folder — each greyed where the run says it: the harness it recorded, the skill where it
 had one, and the skill folder its task file or its import named. Where that folder has changed
-since the run, it is offered beside the others instead; where the run names no skill folder, the
+since the run, it is offered beside the others instead; where the run was given another text than
+it holds, a copy of what the run had is chosen to begin with, the folder offered beside it; where
+the run names no skill folder, the
 folder is a copy of what the run had, an existing skill the Skills page lists, or a path. Then the form sets each run beside the chat,
 for the skill chosen: first what each run is
 given — its harness's own system prompt and tools (the chat's shown, never sent), the

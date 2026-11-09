@@ -468,6 +468,41 @@ def test_a_refinement_at_a_passing_run_is_told_so(store, tmp_path):
     assert "a screen to the end from several checkpoints" in note
 
 
+def test_a_refinement_of_a_run_given_another_text_says_so_to_an_agent(tmp_path, mock_server, monkeypatch):
+    """Issue #55: start_refinement said the skill's file had changed since the run, of a run that
+    was given another text, and show_refinement said nothing of it. Both say what the run was
+    given, and that none of its edits can be validated or approved."""
+    from tuningfork.mcp.tools import Context, RefinementArgs, RefinementRef, show_refinement, start_refinement
+    from tuningfork.ops.batch import execute_batch, prepare_batch
+    from tests.helpers import task_stack
+
+    with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+        stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+        variant = stack.tmp / "variant.md"
+        task_skill = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+        variant.write_text(task_skill.read_text(encoding="utf-8") + "\nIts own line.\n", encoding="utf-8")
+        plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                             model="m", harness="fake", n=1, skill_file=str(variant))
+        (outcome,) = execute_batch(stack.store, plan).outcomes
+        context, who = Context(store=stack.store, jobs=None), {"via": "mcp", "client": "an agent"}
+        started = start_refinement(context, RefinementArgs(run=outcome.run_id, step="write_file", target_match="row_count",
+                                                           unseen_ok=True), who)
+        said = (f"note: run {outcome.run_id[:8]} was given another skill text than {task_skill.parent} holds — "
+                f"{variant} as its SKILL.md: proposals edit the run's copy")
+        shown = show_refinement(context, RefinementRef(refinement=started.data["refinement"], evidence=False))
+        # Recorded before what its run was given was, and given back open when started again: told it all the same.
+        (made,) = [path for path in (stack.store.home / "refinements").glob("*/refinement.json")]
+        data = json.loads(made.read_text(encoding="utf-8"))
+        data["source"] = {key: data["source"][key] for key in ("path", "sha256", "matches")}
+        made.write_text(json.dumps(data), encoding="utf-8")
+        again = start_refinement(context, RefinementArgs(run=outcome.run_id, step="write_file", target_match="row_count",
+                                                         unseen_ok=True), who)
+        assert again.data["refinement"] == started.data["refinement"]
+        for answer in (started, shown, again):
+            assert any(line.startswith(said) for line in answer.lines), answer.lines
+            assert not any("changed since" in line for line in answer.lines)
+
+
 def test_a_step_screen_at_the_ceiling_says_why_nothing_could_show():
     from tuningfork.ops import compact
 

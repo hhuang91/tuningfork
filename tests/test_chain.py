@@ -123,6 +123,61 @@ class TestChain:
         given = (Path(stack.store.get_launch(report.links[1].launch_id).skill_dir) / "SKILL.md").read_text()
         assert given.endswith("learned: round 1\n")
 
+    @pytest.mark.parametrize("recorded", [True, False])
+    def test_a_later_link_is_said_to_have_been_given_another_text_never_its_tasks_to_have_changed(self, stack, recorded):
+        """Issue #55: a link after the first is given the folder the link before it left, not its
+        task's, whose file stays as it was. A scenario of it keeps a copy of what it had, saying what
+        the run was given, its task's folder offered beside the copy; a refinement of it says the
+        same from its start. Never that the task's file has changed since, which it has not. A link
+        recorded before its run kept the folder it was given (`parity.skill_dir`) is read from the
+        chain's record."""
+        from tuningfork.ops import imports, refine
+
+        task_skill = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+        had = task_skill.read_bytes()
+        plan = prepare(stack, n=2)
+        report = execute_chain(stack.store, plan)
+        first, second = report.links
+        assert task_skill.read_bytes() == had
+        assert stack.store.get_run(second.run_id).parity["skill_as_task"] is False
+        assert stack.store.get_run(first.run_id).parity["skill_as_task"] is True
+        if not recorded:
+            run = stack.store.get_run(second.run_id)
+            older = {key: value for key, value in run.parity.items() if key not in ("skill_dir", "skill_as_task")}
+            with stack.store._lock:
+                stack.store._conn.execute("UPDATE runs SET parity = ? WHERE id = ?", (json.dumps(older), run.id))
+                stack.store._conn.commit()
+            assert "skill_dir" not in stack.store.get_run(run.id).parity
+        given = f"the folder link 0 of chain {plan.id[:8]} left, {first.left}"
+
+        choices = imports.scenario_choices(stack.store, second.run_id)
+        assert (choices["skill_dir"], choices["skill_dir_from"]) == (str(task_skill.parent), "task")
+        assert choices["skill_dir_given"] == given and not choices["skill_dir_changed"] and choices["can_copy"]
+        planned = imports.prepare_scenario(stack.store, second.run_id, "second-link")
+        assert planned.own_skill
+        assert not any("changed since" in said for said in [*planned.warnings, *planned.notes])
+        (note,) = [said for said in planned.notes if "was given another skill text" in said]
+        assert note.startswith(f"run {second.run_id[:8]} was given another skill text than {task_skill.parent} holds — {given}")
+        assert f"--skill-dir {task_skill.parent}" in note
+        imports.make_scenario(stack.store, planned)
+        from tuningfork.ops import scenarios
+
+        kept = scenarios.folder(stack.store.home, "second-link") / "skill" / "tally-report" / "SKILL.md"
+        assert kept.read_text(encoding="utf-8").endswith("learned: round 1\n")
+        # The task's folder, named, is still what a scenario takes.
+        assert not imports.prepare_scenario(stack.store, second.run_id, "theirs", skill_dir=str(task_skill.parent)).own_skill
+        # The first link was given the task's own folder: nothing to say, and its folder taken.
+        mine = imports.scenario_choices(stack.store, first.run_id)
+        assert mine["skill_dir_given"] is None and not mine["skill_dir_changed"]
+
+        made = refine.create(stack.store, second.run_id, "write_file", target_match="row_count")
+        source = made.data["source"]
+        assert source["path"] == str(task_skill) and source["matches"] is False
+        assert (source["origin"], source["given"]) == ("other", given)
+        said = refine.source_note(source, second.run_id)
+        assert said.startswith(f"run {second.run_id[:8]} was given another skill text than {task_skill.parent} holds")
+        assert "none can be validated or approved" in said and "changed since" not in said
+
     def test_the_chain_is_kept_and_found_again(self, stack):
         plan = prepare(stack, n=2)
         report = execute_chain(stack.store, plan)

@@ -1151,7 +1151,7 @@ def scenario_choices(store: Store, reference: str, *, skill: str | None = None, 
     launch = store.get_launch(run.launch_id) if run.launch_id else None
     task = launch.eval if launch is not None and isinstance(launch.eval, dict) else {}
     offered = set(start.starts) if start else set()
-    folder, given_by = _default_folder(run, launch, studied) if studied is not None else (None, None)
+    folder, given_by, given = _default_folder(store, run, launch, studied) if studied is not None else (None, None, None)
     return {
         "run": run.id, "harness": harness, "recorded_harness": run.harness,
         "imported": bool((run.parity or {}).get("imported")), "launched": launch is not None,
@@ -1160,8 +1160,11 @@ def scenario_choices(store: Store, reference: str, *, skill: str | None = None, 
         # run's task's own ("import", "task"); else none, and the scenario keeps a copy of what the
         # run had — the copy it kept, or the SKILL.md its model read — where there is one.
         "skill_dir": str(folder) if folder is not None else None, "skill_dir_from": given_by,
-        # That folder's SKILL.md is no longer the text the run had: a copy of that can be kept instead.
-        "skill_dir_changed": folder is not None and studied is not None and _changed_since(folder, studied),
+        # That folder no longer holds what the run had: a copy of that can be kept instead.
+        "skill_dir_changed": given is not None and given.kind != "other",
+        # Or the run was given another text: what, a copy of which the scenario keeps unless the
+        # folder is chosen.
+        "skill_dir_given": given.words if given is not None and given.kind == "other" else None,
         "can_copy": studied is not None and (studied.kept is not None or studied.found is not None),
         "copy_dir": f"{SKILL_FOLDER}/{_folder_name(studied.name)}" if studied is not None else None,
         "turns": [{**turn, "offered": turn["message"] in offered} for turn in turns(chat)],
@@ -1206,7 +1209,8 @@ def prepare_scenario(
     put it, say). The skill, `skill` where the run kept or showed several: in `skill_dir`, else the
     folder an import named, else its task's own (a launched run's spec), else a copy in the
     scenario's own folder — the one the run kept, or the text its model read; that copy whatever
-    folder there is where `copy_skill` asks for it (one changed since the run, say). Its inputs: a
+    folder there is where `copy_skill` asks for it (one changed since the run, say), and where the
+    run was given another text than its task's folder holds (`_default_folder`). Its inputs: a
     launched run's workspace where the scenario starts, from its snapshots, else its task's input
     files; for any other run, the files its conversation names, for a person to add. Its check:
     `check`, else a launched run's task's own (unless `task_check` is False), with what it reads
@@ -1263,7 +1267,11 @@ def prepare_scenario(
     own = place / SKILL_FOLDER / _folder_name(studied.name)
     copy_from: Path | None = None
     extract: str | None = None
-    found_folder, given_by = (None, None) if copy_skill else _default_folder(run, launch, studied)
+    # What the run was given is found whether or not a copy is asked for: the plan says it either
+    # way (found in review: the form asks for the copy, and its plan said nothing of why).
+    default_folder, given_by, given = (None, None, None) if folder is not None else _default_folder(store, run, launch, studied)
+    other = given is not None and given.kind == "other"
+    found_folder = None if copy_skill or other else default_folder
     if folder is not None:
         skill_folder = folder
         text = (folder / "SKILL.md").read_text(encoding="utf-8", errors="replace")
@@ -1272,11 +1280,15 @@ def prepare_scenario(
                             "runs read it as the folder has it")
     elif found_folder is not None:
         skill_folder = found_folder
-        if _changed_since(found_folder, studied):
+        to_copy = ("keep a copy of what the run had instead (--copy-skill, or “A copy of what the run had” on the form) "
+                   "to study the text it had")
+        if given is not None and given.kind == "task":
             since = "was given it" if given_by == "task" else "was imported"
-            warnings.append(f"{found_folder}/SKILL.md has changed since run {run.id[:8]} {since}: the scenario's runs read "
-                            "it as it is now — keep a copy of what the run had instead (--copy-skill, or “A copy of what "
-                            "the run had” on the form) to study the text it had")
+            warnings.append(f"{found_folder} has changed since run {run.id[:8]} {since}: the scenario's runs read it as it "
+                            f"is now — {to_copy}")
+        elif given is not None:
+            warnings.append(f"{found_folder} does not hold what run {run.id[:8]} had: the scenario's runs read it as it is "
+                            f"now — {to_copy}")
     elif studied.kept is not None or studied.found is not None:
         skill_folder = own
         if studied.kept is not None and not extracted_unmasked(run, studied.kept_name):
@@ -1291,7 +1303,12 @@ def prepare_scenario(
             extract = written
         what = (f"the copy run {run.id[:8]} kept" if studied.kept is not None
                 else "the SKILL.md the model read — the rest of its folder, scripts and references, the chat never showed")
-        if copy_skill:
+        if other:
+            notes.append(f"run {run.id[:8]} was given another skill text than {default_folder} holds — {given.words}: the "
+                         f"scenario keeps {what} in the scenario's folder ({own}), where an approved edit is written; name "
+                         f"the task's skill folder (--skill-dir {default_folder}, or “Its skill folder, as it is now” on "
+                         "the scenario's form) to tune that one")
+        elif copy_skill:
             notes.append(f"the scenario keeps {what} in the scenario's folder ({own}), where an approved edit is written")
         else:
             warnings.append(f"no skill folder was found for {studied.name}: the scenario keeps {what} in the scenario's "
@@ -1414,23 +1431,42 @@ def imported_source(run: Any, skill: str) -> Path | None:
     return Path(named) if named and (Path(named) / "SKILL.md").is_file() else None
 
 
-def _default_folder(run: Any, launch: Any, studied: Studied) -> tuple[Path | None, str | None]:
-    """The skill folder a scenario of `run` takes where none is named, and where it comes from:
-    the one named when the chat was imported ("import"), else the folder of the task a launched
-    run was of ("task") — each while it is there. (None, None): the scenario keeps a copy."""
+def _default_folder(store: Store, run: Any, launch: Any, studied: Studied) -> tuple[Path | None, str | None, Any]:
+    """The skill folder a scenario of `run` takes where none is named, where it comes from, and,
+    where the folder no longer holds what the run had, what the run was given in its place
+    (`experiments.Given`; else None): the one named when the chat was imported ("import"), else
+    the folder of the task a launched run was of ("task") — each while it is there. Where the run
+    was given another text ("other": a chain's later link given a skill the link before changed,
+    `batch --skill` or `--skill-dir` with a text of its own, a validation's runs of an edit), the
+    folder gives way to a copy of what the run had, named beside it (the person's choice, issue
+    #55); one changed since ("task"), or that the run's record cannot place ("unknown"), is taken,
+    saying so. (None, None, None): the scenario keeps a copy."""
+    from tuningfork.ops.experiments import Given, skill_given
+
     source = imported_source(run, studied.kept_name) if studied.kept_name is not None else None
     if source is not None:
-        return source, "import"
+        return source, "import", Given("task") if _changed_since(source, store, run, studied) else None
     task_folder = _task_skill_dir(run, launch, studied.kept)
-    return (task_folder, "task") if task_folder is not None else (None, None)
+    if task_folder is None:
+        return None, None, None
+    differs = _changed_since(task_folder, store, run, studied)
+    return task_folder, "task", skill_given(store, run, task_folder) if differs else None
 
 
-def _changed_since(found_folder: Path, studied: Studied) -> bool:
-    """Whether the SKILL.md in the folder a scenario of a run would take is no longer the text
-    the run kept: edited since, by an approval or by hand (found in review: the form fixed such a
-    folder, and a scenario of an old failing run could not study the text it failed with)."""
+def _changed_since(found_folder: Path, store: Store, run: Any, studied: Studied) -> bool:
+    """Whether the folder a scenario of a run would take no longer holds what the run had: any of
+    its files, by the hashes a launched run's batch kept of its copy (`experiments.differs_from_given`:
+    a file a chain's link added counts), else its SKILL.md against the copy the run kept. Edited
+    since, by an approval or by hand — or never what the run was given (`_default_folder`). Found
+    in review: the form fixed such a folder, and a scenario of an old failing run could not study
+    the text it failed with."""
+    from tuningfork.ops.experiments import differs_from_given
+
     if studied.kept is None:
         return False
+    differs = differs_from_given(store, run, found_folder)
+    if differs is not None:
+        return differs
     try:
         return (found_folder / "SKILL.md").read_bytes() != studied.kept.read_bytes()
     except OSError:

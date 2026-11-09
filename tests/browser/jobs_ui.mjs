@@ -2392,7 +2392,7 @@ try {
     return labels.join(",") === "Scenario name,Harness,Skill name,Skill folder"
       && harness.disabled && harness.value === "fake" && skill.disabled && skill.value === "tally-report"
       && folder.readOnly && folder.classList.contains("field-fixed") && folder.value === ${JSON.stringify(`${health.home}/lab-task/tally-report`)}
-      && ways === "fixed*,copy,known,path" && form.textContent.includes("Its SKILL.md has changed since the run");
+      && ways === "fixed*,copy,known,path" && form.textContent.includes("It does not hold what the run had");
   })()`), "a launched run's harness and skill are greyed, in a new scenario's order; its task's folder, changed since, is offered beside a copy of what the run had");
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
   await planShows(page, "data.csv");

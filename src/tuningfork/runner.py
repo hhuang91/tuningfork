@@ -52,6 +52,7 @@ from tuningfork.specs import (
     load_context,
     TaskSpec,
     hash_tree,
+    kept_alike,
     materialize_files,
     missing_files,
     run_check,
@@ -955,8 +956,19 @@ class BatchRunner(Launcher):
         parity = {**(parity or {}), "skill_snapshot": hash_tree([skill]) if skill else {}}
         if skill:
             # The frozen copy every run was given: the true "original" for a later A/B,
-            # however the source has been edited since.
+            # however the source has been edited since. And the folder it was made from — the
+            # task's own, or the one the operation gave (`batch --skill-dir`, a chain's link) —
+            # and whether what it was given held what the task's folder held then, so that what a
+            # run was given is known later (`experiments.skill_given`): a later difference is the
+            # task's folder changed since, or another text given.
+            task_folder = spec.resolved_skill_dir()
             parity["skill_snapshot_dir"] = str(skill.resolve())
+            parity["skill_dir"] = str(Path(skill_dir or task_folder).resolve())
+            try:
+                parity["skill_as_task"] = bool(task_folder and task_folder.is_dir()) and (
+                    kept_alike(hash_tree([task_folder])) == kept_alike(parity["skill_snapshot"]))
+            except OSError:
+                pass  # a file of the task's folder it cannot read: what it held is not known
         if self.skill_file:
             parity["skill_file"] = str(self.skill_file)
 
