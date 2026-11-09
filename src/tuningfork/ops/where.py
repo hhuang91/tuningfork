@@ -16,7 +16,7 @@ answers up with the verdicts. The question is of either side of a run:
   whether it held at the start, the call that made it hold, the call that undid it, and whether it
   held at the end.
 
-Counted by verdict over a task's runs, by condition as pass rates are: in how many passing and how
+Counted by verdict over a task's runs, by set-up as pass rates are: in how many passing and how
 many failing runs it held — at some step, of an answer; at the end, of a file — with Fisher's exact
 test; the steps where it was first seen or made; and the step reference that names that call in each
 run, a tool's first call or a file's first change (`ops.experiments.find_step`), so that a refinement

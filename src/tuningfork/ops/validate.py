@@ -246,7 +246,7 @@ def prepare_validate(
                 f"run {run.id[:8]} was given another skill text than {source.parent} holds — {found.words}: the edit "
                 "was made to that text, which the folder does not hold",
                 hint="to tune that text, refine a run of a scenario of the run that keeps a copy of what it had "
-                     "(`tuningfork scenario`, or Make a scenario… on the run's page), whose task file needs a held-out "
+                     "(`tuningfork scenario`, or Make a scenario… on the run's page), whose spec needs a held-out "
                      "eval to approve an edit", code="drifted", field="refinement",
             )
         if found.kind == "unknown":

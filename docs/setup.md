@@ -321,7 +321,7 @@ is a model you run yourself: nothing is said, and everything works.
 ## The harnesses
 
 tuningfork launches three harnesses itself, for batches, forks and validations: each run in a
-fresh workspace and a fresh home, against your local model only. None sees your own settings
+run folder of its own, against your local model only. None sees your own settings
 or memory files, and none needs an API key.
 
 | | Hermes Agent | Claude Code | OpenClaw |
@@ -424,15 +424,15 @@ seen to decide whether the model wrote a file or only said it did: resampled at 
 forks whose requests differed only in that number wrote it 5 times in 20 and 20 times in 20.
 
 Inside, the rest of the machine is read-only, `/tmp` and the process list are the launch's own,
-and the recordings folder and the task's spec folder are empty: the harness can read neither
+and the recordings folder and the spec's folder are empty: the harness can read neither
 earlier runs nor the check. `TUNINGFORK_SANDBOX_HIDE` names more folders every launch sees
 empty, as `PATH` is written: a benchmark's folder of tasks, say. A check sees them empty too,
-but for its own task's folder, so keep a check's scripts and keys there. `tuningfork connections
+but for its spec's folder, so keep a check's scripts and keys there. `tuningfork connections
 show` says whether launches run in the sandbox, a batch's plan warns when they cannot, and a
 fork of a sandboxed run is refused without one. `TUNINGFORK_SANDBOX=off` turns it off.
 
 A run's check runs in the same sandbox once the run ends, since it can run what the model left
-in the workspace. It works in `/home/user/project`, sees the task's folder read-only, which no
+in the workspace. It works in `/home/user/project`, sees the spec's folder read-only, which no
 launch sees, and has an empty home of its own. Of your environment variables it gets only
 `PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, those its task names in
 [`check_env`](#a-task), and those the machine's config names for every check; without the

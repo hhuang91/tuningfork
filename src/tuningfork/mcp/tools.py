@@ -1571,7 +1571,7 @@ KIND_GUIDE = {
     "forking-tokens": "At the step's least certain tokens, force each likely alternative and let the "
                       "model go on: which tokens change what it does (Holm-corrected).",
     "server-check": "Measure what the server can do: harness needs, token analysis.",
-    "batch": "Run a task N times through its harness, each run in a fresh workspace: pass rates with "
+    "batch": "Run a task N times through its harness, each run in a run folder of its own: pass rates with "
              "intervals. Runs a harness, and the task's check, on this machine.",
     "chain": "A task run N times in order, the skill each run leaves given to the next: what the harness's "
              "own loop makes of it. Runs a harness, and the task's check, on this machine.",

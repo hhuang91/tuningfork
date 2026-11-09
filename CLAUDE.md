@@ -185,7 +185,7 @@ given — its harness's own system prompt and tools, the chat's shown and never 
 steps from the prompt on, each by what a run does with it (`Start.steps`, `STEP_PARTS`: already
 done, where each run starts, made fresh by its model, past where it stops, after the person's next turn).
 The skill is the folder the person names, the import named or a launched run's task's (an approval
-writes there), else a copy in the scenario's own folder (`skill/<name>/`: the copy the run kept, or
+writes there), else a copy in the scenario's folder (`skill/<name>/`: the copy the run kept, or
 the SKILL.md the model read, given frontmatter where its harness showed none) — never the run's own
 copy, which its A/Bs read. Where that folder no longer holds what a launched run had — whole folders
 compared, as every copy keeps them (`experiments.differs_from_given`, `specs.kept_alike`) — what
@@ -219,7 +219,7 @@ workspace as it is, and the run counts, its result saying where it stopped (`sto
 A task file a person has becomes a scenario too (`scenarios.prepare_import`, `prepare_upload`,
 `execute_import`; the Scenarios page's Add a task file you have, `POST /scenarios/import`), planned
 before anything is written: by its path, its skill folder kept where it is, or its folder uploaded,
-the skill folder it holds copied into the scenario's own (`skill/<name>/`). Either way its input
+the skill folder it holds copied into the scenario's folder (`skill/<name>/`). Either way its input
 files, the conversation its runs continue, and what its check reads from its folder
 (`$TUNINGFORK_SPEC_DIR/…`, read inside it as the shell reads it, `//` too) come with it; a
 scenario whose check reads what its folder lacks says so before it runs. A form plans an upload by
@@ -227,7 +227,7 @@ its files' sizes, and makes it with the data of the files it takes alone (`scena
 plan's `taken`). A new scenario's page and
 Make a scenario name the skill alike (`ui/static/js/skillpick.js`): the scenario's name, the
 harness (of a run), the skill's name, then its folder — an existing skill the Skills page lists, or
-a path, a relative one shown after the scenario's own folder it is taken from, and of a run a copy
+a path, a relative one shown after the scenario's folder it is taken from, and of a run a copy
 of what it had — each greyed where the run says it, but a folder that has changed since the run,
 offered beside a copy of what the run had (`copy_skill`), and one the run was never given, offered
 beside the copy, which is chosen to begin with (`skill_dir_given`). A scenario's input files go into

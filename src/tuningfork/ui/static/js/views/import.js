@@ -281,7 +281,7 @@ export async function scenarioFromRunView(root, [runId], scope) {
       skills, name: "run",
       fixed: found.skill_dir ? {
         path: found.skill_dir, why, changed: Boolean(found.skill_dir_changed), given: Boolean(found.skill_dir_given),
-        label: task ? "Its skill folder, as it is now" : "The skill folder named at import, as it is now",
+        label: task ? "The task's skill folder, as it is now" : "The skill folder named at import, as it is now",
       } : null,
       copy: found.can_copy ? { where: `scenarios/<name>/${found.copy_dir}/` } : null,
     });

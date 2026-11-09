@@ -9,7 +9,7 @@ their numbers ("owners 0.5", "owners 0") or their colours ("#333333 on #EA580C")
 A finding is counted once a run, so its count is the number of failed runs that said it, with its
 Wilson interval over the failed runs.
 
-A task's runs are tallied by condition — harness, model, skill version, server — as their pass
+A task's runs are tallied by set-up — harness, model, skill version, server — as their pass
 rates are (`analysis.conditions`): a finding pooled across wordings describes neither. A screen's
 forks are tallied by arm: the original's beside each proposal's, so what a proposal left failing
 shows next to what the original fails. A held-out task's runs are a person's evidence; the front
@@ -265,7 +265,7 @@ def refuse_hidden_task(task_id: str | None, hidden: Iterable[str]) -> None:
 
 
 def tally_task(store: Store, task_id: str, *, hidden: Iterable[str] = ()) -> Tally:
-    """What a task's failed runs' checks said, by condition, the most common finding first."""
+    """What a task's failed runs' checks said, by set-up, the most common finding first."""
     from tuningfork.analysis.conditions import conditions
     from tuningfork.ops.inspect import condition_json
 

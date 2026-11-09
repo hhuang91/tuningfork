@@ -104,7 +104,7 @@ export function skillPicker({ skills = [], path = "", resolved = null, relative 
   });
 
   const choices = [
-    ...(offered ? [["fixed", fixed.label || "Its skill folder, as it is now"]] : []),
+    ...(offered ? [["fixed", fixed.label || "The task's skill folder, as it is now"]] : []),
     ...(copy ? [["copy", "A copy of what the run had"]] : []),
     ["known", "Existing skill"],
     ["path", "Path to skill"],

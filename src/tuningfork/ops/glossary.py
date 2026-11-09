@@ -101,7 +101,7 @@ TERMS: tuple[Term, ...] = (
          "added where it is. A batch copies it once as it starts and gives each of its runs that copy. Nothing writes "
          "to it but an approval, which keeps the old text and a changelog beside the folder, never inside it.",
          "recording", aka=("skill_dir",), see=("skill", "copy of a skill", "approval", "recordings folder"),
-         where="a skill's page: Skill folder; Words page: where things live"),
+         where="a skill's page: Where its SKILL.md is kept; Words page: where things live"),
     Term("recordings folder", "Where tuningfork keeps what it records: every call, a run folder for each run it "
          "started (unless --workdir names another place), and the copies and records beside them. ~/.tuningfork, or "
          "the folder TUNINGFORK_HOME or --home names; readable only by you when tuningfork makes it.",

@@ -1305,13 +1305,13 @@ def prepare_scenario(
                 else "the SKILL.md the model read — the rest of its folder, scripts and references, the chat never showed")
         if other:
             notes.append(f"run {run.id[:8]} was given another skill text than {default_folder} holds — {given.words}: the "
-                         f"scenario keeps {what} in the scenario's folder ({own}), where an approved edit is written; name "
-                         f"the task's skill folder (--skill-dir {default_folder}, or “Its skill folder, as it is now” on "
-                         "the scenario's form) to tune that one")
+                         f"scenario keeps {what}, in the scenario's folder ({own}), where an approved edit is written; "
+                         f"name the task's skill folder (--skill-dir {default_folder}, or “The task's skill folder, as it "
+                         "is now” on the scenario's form) to tune that one")
         elif copy_skill:
-            notes.append(f"the scenario keeps {what} in the scenario's folder ({own}), where an approved edit is written")
+            notes.append(f"the scenario keeps {what}, in the scenario's folder ({own}), where an approved edit is written")
         else:
-            warnings.append(f"no skill folder was found for {studied.name}: the scenario keeps {what} in the scenario's "
+            warnings.append(f"no skill folder was found for {studied.name}: the scenario keeps {what}, in the scenario's "
                             f"folder ({own}), where an approved edit is written; name the skill folder (--skill-dir, or "
                             "“Skill folder” on the scenario's form) to tune that one")
         if made_up:
@@ -1328,10 +1328,10 @@ def prepare_scenario(
         check_files, unread = _check_files(check, spec_dir)
         notes.append(f"its check is task {run.task_id or '-'}'s own, as run {run.id[:8]} was launched with it")
         if check_files:
-            notes.append(f"its check reads {', '.join(sorted(check_files))} from the task's folder ({spec_dir}): "
+            notes.append(f"its check reads {', '.join(sorted(check_files))} from the spec's folder ({spec_dir}): "
                          "copied beside the scenario's spec, where no run sees it")
         if unread:
-            warnings.append(f"its check reads {', '.join(unread)} from the task's folder, which the scenario does not "
+            warnings.append(f"its check reads {', '.join(unread)} from the spec's folder, which the scenario does not "
                             "copy: put what it needs beside the scenario's spec")
     cautions, said = start_notes(start, studied.name, check)
     warnings.extend(cautions)

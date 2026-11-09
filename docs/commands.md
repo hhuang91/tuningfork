@@ -48,7 +48,7 @@ which gives them all. For a walk through them on a real task, see
 
 ### `batch`
 
-Runs a task N times through a headless harness, each run in a fresh workspace and a fresh home,
+Runs a task N times through a headless harness, each run in a run folder of its own,
 and judges each with the task's check. It prints each run's verdict, the pass rate with its
 interval, and where the runs diverged.
 
@@ -218,7 +218,7 @@ prompt and everything before it each run's context.
   given; name the task's skill folder with `--skill-dir` to tune that one instead.
   `--skill <name>` chooses where the run shows several.
 - **The check.** `--check '<command>'` or `--reply-contains <text>`. A launched run's is its
-  task's own by default, and what that check reads from the task's folder
+  task's own by default, and what that check reads from the spec's folder
   (`$TUNINGFORK_SPEC_DIR/…`) is copied beside the scenario's spec, where no run sees it;
   `--no-check` leaves it without one.
 - **The input files.** A launched run's workspace as the scenario's first call finds it — at the
@@ -442,9 +442,9 @@ tuningfork break add --from-step 2                       # before the model sees
 
 ## How do I fix the skill?
 
-A *refinement* is a folder in the recordings, written once wherever it can be: the step, the
-run's copy of the skill, the target, and every proposal with who proposed it, why and the
-evidence they were shown. [Part 4 of the guide](../examples/README.md#part-4--let-tuningfork-propose-the-fix)
+A *refinement* is a folder in the recordings folder, written once wherever it can be: the
+step, the run's copy of the skill, the target, and every proposal with who proposed it, why
+and the evidence they were shown. [Part 4 of the guide](../examples/README.md#part-4--let-tuningfork-propose-the-fix)
 walks through it from the target to the approval.
 
 ### `refine start`
@@ -658,7 +658,7 @@ recorded: an imported chat and each skill it extracted from it, a skill added fr
 model read with what an approval kept beside it (forgotten too), a chain's record, what a
 refinement keeps but what a person gave it, and a scenario's conversation and spec — whether a
 run or a task file made the scenario, which nothing records — with its copy of a skill where that
-is one of the skills read. It never reads what is kept as it was given: a launch's folders, the
+is one of the skills read. It never reads what is kept as it was given: run folders, the
 workspace's snapshots, a scenario's inputs and any other copy of a skill, a skill a person
 brought, the wordings tried. One exception: a skill added from a run that is gone, as the copy
 that run kept, is read, since which copy it was is gone with the run. Besides what today's

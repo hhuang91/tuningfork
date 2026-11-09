@@ -210,7 +210,7 @@ def condition_json(condition: Any) -> dict[str, Any]:
 def task_summaries(
     runs: Sequence[Run], checks: dict[str, list[Any]] | None = None, *, masking: Any = None,
 ) -> list[dict[str, Any]]:
-    """Runs grouped by task, with a check pass rate per condition.
+    """Runs grouped by task, with a check pass rate per set-up.
 
     A task run under two wordings, models or harnesses has one rate for each: `passed` is
     given for the task as a whole only when all its runs share one condition. `checks` are
@@ -253,7 +253,7 @@ def task_summaries(
 
 
 def tasks(store: Store) -> list[dict[str, Any]]:
-    """Every task recorded, newest first, with its pass rate under each condition."""
+    """Every task recorded, newest first, with its pass rate under each set-up."""
     return task_summaries(store.runs(limit=100_000), store.task_checks(), masking=store.masking)
 
 

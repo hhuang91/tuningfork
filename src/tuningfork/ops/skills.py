@@ -5,7 +5,7 @@ the folder a run's skill files were recorded under, else the first part of its t
 Each version of it is a fingerprint of the files its runs were given (`Run.skill_version`):
 two runs with one fingerprint read the same skill, byte for byte. Each version comes with its SKILL.md as the
 runs read it (the launch's snapshot of the skill folder, or the batch's frozen copy), its
-pass rate under each condition it ran under, and what is known of where its text came from:
+pass rate under each set-up it ran under, and what is known of where its text came from:
 the skill's own file as it is now, a saved variant, a refinement's proposal, a version an
 approval replaced. Beside the versions: the skill's own folder as specs name it — or as a person
 added it (`ops.addskill`) — with the changelog and the old versions an approval keeps beside it
