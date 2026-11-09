@@ -102,8 +102,8 @@ blobs, snapshot objects, the folder a batch or a set of forks was laid out in wi
 copy its runs were given (`trash._remove_groups`) — with a two-minute grace for a recording in
 flight, swept once it has passed (`trash.sweep_if_due`: a running proxy looks every half
 minute, and a later deletion sweeps everything). A path a skill added, a scenario or a
-remaining launch's task file names stays where it is, the rest of its folder going
-(`trash._named`, `_clear`), and a batch's folder holding one stays. A launch's folder
+remaining launch's spec names stays where it is, the rest of its folder going
+(`trash._named`, `_clear`), and a batch's folder holding one stays. A run folder
 outside the recordings folder goes only where tuningfork marked its group as made for this
 recordings folder (`runner.GROUP_MARK`, `made_for`, `make_group`: 0700): a copy of the
 recordings folder, whose launches name the original's folders, removes none of them, nor its
@@ -135,7 +135,7 @@ person named), a skill added from what a run's model read (its record's `origin`
 gone, the copy it kept, whichever that was), with what an approval kept beside it, forgotten too,
 a chain's record, a refinement's but what a person gave it (`GIVEN_TO_A_REFINEMENT`, a proposal
 only a person made), a scenario's conversation and spec but `GIVEN_TO_A_SCENARIO`, in the trash
-too — a run's or a task file's alike, since nothing records which — and its copy of a skill where
+too — a run's or a spec's alike, since nothing records which — and its copy of a skill where
 that is one of the skills read. What a mask took is looked for wherever else it stands — of an
 address, what reads as a key (`config.key_like`), never a word or a date its query held — as are
 tuningfork's own keys — never this process's variables, whose local defaults
@@ -850,7 +850,7 @@ profile, the pages and the terminal — but a password whose part before an unes
 `tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
 `tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file
 for it, and every answer an agent is given over MCP, but the files kept as they were
-(`KEPT_AS_IT_WAS`: a launch's folders, the workspace's snapshots, a scenario's inputs, the
+(`KEPT_AS_IT_WAS`: run folders, the workspace's snapshots, a scenario's inputs, the
 wordings tried), what a copy of the skill a launched run was given holds as given, or a
 refinement's copy of it (`GIVEN_COPIES`, `GIVEN_TO_A_REFINEMENT`), and what a scenario's spec
 takes from its run's task as written (`GIVEN_TO_A_SCENARIO`). Never report a rate without its

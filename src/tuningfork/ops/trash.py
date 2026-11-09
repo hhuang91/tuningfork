@@ -282,7 +282,7 @@ def _outside(store: Store, plan: Purge) -> list[str]:
     launched = [folder for workspace, harness_home in plan.launches.values()
                 if (folder := _launch_folder(home, workspace, harness_home)) is not None]
     groups = sorted({str(folder.parent) for folder in launched if not _inside(home, folder, 1)})
-    notes = [f"the folders tuningfork made for its launches outside the recordings folder go too, in "
+    notes = [f"the run folders outside the recordings folder go too, in "
              f"{', '.join(groups)}"] if groups else []
     batches = [group for group, chain in _groups(store, plan).items() if not chain]
     folders = launched + [(imports(home) / run).resolve() for run in plan.runs] + batches

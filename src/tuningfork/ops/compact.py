@@ -1134,7 +1134,7 @@ def tally_lines(view: dict[str, Any]) -> list[str]:
 
 
 def where(report: dict[str, Any], show: int = 12) -> dict[str, Any]:
-    """Where a question held along a task's runs, small enough for an agent: each condition's split
+    """Where a question held along a task's runs, small enough for an agent: each set-up's split
     by verdict with its intervals, where it was first seen or made, the step that names that call in
     each run, and a few of the runs."""
     kind = (report.get("probe") or {}).get("kind")
@@ -1168,7 +1168,7 @@ def where(report: dict[str, Any], show: int = 12) -> dict[str, Any]:
 
 
 def where_lines(view: dict[str, Any]) -> list[str]:
-    """Where a question held, in sentences: the question, then each condition's split by verdict,
+    """Where a question held, in sentences: the question, then each set-up's split by verdict,
     where it was first seen or made, and the step that names that call in each run."""
     from tuningfork.ops.where import reference_text, seen_text, split_text
 

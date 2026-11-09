@@ -794,7 +794,7 @@ class ScenarioSummary:
 
 
 def _results(runs: list[Any], tasks: set[str]) -> list[dict[str, Any]]:
-    """Each task's pass rate under each condition it was run under, newest first."""
+    """Each task's pass rate under each set-up it was run under, newest first."""
     from tuningfork.analysis.conditions import conditions
 
     found = []

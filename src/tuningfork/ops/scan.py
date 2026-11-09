@@ -25,7 +25,7 @@ made from a conversation. Each is read as the store masks it (`Masking.of`), an 
 also as its wire reads them back whole, a token stream as its tokens join. What a mask takes is
 looked for wherever else it stands, as the store looks for it in a step's other forms, and so is
 every key tuningfork holds (`access.held_secrets`). Never what is kept as it was given, whatever
-version made it: a launch's folders, the workspace's snapshots, a scenario's inputs and any other
+version made it: run folders, the workspace's snapshots, a scenario's inputs and any other
 copy of a skill, a skill a person brought, the wordings tried — but a skill added from a run that
 is gone, as the copy that run kept, which may have been what it was given: which it was is gone
 with the run (`_added_from_a_run`). What no pattern reads, it cannot find (`NOT_FOUND`).
@@ -78,7 +78,7 @@ TRASHED_AS = ("run", "experiment", "job", "refinement", "scenario")
 #: What else holds some and goes by hand, where: the trash takes none of them.
 BY_HAND = {"chain": "chains/{}.json", "import": "imports/{}/", "skill": "skills/{}/"}
 #: What is never read, whatever version made it.
-NOT_READ = ("what is kept as it was given, by design: a launch's folders, the workspace's snapshots, a "
+NOT_READ = ("what is kept as it was given, by design: run folders, the workspace's snapshots, a "
             "scenario's inputs and a copy of a skill it was given, a skill a person brought, the wordings tried")
 #: What no pattern reads, which the scan cannot find either.
 NOT_FOUND = ("a key no pattern reads: the end of one a check's output was cut through, as 0.6 kept it, or "

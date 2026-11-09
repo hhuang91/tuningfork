@@ -437,7 +437,7 @@ def where_it_holds(
     masking: Any = None,
 ) -> WhereItHolds:
     """Ask the probe of each of a task's runs — its own, not forks or threads, the newest `limit` —
-    and count the answers by verdict, by condition. With `screen`, of a screen run to the end's
+    and count the answers by verdict, by set-up. With `screen`, of a screen run to the end's
     forks instead, arm by arm (`screen_forks`): where none of a broken skill's own runs passed, a
     proposal's passing forks beside its failing ones are the comparison there is. `masking`: a file
     is matched as an agent is shown it (`Probe.masking`)."""

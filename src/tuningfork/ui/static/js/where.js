@@ -66,7 +66,7 @@ export function whereForm(task, { condition = null, screen = null } = {}) {
   return form;
 }
 
-/** Where it held: each condition's runs — or each arm's forks — by verdict, where it was first
+/** Where it held: each set-up's runs — or each arm's forks — by verdict, where it was first
  *  seen or made, the step that names that call in each run, and the runs one by one. */
 export function whereResult(found, { only = null, of = "run" } = {}) {
   const kind = found.probe?.kind;
