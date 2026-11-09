@@ -292,7 +292,7 @@ def _outside(store: Store, plan: Purge) -> list[str]:
 def _kept_note(named: Sequence[Path], folders: Sequence[Path]) -> list[str]:
     """What stays in the folders a deletion removes, said before it: each path named there."""
     kept = sorted({str(path) for folder in folders for path in named if path == folder or folder in path.parents})
-    return [f"what a skill added, a scenario or a task file names in them stays, and the rest goes: "
+    return [f"what a skill added, a scenario or a spec names in them stays, and the rest goes: "
             f"{', '.join(kept)}"] if kept else []
 
 

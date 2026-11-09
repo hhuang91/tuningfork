@@ -7,11 +7,11 @@ two runs with one fingerprint read the same skill, byte for byte. Each version c
 runs read it (the launch's snapshot of the skill folder, or the batch's frozen copy), its
 pass rate under each set-up it ran under, and what is known of where its text came from:
 the skill's own file as it is now, a saved variant, a refinement's proposal, a version an
-approval replaced. Beside the versions: the skill's own folder as specs name it — or as a person
+approval replaced. Beside the versions: its skill folder as specs name it — or as a person
 added it (`ops.addskill`) — with the changelog and the old versions an approval keeps beside it
 (`ops.approve`); its saved variants; its refinements.
 
-Read-only: nothing here writes the skill's folder, or anything else.
+Read-only: nothing here writes the skill folder, or anything else.
 """
 
 from __future__ import annotations

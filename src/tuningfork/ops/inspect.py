@@ -213,7 +213,7 @@ def task_summaries(
     """Runs grouped by task, with a check pass rate per set-up.
 
     A task run under two wordings, models or harnesses has one rate for each: `passed` is
-    given for the task as a whole only when all its runs share one condition. `checks` are
+    given for the task as a whole only when all its runs share one set-up. `checks` are
     each task's checks, the latest first (`Store.task_checks`): how its runs pass — each kept
     as its task file wrote it, and shown masked as the store masks text (`masking`).
     """

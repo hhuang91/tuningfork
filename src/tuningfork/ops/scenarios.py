@@ -608,10 +608,10 @@ def _take_files(plan: ImportPlan, beside: _Beside) -> None:
                 plan.beside[_placed(top, sub)] = data
                 read.add(top)
     if read:
-        plan.notes.append(f"its check reads {', '.join(sorted(read))} from its task's folder: copied beside the scenario's "
+        plan.notes.append(f"its check reads {', '.join(sorted(read))} from its task file's folder: copied beside the scenario's "
                           "evals.json, where no run sees it")
     if unread:
-        plan.warnings.append(f"its check reads {', '.join(dict.fromkeys(unread))} from its task's folder, which is not "
+        plan.warnings.append(f"its check reads {', '.join(dict.fromkeys(unread))} from its task file's folder, which is not "
                              f"{beside.where}: put it beside the scenario's evals.json")
     if plan.inputs:
         plan.notes.append(f"{len(plan.inputs)} input file(s) copied into the scenario's inputs/")

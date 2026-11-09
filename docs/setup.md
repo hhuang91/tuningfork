@@ -450,7 +450,7 @@ other settings.
 A tool's cache starts empty, so a check that installs a package each time (`uv run --with …`)
 downloads it. It writes nowhere but the workspace, its own home and its own `/tmp`, and it cannot
 read the run's home. A check tried with `tuningfork recheck`, or run along a run, runs the same
-way. Keep a task file in a folder of its own: one directly in `/tmp`, or in the recordings folder
+way. Keep a spec in a folder of its own: one directly in `/tmp`, or in the recordings folder
 itself, leaves its check without what is kept beside it, since a check never sees either, and a
 batch's plan says so.
 
@@ -596,7 +596,7 @@ read — and what tuningfork made of it.
 | `snapshots.git` | Each launched run's workspace at every call, and the skill it was given |
 | `batches/`, `forks/` | Run folders, unless `--workdir` put them elsewhere: each run's workspace as it left it, and its harness's home — the harness's own record of the conversation, its logs and its settings — and, in a batch's folder, the copy of the skill it gave its runs |
 | `imports/` | Each imported chat, and the skills it showed |
-| `scenarios/` | Each scenario's task file, the conversation its runs continue, its input files, what its check reads from its task's folder, and its copy of a skill where it keeps one |
+| `scenarios/` | Each scenario's spec, the conversation its runs continue, its input files, what its check reads from its spec's folder, and its copy of a skill where it keeps one |
 | `skills/` | The skills you added: a record of each, and tuningfork's copy where it keeps one. Forgetting a skill moves its copy to `skills/.forgotten/` |
 | `refinements/` | Each refinement's evidence, the skill it refines, its proposals, test results and approval |
 | `variants/` | Wordings saved to be tested: each refinement's proposals, and a wording given as text rather than as a file |
@@ -626,9 +626,9 @@ Kept as it was:
 - **What a run is given,** since a fork runs it again: its task's text, input files and check, its
   skill, a wording tested, and the copies a scenario, a skill added or a refinement makes of them.
 - **The test an experiment declared,** read again whenever the experiment is judged.
-- **What a run did on the machine:** its workspace at every call, and the folder it was launched
-  in, with the harness's own record of the conversation.
-- **What you brought:** a task file you made a scenario of, with what its check reads; a skill
+- **What a run did on the machine:** its workspace at every call, and its run folder, with the
+  harness's own record of the conversation.
+- **What you brought:** a spec you made a scenario of, with what its check reads; a skill
   folder you named or added.
 
 ### Who can read it
@@ -706,13 +706,13 @@ What is left to look at:
   folder holds what one recorded: `tuningfork scan --home <copy>` says where, run by run, never the
   key, and prints the `trash` commands that set it aside, to delete for good as in step 2.
 - **What is kept as it was:** the snapshots; the wordings tested; a scenario's input files, what its
-  check reads, and its task file's check, expected output and expectations; the copies of skills —
-  in `skills/`, a scenario's, a refinement's, a folder you named for an import; and each task
-  file's text and check, which the database keeps as you wrote them. Git keeps `snapshots.git`
+  check reads, and its spec's check, expected output and expectations; the copies of skills —
+  in `skills/`, a scenario's, a refinement's, a folder you named for an import; and each spec's
+  text and check, which the database keeps as you wrote them. Git keeps `snapshots.git`
   compressed, so a plain search does not find what it holds:
   `tuningfork files <run> <k> --home <copy>` shows a workspace.
 - **What names this machine:** the database and the records beside it — `config.json`, `skills/`,
-  `refinements/`, `chains/`, a scenario's task file — name its folders, your user name among them;
+  `refinements/`, `chains/`, a scenario's spec — name its folders, your user name among them;
   the database also names the servers that answered.
 
 ## Environment variables

@@ -877,7 +877,7 @@ def _print_scan(report: Any, home: str) -> None:
             elif found["aside"] is None:
                 goes = "; no command removes it"
             elif found["owner"] == "scenario":
-                goes = "; made from a run, or from a task file as a person wrote it"
+                goes = "; made from a run, or from a spec as a person wrote it"
             else:
                 goes = ""
             console.print(f"\n  {found['owner']} {escape(name)}  holds some in {_counted(found['places'], 'place')}"

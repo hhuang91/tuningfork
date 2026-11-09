@@ -345,8 +345,8 @@ def prepare_batch(
     if sandbox is not None and check_kind(item.tuningfork.check) == "shell" and not sandbox.shows(spec.directory):
         notes.append(Note(
             "warning",
-            f"the task file is in {spec.directory}, which a sandboxed check never sees: the check will not "
-            "find what is kept beside the task file. Move the task file into a folder of its own",
+            f"the spec is in {spec.directory}, which a sandboxed check never sees: the check will not "
+            "find what is kept beside the spec. Move the spec into a folder of its own",
         ))
     if item.tuningfork.held_out:
         notes.append(Note(

@@ -657,7 +657,7 @@ It reads the store's rows, the blobs they name, and the files tuningfork writes 
 recorded: an imported chat and each skill it extracted from it, a skill added from what a run's
 model read with what an approval kept beside it (forgotten too), a chain's record, what a
 refinement keeps but what a person gave it, and a scenario's conversation and spec — whether a
-run or a task file made the scenario, which nothing records — with its copy of a skill where that
+run or a spec made the scenario, which nothing records — with its copy of a skill where that
 is one of the skills read. It never reads what is kept as it was given: run folders, the
 workspace's snapshots, a scenario's inputs and any other copy of a skill, a skill a person
 brought, the wordings tried. One exception: a skill added from a run that is gone, as the copy
