@@ -2222,7 +2222,7 @@ details.panel[open] > summary:hover { border-radius: var(--radius-lg) var(--radi
 .fork-position { margin: var(--space-3) 0; }
 /* What a probe's continuations wrote, grouped by token: each position, then each token and the
    behaviours its continuations ended in, each continuation's text with the token forced
-   marked — cyan where tuningfork forced it, as a change is; grey where it was the run's own. */
+   marked — cyan where tuningfork forced it, as a change is; grey where it was the original. */
 .written-position { display: flex; flex-direction: column; gap: var(--space-2-5); }
 .written-position + .written-position { margin-top: var(--space-3-5); padding-top: var(--space-3-5); border-top: 1px solid var(--border); }
 .written-head { margin-bottom: var(--space-1); }

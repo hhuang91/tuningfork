@@ -24,8 +24,8 @@ does to keep that local:
   and workspace snapshots, and its batch's folder with the copy of the skill the batch was given,
   once none of the batch's runs is left and nothing else is in it. A path in any of them that a
   skill added, a scenario, or the spec of a run still recorded names stays where it is, and the
-  deletion's preview says so. Outside the recordings folder, a folder goes only
-  where tuningfork marked it as made for this recordings folder, which earlier versions did not.
+  deletion's preview says so. Outside the recordings folder, a folder goes only where tuningfork
+  marked it as made for this recordings folder, which earlier versions did not.
   What its database rows held is overwritten, and the database's log emptied once no other process
   is reading it. What was written in the last two minutes, which a recording in flight may still
   need, goes once those have passed, while a proxy serves the recordings folder, or at the next
