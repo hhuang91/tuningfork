@@ -19,17 +19,17 @@ does to keep that local:
   folder it lays launches out in, wherever that is, on a file system that keeps modes (a Windows
   drive under WSL may not). `serve` and `ui` say when a recordings folder made before can be opened
   by others, and how to make it yours alone; tuningfork never changes it by itself.
-- **Deleting from the trash is for good.** A run goes with what is tied to it, the run folders
-  of its launches, whatever else they hold, and what nothing left refers to: its messages, blobs
-  and workspace snapshots, and its batch's folder with the copy of the skill the batch was given,
-  once none of the batch's runs is left and nothing else is in it. A path in any of them that a
-  skill added, a scenario, or the spec of a run still recorded names stays where it is, and the
+- **Deleting from the trash is for good.** A run goes with what is tied to it, the run folders of
+  its launches, whatever else they hold, and what nothing left refers to: its messages, blobs and
+  workspace snapshots, and its batch's folder with the copy of the skill the batch was given, once
+  none of the batch's runs is left and nothing else is in it. A path in any of them that a skill
+  added, a scenario, or the spec of a run still recorded names stays where it is, and the
   deletion's preview says so. Outside the recordings folder, a folder goes only where tuningfork
-  marked it as made for this recordings folder, which earlier versions did not.
-  What its database rows held is overwritten, and the database's log emptied once no other process
-  is reading it. What was written in the last two minutes, which a recording in flight may still
-  need, goes once those have passed, while a proxy serves the recordings folder, or at the next
-  deletion. Files go as your file system deletes them.
+  marked it as made for this recordings folder, which earlier versions did not. What its database
+  rows held is overwritten, and the database's log emptied once no other process is reading it.
+  What was written in the last two minutes, which a recording in flight may still need, goes once
+  those have passed, while a proxy serves the recordings folder, or at the next deletion. Files go
+  as your file system deletes them.
 - **An agent's MCP client holds no key to the rest.** The MCP endpoint takes a token of its
   own, and no other; the access token is refused there. No MCP tool approves an edit to a
   skill, and none offers the held-out results an edit is judged by.
