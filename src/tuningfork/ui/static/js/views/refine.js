@@ -1352,7 +1352,7 @@ function screenToEndPreview(plan) {
   return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     kv([
       ["forks from", from],
-      ["what you count", plan.target],
+      ["condition", plan.target],
       ["wordings", plan.quick ? h("span", null, "each proposal alone: ", names) : h("span", null, "the original, then ", names)],
       ["the original", theOriginal],
       ["forks", `${plan.forks} in all, each the harness run from its step to the end`],

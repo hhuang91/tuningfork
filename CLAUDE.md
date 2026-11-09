@@ -248,7 +248,7 @@ variable it got whose name is a secret's stands
 characters or more as a mask takes a value (`config._FOUND`). A run's result, its launch's exit
 and its check along it keep it so, masked once. A check that prints what it found wrong, one finding a line, gets a tally
 (`ops/tally.py`; `tuningfork tally`, MCP's tally_failures, the divergence and experiment pages):
-each finding counted across a task's failed runs by condition, or a screen's failed forks by
+each finding counted across a task's failed runs by set-up, or a screen's failed forks by
 arm, its numbers and colours masked and a run counted once, the most common first — the failure to fix
 first, not the first one read. Run along a run (`ops.checks.check_along`; `tuningfork check-along`, the
 `check-along` job kind; the benchmark's driver does it for the baseline before T starts) — on its
@@ -521,7 +521,7 @@ however many came after it. The list names each job by the sidebar section of th
 (`KIND_SECTION` in `ui/static/js/jobs.js`) and, finished, what it made, leading there (`madeLink`,
 the same file); a finished job's page hands off to what it made — it says what it found in a line
 (`found` in `ui/static/js/results.js`: the verdict the experiment's page leads with, from the same
-helpers, where that page has one), with what was counted, the rates, what was left out or is still
+helpers, where that page has one), with the condition, the rates, what was left out or is still
 open in that page's words, and the runs it made, its log folded below — and the note when it ends
 leads there. A question at a held call and a check tried keep their answers on the job's page,
 their only home once the call is decided or the tester closed.
@@ -602,9 +602,11 @@ loop and the ways in — and its words have a page of their own, `#/words`, each
 `ops/glossary.py`. Each page leads with its take-away: a run its verdict strip; the divergence
 page the step whose behaviour best predicts the verdict, in a callout with the ways to it, then the
 runs side by side one step at a time, from the first split, every step a click away (`atStep` in
-`views/compare.js`: the first split is often not the step that decides); a forking-token probe the
-forced tokens that changed what the model did, each beside the run's own token there — what each
-led to, and how often it did what was counted (`flipsTable` in `results.js`);
+`views/compare.js`: the first split is often not the step that decides); a forking-token probe each
+position where a forced token changed what the model did, as a tree under its place in the answer:
+the token boxed in its sentence, a word or two each side, and under it the original token and each
+forced one, the model's chance of each and how often the condition was met, a badge after the rate
+a forced one moved, the behaviours each led to a link away (`flipsTree` in `results.js`);
 Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model, a
 word and a colour each, the server in the status strip's words (`serverWord`), and what that means
 in at most three sentences (`whatItMeans`); a refinement its four stages in a line (`stagesOf` in
@@ -862,9 +864,10 @@ than on a hardcoded assumption about which server is running.
 - The UI puts every string on the page as a text node — payloads are full of markup-looking
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
 - The web UI says some terms more plainly than the CLI, MCP and the docs, which keep the precise
-  words: an arm is a *wording*, a target *what you count* (in a result, *what was counted*, its
-  label on a line of its own; a refinement's, *what the model should do*), a screen a *test at this
-  step*, a validation *full test runs*, a spec a *task file*.
+  words: an arm is a *wording*, a target the *condition* (over a result, *Condition* on a line of
+  its own; a probe's rows, *condition met*; a refinement's, *what the model should do*), a screen a
+  *test at this step*, a validation *full test runs*, a spec a *task file*. A run's set-up is a
+  *set-up* in every front end, so a condition is never a set-up: the word had meant both.
   `ui/static/js/words.js` holds the phrase for each term the glossary defines (a term's `ui`;
   `tests/test_words.py` holds the two together), the Words page shows both, and `tuningfork
   glossary` finds a term by its page phrase too. A sentence the server writes — a refusal, a plan's

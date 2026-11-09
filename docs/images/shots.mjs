@@ -171,7 +171,7 @@ async function abDemo(page, source) {
   await pointer.caret(`document.querySelector('.tl-workcol textarea[name="variant_text"]')`, sentence, sentence.length);
   await pointer.type(", using the keys row_count and amount_total");
   await sleep(700);
-  // What to count: a behaviour described, a condition at a time.
+  // The condition: a behaviour described, one of its conditions at a time.
   await pointer.click(`document.querySelector(".tl-workcol .rule-builder .rule input")`);
   await pointer.type("write_file");
   for (const phrase of ["row_count", "amount_total"]) {

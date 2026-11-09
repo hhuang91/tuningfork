@@ -271,7 +271,7 @@ try {
     // A probe that saw no flip says what it could have seen, as its own page does: no caution.
     probeNull: ["With 8 continuations a token, only a token that changes about 5 of its 8 would show. A smaller shift can be real and go unseen.", 0],
     // What a probe or a test leaves open, in its own page's words; what to do about it is said there.
-    probeOpen: ["Still undecided there. At [12], the run's own token led elsewhere more often than to its own behaviour, so a later token decided it."],
+    probeOpen: ["Still undecided there. At [12], the original token led elsewhere more often than to its own behaviour, so a later token decided it."],
     unfinished: [
       "Not every wording drew what was planned. Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made.",
       "1 fork of the original timed out, counted as a failure.",
@@ -374,7 +374,7 @@ try {
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "A/B a wording at this step").click()`);
   await until(() => page.eval(`!!document.querySelector('.plan-form [name="variant_text"]')`), "the A/B form");
   check(await page.eval(`document.querySelector('[name="variant_text"]').value.includes("Write the totals to report.json.")`), "the editor starts from the skill as the run was given it");
-  await until(() => page.eval(`(document.querySelector(".plan-status")?.textContent || "").includes("Choose what to count before sampling")`), "the form to ask for a target first");
+  await until(() => page.eval(`(document.querySelector(".plan-status")?.textContent || "").includes("Choose the condition before sampling")`), "the form to ask for a target first");
   check(await page.eval(`!!document.querySelector(".plan-status .form-note-box") && !document.querySelector(".plan-status .form-error-box")`),
     "and asks it as a note: a form nobody has touched has done nothing wrong (found in review: it opened in red)");
   check(await page.eval(`![...document.querySelectorAll('[name="target_kind"]')].some((radio) => radio.checked)`), "no target is chosen for you");
@@ -401,7 +401,7 @@ try {
   check(variants.some((variant) => variant.name === variantName), "the variant was saved when the A/B started");
   await until(() => page.eval(`!!document.querySelector(".verdict-block.significant")`), "the verdict on the job page");
   // The job's page says it in a line, with what it counts, and leaves the behaviours' table to the A/B's page.
-  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What was counted:"
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "Condition:"
     && !document.querySelector(".table tr.is-target") && !document.querySelector(".diff-line")`),
     "the A/B's job page says what it found and what it counts, and leaves the rest to the A/B's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
@@ -417,7 +417,7 @@ try {
     return block.classList.contains("significant") && !block.classList.contains("tone-ok")
       && block.firstElementChild.classList.contains("verdict-target")
       && block.querySelector(".verdict-target-text").textContent.startsWith("A from resample ")
-      && block.querySelector(".verdict-big").textContent === "What was counted happened less often with the variant: 0 of 6 samples, against 6 of 6 with the original. That is more than chance would explain.";
+      && block.querySelector(".verdict-big").textContent === "The condition was met less often with the variant: 0 of 6 samples, against 6 of 6 with the original. That is more than chance would explain.";
   })()`), "the result says the target first, then which way the variant moved it, in the accent's colour, not green");
   const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
     [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
@@ -571,7 +571,7 @@ try {
     "the forks' job page says how many passed the task's check, and links each fork: forks are in no list of runs");
 
   await openStepOf(page, launched, 1, "ab&reach=end");
-  check(!(await page.eval(`!!document.querySelector(".target-picker legend")?.textContent.includes("What to count")`)), "to the end, the target is the task's check: no picker");
+  check(!(await page.eval(`!!document.querySelector(".target-picker legend")?.textContent.includes("Condition")`)), "to the end, the target is the task's check: no picker");
   await page.type(`document.querySelector('[name="variant_text"]')`,
     (await page.eval(`document.querySelector('[name="variant_text"]').value`)).replace("Write the totals to report.json.", "Write the totals to report.json, using the keys row_count and amount_total."));
   await page.type(`document.querySelector('[name="variant_name"]')`, `to-end-${Date.now().toString(36)}`);
@@ -1352,31 +1352,50 @@ try {
   const forkJobId = await until(async () => jobIdIn(await page.eval("location.hash")), "the probe's job page");
   const forkJob = await finished(forkJobId, 120000);
   check(forkJob.status === "done" && forkJob.result.forking.flips === 1, "the probe found the token that decides the answer");
-  // Its job's page says so in a line, which token beside the run's own in another, and hands off
+  // Its job's page says so in a line, which token beside the original in another, and hands off
   // to the probe's own page for the rest.
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 forced token changed what the model did"`), "what the probe found, on its job's page");
   const flipLine = await page.eval(`[...document.querySelectorAll(".verdict-block ul.verdict-lines li")].map((li) => li.textContent).join(" | ")`);
-  check(flipLine === `At [${forkSpot.position}], "search_files" forced in place of the run's own "read_file": what was counted happened in 0 of 6 continuations, against 6 of 6.`,
-    `and names the token, beside the run's own, with what each did (${flipLine})`);
-  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".flips-table")`),
-    "the probe's job page says what it found in lines, and leaves the tables to the probe's page");
+  check(flipLine === `At [${forkSpot.position}], "search_files" forced in place of the original "read_file": the condition was met in 0 of 6 continuations, against 6 of 6.`,
+    `and names the token, beside the original, with what each did (${flipLine})`);
+  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".fork-tree")`),
+    "the probe's job page says what it found in lines, and leaves the tree and the tables to the probe's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && [...document.querySelectorAll(".chip")].some((c) => c.textContent === "less often")`), "the result, marked where it forks");
   check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => /^(less|more) often$/.test(c.textContent)).every((c) => c.classList.contains("tone-accent"))`),
     "a forced token that changed what the model did is the accent's colour, its direction in words: a result, not a check's red");
-  // The block the page leads with: what was counted on a line of its own, then the forced token
-  // beside the run's own — what each led to, how many did what was counted, which way it moved.
+  // The block the page leads with: the condition on a line of its own, then a tree from the token
+  // boxed in its sentence, its place in the answer over it: the original token and the forced one a
+  // row each, the model's chance of each, how often each met the condition and a badge after the
+  // rate the forced one moved, every column read from the left; the behaviour breakdown a link away
+  // (the user's drawing, 2026-11-06: no "the run's own" to explain, the sentence shows it; their
+  // look, 2026-11-09: the place heads the tree, the badge has no column of its own, and the link,
+  // under the trees, named for what it leads to).
   const probeLead = await page.eval(`(() => {
     const block = document.querySelector(".verdict-block");
-    const rows = [...block.querySelectorAll(".flips-table tbody tr")].map((row) => [...row.children].map((cell) => cell.textContent.trim()));
-    return { label: block.querySelector(".verdict-target .label").textContent, rows };
+    const at = block.querySelector(".fork-tree tr.fork-at");
+    return {
+      label: block.querySelector(".verdict-target .label").textContent,
+      boxed: at?.querySelector(".fork-token")?.textContent, before: at?.querySelector(".fork-before")?.textContent,
+      after: at?.querySelector(".fork-after")?.textContent,
+      link: [...block.querySelectorAll(":scope > button")].map((button) => button.textContent).join(","),
+      heads: [...block.querySelectorAll(".fork-tree thead th")].map((th) => th.textContent).join(","),
+      fromLeft: [...block.querySelectorAll(".fork-tree th, .fork-tree td")].every((cell) => ["left", "start"].includes(getComputedStyle(cell).textAlign)),
+      marked: [...block.querySelectorAll(".fork-tree tr.fork-branch td:first-child span")].map((span) => span.className).join(","),
+      rows: [...block.querySelectorAll(".fork-tree tr.fork-branch")].map((row) => [...row.children].map((cell) => cell.textContent.trim())),
+    };
   })()`);
-  const [place, own, forced] = probeLead.rows;
-  check(probeLead.label === "What was counted:" && probeLead.rows.length === 3 && place[0].startsWith(`[${forkSpot.position}]`)
-    && own[0] === "the run's own" && own[1].startsWith('"read_file"') && own[2].includes("read_file(") && own[3].startsWith("6/6")
-    && forced[0] === "forced" && forced[1].startsWith('"search_files"') && forced[2].includes("search_files(") && forced[3].startsWith("0/6")
-    && forced[4].startsWith("less often"),
-    `the probe's page leads with the forced token beside the run's own: what each led to, how often it was counted, and which way it moved (${JSON.stringify(probeLead.rows)})`);
+  const [own, forced] = probeLead.rows;
+  check(probeLead.label === "Condition:" && probeLead.boxed === "read_file" && probeLead.before.endsWith("call:") && probeLead.after.startsWith("{path:")
+    && probeLead.link === "Behaviour breakdown" && probeLead.heads === `[${forkSpot.position}] tool call,chance of token,condition met`
+    && probeLead.fromLeft && probeLead.marked === "fork-original,fork-forced"
+    && probeLead.rows.length === 2 && own.length === 3 && own[0] === '"read_file"' && own[2].startsWith("6/6") && !own[2].includes("often")
+    && forced[0] === '"search_files"' && forced[2].startsWith("0/6") && forced[2].endsWith("less often"),
+    `the probe's page leads with a tree from the token in its sentence, its place over it: the original token and the forced one, how often each met the condition, and a badge after the rate one moved (${JSON.stringify(probeLead)})`);
+  await page.eval(`[...document.querySelectorAll(".verdict-block > button")].find((button) => button.textContent === "Behaviour breakdown").click()`);
+  check(await page.eval(`(() => { const section = document.querySelector(".panel.continuations"), box = section?.getBoundingClientRect();
+    return !!section?.querySelector(".probe-behaviours") && !!box && box.top >= -1 && box.top < innerHeight; })()`),
+    "the behaviour breakdown is a link away: every behaviour below, with the tokens whose continuations ended in it");
 
   console.log("from a probe's result to the token it forced, and back");
   const probeId = forkJob.result.experiment.id;
@@ -1433,11 +1452,11 @@ try {
     marks: [...token.querySelectorAll("mark.forced")].map((mark) => mark.textContent + (mark.classList.contains("changed") ? "*" : "")),
     texts: [...token.querySelectorAll(".written-text")].map((text) => text.textContent),
   }))`);
-  check(wrote[0].head.startsWith('the run\'s own "read_file"') && wrote[1].head.startsWith('forced "search_files"')
+  check(wrote[0].head.startsWith('original "read_file"') && wrote[1].head.startsWith('forced "search_files"')
     && wrote[0].marks.length === 6 && wrote[0].marks.every((mark) => mark === "read_file")
     && wrote[1].marks.length === 6 && wrote[1].marks.every((mark) => mark === "search_files*")
     && wrote[1].texts.every((text) => text.startsWith("tool callsearch_files{pattern:")),
-    `each continuation's text from the token forced on, the run's own first, a forced token marked as a change (${JSON.stringify(wrote.map((token) => [token.head, token.marks[0], token.texts[0]]))})`);
+    `each continuation's text from the token forced on, the original first, a forced token marked as a change (${JSON.stringify(wrote.map((token) => [token.head, token.marks[0], token.texts[0]]))})`);
   // The arrow keys move between the groupings, and what was opened by token stays open: shown again
   // at once from what it read, nothing asked again (found in review: a fold asked again at every
   // draw, its text "Loading…" meanwhile).

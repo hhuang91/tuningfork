@@ -139,7 +139,7 @@ async function forkingForm(step, query) {
   pattern.addEventListener("input", () => pick("match"));
   const howMany = input("top", { type: "number", value: 5, min: 1, max: 20 });
   const leastChance = input("min_p", { type: "number", value: 0.05, min: 0.001, max: 0.5, step: "any" });
-  const target = h("fieldset", { class: "target-picker" }, h("legend", null, `${LABELS.whatToCount} (chosen before sampling)`),
+  const target = h("fieldset", { class: "target-picker" }, h("legend", null, `${LABELS.condition} (chosen before sampling)`),
     calls.length
       ? h("label", { class: "target-choice" },
           h("input", { type: "radio", name: "target_kind", value: "tools", checked: true }),
@@ -277,7 +277,7 @@ function forkingPreview(plan) {
       ["step", checkpointLine(plan)],
       ["forks from", h("span", null, h("span", { class: "mono" }, `stream ${short(plan.base.id)}`),
         ` — ${plan.base.source === "scored" ? "the answer the run gave, scored" : plan.base.source}, ${plural(plan.base.tokens, "token")}`)],
-      ["what you count", plan.target],
+      ["condition", plan.target],
       ["draws", `${plural(plan.arms.length, "forced token")} × ${plan.per_arm} = ${plural(plan.planned, "continuation")}`],
       ["can detect", power.detectable
         ? `a forced token that changes the outcome in about ${power.detectable} of its ${power.of} continuations, or more, corrected for ${plural(plan.family, "test")}`
@@ -293,7 +293,7 @@ function forkingPreview(plan) {
           h("td", { class: "muted" }, position.part || "—"),
           h("td", { class: "mono" }, `${JSON.stringify(position.chosen.text)} ${pct(position.chosen.p)}`),
           h("td", { class: "mono" }, position.alternatives.map((alt) => `${JSON.stringify(alt.text)} ${pct(alt.p)}`).join("   "))))))),
-    h("p", { class: "hint" }, "At each position the model is given this step's exact context and the answer up to there, then one token forced — the run's own, or an alternative — and goes on. Each continuation is read back into a behaviour, and each alternative is compared with the run's own token at the same position."));
+    h("p", { class: "hint" }, "At each position the model is given this step's exact context and the answer up to there, then one token forced — the original, or an alternative — and goes on. Each continuation is read back into a behaviour, and each alternative is compared with the original token at the same position."));
 }
 
 function reachToggle(step, kind, toEnd, go) {
@@ -445,7 +445,7 @@ async function abBody(step, toEnd, skill, named) {
       kind: "ab-to-end",
       fields: [
         variantEditor(skill, saved),
-        h("p", { class: "hint" }, "What you count is the task's check passing, set by the task before any fork runs."),
+        h("p", { class: "hint" }, "The condition is the task's check passing, set by the task before any fork runs."),
         ...forkFields({ alpha: true }),
       ],
       read: (form) => {
@@ -517,7 +517,7 @@ function toEndPreview(plan) {
     kv([
       ...forkLines(arm),
       ["forks", `${plural(plan.forks, "fork")}${plan.variant ? ` (${plan.n} for each wording)` : ""}, ${plan.concurrency} at a time`],
-      ["what you count", "the task's check passes"],
+      ["condition", "the task's check passes"],
       plan.variant ? ["swaps", `the original for your variant, from step ${arm.checkpoint.step} on`] : null,
     ].filter(Boolean)),
     [...(arm.warnings || []), ...((plan.variant && plan.variant.warnings) || [])].map((warning) => h("div", { class: "banner banner-warn" }, warning)),
@@ -579,7 +579,7 @@ function abPreview(plan) {
     kv([
       ["step", checkpointLine(plan)],
       ["swaps", h("span", null, `the original, found in ${plural(spans.length, "place")} in this step's context, for your variant`)],
-      ["what you count", plan.target ? h("span", null, plan.target) : chip("nothing declared: every behaviour compared, each p adjusted", "warn")],
+      ["condition", plan.target ? h("span", null, plan.target) : chip("nothing declared: every behaviour compared, each p adjusted", "warn")],
       ["samples", `${plural(plan.sampling.n, "sample")} for each wording, ${plan.sampling.concurrency} at a time, α = ${plan.alpha}`],
       ["takes", estimateText(plan.estimate)],
       ["saved as", h("span", { class: "mono" }, plan.variant)],

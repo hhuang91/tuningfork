@@ -100,7 +100,7 @@ def p_text(value: Any) -> str:
 
 
 def task(summary: dict[str, Any]) -> dict[str, Any]:
-    """A task with its pass rate under each condition: harness, model, skill version, server."""
+    """A task with its pass rate under each set-up: harness, model, skill version, server."""
     check = summary.get("check")
     return {
         "task_id": summary.get("task_id"),
@@ -1054,7 +1054,7 @@ def task_lines(found: dict[str, Any]) -> list[str]:
     conditions = found.get("conditions") or []
     if len(conditions) <= 1:
         return [f"{found.get('task_id')}: {found.get('runs')} run(s), passed {rate_text(found.get('passed'))}"]
-    lines = [f"{found.get('task_id')}: {found.get('runs')} run(s) under {len(conditions)} conditions:"]
+    lines = [f"{found.get('task_id')}: {found.get('runs')} run(s) under {len(conditions)} set-ups:"]
     for condition in conditions:
         lines.append(
             f"  {condition.get('harness')} · {condition.get('model')} · skill {condition.get('skill_version')}:"

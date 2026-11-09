@@ -493,7 +493,7 @@ def tasks(
     """Check pass rates by task: one row per harness, model and skill version.
 
     Runs of a task under a different wording or model are a different sample, so each
-    condition gets its own rate rather than one pooled across them.
+    set-up gets its own rate rather than one pooled across them.
     """
     from tuningfork.analysis.conditions import conditions
 
@@ -587,7 +587,7 @@ def skill_command(
     as_json: bool = typer.Option(False, "--json", help="The skill as the API gives it, texts included."),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
-    """One skill: each version with its pass rate under every condition it ran under and
+    """One skill: each version with its pass rate under every set-up it ran under and
     what its text is known as; its skill folder now, with the changelog and old versions an
     approval keeps beside it; its saved variants and refinements."""
     from tuningfork.ops.skills import skill, skill_diff, skill_text
@@ -1886,7 +1886,7 @@ def diff(
 
 @app.command()
 def tally(
-    task: Optional[str] = typer.Option(None, help="A task id: what its failed runs' checks said, by condition."),
+    task: Optional[str] = typer.Option(None, help="A task id: what its failed runs' checks said, by set-up."),
     screen: Optional[str] = typer.Option(
         None, help="A screen, or an A/B, run to the end (any arm's experiment id): what each arm's failed forks' "
                    "checks said.",
@@ -1915,7 +1915,7 @@ def tally(
         console.print(f"screen {found.screen[:8]} from run {(found.run_id or '-')[:8]}"
                       f"{f' of {escape(found.task_id)}' if found.task_id else ''}: each arm's forks run to the end")
     else:
-        console.print(f"{escape(found.task_id)}: its runs, by condition")
+        console.print(f"{escape(found.task_id)}: its runs, by set-up")
     for group in found.groups:
         console.print()
         console.print(f"[bold]{escape(group.label)}[/bold]  failed {group.failed} of {group.judged} judged")
@@ -2035,7 +2035,7 @@ def where(
     ),
     at_least: int = typer.Option(1, "--at-least", min=1, help="With --contains: how many matches make it hold."),
     limit: int = typer.Option(200, "--limit", min=1, help="At most this many of the task's runs, the newest first."),
-    show: int = typer.Option(20, "--show", min=0, help="Runs listed per condition."),
+    show: int = typer.Option(20, "--show", min=0, help="Runs listed per set-up."),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """Ask one question of every run of a task, and line the answers up with the verdicts.

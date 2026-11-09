@@ -36,10 +36,10 @@ function reasonedText(reasoned, of) {
   return h("div", { class: "small warn-text" }, `${reasoned} of ${of} reasoned`);
 }
 
-/** What an experiment counted, said first and plainly, under its label on a line of its own:
- *  every number below it is of this. A refinement's tests name it as the refinement does: what
- *  the model should do. Its precise word, the target, is the label's tooltip. */
-export function targetLine(description, declared = "set before sampling", label = "What was counted") {
+/** The condition an experiment counted, said first and plainly, under its label on a line of its
+ *  own: every number below it is of this. A refinement's tests name it as the refinement does:
+ *  what the model should do. Its precise word, the target, is the label's tooltip. */
+export function targetLine(description, declared = "set before sampling", label = "Condition") {
   return h("div", { class: "verdict-target" },
     h("div", { class: "label", title: "The target, as the command line and the docs call it" }, `${label}:`),
     h("div", { class: "verdict-target-body" },
@@ -54,10 +54,10 @@ const ofTotal = (rate) => `${rate.successes} of ${rate.total}`;
  *  is never told: a shift is the accent's colour, never the green of a check that passed. */
 function shiftWords(target) {
   if (!target.significant) {
-    return `${capital(LABELS.withinChance)}: what was counted happened in ${ofTotal(target.variant)} samples with the variant, and ${ofTotal(target.original)} with the original.`;
+    return `${capital(LABELS.withinChance)}: the condition was met in ${ofTotal(target.variant)} samples with the variant, and ${ofTotal(target.original)} with the original.`;
   }
   const way = target.direction === "down" ? "less" : "more";
-  return `What was counted happened ${way} often with the variant: ${ofTotal(target.variant)} samples, against ${ofTotal(target.original)} with the original. That is ${LABELS.beyondChance}.`;
+  return `The condition was met ${way} often with the variant: ${ofTotal(target.variant)} samples, against ${ofTotal(target.original)} with the original. That is ${LABELS.beyondChance}.`;
 }
 
 /** Whether the declared target counts a behaviour — all `pooled` of its samples, some, or
@@ -90,7 +90,7 @@ export function comparisonView(experiment) {
     parts.push(h("p", { class: "hint" }, "This A/B changed only this step. Everything before it still comes from the original wording, so treat the result as a lead, and confirm it with full runs."));
   } else {
     parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, "Nothing declared. "),
-      "Nothing to count was chosen before sampling, so every behaviour is compared, and each p-value is adjusted for comparing them all (Bonferroni)."));
+      "No condition was chosen before sampling, so every behaviour is compared, and each p-value is adjusted for comparing them all (Bonferroni)."));
   }
   parts.push(h("div", { class: "table-wrap" }, h("table", { class: "table" },
     h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "behaviour"), h("th", null, "original"), h("th", null, "variant"),
@@ -108,7 +108,7 @@ export function comparisonView(experiment) {
   // A result a job stored before behaviours said whether the target counts them says nothing.
   const said = comparison.shifts.some((shift) => shift.target_counted !== undefined);
   if (target && said && !comparison.shifts.some((shift) => shift.target_counted)) {
-    parts.push(h("p", { class: "hint" }, "What was counted includes none of these behaviours: neither wording ever did it."));
+    parts.push(h("p", { class: "hint" }, "The condition matches none of these behaviours: neither wording ever met it."));
   }
   return panel("Original wording against the variant", parts);
 }
@@ -116,14 +116,14 @@ export function comparisonView(experiment) {
 const PART = { reasoning: "reasoning", content: "answer", tool_call: "tool call" };
 const pct = (p) => (p === null || p === undefined ? "—" : p >= 0.995 || p === 0 ? `${Math.round(p * 100)}%` : `${(p * 100).toFixed(1)}%`);
 
-/** A forking-token probe: at each position, the run's own token and each forced instead,
- *  and which changed how often the model did what was counted — those first, in the block the
- *  page leads with (`flipsTable`). With `context` — the experiment, and `view`, the tokens of
- *  the answer it forked from — that answer is shown with the probed tokens ringed, and each
- *  position leads up to its token and over to the step's own Tokens view; with `written` — how
- *  to ask for continuations' text, which folds are open and which grouping is shown — every
- *  continuation is in a section of its own below, by token or by behaviour
- *  (`continuationsSection`). */
+/** A forking-token probe: at each position, the original token and each forced instead, and
+ *  which changed how often the condition was met: those first, in the block the page leads with,
+ *  each a tree from its token in its sentence (`flipsTree`). With `context` — the experiment,
+ *  and `view`, the tokens of the answer it forked from — that answer is shown with the probed
+ *  tokens ringed, and each position leads up to its token and over to the step's own Tokens view;
+ *  with `written` — how to ask for continuations' text, which folds are open and which grouping
+ *  is shown — every continuation is in a section of its own below, by token or by behaviour
+ *  (`continuationsSection`), where "Behaviour breakdown", under the trees, leads. */
 export function forkingView(report, context = {}) {
   const { experiment = null, view, written = null } = context;
   let map = null;
@@ -153,14 +153,28 @@ export function forkingView(report, context = {}) {
   const said = report.behaviours.clusters.some((cluster) => cluster.by_arm);
   const every = said && written ? continuationsSection(report, ledTo, written) : null;
   const [headline, tone, seen] = forkingHeadline(report);
+  const flipped = report.positions.some((position) => flipsOf(position).length);
   const parts = [
     h("div", { class: ["verdict-block", tone] },
       targetLine(report.target),
       h("div", { class: "verdict-big" }, headline),
       seen ? h("p", { class: "verdict-lines" }, seen) : null,
-      flipsTable(report, said && ledTo),
+      flipsTree(report),
       h("div", { class: "mono small", title: "Fisher's exact test, Holm-corrected" },
-        `Each p corrected for the ${plural(report.family, "test")} planned; α = ${report.alpha}`)),
+        flipped
+          ? report.family > 1
+            ? `A badge marks a difference beyond chance, corrected for the ${report.family} tests planned (α = ${report.alpha}).`
+            : `A badge marks a difference beyond chance (α = ${report.alpha}).`
+          : `Each p corrected for the ${plural(report.family, "test")} planned; α = ${report.alpha}`),
+      // The behaviour breakdown, beside the trees' note: every behaviour below, each with the tokens
+      // whose continuations ended in it, brought into view (a position's "What they wrote" is what
+      // they wrote, by token).
+      flipped && every
+        ? h("button", {
+            class: "btn btn-quiet btn-small", type: "button", title: "Every behaviour the continuations ended in, below, with the tokens that led to it",
+            onclick: () => every.show("behaviour", { reveal: true }),
+          }, "Behaviour breakdown")
+        : null),
   ];
   for (const [title, text, here] of forkingCautions(report)) {
     parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, `${title} `), here ? `${text} ${here}` : text));
@@ -171,7 +185,7 @@ export function forkingView(report, context = {}) {
       h("div", { class: "fork-head" },
         h("span", { class: "mono" }, `[${position.position}]`),
         h("span", { class: "muted" }, PART[position.part] || position.part || ""),
-        h("span", { class: "mono fork-context" }, position.context),
+        sentence(position),
         h("span", { class: "fork-links" },
           map ? h("button", { class: "btn btn-quiet btn-small", type: "button", onclick: () => map.reveal(position.position), title: "This token in the answer above" }, "In the answer") : null,
           every ? h("button", {
@@ -180,14 +194,14 @@ export function forkingView(report, context = {}) {
           }, "What they wrote") : null,
           onStep(position.position))),
       h("div", { class: "table-wrap" }, h("table", { class: "table" },
-        h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "token"), h("th", null, "did what was counted"), h("th", { class: "num" }, "p"),
+        h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "token"), h("th", null, "condition met"), h("th", { class: "num" }, "p"),
           h("th", { class: "num", title: "Holm-corrected" }, "p, corrected"), h("th", null, ""),
           said ? h("th", null, "led to") : null)),
         h("tbody", null,
-          forkRow("the run's own", position.baseline, null, said && ledTo),
+          forkRow("original", position.baseline, null, said && ledTo),
           position.alternatives.map((alt) => forkRow("forced", alt, alt, said && ledTo))))),
       position.weighted !== null && position.weighted !== undefined
-        ? h("p", { class: "hint" }, `The chance of what was counted from here, each token weighted by how likely the model thought it: ${pct(position.weighted)}.`)
+        ? h("p", { class: "hint" }, `The chance the condition is met from here, each token weighted by how likely the model thought it: ${pct(position.weighted)}.`)
         : null));
   }
   return h("div", { class: "stack" },
@@ -199,81 +213,118 @@ export function forkingView(report, context = {}) {
 const armKey = (position, text) => `${position}\u0000${text}`;
 const flipsOf = (position) => position.alternatives.filter((alt) => alt.flips);
 
-/** Which way a forced token moved what was counted, against the run's own token at its
- *  position: the accent's colour, its direction in words — the target is what tuningfork was
- *  told to count, never a check that passed. */
+/** Which way a forced token moved how often the condition was met, against the original token
+ *  at its position: the accent's colour, its direction in words — the condition is what
+ *  tuningfork was told to count, never a check that passed. Its test, corrected, is its tooltip. */
 function moved(tested) {
   const way = tested.direction === "away" ? "less" : "more";
   return chip(`${way} often`, "accent",
-    `Forced here, it made the model do what was counted ${way} often than the run's own token did: ${LABELS.beyondChance}, corrected for the tests planned.`);
+    `Forced here, it made the model meet the condition ${way} often than the original token did: ${LABELS.beyondChance}, corrected for the tests planned (p = ${formatP(tested.adjusted_p)}).`);
 }
 
-/** The text just before a probed token, on one line: what the position's own token followed. */
-function leadIn(context) {
-  const cut = (context || "").lastIndexOf("⟦");
-  return (cut < 0 ? context || "" : context.slice(0, cut)).replace(/\s+/g, " ");
+/** At most this many characters of the answer on each side of a probed token: a word or two. */
+const AROUND = 18;
+const LINE_BREAK = String.fromCharCode(10);
+
+/** A probed token in its sentence: what the answer had just before it (its `context`, back from
+ *  the ⟦ that marks the token) and just after (`after`), a word or two each, every run of
+ *  whitespace one space; the token as the answer had it, a line break drawn as ↵. */
+function sentenceOf(position) {
+  const context = position.context || "";
+  const cut = context.lastIndexOf("⟦");
+  const before = (cut < 0 ? context : context.slice(0, cut)).replace(/^…/, "").replace(/\s+/g, " ");
+  const after = (position.after || "").replace(/\s+/g, " ");
+  let start = Math.max(0, before.length - AROUND);
+  if (start > 0) {
+    const space = before.indexOf(" ", start);
+    if (space >= 0 && space < before.length - 1) start = space + 1;
+  }
+  const words = [...before.slice(start).matchAll(/\S+\s*/g)];
+  if (words.length > 2) start += words[words.length - 2].index;
+  let end = Math.min(after.length, AROUND);
+  if (end < after.length) {
+    const space = after.lastIndexOf(" ", end);
+    if (space > 0) end = space;
+  }
+  const following = [...after.slice(0, end).matchAll(/\s*\S+/g)];
+  if (following.length > 2) end = following[2].index;
+  return {
+    before: before ? `…${before.slice(start)}` : "",
+    token: String(position.baseline?.arm?.text ?? "").split(LINE_BREAK).join("↵"),
+    after: end ? `${after.slice(0, end)}…` : "",
+  };
 }
 
-/** The behaviours a token's continuations reached, by name: the two most common, and how many
- *  more. */
-function reachedList(went, outcomes) {
-  return h("div", { class: "reached" },
-    went.slice(0, 2).map(([letter, count]) => {
-      const found = outcomes.get(letter);
-      return h("div", { class: "reached-one" },
-        h("span", { class: "chip tone-accent" }, letter),
-        h("span", { class: "mono reached-label", title: found?.label || "" }, found?.label || ""),
-        h("span", { class: "faint small" }, `×${count}`));
-    }),
-    went.length > 2 ? h("div", { class: "faint small" }, `and ${plural(went.length - 2, "other behaviour")}`) : null);
+/** A probed token in its sentence, boxed: the line a position's tree grows from, and the head of
+ *  its rows further down. */
+function sentence(position) {
+  const { before, token, after } = sentenceOf(position);
+  return h("span", { class: "fork-sentence" },
+    h("span", { class: "fork-before" }, before),
+    h("span", { class: "fork-token", title: "The token probed here, as the answer had it" }, token),
+    h("span", { class: "fork-after" }, after));
 }
 
-/** What a probe's page leads with, under its headline: each forced token that changed what the
- *  model did, beside the run's own token at its position — the token, the behaviours their
- *  continuations reached (`ledTo`, where the report says them), how many did what was counted,
- *  and which way the forced one moved it. The tables below, cut to what changed; a line says
- *  how many other forced tokens were probed. */
-function flipsTable(report, ledTo) {
+/** How many of the mono font's ch a tree's guides take before a token's row, its box's padding
+ *  with them: `--space-5` and twice `--space-0-5` (app.css), rounded up. */
+const GUIDES = 4;
+
+/** What a probe's page leads with, under its headline: each position where a forced token
+ *  changed what the model did, as a tree, a table each. Its place in the answer heads the tree's
+ *  column; under it the token is boxed in its sentence, and from the box hang the original token
+ *  and each one forced there, a row each: the model's own chance of it, and how often the
+ *  condition was met from there, a badge after that on a forced one that changed it beyond
+ *  chance (`moved`). The guides are drawn, never typed: a screen reader hears a table. Every
+ *  sentence is as wide as the widest tree needs (`--fork-span`), so the trees' columns line up. */
+function flipsTree(report) {
   const flipped = report.positions.filter((position) => flipsOf(position).length);
   if (!flipped.length) return null;
-  const outcomes = new Map(report.behaviours.clusters.map((cluster) => [cluster.letter, cluster.outcome]));
-  const forced = report.positions.reduce((total, position) => total + position.alternatives.length, 0);
-  const others = forced - flipped.reduce((total, position) => total + flipsOf(position).length, 0);
-  const row = (label, arm, tested) => h("tr", null,
-    h("td", { class: "muted nowrap" }, label),
-    h("td", { class: "mono nowrap" }, JSON.stringify(arm.arm.text), h("span", { class: "muted", title: "The model's own chance of this token, under the step's sampler" }, ` ${pct(arm.arm.p)}`)),
-    ledTo ? h("td", null, reachedList(ledTo.get(armKey(arm.arm.position, arm.arm.text)) || [], outcomes)) : null,
-    h("td", { class: "nowrap" }, arm.target.total ? rateBar(arm.target, tested ? "change" : "accent") : h("span", { class: "muted" }, "none drawn")),
-    h("td", { class: "nowrap" }, tested ? [moved(tested), " ", h("span", { class: "mono small muted", title: "Holm-corrected" }, `p = ${formatP(tested.adjusted_p)}`)] : null));
+  const rest = report.positions.length - flipped.length;
+  const span = Math.max(...flipped.map((position) => {
+    const { before, token, after } = sentenceOf(position);
+    const widest = Math.max(...[position.baseline, ...position.alternatives].map((arm) => JSON.stringify(arm.arm.text).length));
+    return Math.max(before.length + token.length + after.length + 1, before.length + GUIDES + widest);
+  }));
+  const row = (arm, tested) => h("tr", { class: "fork-branch" },
+    h("td", { class: "fork-alt" }, h("span", {
+      class: tested ? "fork-forced" : "fork-original",
+      title: tested ? "Forced here, instead of the original token" : "The original token: the one the answer had here",
+    }, JSON.stringify(arm.arm.text))),
+    h("td", { class: "fork-chance", title: "The model's own chance of this token, under the step's sampler" }, pct(arm.arm.p)),
+    h("td", null, h("span", { class: "fork-met" },
+      arm.target.total ? rateBar(arm.target, tested ? "change" : "accent") : h("span", { class: "muted" }, "none drawn"),
+      arm.drawn < arm.planned ? chip(`${arm.drawn} of ${arm.planned} drawn`, "warn") : null,
+      tested?.flips ? moved(tested) : null)));
   return h("div", { class: "flips" },
-    h("div", { class: "table-wrap" }, h("table", { class: "table flips-table" },
-      h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "token"), ledTo ? h("th", null, "led to") : null,
-        h("th", null, "did what was counted"), h("th", null, "against the run's own"))),
-      flipped.map((position) => h("tbody", null,
-        h("tr", { class: "flip-at" }, h("td", { colspan: ledTo ? 5 : 4 },
-          h("span", { class: "mono" }, `[${position.position}]`), " ",
-          h("span", { class: "muted" }, PART[position.part] || position.part || ""), " ",
-          h("span", { class: "mono fork-context", title: "What the model had written just before this token" }, leadIn(position.context)))),
-        row("the run's own", position.baseline, null),
-        flipsOf(position).map((alt) => row("forced", alt, alt)))))),
-    others
-      ? h("p", { class: "small" }, `${others === 1 ? "The other forced token" : `The other ${others} forced tokens`} made no difference beyond chance. Every token probed has its row below.`)
+    h("div", { class: "fork-trees", style: { "--fork-span": `${span}ch` } },
+      flipped.map((position) => h("div", { class: "table-wrap" },
+        h("table", { class: "table fork-tree", style: { "--fork-before": `${sentenceOf(position).before.length}ch` } },
+          h("thead", null, h("tr", null,
+            h("th", null, `[${position.position}] ${PART[position.part] || position.part || ""}`),
+            h("th", { title: "The model's own chance of each token, under the step's sampler" }, "chance of token"),
+            h("th", null, "condition met"))),
+          h("tbody", null,
+            h("tr", { class: "fork-at" }, h("td", null, sentence(position)), h("td", null), h("td", null)),
+            row(position.baseline, null),
+            position.alternatives.map((alt) => row(alt, alt))))))),
+    rest
+      ? h("p", { class: "small" }, `At the ${rest === 1 ? "other position" : `other ${rest} positions`} probed, no forced token made a difference beyond chance. ${rest === 1 ? "It has" : "Each has"} its rows below.`)
       : null);
 }
 
-/** Each forced token that changed what the model did, in a sentence beside the run's own token:
- *  what a probe's job page says under its headline, where the probe's own page has its table. */
+/** Each forced token that changed what the model did, in a sentence beside the original token:
+ *  what a probe's job page says under its headline, where the probe's own page has its tree. */
 export function flipLines(report) {
   return report.positions.flatMap((position) => flipsOf(position).map((alt) =>
-    `At [${position.position}], ${JSON.stringify(alt.arm.text)} forced in place of the run's own ${JSON.stringify(position.baseline.arm.text)}: `
-    + `what was counted happened in ${ofTotal(alt.target)} continuations, against ${ofTotal(position.baseline.target)}.`));
+    `At [${position.position}], ${JSON.stringify(alt.arm.text)} forced in place of the original ${JSON.stringify(position.baseline.arm.text)}: `
+    + `the condition was met in ${ofTotal(alt.target)} continuations, against ${ofTotal(position.baseline.target)}.`));
 }
 
 /** Every continuation the probe drew, in one section grouped the way its picker says: by token,
  *  what each wrote (`tokenGroups`); by behaviour, where they ended (`behaviourRows`). The page
  *  keeps the grouping across its draws (`written.by`) and in its address (`written.onGroup`);
  *  the other is drawn in its place when picked, and `show(by, { at })` picks one from elsewhere
- *  on the page, bringing a position's continuations into view. */
+ *  on the page, bringing a position's continuations into view (`reveal`: the section). */
 function continuationsSection(report, ledTo, written) {
   const behaviours = report.behaviours;
   const grouping = () => (written.by === "behaviour" ? "behaviour" : "token");
@@ -288,7 +339,7 @@ function continuationsSection(report, ledTo, written) {
     });
   };
   let element = null;
-  const show = (by, { focus = false, at = null } = {}) => {
+  const show = (by, { focus = false, at = null, reveal = false } = {}) => {
     if (by !== grouping()) {
       written.by = by;
       written.onGroup?.(by);
@@ -298,6 +349,7 @@ function continuationsSection(report, ledTo, written) {
       if (focus) next.querySelector(".group-pick.current")?.focus();
     }
     if (at !== null) document.getElementById(`written-pos-${at}`)?.scrollIntoView({ block: "start" });
+    if (reveal) element.scrollIntoView({ block: "start" });
   };
   element = build();
   return { get element() { return element; }, show };
@@ -322,7 +374,7 @@ function groupPicker(by, show) {
 }
 
 /** What each continuation wrote, from the token forced on — what a forced token did to the
- *  model's deliberation, not only where it ended: for each position, each token (the run's own
+ *  model's deliberation, not only where it ended: for each position, each token (the original
  *  first) and the behaviours its continuations ended in, from the report. Each behaviour is
  *  folded until opened, and its continuations' text asked for then (`written.load`: `GET
  *  …/continuations`). What the page keeps across its draws — the folds open, what each read,
@@ -337,13 +389,13 @@ function tokenGroups(report, ledTo, written) {
       h("div", { class: "fork-head" },
         h("span", { class: "mono" }, `[${position.position}]`),
         h("span", { class: "muted" }, PART[position.part] || position.part || ""),
-        h("span", { class: "mono fork-context", title: "What the model had written just before this token" }, leadIn(position.context))),
+        sentence(position)),
       [[position.baseline, true], ...position.alternatives.map((alt) => [alt, false])].map(([arm, own]) => {
         const went = ledTo.get(armKey(arm.arm.position, arm.arm.text)) || [];
         const count = went.reduce((sum, [, n]) => sum + n, 0);
         return h("div", { class: "written-token" },
           h("div", { class: "written-head" },
-            h("span", { class: "muted" }, own ? "the run's own" : "forced"), " ",
+            h("span", { class: "muted" }, own ? "original" : "forced"), " ",
             h("span", { class: "mono" }, JSON.stringify(arm.arm.text)),
             h("span", { class: "muted small" }, ` · ${plural(count, "continuation")}`)),
           went.map(([letter, n]) => writtenGroup({
@@ -355,7 +407,7 @@ function tokenGroups(report, ledTo, written) {
 }
 
 /** One token's continuations that ended in one behaviour, folded: the behaviour's letter, whether
- *  what was counted matches it, how many, and what it was; opened, their text — what the fold
+ *  the condition matches it, how many, and what it was; opened, their text — what the fold
  *  read before shown at once, and asked for again only where the group has grown since. */
 function writtenGroup({ position, token, own, letter, count, cluster, written }) {
   const key = cluster?.outcome?.key ?? letter;
@@ -396,7 +448,7 @@ function writtenGroup({ position, token, own, letter, count, cluster, written })
 }
 
 /** One continuation's text: the token forced marked — cyan where tuningfork forced it, as a
- *  change is, grey where it was the run's own (`own`) — then each part the model wrote, named
+ *  change is, grey where it was the original (`own`) — then each part the model wrote, named
  *  where it starts. The text is the model's, put on the page as text. How far its box was
  *  scrolled is kept (`scrolled`, by `id`), and given back when the page draws it again. */
 function writtenOne(continuation, own, scrolled, id) {
@@ -408,7 +460,7 @@ function writtenOne(continuation, own, scrolled, id) {
   }
   const forced = h("mark", {
     class: ["forced", own ? null : "changed"],
-    title: own ? "The run's own token, forced back here" : "The token forced here, instead of the run's own",
+    title: own ? "The original token, forced back here" : "The token forced here, instead of the original",
   }, continuation.forced.text);
   let kind = ["marker", null, undefined].includes(continuation.forced.part) ? null : continuation.forced.part;
   const text = [kind ? h("span", { class: "written-part" }, PART[kind] || kind) : null, forced];
@@ -424,7 +476,7 @@ function writtenOne(continuation, own, scrolled, id) {
 }
 
 /** A probe's behaviours, each badged as its target counts it, with the tokens whose
- *  continuations reached it — the run's own in grey, a forced one in the accent — each leading
+ *  continuations reached it — the original in grey, a forced one in the accent — each leading
  *  to its position's table above. A forced token can change what the model does and still
  *  miss a target too fine to count it: this is where that shows. */
 function behaviourRows(behaviours) {
@@ -444,7 +496,7 @@ function behaviourRows(behaviours) {
           h("td", null, h("span", { class: "led-by" }, (cluster.by_arm || []).map((arm) =>
             h("button", {
               class: ["chip", arm.original ? "tone-muted" : "tone-accent"], type: "button", onclick: jump(arm.position),
-              title: `${arm.original ? "The run's own token" : "A token forced"} at [${arm.position}]: ${plural(arm.count, "continuation")} did this. Its table above.`,
+              title: `${arm.original ? "The original token" : "A token forced"} at [${arm.position}]: ${plural(arm.count, "continuation")} did this. Its table above.`,
             }, `[${arm.position}] ${JSON.stringify(arm.text)} ×${arm.count}`)))));
       })))),
     behaviours.errors ? h("p", { class: "hint" }, notCounted(behaviours.errors, "continuation")) : null,
@@ -505,16 +557,16 @@ export function forkingCautions(report) {
   const cautions = [];
   if (undecided.length) {
     cautions.push(["Still undecided there.",
-      `At ${positionList(undecided)}, the run's own token led elsewhere more often than to its own behaviour, so a later token decided it.`,
+      `At ${positionList(undecided)}, the original token led elsewhere more often than to its own behaviour, so a later token decided it.`,
       "On the answer's heatmap, select tokens after these and probe them."]);
   }
   if (tooFine.length) {
-    cautions.push(["What was counted is too fine.",
-      `At ${positionList(tooFine)}, the run's own token led mostly to the same tools with other arguments, so what was counted may be too fine to compare on. Grouping behaviours by tool name alone (tool_name), or a pattern, may say more.`]);
+    cautions.push(["The condition is too fine.",
+      `At ${positionList(tooFine)}, the original token led mostly to the same tools with other arguments, so the condition may be too fine to compare on. Grouping behaviours by tool name alone (tool_name), or a pattern, may say more.`]);
   }
   if (!undecided.length && !tooFine.length && report.reproduced && report.reproduced.total && report.reproduced.point < 0.5) {
-    cautions.push(["The run's own tokens rarely led back to what was counted.",
-      `Even with the run's own tokens forced, the model did what was counted in only ${ofTotal(report.reproduced)} continuations. It may be too fine to reproduce, or the step not yet decided at these positions.`]);
+    cautions.push(["With the original tokens forced, the condition was rarely met.",
+      `Only ${ofTotal(report.reproduced)} continuations met it. The condition may be too fine to reproduce, or the step not yet decided at these positions.`]);
   }
   return cautions;
 }
@@ -565,7 +617,7 @@ export function endHeadline(result) {
 
 /** What a finished job found, in a line, for its page: the verdict the page of what it made
  *  leads with, from the same helpers, where that page has one (a test at a step, an A/B, a
- *  probe); else the result in a line (a resample, a resample to the end). With what was counted
+ *  probe); else the result in a line (a resample, a resample to the end). With the condition
  *  (`target`: its label, what it is, when it was chosen), what the verdict could see (`seen`, as
  *  that page says it), a probe's forced tokens that changed what the model did (`lines`, a
  *  sentence each), the rates it rests on — each with its interval, and the behaviour where one
@@ -585,10 +637,10 @@ export function found(job) {
       const [text, tone, seen] = forkingHeadline(result.forking);
       // A next step taken on the answer's heatmap is the probe's page's to say.
       const notes = forkingCautions(result.forking).map(([title, said]) => `${title} ${said}`);
-      // Which forced tokens, each beside the run's own: the probe's page has them as a table.
+      // Which forced tokens, each beside the original: the probe's page has them as a tree.
       const flips = flipLines(result.forking);
       const lines = flips.length > 3 ? [...flips.slice(0, 3), `And ${flips.length - 3} more, on the probe's page.`] : flips;
-      return { text, tone, target: ["What was counted", result.forking.target], seen, lines, bars: [], notes };
+      return { text, tone, target: ["Condition", result.forking.target], seen, lines, bars: [], notes };
     }
     case "screen":
     case "screen-to-end": {
@@ -599,7 +651,7 @@ export function found(job) {
       return {
         text, tone,
         target: screen.reach === "end"
-          ? ["What was counted", screen.target, "set by the task, before any fork ran"]
+          ? ["Condition", screen.target, "set by the task, before any fork ran"]
           : ["What the model should do", screen.target],
         bars: [["original", screen.baseline?.target], ...screen.arms.map((arm) => [arm.name, arm.target, "change"])],
         notes: [
@@ -625,7 +677,7 @@ export function found(job) {
   }
 }
 
-const CHECK_TARGET = ["What was counted", "the task's check passes", "set by the task, before any fork ran"];
+const CHECK_TARGET = ["Condition", "the task's check passes", "set by the task, before any fork ran"];
 
 function distributionFinding(distribution) {
   const [first] = distribution.clusters;
@@ -645,7 +697,7 @@ function abFinding(comparison, alpha) {
   if (target) {
     return {
       text: shiftWords(target), tone: target.significant ? "significant" : "not-significant",
-      target: ["What was counted", target.description],
+      target: ["Condition", target.description],
       bars: [["original", target.original], ["variant", target.variant, "change"]], notes: [],
     };
   }

@@ -256,7 +256,7 @@ What the checks said, counted. Each line a check prints is one finding, and line
 only in their numbers are one; the most common finding comes first, with how many failed runs
 said it: the failure to fix first, not the first one read.
 
-- `--task <id>` — across a task's failed runs, by condition.
+- `--task <id>` — across a task's failed runs, by set-up.
 - `--screen <experiment>` — across each arm's failed forks, for a screen or an A/B run to the end.
 - `--show N` — findings shown per group (default 10).
 
@@ -287,7 +287,7 @@ the difference.
   matches; without `--contains`, the file must exist). It gives whether it held at the start,
   which call made it hold, which undid it, and whether it held at the end.
 - `--task <id>`, or `--screen <experiment>` for a screen's forks, arm by arm. `--limit` (200 runs)
-  and `--show` (20 listed per condition).
+  and `--show` (20 listed per set-up).
 
 ## Bad luck, or the wording?
 
@@ -525,7 +525,7 @@ closes one, keeping everything it holds.
 
 `skills` lists the skills the recordings know — from runs, scenarios, saved variants and
 refinements, and those added with `add-skill` — each with its tasks, runs and versions. `skill
-<name>` gives each version with its pass rate under every condition it ran under, and what its
+<name>` gives each version with its pass rate under every set-up it ran under, and what its
 text is known as, the scenarios that run it, and how its skill folder was added, where it was;
 `--text <ref>` prints one text (a version's fingerprint, `file`, `variant:<name>` or
 `history:<file>`), and `--diff A B` compares two line by line.

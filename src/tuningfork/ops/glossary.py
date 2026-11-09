@@ -242,7 +242,8 @@ TERMS: tuple[Term, ...] = (
     Term("target", "What should happen at the step, declared before anything is sampled: a behaviour's letter, a "
          "pattern, or conditions in words. Run to the end, the target is the task's check.",
          "experiments", see=("A/B", "refinement"),
-         ui="what you count (in a result, what was counted); in a refinement, what the model should do"),
+         ui="condition (over a result, Condition; a probe's rows, condition met); "
+            "in a refinement, what the model should do"),
     Term("to the end", "Each sample a fork run to the end of the task and judged by its check, instead of the one "
          "answer at the step: whether a change at the step carries through.",
          "experiments", aka=("each to the end", "--to-end"), see=("fork", "sample"),
@@ -321,9 +322,9 @@ TERMS: tuple[Term, ...] = (
          "`<home>/.access-token`. Reading needs none.",
          "working", aka=("token",), where="tuningfork token"),
     # --- how results are judged
-    Term("condition", "What a run was given besides its task: the harness, the model, the skill version and the "
-         "server. Pass rates are kept apart per condition: runs under two are never pooled.",
-         "statistics", see=("pass rate", "skill version"), where="Runs page; tuningfork tasks", ui="set-up"),
+    Term("set-up", "What a run was given besides its task: the harness, the model, the skill version and the "
+         "server. Pass rates are kept apart per set-up: runs under two are never pooled.",
+         "statistics", see=("pass rate", "skill version"), where="Runs page; tuningfork tasks"),
     Term("pass rate", "The share of a skill version's runs whose check passed, always with its interval; runs that "
          "timed out or were edited at a breakpoint are left out and counted apart.",
          "statistics", see=("Wilson interval", "check")),

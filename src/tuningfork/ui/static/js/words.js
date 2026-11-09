@@ -14,7 +14,7 @@ export const UI_WORDS = {
   "launch": "a run tuningfork started",
   "skill version": "version 1, 2, … in order of first run, on the Skills page",
   "arm": "wording",
-  "target": "what you count (in a result, what was counted); in a refinement, what the model should do",
+  "target": "condition (over a result, Condition; a probe's rows, condition met); in a refinement, what the model should do",
   "to the end": "whether the whole run then passes",
   "checkpoint": "this step",
   "proposer": "proposing model (the built-in one)",
@@ -23,7 +23,6 @@ export const UI_WORDS = {
   "validation": "full test runs",
   "gate": "approval checks",
   "server check": "server test",
-  "condition": "set-up",
   "Wilson interval": "95% interval",
   "Fisher's exact test": "beyond chance",
   "Holm correction": "corrected for the tests planned",
@@ -32,12 +31,12 @@ export const UI_WORDS = {
 
 /** Labels more than one page shows, spelled once. */
 export const LABELS = {
-  // Whether what you count includes a behaviour, as a badge beside it: never "counted", which
+  // Whether the condition includes a behaviour, as a badge beside it: never "counted", which
   // already means a run or fork is in the pass rate.
   matches: "matches",
   noMatch: "no match",
   // The legend over a target's choices.
-  whatToCount: "What to count",
+  condition: "Condition",
   // Settings a form keeps folded.
   advanced: "Advanced settings",
   // The two reaches of a resample and an A/B.

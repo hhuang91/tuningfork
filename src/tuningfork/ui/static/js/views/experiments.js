@@ -51,7 +51,7 @@ export async function experimentsView(root) {
     rows.length
       ? h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
           h("thead", null, h("tr", null, h("th", null, "experiment"), h("th", null, "kind"), h("th", null, "step"),
-            h("th", { class: "num" }, "samples"), h("th", null, "what is counted"), h("th", null, "when"))),
+            h("th", { class: "num" }, "samples"), h("th", null, "condition"), h("th", null, "when"))),
           h("tbody", null, rows.map((experiment) =>
             h("tr", { class: "clickable", onclick: () => (location.hash = `#/experiments/${experiment.id}`) },
               h("td", null, h("a", { class: "mono", href: `#/experiments/${experiment.id}` }, short(experiment.id))),
@@ -170,7 +170,7 @@ export async function experimentView(root, [id], scope) {
     const how = toEnd
       ? ": each sample a fork of the run, answered from the recording up to it and live from there to the end, where the task's check decided."
       : experiment.kind === "forking-tokens"
-        ? ": at each probed token, the run's own and each alternative forced, and the model left to go on — with everything before it held fixed."
+        ? ": at each probed token, the original and each alternative forced, and the model left to go on — with everything before it held fixed."
         : experiment.kind === "screen"
           ? ": each proposal's wording swapped in, and sampled against the original wording, drawn fresh — with everything before it held fixed."
           : ", with everything before it held fixed.";
@@ -264,7 +264,7 @@ function originBanner(experiment) {
   if (!origin?.hold) return null;
   if (origin.matches_step === false) {
     return h("div", { class: "banner banner-warn" }, h("strong", null, "Sampled at a held call, then edited. "),
-      "These samples are of the request as it was held, and the model then saw an edited one. They are not this step's behaviour, and an A/B never takes what to count from them.");
+      "These samples are of the request as it was held, and the model then saw an edited one. They are not this step's behaviour, and an A/B never takes its condition from them.");
   }
   return h("div", { class: "banner" }, h("strong", null, "Sampled at a held call. "),
     experiment.run_id ? "Filed under the step the call became." : "Filed under its step once the call is recorded.");

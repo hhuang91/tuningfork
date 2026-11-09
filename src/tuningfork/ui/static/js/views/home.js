@@ -321,8 +321,8 @@ const WORKFLOWS = [
   },
   {
     question: "Would other wording change what the model does here?",
-    answer: "An A/B at the step: your edit of the skill against the original wording, counting what you chose before anything is sampled.",
-    steps: ["At the step: A/B a wording…", "Edit the text, and choose what to count: a behaviour's letter, a pattern, or conditions in words", "Read the shift, and whether it is beyond chance; with nothing declared, every behaviour is compared"],
+    answer: "An A/B at the step: your edit of the skill against the original wording, counting how often each meets a condition chosen before anything is sampled.",
+    steps: ["At the step: A/B a wording…", "Edit the text, and choose the condition: a behaviour's letter, a pattern, or a behaviour described in words", "Read the shift, and whether it is beyond chance; with nothing declared, every behaviour is compared"],
     cli: "tuningfork ab <run> <step> --variant SKILL.v2.md --target A", href: "#/runs", go: "Choose a run",
   },
   {

@@ -168,7 +168,7 @@ class DivergenceArgs:
 
 @dataclass
 class TallyArgs:
-    task: str | None = field(default=None, metadata=_help("A task: its failed runs, by condition."))
+    task: str | None = field(default=None, metadata=_help("A task: its failed runs, by set-up."))
     screen: str | None = field(default=None, metadata=_help("Or a screen run to the end (any arm's id): each arm's failed forks."))
 
 
@@ -841,7 +841,7 @@ def where_holds(context: Context, args: WhereArgs) -> Answer:
 
 
 def where_advice(context: Context, view: dict[str, Any]) -> list[str]:
-    """What a refining agent can do with where a question held: of the condition with the most
+    """What a refining agent can do with where a question held: of the set-up with the most
     judged runs, the call to refine and toward what — or another question to ask."""
     groups = view.get("groups") or []
     if not groups:
@@ -1433,7 +1433,7 @@ def plan_answer(kind: Kind, planned: dict[str, Any]) -> Answer:
 READS = (
     Tool("list_tasks", "Tasks and pass rates",
          "Start here. Every task recorded, with its check's pass rate (and 95% interval) under each "
-         "condition it ran under: harness, model, skill version, server.", NoArgs, list_tasks),
+         "set-up it ran under: harness, model, skill version, server.", NoArgs, list_tasks),
     Tool("list_runs", "Runs",
          "Recorded runs, newest first: of a task, or where the model called a tool (at a step). Each with "
          "its verdict; a failed run's with the first line its check printed.",
@@ -1456,7 +1456,7 @@ READS = (
     Tool("tally_failures", "What failed checks said, counted",
          "Every failed run's check output, counted: a finding a line (lines differing only in numbers are "
          "one), how many failed runs said it, with its interval, the most common first: the failure to fix "
-         "first. By condition for a task; by arm for a screen run to the end.", TallyArgs, tally_failures),
+         "first. By set-up for a task; by arm for a screen run to the end.", TallyArgs, tally_failures),
     Tool("show_step", "One step's context",
          "One step as the model saw it: where the skill's text sits (file and lines), the last "
          "messages before it answered, and its answer, each clipped: message reads one whole, page by "
@@ -1506,7 +1506,7 @@ REFINE_READS = (
 #: model no server instructions (Hermes shows none) and the descriptions are then all it has.
 REFINE_LIST_TASKS = Tool(
     "list_tasks", "Tasks and pass rates",
-    "Start here. Every task recorded, with its check's pass rate (and 95% interval) under each condition it "
+    "Start here. Every task recorded, with its check's pass rate (and 95% interval) under each set-up it "
     "ran under. The loop from here: tally_failures (what every failed run's check said, counted: the most "
     "common failure first); show_run of a failed run that said it and show_files of what it wrote, beside a "
     "passing run's — where_it_holds when the check prints only its verdict; show_skill for the skill's "

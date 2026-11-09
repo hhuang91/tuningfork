@@ -1045,7 +1045,7 @@ a.chip:hover { text-decoration: none; filter: brightness(0.97); }
 .ci-text { font-family: var(--mono); font-size: var(--text-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
 /* Wherever it is short of room, a rate's numbers go under its bar: in a table the row's other
    columns — a behaviour's own words — keep their width (seen at 1200 px, beside the sidebar); in
-   a form, the step's latest resample, offered as what to count, no longer widens the form past
+   a form, the step's latest resample, offered as the condition, no longer widens the form past
    the work beside a run; on a phone, nothing is wider than the page. */
 
 .kv {
@@ -1570,21 +1570,55 @@ pre.code { color: var(--muted); }
 /* The result in a sentence: the lead of its page, a size above the words around it. */
 .verdict-big { max-width: var(--measure); font-size: var(--text-lg); font-weight: var(--weight-semibold); line-height: var(--leading-snug); letter-spacing: var(--tracking-tight); }
 .verdict-block > .verdict-target, .verdict-block > .verdict-big, .verdict-block > .verdict-lines, .verdict-block > .flips { flex-basis: 100%; }
-/* What was counted: its label on a line of its own, the target under it. */
+/* The condition: its label on a line of its own, the target under it. */
 .verdict-target { display: flex; flex-direction: column; gap: var(--space-0-5); font-size: var(--text-base); }
 .verdict-target .label { margin: 0; font-size: var(--text-sm); }
 .verdict-target-body { padding-left: var(--space-5); }
 .verdict-target-text { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
-/* A probe's forced tokens that changed what the model did, under its headline: each position's
-   line, then the run's own token and each forced one, as the tables below have them. */
+/* A probe's lead, under its headline: each position where a forced token changed what the model
+   did, as a tree, a table each, as wide as its words. Its place in the answer heads the tree's
+   column; under it the token is boxed in its sentence (the head of the position's rows below
+   too), and from under the box hang the original token, boxed alike, and each one forced, in the
+   cyan of a change, a row each. The guides are drawn on the token's cell, set in by the text
+   before the box (`--fork-before`, in the mono font's ch, as the sentence is), so the trunk falls
+   from the box: a screen reader hears a table. Every sentence is as wide as the widest tree needs
+   (`--fork-span`) and every tree's panel as wide as the widest, so their columns line up. */
 .flips { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .flips p { margin: 0; }
-.flips-table { background: var(--panel); }
-.flips-table tr.flip-at td { padding-top: var(--space-2-5); padding-bottom: var(--space-0-5); border-bottom: none; }
-.flips-table .fork-context { white-space: pre; }
-.reached { display: flex; flex-direction: column; gap: var(--space-1); }
-.reached-one { display: flex; align-items: baseline; gap: var(--space-1-5); }
-.reached-label { max-width: var(--label-max); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fork-trees { display: grid; gap: var(--space-2); width: fit-content; max-width: 100%; }
+.fork-trees > .table-wrap { background-color: var(--panel); }
+.fork-sentence, .fork-tree td.fork-alt { font-family: var(--mono); font-size: var(--text-code); }
+.fork-sentence { white-space: pre; }
+/* A block of its own, so the box sits at its cell's foot, where the trunk starts. */
+.fork-tree .fork-sentence { display: block; min-width: var(--fork-span, 0); }
+.fork-before, .fork-after { color: var(--muted); }
+/* The box drawn outside the token, a pixel clear of it: an underscore at its foot still reads. */
+.fork-token, .fork-original { box-shadow: 0 0 0 1px var(--text); border-radius: var(--radius-sm); padding: 1px var(--space-0-5); color: var(--text); }
+.fork-forced { background: var(--change-soft); color: var(--change); border-radius: var(--radius-sm); padding: 0 var(--space-0-5); }
+.fork-tree { --fork-before: 0ch; background: var(--panel); }
+/* The token's column and its chance's as narrow as their words: a tree narrower than the widest
+   gives its room to the rates, its heading's rule across its panel and its columns where the
+   widest tree has them. */
+.fork-tree th:not(:last-child), .fork-tree td:not(:last-child) { width: 1px; }
+.fork-tree tr.fork-at td { padding-top: var(--space-2-5); padding-bottom: var(--space-1); border-bottom: none; }
+.fork-tree tr.fork-branch td { padding-top: var(--space-1); padding-bottom: var(--space-1); border-bottom: none; vertical-align: middle; }
+.fork-tree tr.fork-branch:last-child td { padding-bottom: var(--space-3); }
+/* A token's chance and how often the condition was met after it read alike, from the left; a
+   badge follows the rate it is about. */
+.fork-tree td.fork-chance { font-family: var(--mono); font-size: var(--text-xs); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fork-met { display: inline-flex; align-items: center; gap: var(--space-2-5); white-space: nowrap; }
+.fork-tree td.fork-alt { position: relative; white-space: pre; padding-left: calc(var(--space-3) + var(--fork-before) + var(--space-5)); }
+.fork-tree td.fork-alt::before, .fork-tree td.fork-alt::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--space-3) + var(--fork-before) + var(--space-2));
+  border: 0 solid var(--control);
+}
+.fork-tree td.fork-alt::before { top: 0; height: calc(var(--space-1) + 0.75em); width: var(--space-2); border-left-width: 1px; border-bottom-width: 1px; }
+.fork-tree tr.fork-branch:not(:last-child) td.fork-alt::after { top: 0; bottom: 0; border-left-width: 1px; }
+/* The first row's guides reach up to the box. */
+.fork-tree tr.fork-at + tr.fork-branch td.fork-alt::before { top: calc(-1 * var(--space-1)); height: calc(var(--space-2) + 0.75em); }
+.fork-tree tr.fork-at + tr.fork-branch td.fork-alt::after { top: calc(-1 * var(--space-1)); }
 .verdict-block.tone-ok .verdict-big { color: var(--ok); }
 .verdict-block.tone-bad .verdict-big { color: var(--bad); }
 .verdict-block.tone-warn .verdict-big { color: var(--warn); }
@@ -1853,7 +1887,7 @@ pre.code { color: var(--muted); }
 .tk-probe { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-0-5) var(--space-3); }
 .tk-probe-flip { color: var(--accent); font-weight: var(--weight-semibold); }
 .fork-answer { display: flex; flex-direction: column; gap: var(--space-1-5); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
-.fork-links { display: inline-flex; gap: var(--space-1-5); margin-left: auto; }
+.fork-links { display: inline-flex; flex-wrap: wrap; gap: var(--space-1-5); margin-left: auto; }
 .passes-when { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2-5); padding: var(--space-2) var(--space-4) 0; }
 .passes-when .label { margin: 0; }
 .passes-when code { overflow-wrap: anywhere; }
@@ -2222,7 +2256,8 @@ details.panel[open] > summary:hover { border-radius: var(--radius-lg) var(--radi
 mark.forced { padding: 0 var(--space-0-5); border-radius: var(--radius-xs); background: transparent; color: var(--text); box-shadow: 0 0 0 var(--stroke-1-5) var(--border-strong); }
 mark.forced.changed { background: var(--change-soft); color: var(--change); box-shadow: 0 0 0 var(--stroke-1-5) var(--change); }
 .fork-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2-5); margin-bottom: var(--space-1); }
-.fork-context { color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+/* Over a position's rows and its continuations, the sentence wraps where the page is narrow. */
+.fork-head .fork-sentence { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* --- jobs: ticked to move to the trash together -------------------------------------------- */
 
