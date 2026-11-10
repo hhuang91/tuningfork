@@ -9,8 +9,8 @@
 
 import { api, enc, query } from "../api.js";
 import { guard } from "../auth.js";
-import { ago, capital, chip, crumbs, h, icon, kv, loading, panel, plural, pretty, rateBar, replace, short, when } from "../dom.js";
-import { cacheField, field, formError, input, numberOf, planForm, samplingChoices, seedField, textArea } from "../forms.js";
+import { ago, capital, chip, crumbs, h, icon, info, kv, loading, panel, plural, pretty, rateBar, replace, short, when } from "../dom.js";
+import { cacheField, field, formError, input, numberOf, planForm, samplingChoices, seedField, textArea, ways } from "../forms.js";
 import { copyChip, folderTree, nameOf, parentOf, placeOf, writes } from "../folders.js";
 import { ACTIVE } from "../jobs.js";
 import { live } from "../live.js";
@@ -42,7 +42,7 @@ export async function refinementsView(root, _, scope) {
   const found = await api.get(`/refinements${closed ? "?closed=1" : ""}`);
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Refine"),
-      h("p", { class: "sub" }, "A skill refined at one step of a run. First you choose what the model should do there. Then edits of the skill are proposed — by you, an agent over MCP or the proposing model — and each is tested at that step against the original wording.")),
+      h("p", { class: "sub" }, "A skill refined at one step of a run: what the model should do there, edits proposed for it, and each edit tested against the original wording.")),
       h("div", { class: "actions" },
         h("a", { class: "btn btn-quiet btn-small", href: closed ? "#/refine" : "#/refine?closed=1" }, closed ? "Open ones only" : "Closed ones too"))),
     found.length
@@ -79,7 +79,13 @@ export async function refineStartForm(step) {
   const here = existing.filter((each) => each.step === step.idx);
   const picker = targetPicker(targets, {
     run, idx: step.idx, exploratory: false,
-    legend: "What the model should do at this step (chosen before anything is proposed or sampled)",
+    legend: "What the model should do here",
+    about: "The behaviour every proposed edit is tested for. You choose it first, before anything is proposed or sampled.",
+    // A target no answer at this step can express: what the run wrote, as the task's check reads it.
+    more: [{
+      value: "check", label: "Pass the check",
+      note: "For a failure only the task's check can see, in what the run wrote: each test forks the run from here to the end, and the check decides.",
+    }],
   });
   // A run that kept several skills — an imported chat — refines the one chosen here.
   const kept = skill.kept || [];
@@ -121,14 +127,9 @@ export async function refineStartForm(step) {
         here.map((each, index) => [index ? ", " : "", h("a", { href: `#/refine/${each.id}` }, `${short(each.id)} (${each.target?.description || "?"})`)]),
         ". The same choice opens that one again.")
     : null,
-  h("p", { class: "hint" }, "The skill as this run was given it is copied into the refinement, and every proposal edits that copy. The skill folder is written only when you approve one."),
+  h("p", { class: "hint" }, "Every proposal edits a copy of the skill as this run had it. The skill folder is written only when you approve one."),
   studies ? field("Skill", studies, { help: "The run kept several: the refinement edits the one chosen." }) : null,
   picker,
-  // A target no answer at this step can express: what the run wrote, as the task's check reads it.
-  h("label", { class: "target-choice" },
-    h("input", { type: "radio", name: "target_kind", value: "check" }),
-    h("span", null, h("strong", null, "The task's check passes"),
-      h("span", { class: "muted small" }, " — for a failure only the check can see, a property of what the run wrote: its tests fork the run from here to the end, and the check decides"))),
   error,
   h("div", { class: "form-actions" }, button));
   return form;
@@ -137,7 +138,7 @@ export async function refineStartForm(step) {
 function readRefineTarget(form) {
   const kind = form.querySelector('[name="target_kind"]:checked')?.value;
   if (!kind) {
-    throw Object.assign(new Error("Choose what the model should do here: a behaviour, one you describe, a pattern, or the task's check."), { field: "target_kind" });
+    throw Object.assign(new Error("Choose what the model should do here: Seen here, Tools & words, Pattern or Pass the check."), { field: "target_kind" });
   }
   if (kind === "check") return { target_check: true };
   if (kind === "letter") {
@@ -183,7 +184,7 @@ export async function refinementView(root, [id], scope) {
   const stagePanels = {
     propose: stagePanel("propose", 1, "Propose", "small edits, each with its reason", [proposeEl], { fold: true, className: "propose-panel" }),
     test: stagePanel("test", 2, LABELS.screen, "the proposals ticked, each against the original", [proposalsEl, screenEl, screensEl]),
-    validate: stagePanel("validate", 3, LABELS.validate, "the task, and the tasks held out from it, each against the original", [validateEl, validationsEl]),
+    validate: stagePanel("validate", 3, LABELS.validate, "the task and its held-out tasks, each against the original", [validateEl, validationsEl]),
     approve: stagePanel("approve", 4, "Approve", "nothing is written until you type the code", [approveLine, approveEl]),
   };
   let proposeForm = null;
@@ -515,7 +516,7 @@ export async function refinementView(root, [id], scope) {
       h("div", { class: "table-wrap" }, h("table", { class: "table evidence-table" },
         h("thead", null, h("tr", null, h("th", null, "the edit"), h("th", null, "its test at this step"), h("th", null, "its full test runs"))),
         h("tbody", null, items.map((item) => evidenceRow(item, pick)))))),
-      { meta: h("span", { class: "muted" }, "why a proposal is kept: a test at this step, then full test runs"), className: "evidence-panel" }));
+      { className: "evidence-panel" }));
   }
 
   function evidenceRow(item, pick) {
@@ -618,9 +619,10 @@ export async function refinementView(root, [id], scope) {
       ]),
       !answers.reached
         ? h("p", { class: "hint" },
-            answers.of ? "With the original wording, no answer here did what the model should do. The proposing model learns what is wanted only from what you said it should do and, where you show them, from the task's own criteria. " : "",
-            "More answers here make better evidence: ",
-            h("a", { href: `#/runs/${found.run}/${found.step}?start=resample` }, "resample this step"), ".")
+            // The remedy first: a hint's later sentences fold behind "more".
+            answers.of ? "With the original wording, no answer here did what the model should do: " : "More answers here make better evidence: ",
+            h("a", { href: `#/runs/${found.run}/${found.step}?start=resample` }, "resample this step"),
+            answers.of ? " for more to go on. The proposing model learns what is wanted only from what you said it should do and, where you show them, from the task's own criteria." : ".")
         : null,
       h("details", { class: "fold" },
         h("summary", null, h("span", { class: "fold-preview" }, "As JSON"),
@@ -796,12 +798,31 @@ export async function refinementView(root, [id], scope) {
         }
       }),
     },
-    h("p", { class: "hint" }, "The skill as the run was given it. Change what you think will help. A test at this step can tell which change helped only when the changes are small; more than ten lines is allowed, with a warning."),
+    h("p", { class: "hint" }, "Change what you think will help, and keep it small.",
+      info("This is the skill as the run was given it. A test at this step can tell which change helped only when the changes are small; more than ten lines is allowed, with a warning.", { label: "Why small" })),
     h("div", { class: "editor-head" }, h("span", { class: "label" }, "Your wording"), changes),
     text,
     field("Why", why, { help: "Kept with the proposal, and shown to whoever proposes after you.", wide: true }),
     note,
     h("div", { class: "form-actions" }, button));
+  }
+
+  /** A test's two reaches, side by side: what each sample is, said of the one chosen. */
+  function reachWays(checkTarget, onChange) {
+    const reach = ways("reach", [
+      {
+        value: "step", label: capital(LABELS.nextOnly), checked: !checkTarget, disabled: checkTarget,
+        note: checkTarget
+          ? "Not for this refinement: what the model should do is pass the task's check, which only a run's end can show."
+          : "Each sample is an answer here, judged by what the model should do. Each proposal is set against the original wording, sampled fresh.",
+      },
+      {
+        value: "end", label: capital(LABELS.wholeRun), checked: checkTarget,
+        note: "Each sample is a fork run from here to the end through the harness. The task's check decides.",
+      },
+    ], { legend: LABELS.judgeBy });
+    reach.addEventListener("change", onChange);
+    return reach;
   }
 
   function screenPanel() {
@@ -829,16 +850,7 @@ export async function refinementView(root, [id], scope) {
     const form = planForm({
       kind: (element) => (toEnd(element) ? "screen-to-end" : "screen"),
       fields: [
-        h("fieldset", { class: "target-picker" }, h("legend", null, LABELS.judgeBy.replace(/:$/, "")),
-          h("label", { class: "target-choice" },
-            h("input", { type: "radio", name: "reach", value: "step", checked: !checkTarget, disabled: checkTarget, onchange: reachChanged }),
-            h("span", null, h("strong", null, capital(LABELS.nextOnly)), h("span", { class: "muted small" }, checkTarget
-              ? " — not for this refinement: what the model should do is pass the task's check, which only a run's end can show"
-              : " — each sample an answer here, judged by what the model should do; each proposal against the original wording, sampled fresh"))),
-          h("label", { class: "target-choice" },
-            h("input", { type: "radio", name: "reach", value: "end", checked: checkTarget, onchange: reachChanged }),
-            h("span", null, h("strong", null, capital(LABELS.wholeRun)), h("span", { class: "muted small" },
-              " — each sample a fork run from here to the end through the harness, the task's check deciding")))),
+        reachWays(checkTarget, reachChanged),
         h("div", { class: "form-grid" },
           field("Samples", input("n", { type: "number", value: 20, min: 2, max: 200 }), { help: "For each wording, the original's included." })),
         endOnly,
@@ -890,9 +902,9 @@ export async function refinementView(root, [id], scope) {
       kind: "validate",
       fields: [
         h("div", { class: "form-grid" },
-          field("Proposal", choose, { help: "One that beat the original in a test at this step." }),
+          field("Proposal", choose, { help: "One that beat the original here." }),
           field("Forks", input("n", { type: "number", value: 5, min: 5, max: 200 }), { help: "For each wording, from this step to the end." }),
-          field("Full runs", input("runs", { type: "number", value: 5, min: 5, max: 200 }), { help: "For each wording, of the task and of each held-out task." })),
+          field("Full runs", input("runs", { type: "number", value: 5, min: 5, max: 200 }), { help: "For each wording.", about: "Of the task, and of each held-out task." })),
         h("details", { class: "fold more-settings" },
           h("summary", null, LABELS.advanced),
           h("div", { class: "form-grid" },
@@ -1229,7 +1241,8 @@ function validatePreview(plan) {
         : null],
     ]),
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-    h("p", { class: "hint" }, "Every wording's runs are drawn fresh, the original's included. Held-out runs are recorded in a temporary folder outside the recordings folder, and deleted after. Their verdicts are shown on this page, and to no agent."));
+    h("p", { class: "hint" }, "Every wording's runs are drawn fresh. Held-out verdicts are shown here, and to no agent.",
+      info("The original's runs are drawn fresh too. Held-out runs are recorded in a temporary folder outside the recordings folder, and deleted after.", { label: "How the runs are kept" })));
 }
 
 /** A screen's numbers for one proposal: against the original's arm, or — a quick look, which
@@ -1237,7 +1250,7 @@ function validatePreview(plan) {
 function screenLine(verdict) {
   const rate = `${verdict.target.successes}/${verdict.target.total}`;
   const base = verdict.baseline || {};
-  const toEnd = verdict.reach === "end" ? ", forks to the end" : "";
+  const toEnd = verdict.reach === "end" ? ", whole run" : "";
   if (verdict.quick) {
     return `${rate} forks passed${toEnd}: rates, never a verdict${base.total ? `; the original's ${base.successes}/${base.total} drawn before` : ""}`;
   }
@@ -1354,7 +1367,8 @@ function proposePreview(plan) {
       ["sends", `${Math.round(plan.size / 1024) || 1} KB: the skill, and what the proposing model is shown, below (kept as ${plan.packet})`],
     ]),
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-    h("p", { class: "hint" }, "One call. Each proposal it makes is checked — its edits must match the skill exactly, leave the frontmatter alone and change at most ten lines — and kept with the model, what it was shown, and the prompt it came from."));
+    h("p", { class: "hint" }, "One call. Each proposal it makes is checked before it is kept.",
+      info("Its edits must match the skill exactly, leave the frontmatter alone and change at most ten lines. Each proposal is kept with the model, what it was shown, and the prompt it came from.", { label: "What is checked" })));
 }
 
 /** A screen to the end, as it would run: the runs its forks are drawn from, the original's
@@ -1392,7 +1406,8 @@ function screenToEndPreview(plan) {
     ]),
     (plan.notes || []).map((note) => h("p", { class: "faint small" }, note)),
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-    h("p", { class: "hint" }, "Each fork replays its run as recorded up to the step — the model's answers and what its tools did to the files — then runs live to the end, where the task's check decides."));
+    h("p", { class: "hint" }, "Each fork replays its run up to the step, then runs live to the end.",
+      info("What is replayed is the run as recorded: the model's answers, and what its tools did to the files. At the end, the task's check decides.", { label: "What a fork is" })));
 }
 
 function screenPreview(plan) {
@@ -1413,5 +1428,6 @@ function screenPreview(plan) {
         : minutes === undefined || minutes === null ? null : minutes < 1 ? `at most about ${Math.max(1, Math.round(minutes * 60))} s` : `at most about ${minutes.toFixed(1)} min`],
     ]),
     (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-    h("p", { class: "hint" }, "The original is sampled fresh, first, then each proposal with its wording swapped in, and each is compared with the original, corrected for the number of proposals ticked. This test changes only this step, so treat the result as a lead, and confirm it with full test runs."));
+    h("p", { class: "hint" }, "A lead, not proof: only this step sees each proposal.",
+      info("The original is sampled fresh, first, then each proposal with its wording swapped in, and each is compared with the original, corrected for the number of proposals ticked. Confirm a result here with full test runs.", { label: "How the test runs" })));
 }

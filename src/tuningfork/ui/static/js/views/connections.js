@@ -419,7 +419,7 @@ export async function connectionsView(root, _, scope) {
         ["another machine", settings.allow_remote ? chip("allowed", "warn") : chip("not allowed", "muted")],
         ["key", key.set ? chip(key.from === "environment" ? "set, from TUNINGFORK_PROPOSER_KEY" : "set, in the recordings folder", "muted") : chip("not set", "muted")],
       ]),
-      h("p", { class: "hint" }, "The model tuningfork asks for edits of a skill, from a refinement's page. What it is sent — the skill, recorded prompts and answers — goes to this address."),
+      h("p", { class: "hint" }, "The model tuningfork asks for edits of a skill, from a refinement's page: what it is sent — the skill, recorded prompts and answers — goes to this address."),
       error,
       h("details", { class: "fold" }, h("summary", null, "Change the proposing model"),
         h("form", {
@@ -564,7 +564,7 @@ export async function connectionsView(root, _, scope) {
       h("p", { class: "hint" }, "These change only with a restart:"),
       command(proxy.restart),
       proxy.restart_masked
-        ? h("p", { class: "hint" }, "A key in the upstream's address, such as its user and password or a value in its query, shows as <redacted>. Type it back in before you run it.")
+        ? h("p", { class: "hint" }, "Type any key back in before you run it: one in the upstream's address, such as its user and password or a value in its query, shows as <redacted>.")
         : null,
     ]));
   }

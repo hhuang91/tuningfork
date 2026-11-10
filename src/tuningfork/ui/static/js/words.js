@@ -15,7 +15,9 @@ export const UI_WORDS = {
   "skill version": "version 1, 2, … in order of first run, on the Skills page",
   "arm": "wording",
   "target": "condition (over a result, Condition; a probe's rows, condition met); in a refinement, what the model should do",
-  "to the end": "whether the whole run then passes",
+  "to the end": "the whole run",
+  "check along": "the call behind each line",
+  "where it holds": "ask every run",
   "checkpoint": "this step",
   "proposer": "proposing model (the built-in one)",
   "packet": "what the proposing model is shown",
@@ -40,9 +42,9 @@ export const LABELS = {
   // Settings a form keeps folded.
   advanced: "Advanced settings",
   // The two reaches of a resample and an A/B.
-  judgeBy: "Judge each try by:",
-  nextOnly: "what the model does next",
-  wholeRun: "whether the whole run then passes",
+  judgeBy: "Measure",
+  nextOnly: "The next step",
+  wholeRun: "The whole run",
   // A test at one step of a refinement's proposals, and the full runs after it.
   screen: "Test at this step",
   validate: "Full test runs",

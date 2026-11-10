@@ -35,17 +35,18 @@ export async function homeView(root, _, scope) {
     h("div", { class: "stack" },
       leftOff(runs, refinements),
       setup(runs, scenarios, connections),
-      panel("How the pieces fit", [
+      panel("The loop", [
         mapView(terms),
+        colours(),
+        h("details", { class: "fold map-more" }, h("summary", null, "Each part"),
         h("div", { class: "map-notes" },
           h("p", null, h("strong", null, "Record. "), "A scenario is a task file kept here: a skill's tasks, each with its check. A batch starts the harness once for each run, in a run folder of its own, and the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way, and a chat it already had can be imported as a run. Any run can become a scenario, whose runs continue its conversation. ",
             h("a", { href: "#/words?place=recordings-folder" }, "Where things live"), " shows each folder tuningfork keeps, and what a run is given."),
-          h("p", null, h("strong", null, "Measure. "), "At any step, an experiment sends the step's exact request again, with everything before it held fixed, and counts what the model does there. To judge each try by whether the whole run then passes, each sample is a fork of the run: replayed to the step, live after it, and judged by the task's check."),
+          h("p", null, h("strong", null, "Measure. "), "At any step, an experiment sends the step's exact request again, with everything before it held fixed, and counts what the model does there. To measure by the whole run instead, each sample is a fork of the run: replayed to the step, live after it, and judged by the task's check."),
           h("p", null, h("strong", null, "Improve. "), "A refinement declares what the model should do at a step, then tests small edits there against the original wording. An edit that beats the original gets full test runs, held-out tasks included, and is written back only when a person approves it: a new version of the skill, measured again from the top."),
-          h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a test at a step, full test runs, each run inside `tuningfork serve`. A job is a record of the work. What it made, runs and experiments, is kept on its own."),
-          colours()),
+          h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a test at a step, full test runs, each run inside `tuningfork serve`. A job is a record of the work. What it made, runs and experiments, is kept on its own."))),
       ]),
-      panel("What do you want to find out?", h("div", { class: "workflows" }, WORKFLOWS.map(workflowCard))),
+      panel("Start from a question", h("div", { class: "workflows" }, WORKFLOWS.map(workflowCard))),
       lookUp(words)));
 }
 
@@ -94,13 +95,13 @@ function lookUp(words) {
 
 // The colours, each shown as the chips that wear it (app.css keeps the legend beside its tokens).
 function colours() {
-  return h("p", { class: "colours" }, h("strong", null, "Colours. "),
-    chip("pass", "ok"), " ", chip("fail", "bad"), " Green and red are a check's verdict. ",
-    chip("not counted", "warn"), " Amber is a caution. ",
-    chip("edited", "change"), " Cyan is what a person or tuningfork changed. ",
-    chip("skill", "skill"), " Purple is a skill's own words. ",
-    chip("tool call", "accent"), " Indigo is what you can act on, what is current or significant, every rate, and the model's own answer. "
-      + "Everything else is grey.");
+  const key = (chips, means) => h("span", { class: "colour-key" }, chips, h("span", { class: "muted" }, means));
+  return h("p", { class: "colours", "aria-label": "What each colour means" },
+    key([chip("pass", "ok"), chip("fail", "bad")], "a check's verdict"),
+    key(chip("not counted", "warn"), "a caution"),
+    key(chip("edited", "change"), "changed, by you or tuningfork"),
+    key(chip("skill", "skill"), "a skill's own words"),
+    key(chip("tool call", "accent"), "the model's answer, and what you can act on"));
 }
 
 // --- where you left off -----------------------------------------------------------------------
@@ -112,7 +113,7 @@ function leftOff(runs, refinements) {
   if (!runs?.length && !held && !jobs.length && !open.length) return null;
   const card = (title, href, body) => h("div", { class: "left-off-card" },
     h("div", { class: "left-off-head" }, h("h3", null, title), href ? h("a", { class: "small", href }, "All") : null), body);
-  return panel("Where you left off", h("div", { class: "left-off" },
+  return panel("Recent", h("div", { class: "left-off" },
     held ? card("Held now", "#/live", h("p", null, h("a", { href: "#/live" }, plural(held, "model call")), " waiting at a breakpoint.")) : null,
     jobs.length ? card("Running", "#/jobs", h("ul", { class: "plain-list" }, jobs.slice(0, 4).map((job) =>
       h("li", null, h("a", { href: `#/jobs/${job.id}` }, kindLabel(job)), " ", chip(job.status, "accent"))))) : null,
@@ -130,7 +131,7 @@ function leftOff(runs, refinements) {
 function setup(runs, scenarios, connections) {
   if (live.mode !== "live") {
     return panel("Browsing recordings", [h("p", { class: "hint" },
-      "Everything recorded can be read here, but nothing can be started: that needs the proxy. Start it with ",
+      "Read-only: starting anything needs the proxy. Start it with ",
       h("code", null, "tuningfork serve --upstream <your inference server>"), " and open the address it prints."),
     serverNote()]);
   }
@@ -197,15 +198,16 @@ function setup(runs, scenarios, connections) {
 // from how it was sampled; so it does for a model whose layers keep a running state, where only
 // --ctx-checkpoints 0 helps.
 function serverNote() {
-  return h("div", { class: "banner banner-warn" }, h("strong", null, "Strongly recommended: "), "start llama-server with ",
-    h("code", null, "--no-cache-prompt"), " and with ", h("code", null, "--ctx-checkpoints 0"),
-    " for a model with sliding-window layers (Gemma 2, 3, 4; ", h("code", null, "--swa-full"),
+  return h("details", { class: "banner banner-warn server-note" },
+    h("summary", null, h("span", null, h("strong", null, "Strongly recommended: "), "start llama-server with ",
+      h("code", null, "--no-cache-prompt"), " and ", h("code", null, "--ctx-checkpoints 0"), "."), h("span", { class: "server-note-why" }, "Why")),
+    h("p", null, h("code", null, "--ctx-checkpoints 0"), " is for a model with sliding-window layers (Gemma 2, 3, 4; ", h("code", null, "--swa-full"),
     " serves too) or layers that keep a running state (Qwen3.5, 3.6)",
-    ". Without the first, a step's behaviour can depend on what the server ran before: Claude Code's samples and every fork share one cached state, and a test at a step favours its proposals (",
+    ". Without ", h("code", null, "--no-cache-prompt"), ", a step's behaviour can depend on what the server ran before: Claude Code's samples and every fork share one cached state, and a test at a step favours its proposals (",
     h("a", { href: "#/words?term=prompt%20cache" }, "why"),
-    "). Without the second, an answer scores differently on the raw endpoint than on the chat one it was sampled on (",
+    "). Without ", h("code", null, "--ctx-checkpoints 0"), ", an answer scores differently on the raw endpoint than on the chat one it was sampled on (",
     h("a", { href: "#/words?term=sliding-window" }, "why"),
-    "). The server test measures prompt reuse; llama-server reports neither --ctx-checkpoints nor --swa-full.");
+    "). The server test measures prompt reuse; llama-server reports neither --ctx-checkpoints nor --swa-full."));
 }
 
 // --- the map --------------------------------------------------------------------------------------
@@ -309,8 +311,8 @@ const WORKFLOWS = [
   },
   {
     question: "Where did runs stop agreeing?",
-    answer: "The first step where runs of one task did different things: where to look first.",
-    steps: ["Runs: a task's row → Where do they diverge?", "Open that step in one of the runs"],
+    answer: "A task's runs drawn as paths that part, and the turning point: the split where passing and failing part.",
+    steps: ["Runs: a task's row → Where do they diverge?", "Choose a box on the map, and open its step in a run"],
     cli: "tuningfork divergence --task <skill>/<eval>", href: "#/runs", go: "Runs",
   },
   {
@@ -322,13 +324,13 @@ const WORKFLOWS = [
   {
     question: "Would other wording change what the model does here?",
     answer: "An A/B at the step: your edit of the skill against the original wording, counting how often each meets a condition chosen before anything is sampled.",
-    steps: ["At the step: A/B a wording…", "Edit the text, and choose the condition: a behaviour's letter, a pattern, or a behaviour described in words", "Read the shift, and whether it is beyond chance; with nothing declared, every behaviour is compared"],
+    steps: ["At the step: A/B a wording…", "Edit the text, and choose the condition: Seen here, Tools & words, Pattern or None", "Read the shift, and whether it is beyond chance; with nothing declared, every behaviour is compared"],
     cli: "tuningfork ab <run> <step> --variant SKILL.v2.md --target A", href: "#/runs", go: "Choose a run",
   },
   {
     question: "Does a change at the step carry through to the end?",
     answer: "Each sample a fork of the run — replayed up to the step, live after it — and judged by the task's check.",
-    steps: ["In Resample… or A/B a wording…: Judge each try by → whether the whole run then passes", "Or Fork from here… to follow one fork, breakpoints on"],
+    steps: ["In Resample… or A/B a wording…: Measure → The whole run", "Or Fork from here… to follow one fork, breakpoints on"],
     cli: "tuningfork ab <run> <step> --variant SKILL.v2.md --to-end", href: "#/runs", go: "Choose a run",
   },
   {
@@ -353,12 +355,13 @@ const WORKFLOWS = [
 
 function workflowCard(flow) {
   const reachable = live.mode === "live" || !["#/batch", "#/live", "#/import"].includes(flow.href);
-  return h("article", { class: "workflow" },
-    h("h3", null, flow.question),
-    h("p", { class: "muted" }, flow.answer),
-    h("ol", { class: "workflow-steps" }, flow.steps.map((step) => h("li", null, step))),
-    command(flow.cli),
-    reachable ? h("a", { class: "btn btn-small", href: flow.href }, flow.go) : null);
+  return h("details", { class: "workflow" },
+    h("summary", null, h("h3", null, flow.question)),
+    h("div", { class: "workflow-body" },
+      h("p", { class: "muted" }, flow.answer),
+      h("ol", { class: "workflow-steps" }, flow.steps.map((step) => h("li", null, step))),
+      command(flow.cli),
+      reachable ? h("a", { class: "btn btn-small", href: flow.href }, flow.go) : null));
 }
 
 // --- words ----------------------------------------------------------------------------------------------

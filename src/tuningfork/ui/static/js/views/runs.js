@@ -31,7 +31,7 @@ export async function runsView(root, _params, scope) {
   replace(
     root,
     h("div", { class: "page-head" },
-      h("div", null, h("h1", null, "Runs"), h("p", { class: "sub" }, "Recorded runs by task. A run that branched from another sits under it; tick two runs to diff them.")),
+      h("div", null, h("h1", null, "Runs"), h("p", { class: "sub" }, "Recorded runs, by task. Tick two to diff them.")),
       h("div", { class: "actions" }, search, chainsLink,
         live.mode === "live" ? h("a", { class: "btn", href: "#/import", "data-control": true }, "Import a chat…") : null,
         live.mode === "live" ? h("a", { class: "btn btn-primary", href: "#/batch", "data-control": true }, "Run a task…") : null)),

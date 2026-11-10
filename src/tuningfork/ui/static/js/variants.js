@@ -9,8 +9,8 @@
 // target picked after seeing the samples is a result fished for.
 
 import { api, enc } from "./api.js";
-import { h, outcome, rateBar, short } from "./dom.js";
-import { field, input, textArea, textOf } from "./forms.js";
+import { h, info, outcome, rateBar, short } from "./dom.js";
+import { field, input, textArea, textOf, ways } from "./forms.js";
 import { describeBuilder, seenPreview } from "./targets.js";
 import { LABELS } from "./words.js";
 
@@ -42,6 +42,7 @@ function changedLines(before, after) {
 export function variantEditor(skill, saved) {
   const baseline = skill.text ?? "";
   const text = textArea("variant_text", baseline, { rows: 18 });
+  text.setAttribute("aria-label", "The variant");
   const name = input("variant_name", { value: suggestedName(saved) });
   const original = skill.text === null || skill.text === undefined
     ? input("original", { placeholder: "/path/to/the/SKILL.md the run was given" })
@@ -81,9 +82,9 @@ export function variantEditor(skill, saved) {
     original
       ? h("div", { class: "banner banner-warn" }, h("strong", null, "This run kept no copy of its skill file. "),
           "Name the original — the SKILL.md as the run was given it, on the proxy's machine — and write the variant in full below.")
-      : h("p", { class: "hint" }, "The skill as this run was given it",
-          skill.path ? [": ", h("span", { class: "mono" }, skill.path)] : "",
-          ". Change what you want to test; the A/B swaps your text in wherever the original sits in the context."),
+      : h("p", { class: "hint" }, "Edit the skill below. The A/B swaps your text in for the original.",
+          info(["The skill as this run was given it", skill.path ? [": ", h("span", { class: "mono" }, skill.path)] : "",
+            ". Your text goes in wherever the original sits in the context."], { label: "Which text this is" })),
     original ? field("Original skill file", original, { wide: true }) : null,
     from ? field("Start from", from) : null,
     h("div", { class: "editor-head" }, h("span", { class: "label" }, "The variant"), changes),
@@ -109,23 +110,16 @@ export function readVariant(form) {
  *  `exploratory: false` leaves that choice out. */
 export function targetPicker(targets, {
   run = null, idx = null, exploratory = true,
-  legend = `${LABELS.condition} (chosen before sampling)`,
+  legend = LABELS.condition,
+  about = "What the model must do to be counted. You choose it before anything is sampled: a condition picked after seeing the samples is a result fished for.",
+  more = [],
 } = {}) {
   const clusters = targets.behaviours?.clusters || [];
   const resample = targets.resample;
-  const pick = (kind) => {
-    const radio = form.querySelector(`[name="target_kind"][value="${kind}"]`);
-    if (radio && !radio.checked) {
-      radio.checked = true;
-      radio.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-  };
+  // What a person touches says which way they mean: a behaviour ticked, a rule or a pattern typed.
+  const pick = (kind) => form.choose(kind);
   const builder = describeBuilder({ onUse: () => pick("describe") });
   const seen = run ? seenPreview({ run, idx, onTools: builder.setTools }) : null;
-  const choice = (value, label, detail, disabled = false) =>
-    h("label", { class: ["target-choice", disabled && "disabled"] },
-      h("input", { type: "radio", name: "target_kind", value, disabled }),
-      h("span", null, h("strong", null, label), detail ? h("span", { class: "muted small" }, ` — ${detail}`) : null));
 
   const letters = clusters.length
     ? h("div", { class: "target-letters" }, clusters.map((cluster) =>
@@ -138,20 +132,20 @@ export function targetPicker(targets, {
   const pattern = input("target_match", { placeholder: "row_count" });
   pattern.addEventListener("input", () => pick("pattern"));
 
-  const form = h("fieldset", { class: "target-picker" },
-    h("legend", null, legend),
-    choice("letter", "A behaviour from this step's latest resample",
-      resample
-        ? `resample ${short(resample.id)}, ${targets.behaviours.total} samples${targets.normalizers.length ? `, grouped by ${targets.normalizers.join(", ")}` : ""}`
-        : "none yet: resample this step first, to name one",
-      !clusters.length),
-    letters,
-    choice("describe", "A behaviour I describe", "the tools it calls, the phrases it mentions"),
-    builder.element,
-    choice("pattern", "What the model does matches a pattern", "a regular expression over its text, reasoning and tool calls"),
-    h("div", { class: "target-pattern" }, pattern),
-    exploratory ? choice("exploratory", "Nothing declared", "every behaviour is compared, and each p-value adjusted for that (Bonferroni)") : null,
-    seen ? seen.element : null);
+  // The four ways to say it, each a word or two: what each is, said under them once chosen.
+  const form = ways("target_kind", [
+    {
+      value: "letter", label: "Seen here", disabled: !clusters.length, body: letters,
+      note: resample
+        ? `One of the behaviours this step's latest resample found (${short(resample.id)}, ${targets.behaviours.total} samples${targets.normalizers.length ? `, grouped by ${targets.normalizers.join(", ")}` : ""}).`
+        : "No resample here yet: resample this step first, to pick a behaviour by its letter.",
+    },
+    { value: "describe", label: "Tools & words", note: "The tools the model calls and the words it says.", body: builder.element },
+    { value: "pattern", label: "Pattern", note: "A regular expression over a reply's words, or a call's name and arguments.", body: h("div", { class: "target-pattern" }, pattern) },
+    ...more,
+    exploratory ? { value: "exploratory", label: "None", note: "Every behaviour is compared, and each p adjusted for that." } : null,
+  ], { legend, about });
+  if (seen) form.append(seen.element);
   form.describe = builder;
   if (seen) {
     // What a described target or a pattern would count, among what this step has done.
@@ -178,7 +172,7 @@ export function targetPicker(targets, {
 export function readTarget(form) {
   const kind = form.querySelector('[name="target_kind"]:checked')?.value;
   if (!kind) {
-    throw Object.assign(new Error("Choose the condition before sampling: a behaviour, a pattern, or nothing declared."), { field: "target_kind" });
+    throw Object.assign(new Error("Choose the condition before sampling: Seen here, Tools & words, Pattern or None."), { field: "target_kind" });
   }
   if (kind === "letter") {
     const letter = form.querySelector('[name="target"]:checked')?.value;

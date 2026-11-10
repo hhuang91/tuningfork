@@ -2,7 +2,8 @@
 // page — and, in a line, on the page of the job that made it (`found`), with that page's own
 // verdict and cautions where it leads with them.
 
-import { capital, chip, h, loading, outcome, panel, plural, rateBar, replace, short } from "./dom.js";
+import { capital, chip, h, info, loading, outcome, panel, plural, rateBar, replace, short } from "./dom.js";
+import { fan, fanTree } from "./runmap.js";
 import { heatmap, probeMarks } from "./tokens.js";
 import { LABELS } from "./words.js";
 
@@ -10,23 +11,90 @@ import { LABELS } from "./words.js";
 const intervals = (count, noun) =>
   h("span", { class: "muted", title: "Wilson score intervals" }, `${plural(count, noun)} · 95% intervals`);
 
-/** Samples whose call failed, said in a sentence: they are in no rate. */
-const notCounted = (count, noun) => `${plural(count, noun)} ${count === 1 ? "is" : "are"} not counted, because the call itself failed.`;
+/** Samples whose call failed, said in a sentence: they are in no rate. A fork is left out of
+ *  what the step led to for another reason: it timed out, or it measured nothing. */
+export const notCounted = (count, noun) => (noun === "fork"
+  ? `${plural(count, "fork")} ${count === 1 ? "is" : "are"} not among these: ${count === 1 ? "it" : "they"} timed out, or ${count === 1 ? "was" : "were"} not counted.`
+  : `${plural(count, noun)} ${count === 1 ? "is" : "are"} not counted, because the call itself failed.`);
 
-export function distributionView(distribution, title = "What the model did") {
-  const clusters = distribution.clusters;
+/** A distribution's behaviours in a list, each in full with its rate: what a fan draws by move. */
+export function behaviourList(distribution) {
+  const row = (cluster) => h("div", { class: "group" },
+    h("span", { class: "letter" }, cluster.letter),
+    h("div", null, outcome(cluster.outcome)),
+    h("div", { class: "group-rates" }, rateBar(cluster.rate), reasonedText(cluster.reasoned, cluster.rate.successes)));
+  return h("div", { class: "groups" }, foldReplies(distribution.clusters, row, (cluster) => cluster.rate.successes));
+}
+
+export function distributionView(distribution, title = "Behaviours", { from = "this step", unit = "sample" } = {}) {
+  const drawn = fanOf([{ name: null, moves: distribution.moves, arm: "all" }], { from, unit });
+  const list = behaviourList(distribution);
   return panel(
     title,
     [
-      h("div", { class: "groups" }, clusters.map((cluster) =>
-        h("div", { class: "group" },
-          h("span", { class: "letter" }, cluster.letter),
-          h("div", null, outcome(cluster.outcome)),
-          h("div", { class: "group-rates" }, rateBar(cluster.rate), reasonedText(cluster.reasoned, cluster.rate.successes))))),
-      distribution.errors ? h("p", { class: "hint" }, notCounted(distribution.errors, "sample")) : null,
+      drawn,
+      // Where the picture says how often each thing was done, each behaviour in full is a click away.
+      drawn ? h("details", { class: "fold in-full" }, h("summary", null, `Every behaviour (${distribution.clusters.length})`), list) : list,
+      distribution.errors ? h("p", { class: "hint" }, notCounted(distribution.errors, unit)) : null,
     ],
-    { meta: intervals(distribution.total, "sample") },
+    { meta: intervals(distribution.total, unit) },
   );
+}
+
+/** What a box says under its move: what tells its form of a call from the others, or how many
+ *  forms this wording's own samples took — of a reply, how many phrasings. Counted over every
+ *  wording, a reply the variant never made would say the original's "11 phrasings". */
+function formsHint(move, arm) {
+  const forms = move.forms_by_arm?.[arm] ?? move.forms;
+  if (move.others) return forms ? `${forms} other ${forms === 1 ? "form" : "forms"}` : null;
+  if (move.hint) return move.hint;
+  return forms > 1 ? `${forms} ${move.kind === "text" ? "phrasings" : "forms"}` : null;
+}
+
+/** What one step led to, drawn as a fan (`runmap.js`): a branch for each move a wording made, as
+ *  wide as its samples were many, ending in how often it was made — or, where each sample was a
+ *  fork run to the end (a move's `ended`), in its forks, a mark each by how its check went, with
+ *  the marks' key under it. `arms`: `{ name, tone, moves, arm }`, a wording each, `arm` naming
+ *  its rates among the server's (`moves[].by_arm`). Nothing where a result was stored before
+ *  moves were, or where one wording's every sample did the one same thing. */
+export function fanOf(arms, { from, unit = "sample" }) {
+  const drawn = arms.filter((arm) => arm.moves?.length).map((arm) => ({
+    name: arm.name, tone: arm.tone,
+    moves: arm.moves.filter((move) => move.by_arm?.[arm.arm]?.successes).map((move) => ({
+      kind: move.kind, label: move.label, count: move.by_arm[arm.arm].successes, rate: move.by_arm[arm.arm],
+      letter: move.letters?.length === 1 ? move.letters[0] : null,
+      hint: formsHint(move, arm.arm),
+      ended: move.ended?.[arm.arm] || null,
+    })),
+  })).filter((arm) => arm.moves.length);
+  if (!drawn.length || (drawn.length === 1 && drawn[0].moves.length < 2)) return null;
+  const moves = drawn.flatMap((arm) => arm.moves);
+  if (!moves.some((move) => move.ended)) return fan(fanTree(drawn, { from, unit }), { label: `What ${from} led to` }).element;
+  const mark = (tone, text) => h("span", { class: "rm-key" }, h("span", { class: `rm-mark tone-${tone}` }), text);
+  return [
+    fan(fanTree(drawn, { from, unit }), { label: `What ${from} led to, and how those ${unit}s ended`, ended: true }).element,
+    h("div", { class: "rm-legend" },
+      mark("ok", "passed"), mark("bad", "failed"),
+      moves.some((move) => move.ended?.no_verdict) ? mark("none", "no check") : null,
+      h("span", { class: "rm-key" }, h("span", { class: "rm-key-line" }), `wider line, more ${unit}s`)),
+  ];
+}
+
+/** Behaviours in a list, the replies that differ only in their words as one line: three or more
+ *  phrasings fold, and open to each. `count(item)` is how many samples a behaviour had. */
+function foldReplies(items, row, count) {
+  const replies = items.filter((item) => item.outcome?.kind === "text");
+  if (replies.length < 3) return items.map(row);
+  const total = replies.reduce((sum, item) => sum + count(item), 0);
+  let folded = false;
+  return items.map((item) => {
+    if (item.outcome?.kind !== "text") return row(item);
+    if (folded) return null;
+    folded = true;
+    return h("details", { class: "fold group-fold" },
+      h("summary", null, outcome({ kind: "text", label: `${total} ${total === 1 ? "reply" : "replies"}, ${plural(replies.length, "phrasing")}` })),
+      h("div", { class: "groups" }, replies.map(row)));
+  });
 }
 
 /** How many of a behaviour's samples came with reasoning — said only where some did not,
@@ -87,12 +155,18 @@ export function comparisonView(experiment) {
         h("span", null, h("span", { class: "muted rate-label" }, "original"), rateBar(target.original)),
         h("span", null, h("span", { class: "muted rate-label" }, "variant"), rateBar(target.variant, "change"))),
       h("div", { class: "mono small", title: "Fisher's exact test" }, `p = ${formatP(target.p_value)}, α = ${target.alpha}`)));
-    parts.push(h("p", { class: "hint" }, "This A/B changed only this step. Everything before it still comes from the original wording, so treat the result as a lead, and confirm it with full runs."));
+    parts.push(h("p", { class: "hint" }, "A lead, not proof: only this step saw the variant.",
+      info("Everything before this step still comes from the original wording. Confirm a result here with full runs.", { label: "Why a lead" })));
   } else {
     parts.push(h("div", { class: "banner banner-warn" }, h("strong", null, "Nothing declared. "),
       "No condition was chosen before sampling, so every behaviour is compared, and each p-value is adjusted for comparing them all (Bonferroni)."));
   }
-  parts.push(h("div", { class: "table-wrap" }, h("table", { class: "table" },
+  const drawn = fanOf([
+    { name: "original", moves: comparison.moves, arm: "original" },
+    { name: "variant", tone: "change", moves: comparison.moves, arm: "variant" },
+  ], { from: experiment.step_idx === undefined || experiment.step_idx === null ? "this step" : `step ${experiment.step_idx}` });
+  parts.push(drawn);
+  const table = h("div", { class: "table-wrap" }, h("table", { class: "table" },
     h("thead", null, h("tr", null, h("th", null, ""), h("th", null, "behaviour"), h("th", null, "original"), h("th", null, "variant"),
       h("th", { class: "num" }, "p"), comparison.exploratory ? h("th", { class: "num", title: "Bonferroni-adjusted" }, "p, adjusted") : null)),
     h("tbody", null, comparison.shifts.map((shift) => {
@@ -104,13 +178,18 @@ export function comparisonView(experiment) {
         h("td", null, rateBar(shift.variant, "change"), reasonedText(shift.variant_reasoned, shift.variant.successes)),
         h("td", { class: "num mono" }, formatP(shift.p_value)),
         comparison.exploratory ? h("td", { class: "num mono" }, formatP(shift.adjusted_p)) : null);
-    })))));
+    }))));
+  // With a condition declared and the picture drawn, each behaviour's own test is a click away;
+  // with nothing declared, the table is the result.
+  parts.push(target && drawn
+    ? h("details", { class: "fold in-full" }, h("summary", null, `Every behaviour, tested (${comparison.shifts.length})`), table)
+    : table);
   // A result a job stored before behaviours said whether the target counts them says nothing.
   const said = comparison.shifts.some((shift) => shift.target_counted !== undefined);
   if (target && said && !comparison.shifts.some((shift) => shift.target_counted)) {
     parts.push(h("p", { class: "hint" }, "The condition matches none of these behaviours: neither wording ever met it."));
   }
-  return panel("Original wording against the variant", parts);
+  return panel("Original vs variant", parts);
 }
 
 const PART = { reasoning: "reasoning", content: "answer", tool_call: "tool call" };
@@ -130,11 +209,12 @@ export function forkingView(report, context = {}) {
   let answer = null;
   if (experiment?.run_id && experiment.settings?.base_stream) {
     if (view === undefined) {
-      answer = loading("Loading the answer it forked from…");
+      answer = loading("Loading the original answer…");
     } else if (view) {
       map = heatmap(view, { marks: probeMarks([{ experiment, positions: report.positions }]), compact: true });
       answer = h("div", { class: "fork-answer" },
-        h("div", { class: "label" }, "The answer it forked from. The probed tokens are ringed, doubled where a forced token changed what the model did."),
+        h("div", { class: "label seen-title" }, "Original answer",
+          info("The probed tokens are ringed, doubled where a forced token changed what the model did. Each token is shaded by how unsure the model was when it chose it.", { label: "How to read it" })),
         map);
     }
   }
@@ -205,12 +285,14 @@ export function forkingView(report, context = {}) {
         : null));
   }
   return h("div", { class: "stack" },
-    panel("Which forced tokens changed what the model did", parts),
+    panel("Forking tokens", parts),
     every ? every.element
-      : said ? probeBehavioursView(report.behaviours) : distributionView(report.behaviours, "Behaviours, across the probe"));
+      : said ? probeBehavioursView(report.behaviours) : distributionView(report.behaviours, "Behaviours, across the probe", { unit: "continuation" }));
 }
 
 const armKey = (position, text) => `${position}\u0000${text}`;
+/** How many behaviours a token's row names before it says how many more there were. */
+const LED_SHOWN = 4;
 const flipsOf = (position) => position.alternatives.filter((alt) => alt.flips);
 
 /** Which way a forced token moved how often the condition was met, against the original token
@@ -357,8 +439,8 @@ function continuationsSection(report, ledTo, written) {
 
 const GROUPINGS = [["token", "By token"], ["behaviour", "By behaviour"]];
 
-/** Which way the continuations are grouped: two buttons, as the divergence page's steps are, the
- *  grouping shown in the accent; the arrow keys move between them. */
+/** Which way the continuations are grouped: two buttons, the grouping shown in the accent; the
+ *  arrow keys move between them. */
 function groupPicker(by, show) {
   const keys = (event) => {
     const next = { ArrowLeft: "token", ArrowRight: "behaviour" }[event.key];
@@ -384,7 +466,8 @@ function tokenGroups(report, ledTo, written) {
   const clusters = new Map(report.behaviours.clusters.map((cluster) => [cluster.letter, cluster]));
   const failed = report.behaviours.errors || 0;
   return [
-    h("p", { class: "hint" }, "Each continuation's text from the token forced on: its reasoning, then its call or reply. Open a behaviour to read the continuations that ended in it."),
+    h("p", { class: "hint" }, "Open a behaviour to read what its continuations wrote.",
+      info("Each continuation's text from the token forced on: its reasoning, then its call or reply. Open a behaviour to read the continuations that ended in it.", { label: "What is shown" })),
     report.positions.map((position) => h("div", { class: "written-position", id: `written-pos-${position.position}` },
       h("div", { class: "fork-head" },
         h("span", { class: "mono" }, `[${position.position}]`),
@@ -398,12 +481,36 @@ function tokenGroups(report, ledTo, written) {
             h("span", { class: "muted" }, own ? "original" : "forced"), " ",
             h("span", { class: "mono" }, JSON.stringify(arm.arm.text)),
             h("span", { class: "muted small" }, ` · ${plural(count, "continuation")}`)),
-          went.map(([letter, n]) => writtenGroup({
+          repliesTogether(went, clusters, ([letter, n]) => writtenGroup({
             position: position.position, token: arm.arm.text, own, letter, count: n, cluster: clusters.get(letter), written,
           })));
       }))),
     failed ? h("p", { class: "hint" }, `${plural(failed, "continuation")} wrote nothing, because the call itself failed.`) : null,
   ];
+}
+
+/** What a token's continuations ended in, the replies that differ only in their words as one
+ *  line: three or more phrasings that the condition counts alike fold together, and open to each. */
+function repliesTogether(went, clusters, row) {
+  const kindOf = ([letter]) => clusters.get(letter)?.outcome?.kind;
+  const matchOf = ([letter]) => Boolean(clusters.get(letter)?.target_counted);
+  const replies = went.filter((each) => kindOf(each) === "text");
+  const alike = replies.length >= 3 && replies.every((each) => matchOf(each) === matchOf(replies[0]));
+  if (!alike) return went.map(row);
+  const total = replies.reduce((sum, [, n]) => sum + n, 0);
+  const said = clusters.get(replies[0][0])?.target_counted === undefined ? null : matchOf(replies[0]);
+  let folded = false;
+  return went.map((each) => {
+    if (kindOf(each) !== "text") return row(each);
+    if (folded) return null;
+    folded = true;
+    return h("details", { class: "fold written-replies" },
+      h("summary", null,
+        said === null ? null : chip(said ? LABELS.matches : LABELS.noMatch, said ? "target" : "not-target"),
+        h("span", { class: "faint nowrap" }, `×${total}`),
+        outcome({ kind: "text", label: `${total === 1 ? "reply" : "replies"} in ${plural(replies.length, "phrasing")}` })),
+      h("div", { class: "written-replies-each" }, replies.map(row)));
+  });
 }
 
 /** One token's continuations that ended in one behaviour, folded: the behaviour's letter, whether
@@ -525,7 +632,9 @@ function forkRow(label, arm, tested, ledTo = null) {
     h("td", { class: "num mono" }, tested ? formatP(tested.p_value) : ""),
     h("td", { class: "num mono" }, tested ? formatP(tested.adjusted_p) : ""),
     h("td", null, tested?.flips ? moved(tested) : null),
-    went ? h("td", { class: "nowrap small" }, went.map(([letter, count]) => `${letter} ×${count}`).join(" · ")) : null);
+    went ? h("td", { class: "nowrap small", title: went.map(([letter, count]) => `${letter} ×${count}`).join(" · ") },
+      went.slice(0, LED_SHOWN).map(([letter, count]) => `${letter} ×${count}`).join(" · "),
+      went.length > LED_SHOWN ? ` · +${went.length - LED_SHOWN} more` : null) : null);
 }
 
 /** The chip tones for a screen's survivor and for a proposal it found worse: green and red
@@ -777,7 +886,7 @@ export function screenView(screen, { arms = {} } = {}) {
         }))))
     : null;
   return h("div", { class: "stack" },
-    panel(screen.quick ? "Each proposal's forks" : "Each proposal against the original", [
+    panel(screen.quick ? "Each proposal's forks" : "Proposals vs original", [
       h("div", { class: ["verdict-block", tone] },
         // Run to the end, the task's check decides, whatever the refinement said should happen.
         screen.reach === "end"
@@ -804,15 +913,37 @@ export function screenView(screen, { arms = {} } = {}) {
             h("td", { class: "num mono" }, formatP(arm.adjusted_p)),
             h("td", null, verdict(arm))))))),
       h("p", { class: "hint" }, screen.reach === "end"
-        ? "Each fork replays its run as recorded up to the step, the workspace included, then runs live to the end, where the task's check decides. Confirm an edit that beat the original with full test runs."
-        : "This test changed only this step. Everything before it still comes from the original wording, so treat the result as a lead, and confirm it with full test runs."),
+        ? "A lead, not proof: confirm an edit that beat the original with full test runs."
+        : "A lead, not proof: only this step saw each proposal.",
+        info(screen.reach === "end"
+          ? "Each fork replays its run as recorded up to the step, the workspace included: what an edit would change before the step, no fork shows. From there it runs live to the end, where the task's check decides."
+          : "Everything before this step still comes from the original wording. Confirm an edit that beat the original with full test runs.", { label: "Why a lead" })),
     ]),
     checkpointsView(screen, names),
-    !behaviours ? null : screen.reach === "end"
-      ? h("details", { class: "fold" },
-          h("summary", null, `What each fork's model did at the step: ${plural(screen.behaviours.length, "behaviour")}, by wording`),
-          behaviours)
-      : panel("What the model did, by wording", behaviours));
+    behavioursPanel(screen, names, behaviours));
+}
+
+/** What each wording led to at the step. The picture drawn — a fan for each wording, ending in
+ *  how often or, run to the end, in its forks — the table is a click away: each behaviour in
+ *  full, and which of them the condition counts. With no picture to draw, the table is as it was. */
+function behavioursPanel(screen, names, behaviours) {
+  if (!behaviours) return null;
+  const toEnd = screen.reach === "end";
+  const count = screen.behaviours.length;
+  const drawn = fanOf(names.map((arm) => ({ name: arm, tone: arm === "original" ? null : "change", moves: screen.moves, arm })),
+    { from: "this step", unit: toEnd ? "fork" : "sample" });
+  if (drawn) {
+    // Run to the end, a fork that timed out or was left out is in no branch: said, where a
+    // wording's box holds fewer forks than it drew.
+    const fanned = (arm) => (screen.moves || []).reduce((sum, move) => sum + (move.by_arm?.[arm]?.successes || 0), 0);
+    const left = toEnd ? [screen.baseline, ...screen.arms].reduce((sum, arm) => sum + Math.max(0, (arm.drawn || 0) - fanned(arm.name)), 0) : 0;
+    return panel("Behaviours by wording", [drawn,
+      left ? h("p", { class: "hint" }, notCounted(left, "fork")) : null,
+      h("details", { class: "fold in-full" }, h("summary", null, `Every behaviour (${count})`), behaviours)]);
+  }
+  return toEnd
+    ? h("details", { class: "fold" }, h("summary", null, `Behaviours by wording (${count})`), behaviours)
+    : panel("Behaviours by wording", behaviours);
 }
 
 /** A screen to the end drawn from several runs, run by run: each arm's passes at each, and for
@@ -845,19 +976,30 @@ function checkpointsView(screen, names) {
 }
 
 /** What the checks said, counted: each group's findings, the most common first, each with the
- *  failed runs (or forks) that said it. `only` keeps one condition of a task's tally. */
+ *  failed runs (or forks) that said it. `only` keeps one set-up of a task's tally. */
 export function tallyView(tally, { only = null } = {}) {
+  const body = tallyBody(tally, { only });
+  if (!body) return null;
+  const forks = tally.scope === "screen";
+  return panel(forks ? "Why forks failed" : "Why runs failed", body);
+}
+
+/** The same, without a panel round it: what a tab or a panel holds. Null where nothing failed. */
+export function tallyBody(tally, { only = null } = {}) {
   const groups = (tally?.groups || []).filter((group) => !only || group.condition?.id === only);
   if (!groups.some((group) => group.failed)) return null;
   const forks = tally.scope === "screen";
-  const title = forks ? "What each wording's failed forks' checks said" : "What the failed runs' checks said";
   const failed = forks ? "failed forks" : "failed runs";
-  return panel(title, [
+  return [
+    h("p", { class: "rm-caption" }, `What the check printed for the ${failed}, the most common line first.`,
+      info(`Each bar counts the ${failed} that printed the line: once each, however many times it printed it. `
+        + "Lines that differ only in their numbers or colour codes count as one, shown with # for each number and <color> for each colour. "
+        + "The most common comes first: it is the failure to fix first.", { label: "How the lines are counted" })),
     ...groups.map((group) => h("div", { class: "stack", style: { gap: "var(--space-1-5)", marginBottom: "var(--space-3)" } },
       h("div", null, h("strong", null, group.label), h("span", { class: "muted small" }, `  failed ${group.failed} of ${group.judged} judged`)),
       group.failed && group.findings.length
         ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
-            h("thead", null, h("tr", null, h("th", null, `${failed} that printed it`), h("th", null, "a line the check printed"))),
+            h("thead", null, h("tr", null, h("th", null, failed), h("th", null, "line"))),
             h("tbody", null, group.findings.slice(0, 12).map((found) =>
               h("tr", null, h("td", null, rateBar(found.rate)), h("td", { class: "mono small" }, found.finding,
                 // Where the check was run along the runs: the call that made it, passing runs included.
@@ -866,12 +1008,7 @@ export function tallyView(tally, { only = null } = {}) {
       group.findings.length > 12 ? h("p", { class: "faint small" }, `+${group.findings.length - 12} more line(s)`) : null,
       group.silent ? h("p", { class: "faint small" }, `${plural(group.silent, forks ? "failed fork" : "failed run")} whose check printed nothing`) : null,
       group.cut ? h("p", { class: "hint" }, `${plural(group.cut, forks ? "failed fork" : "failed run")} whose check printed more than the last 2,000 characters a verdict keeps: what each printed before them is not counted.`) : null)),
-    h("p", { class: "hint" }, `Each bar counts the ${failed} that printed the line: once each, however many times it printed it. `
-      + "Lines that differ only in their numbers or colour codes count as one, shown with # for each number and <color> for each colour. "
-      + "The most common comes first: it is the failure to fix first."),
-  ], {
-    meta: h("span", { class: "muted" }, `Every ${forks ? "failed fork" : "failed run"}'s check output, line by line`),
-  });
+  ];
 }
 
 export function formatP(value) {

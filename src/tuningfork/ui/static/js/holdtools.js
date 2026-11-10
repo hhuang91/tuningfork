@@ -62,7 +62,7 @@ function evidence(hold, scope) {
               ? ["The answer held here is behaviour ", h("strong", null, sampled.held_letter), " below."]
               : "The answer held here is none of the sampled behaviours.")
           : null,
-        distributionView(sampled.distribution, "What the model does at this call"),
+        distributionView(sampled.distribution, "Behaviours at this call", { from: "this call" }),
         h("a", { class: "btn btn-small", href: `#/experiments/${sampled.experiment.id}` }, "Open the experiment")));
     });
   }
@@ -114,7 +114,7 @@ function hypotheses(hold, scope) {
   }, () => {});
 
   return panel("Hypotheses, not evidence", [
-    h("p", { class: "hint" }, "Ask the model about what it is doing here. Its answer is its account of itself, which need not be what drives it: a hypothesis to test, by resampling or an A/B — never a result. Asked once, never recorded."),
+    h("p", { class: "hint" }, "Ask the model about what it is doing here: its answer is a hypothesis to test, never a result. It is the model's account of itself, which need not be what drives it; test it by resampling or an A/B. Asked once, never recorded."),
     element, replies,
   ], { className: "hypotheses" });
 }

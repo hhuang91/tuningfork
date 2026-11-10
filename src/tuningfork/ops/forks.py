@@ -468,20 +468,39 @@ class EndToEnd:
     forks: list[tuple[int, str | None, bool | None, str | None]] = field(default_factory=list)
     #: Forks that timed out: counted among the failures, as the gate counts them.
     timeouts: int = 0
+    #: What each fork did at the step, by its behaviour's letter among `actions`, as `forks` are
+    #: ordered: None for a fork the step's rates leave out.
+    letters: list[str | None] = field(default_factory=list)
+
+    def ended(self) -> dict[str, tuple[int, int, int]]:
+        """By the letter of what a fork did at the step: how many of the forks that did it passed
+        the check, failed it, and had no verdict (no check judged them) — what the model did at
+        the step, set against how the run then ended. A fork the step's rates leave out has no
+        letter, and is in none."""
+        tally: dict[str, list[int]] = {}
+        for (_, _, passed, why), letter in zip(self.forks, self.letters):
+            if letter is None:
+                continue
+            verdict = fork_counted(passed, why)
+            tally.setdefault(letter, [0, 0, 0])[0 if verdict is True else 1 if verdict is False else 2] += 1
+        return {letter: (counts[0], counts[1], counts[2]) for letter, counts in tally.items()}
 
     def to_json(self) -> dict[str, Any]:
         """One arm of forks run to the end: its pass rate, what it left out, what the model
-        did at the step, and each fork — forks are not in the list of runs."""
+        did at the step — each behaviour and each move with how its forks ended — and each
+        fork, with the letter of what it did there: forks are not in the list of runs."""
+        letters = [*self.letters, *[None] * (len(self.forks) - len(self.letters))]
         return {
             "passed": self.passed,
             "counted": self.counted,
             "rate": self.rate.to_json() if self.rate else None,
             "exclusions": [{"run_id": run_id, "why": why} for run_id, why in self.exclusions],
             "timeouts": self.timeouts,
-            "actions": self.actions.to_json(),
+            "actions": self.actions.to_json(self.ended()),
             "forks": [
-                {"idx": idx, "run_id": run_id, "passed": passed, "exclusion": why, "timed_out": why == TIMED_OUT}
-                for idx, run_id, passed, why in self.forks
+                {"idx": idx, "run_id": run_id, "passed": passed, "exclusion": why, "timed_out": why == TIMED_OUT,
+                 "letter": letter}
+                for (idx, run_id, passed, why), letter in zip(self.forks, letters)
             ],
         }
 
@@ -510,10 +529,29 @@ class ABEndToEnd:
             return "down"
         return "unchanged"
 
+    def moves(self) -> list[dict[str, Any]]:
+        """What each wording's forks did at the step, by move, and how those forks ended: both
+        arms' behaviours gathered together, so that a call the two made in different forms is
+        told apart — the original writing one report and the variant another are two moves,
+        where each arm by itself made one."""
+        from tuningfork.analysis.paths import gather_moves
+
+        rows: dict[str, list[Any]] = {}
+        for name, arm in (("original", self.original), ("variant", self.variant)):
+            ended = arm.ended()
+            for cluster in arm.actions.clusters:
+                # No letter: each arm letters its own behaviours, and A is not the same in both.
+                row = rows.setdefault(cluster.outcome.key, [cluster.outcome, None, {}, {}])
+                row[2][name] = cluster.count
+                row[3][name] = ended.get(cluster.letter, (0, 0, 0))
+        totals = {"original": self.original.actions.total, "variant": self.variant.actions.total}
+        return gather_moves((tuple(row) for row in rows.values()), totals)
+
     def to_json(self) -> dict[str, Any]:
         return {
             "original": self.original.to_json(),
             "variant": self.variant.to_json(),
+            "moves": self.moves(),
             "p_value": self.p_value,
             "significant": self.significant,
             "alpha": self.alpha,
@@ -531,16 +569,20 @@ def arm_summary(store: Store, experiment: Any, outcomes: list[Any] = ()) -> EndT
     verdicts = [fork_counted(s.passed, s.exclusion) for s in samples]
     counted = [verdict for verdict in verdicts if verdict is not None]
     passed = sum(counted)
+    actions = experiment_distribution(store, experiment)
+    # A behaviour's members are its samples' places among the experiment's, as they are read here.
+    letters = {member: cluster.letter for cluster in actions.clusters for member in cluster.members}
     return EndToEnd(
         experiment=experiment,
         passed=passed,
         counted=len(counted),
         rate=rate(passed, len(counted)) if counted else None,
         exclusions=[(s.run_id, s.exclusion) for s, verdict in zip(samples, verdicts) if s.exclusion and verdict is None],
-        actions=experiment_distribution(store, experiment),
+        actions=actions,
         outcomes=list(outcomes),
         forks=[(s.idx, s.run_id, s.passed, s.exclusion) for s in samples],
         timeouts=sum(1 for s in samples if s.exclusion == TIMED_OUT),
+        letters=[letters.get(place) for place in range(len(samples))],
     )
 
 

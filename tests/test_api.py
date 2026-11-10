@@ -177,7 +177,7 @@ class TestDataAPI:
         report = (await proxy_client.get(f"{API}/divergence", params={"task": "t/1"})).json()
         assert report["divergence_index"] == 1
         assert len(report["steps"][1]["groups"]) == 2
-        # What goes with passing, for the page beside the first split: no verdicts here, so nothing.
+        # The step whose behaviour best predicts the verdict, beside the first split: no verdicts here, so nothing.
         assert report["verdict_split"] == {"judged": 0, "best": None}
         assert report["tool_split"]["best"] is None
 

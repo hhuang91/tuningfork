@@ -101,7 +101,7 @@ TERMS: tuple[Term, ...] = (
          "added where it is. A batch copies it once as it starts and gives each of its runs that copy. Nothing writes "
          "to it but an approval, which keeps the old text and a changelog beside the folder, never inside it.",
          "recording", aka=("skill_dir",), see=("skill", "copy of a skill", "approval", "recordings folder"),
-         where="a skill's page: Where its SKILL.md is kept; Words page: where things live"),
+         where="a skill's page: Skill folder; Words page: where things live"),
     Term("recordings folder", "Where tuningfork keeps what it records: every call, a run folder for each run it "
          "started (unless --workdir names another place), and the copies and records beside them. ~/.tuningfork, or "
          "the folder TUNINGFORK_HOME or --home names; readable only by you when tuningfork makes it.",
@@ -171,7 +171,10 @@ TERMS: tuple[Term, ...] = (
          "and at its end: when each thing the check complains about was made, and by which call. Never a verdict. "
          "A finding every run made, the passing ones too, is a mistake they all made — and refined where it was "
          "made, not where the runs that repaired it later differ.",
-         "tasks", see=("check", "checkpoint"), where="a task's tally; tuningfork check-along --task <id>"),
+         "tasks", aka=("the call behind each check line",), see=("check", "checkpoint"),
+         where="Runs → Where do they diverge? → Why runs failed → Find the call behind each line…; "
+               "tuningfork check-along --task <id>",
+         ui="the call behind each line"),
     Term("batch", "A task run N times through the harness, each run in a run folder of its own, all from one copy "
          "of the skill made as the batch starts: the pass rate of one skill version, with its interval.",
          "tasks", see=("launch", "pass rate"), where="Runs → Run a task…; tuningfork batch <spec> -n 8"),
@@ -210,15 +213,29 @@ TERMS: tuple[Term, ...] = (
     Term("held-out task", "A task kept out of refining: it judges an edit at validation and never shapes one. Its "
          "runs are verdicts only, recorded nowhere an agent can read.",
          "tasks", aka=("held out",), see=("validation", "gate")),
-    Term("divergence", "The first step where runs of one task stopped doing the same thing: where to look first.",
-         "tasks", see=("run",), where="Runs → Where do they diverge?; tuningfork divergence --task <id>"),
+    Term("divergence", "The first step where runs of one task stopped doing the same thing, compared exactly: "
+         "often before their paths part on the run map, and often not where passing and failing part (the "
+         "turning point).",
+         "tasks", see=("run", "run map", "turning point"), where="Runs → Where do they diverge?; tuningfork divergence --task <id>"),
+    Term("run map", "A task's runs drawn as paths that part: what the runs did at each step is a box — the tool "
+         "they called, or a reply, whatever its words; a tool's calls apart where they came in a few distinct "
+         "forms — a line joins what runs did to what they did next, as wide as they were many, and each path ends "
+         "in its runs, coloured by their checks.",
+         "tasks", aka=("paths",), see=("divergence", "turning point", "behaviour"),
+         where="Runs → Where do they diverge?; tuningfork divergence --task <id> --paths"),
+    Term("turning point", "The split on a run map whose branches best separate the runs that passed from the runs "
+         "that failed: each branch against the rest of the runs that got there, by Fisher's exact test. A lead under "
+         "p 0.2, never a verdict: with many splits compared, chance alone can make one.",
+         "tasks", see=("run map", "Fisher's exact test"),
+         where="the divergence page's lead; tuningfork divergence --task <id> --paths; MCP find_divergence"),
     Term("where it holds", "One question asked of every run of a task — of what the model did, at every step, or of "
          "a file the runs wrote, at each state of the workspace — and the answers lined up with the verdicts: in how "
          "many passing and failing runs it held, the call that first did it or made it in each, and the step that "
          "names that call in every run. Where a check prints only its verdict, the way to the call that made the "
          "difference. A lead to read, never a verdict.",
          "tasks", aka=("where",), see=("check along", "divergence", "target"),
-         where="Runs → Where do they diverge? → Where does it hold?; tuningfork where --task <id>"),
+         where="Runs → Where do they diverge? → Ask every run; tuningfork where --task <id>",
+         ui="ask every run"),
     Term("trash", "Where things set aside wait, out of every list and pass rate, until restored as they went. "
          "Deleting from the trash is for good, with everything tied to the item.",
          "tasks", see=(), where="Trash page; tuningfork trash"),
@@ -247,8 +264,8 @@ TERMS: tuple[Term, ...] = (
     Term("to the end", "Each sample a fork run to the end of the task and judged by its check, instead of the one "
          "answer at the step: whether a change at the step carries through.",
          "experiments", aka=("each to the end", "--to-end"), see=("fork", "sample"),
-         where="a form's Judge each try by: whether the whole run then passes; --to-end",
-         ui="whether the whole run then passes"),
+         where="a form's Measure: The whole run; --to-end",
+         ui="the whole run"),
     Term("token stream", "An answer kept as the model's tokens: each with its probability, and the alternatives the "
          "model weighed.",
          "experiments", aka=("logprobs",), see=("score", "forking token")),

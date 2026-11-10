@@ -93,16 +93,34 @@ class Distribution:
     def by_key(self, key: str) -> Cluster | None:
         return next((c for c in self.clusters if c.outcome.key == key), None)
 
-    def to_json(self) -> dict:
+    def to_json(self, ended: Mapping[str, tuple[int, int, int]] | None = None) -> dict:
+        """`ended`, where each sample was a fork run to the end: by a behaviour's letter, how many
+        of its forks passed the task's check, failed it, and had no verdict. Each behaviour and
+        each move then says how its own ended (`paths.ended_json`)."""
+        from tuningfork.analysis.paths import ended_json, gather_moves
+
+        def fared(cluster: Cluster) -> tuple[int, int, int]:
+            return (ended or {}).get(cluster.letter, (0, 0, 0))
+
         return {
             "total": self.total,
             "errors": self.errors,
+            # The same behaviours by move, a reply one move whatever its words: what a page draws.
+            "moves": gather_moves(
+                (
+                    (cluster.outcome, cluster.letter, {"all": cluster.count},
+                     *([] if ended is None else [{"all": fared(cluster)}]))
+                    for cluster in self.clusters
+                ),
+                {"all": self.total},
+            ),
             "clusters": [
                 {
                     "letter": cluster.letter,
                     "outcome": cluster.outcome.to_json(),
                     "rate": cluster.rate.to_json(),
                     **({"reasoned": cluster.reasoned} if cluster.reasoned is not None else {}),
+                    **({} if ended is None else {"ended": ended_json(fared(cluster))}),
                 }
                 for cluster in self.clusters
             ],
@@ -409,8 +427,16 @@ class ABComparison:
         return [shift for shift in self.shifts if shift.adjusted_p < self.alpha]
 
     def to_json(self) -> dict:
+        from tuningfork.analysis.paths import gather_moves
+
         return {
             "exploratory": self.exploratory,
+            # What each wording led to, by move: each arm's samples that made it, of its own.
+            "moves": gather_moves(
+                ((shift.outcome, shift.letter, {"original": shift.original.successes, "variant": shift.variant.successes})
+                 for shift in self.shifts),
+                {"original": self.original.total, "variant": self.variant.total},
+            ),
             "shifts": [
                 {
                     "letter": shift.letter,

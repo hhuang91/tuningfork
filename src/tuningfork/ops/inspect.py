@@ -313,7 +313,18 @@ def divergence_report(
     report, results = divergence(store, run_ids, lens)
     out = {**report.to_json(results), "tool_split": tool_split(store, run_ids, results)}
     out["verdict_split"] = verdict_split(out)
+    out["paths"] = run_paths(out)
     return out
+
+
+def run_paths(report: dict[str, Any]) -> dict[str, Any]:
+    """A divergence report's runs as trees of paths (`analysis.paths.path_tree`), one for each
+    way of telling a tool's calls apart: `auto`, the one a terminal and an agent are given,
+    `tools` and `calls`, which the run map's detail steps between. Each has its turning point:
+    the split whose branches best separate passing from failing."""
+    from tuningfork.analysis.paths import FORMS, path_tree
+
+    return {forms: path_tree(report, forms=forms) for forms in FORMS}
 
 
 def behaviour_pass_rates(comparison: Any, results: dict[str, dict[str, Any]]) -> list[Any]:
@@ -337,6 +348,7 @@ def verdict_split(report: dict[str, Any], *, alpha: float = 0.2, minimum: int = 
     from tuningfork.analysis.stats import fisher_exact
 
     best: dict[str, Any] | None = None
+    smallest = 1.0
     judged = 0
     for step in report.get("steps") or []:
         groups = [group for group in step.get("groups") or [] if (group.get("passed") or {}).get("total")]
@@ -349,7 +361,8 @@ def verdict_split(report: dict[str, Any], *, alpha: float = 0.2, minimum: int = 
             if total < minimum or others_total < minimum:
                 continue
             p = fisher_exact(passed, total - passed, others_passed, others_total - others_passed)
-            if best is None or p < best["p"]:
+            if best is None or p < smallest:
+                smallest = p
                 outcome = group.get("outcome") or {}
                 best = {
                     "index": step.get("index"), "label": outcome.get("label"), "kind": outcome.get("kind"),

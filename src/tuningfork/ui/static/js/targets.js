@@ -1,11 +1,11 @@
-// A target described in conditions, and what a target would count before it is declared.
+// A target described in rules, and what a target would count before it is declared.
 //
-// The conditions are the server's (`analysis.distribution.RULES`): a tool called or not, a
+// The rules are the server's (`analysis.distribution.RULES`): a tool called or not, a
 // phrase mentioned or not. What a target counts is the server's to say too — the matcher the
 // report will use — among the behaviours already seen at the step.
 
 import { api, enc, query } from "./api.js";
-import { h, icon, outcome, replace } from "./dom.js";
+import { h, icon, info, outcome, plural, replace } from "./dom.js";
 import { LABELS } from "./words.js";
 
 const KINDS = [
@@ -16,8 +16,8 @@ const KINDS = [
 ];
 let lists = 0;
 
-/** Conditions that must all hold. `read()` gives them as `target_rules`; `setTools(names)`
- *  offers the step's tools for the conditions that name one. `onUse` is called whenever a
+/** Rules that must all hold. `read()` gives them as `target_rules`; `setTools(names)`
+ *  offers the step's tools for the rules that name one. `onUse` is called whenever a
  *  person touches them, to choose this way of declaring the target. */
 export function describeBuilder({ onUse = () => {} } = {}) {
   const listId = `tf-tools-${(lists += 1)}`;
@@ -26,20 +26,22 @@ export function describeBuilder({ onUse = () => {} } = {}) {
   const changed = () => element.dispatchEvent(new Event("input", { bubbles: true }));
   const element = h("div", { class: "rule-builder", onfocusin: onUse, oninput: onUse },
     rows,
-    h("button", { class: "btn btn-quiet btn-small", type: "button", onclick: () => { add("contains"); onUse(); changed(); } }, "+ Add a condition"),
-    h("p", { class: "form-help" }, "Every condition must hold. A phrase is looked for, ignoring case, in the reply and in each tool call's name and arguments."),
+    h("div", { class: "rule-more" },
+      h("button", { class: "btn btn-quiet btn-small", type: "button", onclick: () => { add("contains"); onUse(); changed(); } }, "+ Add a rule"),
+      h("span", { class: "form-help" }, "All must hold."),
+      info("Every rule must hold. A phrase is looked for, ignoring case, in the reply and in each tool call's name and arguments.", { label: "How the rules are read" })),
     tools);
   add("calls");
   return { element, read, setTools };
 
   function add(kind) {
     const value = h("input", { class: "field", type: "text", "aria-label": "Value" });
-    const which = h("select", { class: "field", "aria-label": "Kind of condition", onchange: () => shape() },
+    const which = h("select", { class: "field", "aria-label": "Kind of rule", onchange: () => shape() },
       KINDS.map(([key, label]) => h("option", { value: key, selected: key === kind }, label)));
     // The value and its × go to a line of their own together where the row is narrow.
     const row = h("div", { class: "rule" }, which, h("span", { class: "rule-value" }, value,
       h("button", {
-        class: "btn btn-quiet btn-small", type: "button", title: "Remove this condition", "aria-label": "Remove this condition",
+        class: "btn btn-quiet btn-small", type: "button", title: "Remove this rule", "aria-label": "Remove this rule",
         onclick: () => {
           row.remove();
           if (!rows.children.length) add("calls");
@@ -61,7 +63,7 @@ export function describeBuilder({ onUse = () => {} } = {}) {
       .map((row) => ({ if: row.querySelector("select").value, value: row.querySelector("input").value.trim() }))
       .filter((rule) => rule.value);
     if (!rules.length) {
-      throw Object.assign(new Error("Describe the behaviour: give at least one condition a value."), { field: "target_rules" });
+      throw Object.assign(new Error("Tools & words: give at least one rule a value."), { field: "target_rules" });
     }
     return rules;
   }
@@ -107,21 +109,61 @@ export function seenPreview({ run, idx, onTools = () => {} }) {
     if (!seen.behaviours.length) return h("p", { class: "muted small" }, "Nothing has been seen at this step yet, so there is nothing to try this on.");
     const total = seen.behaviours.reduce((sum, found) => sum + found.count, 0);
     const counted = seen.behaviours.filter((found) => found.matches).reduce((sum, found) => sum + found.count, 0);
+    const row = (found) =>
+      h("li", { class: ["seen", found.matches === true && "seen-yes", found.matches === false && "seen-no"] },
+        h("span", { class: "seen-mark", title: found.matches === null ? "" : found.matches ? LABELS.matches : LABELS.noMatch },
+          found.matches === null ? "·" : icon(found.matches ? "check" : "x")),
+        outcome(found),
+        h("span", { class: "muted small" }, Object.entries(found.seen).map(([where, n]) => `${where} ${n}`).join(" · ") + fared(found)));
     const parts = [
-      h("div", { class: "label" }, seen.target === null
-        ? "Behaviours seen at this step"
-        : `What it would match, of the behaviours seen at this step: ${counted} of ${total}`),
-      h("ul", { class: "seen-list" }, seen.behaviours.map((found) =>
-        h("li", { class: ["seen", found.matches === true && "seen-yes", found.matches === false && "seen-no"] },
-          h("span", { class: "seen-mark", title: found.matches === null ? "" : found.matches ? LABELS.matches : LABELS.noMatch },
-            found.matches === null ? "·" : icon(found.matches ? "check" : "x")),
-          outcome(found),
-          h("span", { class: "muted small" }, Object.entries(found.seen).map(([where, n]) => `${where} ${n}`).join(" · ") + fared(found))))),
+      h("div", { class: "label seen-title" }, seen.target === null
+        ? `Seen at this step: ${plural(total, "answer")}`
+        : `Matches ${counted} of ${total} answers seen at this step`,
+        info("These are earlier answers, shown so you can see what your choice would match. They are not the samples the test will draw.", { label: "What these are" })),
+      h("ul", { class: "seen-list" }, grouped(seen.behaviours).map((item) => (item.replies ? repliesRow(item, row) : row(item)))),
     ];
     const judged = split(seen);
     if (judged) parts.push(judged);
-    parts.push(h("p", { class: "form-help" }, "These are earlier answers, shown so you can see what your choice would match. They are not the samples the test will draw."));
     return h("div", { class: "stack", style: { gap: "var(--space-1)" } }, ...parts);
+  }
+
+  // Replies that differ only in their words, and match alike, as one line: a step where the
+  // model mostly replies has a wording for nearly every answer, and a list of them hides the
+  // few behaviours that differ. Three or more of a kind fold; opened, each wording is there.
+  function grouped(behaviours) {
+    const byMatch = new Map();
+    for (const found of behaviours) {
+      if (found.kind !== "text") continue;
+      const key = String(found.matches);
+      if (!byMatch.has(key)) byMatch.set(key, []);
+      byMatch.get(key).push(found);
+    }
+    const out = [];
+    const folded = new Set();
+    for (const found of behaviours) {
+      const alike = found.kind === "text" ? byMatch.get(String(found.matches)) : null;
+      if (!alike || alike.length < 3) {
+        out.push(found);
+      } else if (!folded.has(alike)) {
+        folded.add(alike);
+        out.push({ replies: alike, matches: found.matches });
+      }
+    }
+    return out;
+  }
+
+  function repliesRow(item, row) {
+    const count = item.replies.reduce((sum, found) => sum + found.count, 0);
+    const passed = item.replies.reduce((sum, found) => sum + (found.verdicts?.passed || 0), 0);
+    const failed = item.replies.reduce((sum, found) => sum + (found.verdicts?.failed || 0), 0);
+    return h("li", { class: ["seen", "seen-replies", item.matches === true && "seen-yes", item.matches === false && "seen-no"] },
+      h("details", { class: "fold" },
+        h("summary", null,
+          h("span", { class: "seen-mark", title: item.matches === null ? "" : item.matches ? LABELS.matches : LABELS.noMatch },
+            item.matches === null ? "·" : icon(item.matches ? "check" : "x")),
+          outcome({ kind: "text", label: `${count} ${count === 1 ? "reply" : "replies"}, ${plural(item.replies.length, "phrasing")}` }),
+          passed || failed ? h("span", { class: "muted small" }, `${passed} passed, ${failed} failed`) : null),
+        h("ul", { class: "seen-list" }, item.replies.map(row))));
   }
 
   // How the recorded runs that took a behaviour fared: a target should count the passing runs'.
@@ -138,7 +180,7 @@ export function seenPreview({ run, idx, onTools = () => {} }) {
       : found.kind === "unseen" ? "no answer seen satisfies it"
       : found.separates === true ? "it separates them" : found.separates === false ? "it does not go with passing" : "";
     return h("p", { class: "muted small" },
-      `Counts the answers of ${found.passing.counted} of ${found.passing.of} passing runs and ${found.failing.counted} of ${found.failing.of} failing runs`
+      `Matches the answers of ${found.passing.counted} of ${found.passing.of} passing runs and ${found.failing.counted} of ${found.failing.of} failing runs`
       + (words ? ` — ${words}` : ""));
   }
 }

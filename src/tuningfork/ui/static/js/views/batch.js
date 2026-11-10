@@ -5,7 +5,7 @@
 // whole, always, before anything starts — or a check of the final reply, said in words.
 
 import { api, enc } from "../api.js";
-import { chip, command, crumbs, h, kv, loading, longText, panel, plural, replace } from "../dom.js";
+import { chip, command, crumbs, h, info, kv, loading, longText, panel, plural, replace } from "../dom.js";
 import { copyChip, folderTree, nameOf, seenAs } from "../folders.js";
 import { field, input, numberOf, planForm, textOf } from "../forms.js";
 import { live } from "../live.js";
@@ -33,7 +33,8 @@ export async function batchView(root, _, scope) {
   }
 
   const head = h("div", { class: "page-head" }, h("div", null, h("h1", null, "Run a task"),
-    h("p", { class: "sub" }, "Each run starts in a run folder of its own. In a batch every run gets the same copy of the skill. In a chain each run gets the skill the run before it left behind.")));
+    h("p", { class: "sub" }, "A task run again and again, each run in a run folder of its own.",
+      info("In a batch every run gets the same copy of the skill. In a chain each run gets the skill the run before it left behind.", { label: "Batch or chain" }))));
   if (live.mode !== "live") {
     replace(root, crumbs([["Scenarios", "#/scenarios"], ["Run a task"]]), head,
       panel("From a terminal", h("div", { class: "stack", style: { gap: "var(--space-2)" } },
@@ -205,13 +206,16 @@ function batchPreview(plan) {
     h("div", { class: "check-command" },
       plan.check_kind === "shell"
         ? [
-            h("div", { class: "label warn-text" }, "How a run passes — this runs as a shell command, as you, in each run's workspace, where the harness worked. $TUNINGFORK_REPLY names a file holding the agent's final reply."),
+            h("div", { class: "label" }, "How a run passes"),
+            // What it is stays in sight: a command of the task file's, run as the person.
+            h("p", { class: "small warn-text" }, "A shell command, run as you in each run's workspace.",
+              info("It runs where the harness worked. $TUNINGFORK_REPLY names a file holding the agent's final reply.", { label: "Where it runs" })),
             h("pre", { class: "code" }, plan.check),
           ]
         : plan.check_kind
-          ? [h("div", { class: "label" }, "How a run passes — judged by tuningfork on each run's final reply"), h("p", null, plan.check_text)]
+          ? [h("div", { class: "label" }, "How a run passes"), h("p", { class: "small muted" }, "Judged by tuningfork on each run's final reply."), h("p", null, plan.check_text)]
           : [h("div", { class: "label" }, "How a run passes"), h("p", { class: "muted" }, "No check: runs will have no verdict.")]),
-    h("div", null, h("div", { class: "label" }, "What each run is asked"), longText(plan.prompt, { limit: 600, lines: 8 })),
+    h("div", null, h("div", { class: "label" }, "The prompt"), longText(plan.prompt, { limit: 600, lines: 8 })),
     kv([
       ["task", h("span", { class: "mono" }, plan.task_id)],
       ["task file", plan.spec ? h("span", { class: "mono" }, plan.spec) : null],

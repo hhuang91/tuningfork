@@ -255,6 +255,13 @@ interval, and how the runs that took it fared ("then passed").
 - `--task <id>` — every run of a task (`--limit`, default 20), or name runs by id instead.
 - `--normalizer <name>` — compare under that normalizer only: `tool_name`, for instance, compares
   the tools called and ignores their arguments.
+- `--paths` — also the runs as paths that part: a line for each way the runs went, by the tool each
+  step called (any reply is one, whatever its words), each ending in how its runs fared. A tool's
+  calls are apart where they came in a few distinct forms, each with what tells it from the others
+  in brackets, and runs that each went their own way from one place are counted in one line. Under
+  it, the turning point, when there is one: the split whose branches best separate the runs that
+  passed from the runs that failed — a lead under p 0.2, never a verdict. The web UI draws the same
+  tree as its run map.
 
 ### `tally`
 
@@ -313,7 +320,9 @@ tuningfork resample <run> write_file -n 20
   `tokens --sample` shows one. Where the server sends none back, the experiment says so; started
   through the proxy, it is refused on a server the check found without them.
 - `--to-end` — each sample a fork run to the end through the harness, counted by the task's check
-  (`--proxy`; `--spec` for a run recorded before tuningfork kept how it was launched).
+  (`--proxy`; `--spec` for a run recorded before tuningfork kept how it was launched). Where the
+  forks did more than one thing at the step, each behaviour says how often its forks then passed,
+  with its interval: a lead to which of them goes with passing.
 - `--normalizer`, `--seed-base`, `--prompt-cache`, `--base-url`, `--concurrency` — as
   [above](#how-commands-name-things).
 
@@ -334,7 +343,8 @@ tuningfork ab <run> write_file --variant examples/variants/tally-report/SKILL.v2
   `--alpha` (default 0.05), kept with the A/B and the level it is judged at whenever it is shown
   again.
 - `--to-end` — each sample a fork run to the end, both arms compared on the task's check: the
-  confirmation a checkpoint A/B asks for.
+  confirmation a checkpoint A/B asks for. Each arm's behaviours at the step say how their forks
+  went on, as a resample's do.
 - `-n N` (default 20 an arm), and the sampling options of `resample`.
 
 ### `fork`

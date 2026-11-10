@@ -9,7 +9,7 @@
 
 import { api, enc } from "./api.js";
 import { chip, command, failure, h, kv, loading, panel, plural, replace, short } from "./dom.js";
-import { cacheField, field, groupingField, input, numberOf, planForm, samplingChoices, seedField, textOf } from "./forms.js";
+import { cacheField, field, groupingField, input, numberOf, planForm, samplingChoices, seedField, textOf, ways } from "./forms.js";
 import { live, tokenWork } from "./live.js";
 import { describeBuilder, seenPreview } from "./targets.js";
 import { readTarget, readVariant, targetPicker, variantEditor } from "./variants.js";
@@ -104,10 +104,11 @@ export async function startForm(kind, step, query = new URLSearchParams(), { go 
 // --- forking tokens -----------------------------------------------------------------------
 
 const REGIONS = [
-  ["answer", "The answer", "the reply and its tool calls, where a skill's wording usually bites; continuations are short"],
-  ["reasoning", "The reasoning", "where a model that thinks usually decides; each continuation rewrites the rest of the reasoning"],
-  ["all", "Anywhere", "the likeliest forks wherever they are"],
+  ["answer", "Answer", "The reply and its tool calls, where a skill's wording usually bites. Continuations are short."],
+  ["reasoning", "Reasoning", "Where a model that thinks usually decides. Each continuation rewrites the rest of the reasoning."],
+  ["all", "Anywhere", "The likeliest forking tokens, wherever they are."],
 ];
+const CONDITION_ABOUT = "What the model must do to be counted. You choose it before anything is sampled: a condition picked after seeing the samples is a result fished for.";
 
 async function forkingForm(step, query) {
   const picked = query.get("positions") || "";
@@ -119,51 +120,34 @@ async function forkingForm(step, query) {
   const calls = [...new Set((detail?.response?.choices?.[0]?.message?.tool_calls || [])
     .map((call) => call.function?.name).filter(Boolean))];
   const callsRules = calls.map((name) => ({ if: "calls", value: name }));
-  const regions = h("fieldset", { class: "target-picker" }, h("legend", null, "Where to look, when no positions are named"),
-    REGIONS.map(([value, label, detail]) =>
-      h("label", { class: "target-choice" },
-        h("input", { type: "radio", name: "region", value, checked: value === "answer" }),
-        h("span", null, h("strong", null, label), h("span", { class: "muted small" }, ` — ${detail}`)))));
-  // Declared before sampling: the base's own behaviour, one described in conditions, or a
+  const regions = ways("region", REGIONS.map(([value, label, note]) => ({ value, label, note, checked: value === "answer" })),
+    { legend: "Where to look", about: "Used when no positions are named: the likeliest forking tokens in the part chosen are probed." });
+  // Declared before sampling: the base's own behaviour, one described in rules, or a
   // pattern — each shown against the behaviours already seen at this step.
-  const pick = (kind) => {
-    const radio = target.querySelector(`[name="target_kind"][value="${kind}"]`);
-    if (radio && !radio.checked) {
-      radio.checked = true;
-      radio.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-  };
-  const builder = describeBuilder({ onUse: () => pick("describe") });
+  const builder = describeBuilder({ onUse: () => target.choose("describe") });
   const seen = seenPreview({ run: step.run.id, idx: step.idx, onTools: builder.setTools });
   const pattern = input("target_match", { placeholder: "a regular expression, e.g. row_count" });
-  pattern.addEventListener("input", () => pick("match"));
+  pattern.addEventListener("input", () => target.choose("match"));
   const howMany = input("top", { type: "number", value: 5, min: 1, max: 20 });
   const leastChance = input("min_p", { type: "number", value: 0.05, min: 0.001, max: 0.5, step: "any" });
-  const target = h("fieldset", { class: "target-picker" }, h("legend", null, `${LABELS.condition} (chosen before sampling)`),
-    calls.length
-      ? h("label", { class: "target-choice" },
-          h("input", { type: "radio", name: "target_kind", value: "tools", checked: true }),
-          h("span", null, h("strong", null, `Calls ${calls.join(" and ")}`),
-            h("span", { class: "muted small" }, " — the tools the answer calls, with any arguments: a continuation that calls them another way still counts")))
-      : null,
-    h("label", { class: "target-choice" },
-      h("input", { type: "radio", name: "target_kind", value: "base", checked: !calls.length }),
-      h("span", null, h("strong", null, "The answer's own behaviour"), h("span", { class: "muted small" }, calls.length
-        ? " — its exact tool call, arguments and all, read the way every continuation is read"
-        : " — its tool call or reply, read the way every continuation is read"))),
-    h("label", { class: "target-choice" },
-      h("input", { type: "radio", name: "target_kind", value: "describe" }),
-      h("span", null, h("strong", null, "A behaviour I describe"), h("span", { class: "muted small" }, " — the tools it calls, the phrases it mentions"))),
-    builder.element,
-    h("label", { class: "target-choice" },
-      h("input", { type: "radio", name: "target_kind", value: "match" }),
-      h("span", null, h("strong", null, "A behaviour matching "), pattern)),
-    seen.element);
+  const target = ways("target_kind", [
+    calls.length ? {
+      value: "tools", label: `Calls ${calls.join(" + ")}`, checked: true,
+      note: "The tools the answer calls, with any arguments: a continuation that calls them another way still counts.",
+    } : null,
+    {
+      value: "base", label: "Same behaviour", checked: !calls.length,
+      note: calls.length ? "The answer's exact tool call, arguments and all." : "The answer's own tool call or reply.",
+    },
+    { value: "describe", label: "Tools & words", note: "The tools the model calls and the words it says.", body: builder.element },
+    { value: "match", label: "Pattern", note: "A regular expression over a reply's words, or a call's name and arguments.", body: h("div", { class: "target-pattern" }, pattern) },
+  ], { legend: LABELS.condition, about: CONDITION_ABOUT });
+  target.append(seen.element);
   const { element } = planForm({
     kind: "forking-tokens",
     fields: [
-      field("Positions", input("positions", { value: picked, placeholder: "none: the likeliest forks in the region below" }),
-        { help: "Comma-separated, as the Tokens view numbers them; select tokens there to fill this in.", wide: true }),
+      field("Positions", input("positions", { value: picked, placeholder: "none: the likeliest in the part chosen below" }),
+        { help: "Comma-separated, as the Tokens view numbers them.", about: "Select tokens in the step's Tokens view to fill this in.", wide: true }),
       regions,
       h("div", { class: "form-grid" },
         field("Positions to probe", howMany, { help: "When none are named." }),
@@ -173,7 +157,7 @@ async function forkingForm(step, query) {
       h("details", { class: "fold more-settings" },
         h("summary", null, LABELS.advanced),
         h("div", { class: "form-grid" },
-          field("Least chance", leastChance, { help: "That the step's sampler gave an alternative, to count as a fork, when no positions are named." }),
+          field("Least chance", leastChance, { help: "That the step's sampler gave an alternative, to count as a forking token, when no positions are named." }),
           field("Significance (α)", input("alpha", { type: "number", value: 0.05, min: 0.0001, max: 0.5, step: "any" }), { help: "Corrected for the number of tests planned (Holm)." }),
           field("Max tokens", input("max_tokens", { type: "number", value: 4096, min: 1 }), { help: "Per continuation; hitting it counts as truncated." }),
           field("At once", input("concurrency", { type: "number", value: 1, min: 1, max: 16 }), { help: "On one GPU, 1 keeps the prompt cache." }),
@@ -218,6 +202,7 @@ async function forkingForm(step, query) {
       return params;
     },
     render: forkingPreview,
+    about: FORKING_ABOUT,
     startLabel: "Find the forking tokens",
     onStarted: opened,
   });
@@ -293,13 +278,15 @@ function forkingPreview(plan) {
           h("td", { class: "muted" }, position.part || "—"),
           h("td", { class: "mono" }, `${JSON.stringify(position.chosen.text)} ${pct(position.chosen.p)}`),
           h("td", { class: "mono" }, position.alternatives.map((alt) => `${JSON.stringify(alt.text)} ${pct(alt.p)}`).join("   "))))))),
-    h("p", { class: "hint" }, "At each position the model is given this step's exact context and the answer up to there, then one token forced — the original, or an alternative — and goes on. Each continuation is read back into a behaviour, and each alternative is compared with the original token at the same position."));
+  );
 }
+const FORKING_ABOUT = "At each position the model is given this step's exact context and the answer up to there, then one token forced — the original, or an alternative — and goes on. Each continuation is read back into a behaviour, and each alternative is compared with the original token at the same position.";
 
 function reachToggle(step, kind, toEnd, go) {
   const here = `#/runs/${step.run.id}/${step.idx}?start=${kind}`;
+  // Links, each to the form as it measures: the chosen one is the current one, never a button pressed.
   const option = (href, label, active, title) =>
-    way(href, go, { class: active ? "active" : null, "aria-pressed": String(active), title }, label);
+    way(href, go, { class: active ? "active" : null, "aria-current": active ? "true" : null, title }, label);
   return h("div", { class: "reach" },
     h("span", { class: "muted small" }, LABELS.judgeBy),
     h("div", { class: "toggle" },
@@ -364,7 +351,9 @@ function resampleForm(step, work = {}) {
   // where the server's check found it sends none.
   const keep = input("logprobs", { type: "number", min: 1, max: 20, placeholder: "not kept" });
   const kept = field("Keep each sample's tokens", keep, {
-    help: work.logprobs || "With this many alternatives at each token, for each sample's heatmap in the step's Tokens view.",
+    help: work.logprobs || "Alternatives kept at each token.",
+    about: work.logprobs ? null : "Kept for each sample's heatmap in the step's Tokens view.",
+    keep: Boolean(work.logprobs),
   });
   keep.disabled = Boolean(work.logprobs);
   kept.classList.toggle("off", Boolean(work.logprobs));
@@ -401,8 +390,8 @@ function resampleForm(step, work = {}) {
         ["tokens", plan.sampling.logprobs
           ? `each sample's kept, with ${plural(plan.sampling.logprobs, "alternative")} at each token` : null],
       ]),
-      (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-      h("p", { class: "hint" }, "Each sample resends this step's request exactly as recorded, with its own seed. Everything before the step stays as it was, and nothing is recorded as a run.")),
+      (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning))),
+    about: "Each sample resends this step's request exactly as recorded, with its own seed. Everything before the step stays as it was, and nothing is recorded as a run.",
     startLabel: "Start the resample",
     onStarted: opened,
   });
@@ -455,6 +444,7 @@ async function abBody(step, toEnd, skill, named) {
         return params;
       },
       render: toEndPreview,
+      about: TO_END_ABOUT,
       startLabel: "Start the A/B",
       onStarted: opened,
     });
@@ -477,6 +467,7 @@ async function abBody(step, toEnd, skill, named) {
       return params;
     },
     render: abPreview,
+    about: AB_ABOUT,
     startLabel: "Start the A/B",
     onStarted: opened,
   });
@@ -488,9 +479,9 @@ async function abBody(step, toEnd, skill, named) {
 function forkFields({ alpha = false, n = 5 } = {}) {
   return [
     h("div", { class: "form-grid" },
-      field("Forks", input("n", { type: "number", value: n, min: 1, max: 200 }), { help: alpha
-        ? "For each wording. Each fork runs in full from here, so it takes minutes, not seconds."
-        : "Each fork runs in full from here, so it takes minutes, not seconds." })),
+      field("Forks", input("n", { type: "number", value: n, min: 1, max: 200 }), {
+        help: alpha ? "For each wording." : null,
+        about: "Each fork runs in full from here, so it takes minutes, not seconds." })),
     h("details", { class: "fold more-settings" },
       h("summary", null, LABELS.advanced),
       h("div", { class: "form-grid" },
@@ -520,9 +511,9 @@ function toEndPreview(plan) {
       ["condition", "the task's check passes"],
       plan.variant ? ["swaps", `the original for your variant, from step ${arm.checkpoint.step} on`] : null,
     ].filter(Boolean)),
-    [...(arm.warnings || []), ...((plan.variant && plan.variant.warnings) || [])].map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-    h("p", { class: "hint" }, "Every fork replays the recorded history up to this step, then runs live to the end with breakpoints off; the task's check decides. A fork cut off or taken off the recording is not counted."));
+    [...(arm.warnings || []), ...((plan.variant && plan.variant.warnings) || [])].map((warning) => h("div", { class: "banner banner-warn" }, warning)));
 }
+const TO_END_ABOUT = "Every fork replays the recorded history up to this step, then runs live to the end with breakpoints off; the task's check decides. A fork cut off or taken off the recording is not counted.";
 
 function resampleToEndForm(step) {
   const { element } = planForm({
@@ -530,6 +521,7 @@ function resampleToEndForm(step) {
     fields: forkFields(),
     read: (form) => ({ run: step.run.id, step: String(step.idx), ...readForks(form) }),
     render: toEndPreview,
+    about: TO_END_ABOUT,
     startLabel: "Start the forks",
     onStarted: opened,
   });
@@ -537,17 +529,13 @@ function resampleToEndForm(step) {
 }
 
 const HOLDS = [
-  ["step", "Stop at the step", "the fork waits, held, before the model answers there — for you to look, edit, and step on. Breakpoints armed on the proxy apply too."],
-  ["breakpoints", "Only where breakpoints stop it", "no stop of its own; the proxy's armed breakpoints apply to its live calls."],
-  ["none", "Run to the end unattended", "breakpoints off."],
+  ["step", "At this step", "The fork waits, held, before the model answers there, for you to look, edit and step on. Breakpoints armed on the proxy apply too."],
+  ["breakpoints", "At breakpoints", "No stop of its own: the proxy's armed breakpoints apply to its live calls."],
+  ["none", "Never", "It runs to the end unattended, breakpoints off."],
 ];
 
 function forkForm(step) {
-  const holds = h("fieldset", { class: "target-picker" }, h("legend", null, "Where it stops"),
-    HOLDS.map(([value, label, detail]) =>
-      h("label", { class: "target-choice" },
-        h("input", { type: "radio", name: "hold", value, checked: value === "step" }),
-        h("span", null, h("strong", null, label), h("span", { class: "muted small" }, ` — ${detail}`)))));
+  const holds = ways("hold", HOLDS.map(([value, label, note]) => ({ value, label, note, checked: value === "step" })), { legend: "Where it stops" });
   const { element } = planForm({
     kind: "fork",
     fields: [holds, h("div", { class: "form-grid" },
@@ -588,6 +576,6 @@ function abPreview(plan) {
       ? h("div", { class: "banner banner-warn" }, h("strong", null, "Parts of your edit the model never sees at this step: "),
           h("ul", { class: "small" }, plan.unapplied.map((line) => h("li", null, line))))
       : null,
-    (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-    h("p", { class: "hint" }, "Both wordings resend this step's request: the original as recorded, and the variant with your text swapped in. Everything before this step was written under the original wording, so treat the result as a lead, and confirm it with full runs."));
+    (plan.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)));
 }
+const AB_ABOUT = "Both wordings resend this step's request: the original as recorded, and the variant with your text swapped in. Everything before this step was written under the original wording, so treat the result as a lead, and confirm it with full runs.";

@@ -192,7 +192,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       ]),
       made.length
         ? h("div", { class: "verdict-lines-wrap" },
-            h("div", { class: "label" }, "Where each line came from: the check, run along the run"),
+            h("div", { class: "label" }, "The call behind each line"),
             h("ul", { class: "verdict-lines" }, made.map((line) => h("li", null,
               h("span", { class: "mono" }, line.line), " — ",
               line.made_by === null
@@ -708,7 +708,7 @@ export function timeline(data, { focus = null, query = new URLSearchParams(), sc
       ["experiments here", step.experiments.length
         ? h("div", { class: "tl-experiments" }, step.experiments.map((experiment) =>
             h("a", { href: `#/experiments/${experiment.id}` },
-              chip(`${EXPERIMENT[experiment.kind] || experiment.kind}${experiment.reach === "end" ? `${experiment.kind === "screen" ? "," : ""} to the end` : ""} · ${experiment.samples}${experiment.n ? ` of ${experiment.n}` : ""}`,
+              chip(`${EXPERIMENT[experiment.kind] || experiment.kind}${experiment.reach === "end" ? ", whole run" : ""} · ${experiment.samples}${experiment.n ? ` of ${experiment.n}` : ""}`,
                 experiment.status === "done" ? "accent" : "muted", experiment.target || ""))))
         : null],
     ]));

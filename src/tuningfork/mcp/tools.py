@@ -690,15 +690,34 @@ def find_divergence(context: Context, args: DivergenceArgs) -> Answer:
         raise OperationError("those runs are of a held-out task: the person's evidence, never an agent's",
                              code="held_out", field="task")
     lines = compact.divergence_lines(view)
+    from tuningfork.analysis.paths import turning_text
+
+    found = ((report.get("paths") or {}).get("auto") or {}).get("turning")
+    turning = turning_text(found)
+    if turning:
+        # A lead, said as one.
+        lines.append(f"the turning point — where passing and failing part along the runs' paths; a lead, under "
+                     f"p 0.2 — is at {turning}")
     best = split.get("best")
     if best is not None:
         view["verdict_split"] = best
-        where = "this split" if best["index"] == view.get("divergence_index") else f"step {best['index']}"
-        lines.append(
-            f"the behaviour that best predicts the verdict is at {where}: {best['label']} — those runs passed "
-            f"{best['passed']}/{best['total']}, the others {best['others_passed']}/{best['others_total']} "
-            f"(Fisher p = {p_short(best['p'])})"
+        first = " (the first split)" if best["index"] == view.get("divergence_index") else ""
+        line = (
+            f"the behaviour that best predicts the verdict is at step {best['index']}{first}: {best['label']} — "
+            f"those runs passed {best['passed']}/{best['total']}, the others "
+            f"{best['others_passed']}/{best['others_total']} (Fisher p = {p_short(best['p'])})"
         )
+        if found and found["step"] != best["index"]:
+            # Two leads that name different steps: why they differ, and which to act on where the
+            # comparison's is only that some runs had ended.
+            line += (
+                " — this comparison counts runs that had ended as one behaviour at every later step: refine at "
+                "the turning point, where passing and failing parted"
+                if best.get("kind") == "ended" else
+                " — another step than the turning point's: this compares exact behaviours at one step, the "
+                "turning point what the runs did along their paths"
+            )
+        lines.append(line)
     by_tool = (report.get("tool_split") or {}).get("best")
     if by_tool is not None:
         view["tool_split"] = by_tool
@@ -1454,9 +1473,10 @@ READS = (
          "passing run wrote is the difference the check saw.", FilesArgs, show_files),
     Tool("find_divergence", "Where runs split",
          "The first step where a task's runs stopped agreeing — the behaviours there, how many runs took "
-         "each, how often those went on to pass — the step whose behaviour best predicts the verdict, "
-         "when one does (the first split often does not), and the tool whose use goes with passing, when "
-         "one does: runs that called it against runs that never did, at whatever step.",
+         "each, how often those went on to pass; the turning point, when there is one: where passing and "
+         "failing part along the runs' paths (a lead); the step whose behaviour best predicts the verdict, "
+         "when one does (the first split often does not); and the tool whose use goes with passing, when one "
+         "does: runs that called it against runs that never did, at whatever step.",
          DivergenceArgs, find_divergence),
     Tool("tally_failures", "What failed checks said, counted",
          "Every failed run's check output, counted: a finding a line (lines differing only in numbers are "
@@ -1489,8 +1509,9 @@ READS = (
          "Resamples, A/Bs and probes, newest first: of a run, or all.", ExperimentsArgs, list_experiments),
     Tool("show_experiment", "An experiment's result",
          "An experiment's result again: behaviours with their rates and intervals; an A/B's declared "
-         "target, Fisher's p and its verdict, or that it was exploratory; a probe's flipping tokens, and "
-         "with continuations what the model wrote after each: why it changed what it did.",
+         "target, Fisher's p and its verdict, or that it was exploratory; of forks run to the end, how "
+         "often each behaviour's forks went on to pass; a probe's flipping tokens, and with continuations "
+         "what the model wrote after each: why it changed what it did.",
          ExperimentArgs, show_experiment),
     Tool("step_tokens", "Where the model wavered",
          "A step's answer as tokens, once scored (start_tokens): the tokens the model was least sure "

@@ -24,7 +24,61 @@ export function h(tag, props, ...children) {
       el.setAttribute(key, value === true ? "" : String(value));
     }
   }
-  return append(el, children);
+  return briefly(append(el, children));
+}
+
+// --- a paragraph of help, in a sentence ----------------------------------------------------
+//
+// A page's lead and its hints explain; read every visit, they are a wall. A paragraph of them
+// longer than a couple of lines shows its first sentence, and "more" opens the rest: nothing a
+// page says is taken away, and none of it has to be read past. Done here, where every paragraph
+// is made, so that no page has to remember to. A caution (a banner) is never shortened.
+
+/** The most words a lead or a hint has and stays whole. */
+const BRIEF_WORDS = 24;
+/** The least words a first sentence has, and the least left to fold away. */
+const BRIEF_LEAST = 5;
+const BRIEF_CLASSES = ["hint", "sub"];
+const wordsIn = (text) => (text.match(/\S+/g) || []).length;
+
+function briefly(el) {
+  if (el.tagName !== "P" || !BRIEF_CLASSES.some((name) => el.classList.contains(name))) return el;
+  if (el.querySelector(".info, .more-toggle, button, input, select, textarea")) return el;
+  if (wordsIn(el.textContent) <= BRIEF_WORDS) return el;
+  // The first sentence's end, in the paragraph's own text: a link or a name inside it is never cut.
+  let seen = 0;
+  for (const node of [...el.childNodes]) {
+    const text = node.textContent;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const ends = /[.!?](?=\s+[A-Z\u201c"(`]|\s*$)/g;
+      for (let match = ends.exec(text); match; match = ends.exec(text)) {
+        const before = seen + wordsIn(text.slice(0, match.index + 1));
+        if (before < BRIEF_LEAST) continue;
+        const rest = h("span", { class: "more-text", hidden: true });
+        const tail = node.splitText(match.index + 1);
+        const moved = [tail];
+        for (let next = tail.nextSibling; next; next = next.nextSibling) moved.push(next);
+        if (wordsIn(moved.map((each) => each.textContent).join(" ")) < BRIEF_LEAST) {
+          node.textContent = text;
+          tail.remove();
+          return el;
+        }
+        rest.append(...moved);
+        const toggle = h("button", {
+          class: "more-toggle link-button", type: "button", "aria-expanded": "false",
+          onclick: () => {
+            rest.hidden = !rest.hidden;
+            toggle.textContent = rest.hidden ? "more" : "less";
+            toggle.setAttribute("aria-expanded", String(!rest.hidden));
+          },
+        }, "more");
+        el.append(rest, " ", toggle);
+        return el;
+      }
+    }
+    seen += wordsIn(text);
+  }
+  return el;
 }
 
 const kebab = (name) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
@@ -39,7 +93,7 @@ export function append(el, children) {
 
 export function replace(el, ...children) {
   el.replaceChildren();
-  return append(el, children);
+  return briefly(append(el, children));
 }
 
 // --- formatting ----------------------------------------------------------------------
@@ -218,6 +272,84 @@ export function toggle(options, current, onChange) {
     );
   }
   return el;
+}
+
+/** Parts of a page that answer different questions, one in sight at a time: a row of tabs, each
+ *  named in a word or two, and the chosen one's body under it. `items`: `{ id, label, count,
+ *  body }`, a body a node or a function building it the first time its tab is chosen. The arrow
+ *  keys move along the tabs. `onChange(id)` hears the choice. */
+export function tabs(items, { current = null, onChange = null, label = "Sections" } = {}) {
+  const shown = items.filter(Boolean);
+  const built = new Map();
+  const list = h("div", { class: "tab-list", role: "tablist", "aria-label": label });
+  const body = h("div", { class: "tab-body", role: "tabpanel" });
+  const element = h("section", { class: "panel tabs" }, list, body);
+  let chosen = null;
+  const buttons = new Map();
+  const choose = (id, { focus = false } = {}) => {
+    const item = shown.find((each) => each.id === id) || shown[0];
+    if (!item) return;
+    chosen = item.id;
+    if (!built.has(item.id)) built.set(item.id, h("div", { class: "tab-panel" }, typeof item.body === "function" ? item.body() : item.body));
+    replace(body, built.get(item.id));
+    for (const [each, button] of buttons) {
+      const on = each === item.id;
+      button.setAttribute("aria-selected", String(on));
+      button.tabIndex = on ? 0 : -1;
+    }
+    if (focus) buttons.get(item.id).focus();
+  };
+  for (const item of shown) {
+    const button = h("button", {
+      class: "tab", type: "button", role: "tab", "aria-selected": "false",
+      onclick: () => {
+        choose(item.id);
+        onChange?.(item.id);
+      },
+    }, item.label, item.count === undefined || item.count === null ? null : h("span", { class: "tab-count" }, String(item.count)));
+    buttons.set(item.id, button);
+    list.append(button);
+  }
+  list.addEventListener("keydown", (event) => {
+    const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+    if (!step) return;
+    const at = shown.findIndex((each) => each.id === chosen);
+    const next = shown[at + step];
+    if (!next) return;
+    event.preventDefault();
+    choose(next.id, { focus: true });
+    onChange?.(next.id);
+  });
+  choose(current);
+  return { element, choose, get current() { return chosen; } };
+}
+
+/** What a word or a control means, a click away: a small "?" that opens a note under it. What
+ *  the page would otherwise say in a paragraph beside every control. A button and a span, so that
+ *  it can stand in a paragraph, a field's label or a legend. Closes on Escape, or a click
+ *  elsewhere. */
+export function info(text, { label = "What is this?" } = {}) {
+  const note = h("span", { class: "info-note", role: "note", hidden: true }, text);
+  const button = h("button", { class: "info-toggle", type: "button", "aria-label": label, title: label, "aria-expanded": "false" }, "?");
+  const wrap = h("span", { class: "info" }, button, note);
+  const away = (event) => {
+    if (!wrap.contains(event.target)) set(false);
+  };
+  const set = (open) => {
+    note.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
+    wrap.classList.toggle("open", open);
+    if (open) document.addEventListener("click", away, true);
+    else document.removeEventListener("click", away, true);
+  };
+  button.addEventListener("click", () => set(note.hidden));
+  wrap.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || note.hidden) return;
+    event.stopPropagation();
+    set(false);
+    button.focus();
+  });
+  return wrap;
 }
 
 export function copyButton(text, label = "Copy") {

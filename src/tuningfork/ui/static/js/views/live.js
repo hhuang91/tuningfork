@@ -779,7 +779,7 @@ function breakpointForm() {
   const summary = h("p", { class: "bp-summary" });
   const error = h("p", { class: "form-error", hidden: true });
 
-  const responseSet = h("fieldset", null, h("legend", null, "What the model does"),
+  const responseSet = h("fieldset", null, h("legend", null, "The model's answer"),
     h("div", { class: "form-grid" },
       field("Tool", input("tool", "write_file, write_*")),
       field("Path argument", input("path_glob", "*.json")),

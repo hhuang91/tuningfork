@@ -133,7 +133,7 @@ export function heatmap(view, { onProbe = null, probeOff = null, marks = null, f
       if (part === "reasoning") {
         const hot = (view.hotspots || []).filter((spot) => spot.part === "reasoning").length;
         parts.push(h("details", { class: "tk-part tk-reasoning", open: wanted },
-          h("summary", null, `Reasoning · ${plural(count, "token")}${hot ? ` · ${hot} of the likeliest forks are here` : ""}`), holder));
+          h("summary", null, `Reasoning · ${plural(count, "token")}${hot ? ` · ${hot} of the likeliest forking tokens are here` : ""}`), holder));
       } else {
         parts.push(h("div", { class: `tk-part tk-${part || "content"}` }, h("div", { class: "label" }, PART_LABEL[part] || "Answer"), holder));
       }

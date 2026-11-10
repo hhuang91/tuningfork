@@ -24,7 +24,7 @@ from typing import Any, Mapping, Sequence
 
 from tuningfork.analysis.conditions import TIMED_OUT, fork_counted
 from tuningfork.analysis.distribution import Target, agreeing_letters
-from tuningfork.analysis.normalize import Outcome
+from tuningfork.analysis.normalize import Outcome, called_tools
 from tuningfork.analysis.stats import Rate, fisher_exact, holm, rate
 
 
@@ -123,6 +123,26 @@ class ScreenReport:
     def _passed(self, arm: ArmResult) -> bool:
         return arm.adjusted_p is not None and arm.adjusted_p < self.alpha
 
+    def moves(self) -> list[dict[str, Any]]:
+        """What each wording led to at the step, by move: each arm's samples that made it, of its own."""
+        from tuningfork.analysis.paths import gather_moves, json_move
+
+        totals: dict[str, int] = {}
+        for row in self.behaviours:
+            for arm, count in (row.get("by_arm") or {}).items():
+                totals[arm] = totals.get(arm, 0) + count
+
+        def fared(row: dict[str, Any]) -> dict[str, tuple[int, int, int]] | None:
+            """How each arm's forks that did this ended, where the screen ran to the end."""
+            ended = row.get("ended")
+            if ended is None:
+                return None
+            return {arm: (found["passed"], found["failed"], found["no_verdict"]) for arm, found in ended.items()}
+
+        return gather_moves(
+            ((row, row.get("letter"), row.get("by_arm") or {}, fared(row)) for row in self.behaviours), totals, json_move
+        )
+
     def to_json(self) -> dict[str, Any]:
         survivors, worse = {arm.name for arm in self.survivors()}, {arm.name for arm in self.worse()}
         return {
@@ -141,6 +161,7 @@ class ScreenReport:
             ],
             "survivors": sorted(survivors),
             "behaviours": self.behaviours,
+            "moves": self.moves(),
             "checkpoints": self.checkpoints,
             "across_checkpoints": self.across_checkpoints(),
         }
@@ -206,17 +227,23 @@ def compare_verdicts(
     """Each arm's forks to the end against the baseline's, on the task's check: the test of
     `compare_to_baseline`, the check in place of a target at the step. Each sample has
     `passed` and `exclusion`, as a stored fork does; `behaviours` is what the model did at
-    the step in each arm's forks, for the report's letters. `baseline_planned`: the original's
-    forks the screen counts on, where they are not `planned` — a quick look's are whatever the
-    refinement drew before; `quick` reports rates and never a verdict."""
+    the step in each arm's forks, for the report's letters — one answer a fork, in the samples'
+    order, and each behaviour then says how each arm's forks that did it ended (`ended`); given
+    otherwise, none does. `baseline_planned`: the original's forks the screen counts on, where
+    they are not `planned` — a quick look's are whatever the refinement drew before; `quick`
+    reports rates and never a verdict."""
     from tuningfork.analysis.distribution import CHECK_TARGET
 
     base_planned = planned if baseline_planned is None else baseline_planned
     base, base_hits, base_total = _arm_by_check("original", baseline, base_planned)
     counted = [_arm_by_check(name, samples, planned) for name, samples in arms.items()]
+    forks = {"original": baseline, **arms}
+    verdicts = None
+    if behaviours and all(name in forks and len(forks[name]) == len(answers) for name, answers in behaviours.items()):
+        verdicts = {name: [fork_counted(fork.passed, fork.exclusion) for fork in forks[name]] for name in behaviours}
     report = _tested(
         base, base_hits, base_total, counted, alpha=alpha, planned=planned,
-        target=CHECK_TARGET["description"], behaviours=_behaviours(behaviours or {}), reach="end",
+        target=CHECK_TARGET["description"], behaviours=_behaviours(behaviours or {}, verdicts=verdicts), reach="end",
         baseline_planned=base_planned,
     )
     report.quick = quick
@@ -258,18 +285,24 @@ def _tested(
 
 def _behaviours(
     by_arm: Mapping[str, Sequence[Outcome]], target: Target | None = None, letters: Mapping[str, str] | None = None,
+    verdicts: Mapping[str, Sequence[bool | None]] | None = None,
 ) -> list[dict[str, Any]]:
     """Behaviours lettered over every arm together — as `letters` letter them, where given —
     each with how many times each arm did it, and, given the screen's target, how many of its
     samples the target counted (all, none, or some, where a pattern meets what one script of it
-    says and not another's)."""
+    says and not another's). `verdicts`, where each sample was a fork run to the end: how each
+    arm's counted (`fork_counted`), one a sample in the samples' order; each behaviour then says
+    how each arm's forks that did it ended (`paths.ended_json`)."""
+    from tuningfork.analysis.paths import ended_json
+
     counts: Counter[str] = Counter()
     counted: Counter[str] = Counter()
     first: dict[str, Outcome] = {}
     per_arm: dict[str, Counter[str]] = {}
+    ended: dict[tuple[str, str], list[int]] = {}
     for name, outcomes in by_arm.items():
         mine = per_arm.setdefault(name, Counter())
-        for outcome in outcomes:
+        for place, outcome in enumerate(outcomes):
             if outcome.is_error:
                 continue
             counts[outcome.key] += 1
@@ -277,14 +310,20 @@ def _behaviours(
             first.setdefault(outcome.key, outcome)
             if target is not None and target.matches(outcome):
                 counted[outcome.key] += 1
+            if verdicts is not None:
+                verdict = verdicts[name][place]
+                ended.setdefault((outcome.key, name), [0, 0, 0])[0 if verdict is True else 1 if verdict is False else 2] += 1
     ordered = sorted(counts, key=lambda key: (-counts[key], first[key].label))
     return [
         {
             "letter": letter,
             "outcome": first[key].to_json(),
+            "tools": list(called_tools(first[key]) or ()),
             "count": counts[key],
             "by_arm": {name: per_arm[name][key] for name in by_arm},
             **({"target_counted": counted[key]} if target is not None else {}),
+            **({"ended": {name: ended_json(ended.get((key, name), (0, 0, 0))) for name in by_arm}}
+               if verdicts is not None else {}),
         }
         for letter, key in zip(agreeing_letters(ordered, letters), ordered)
     ]
