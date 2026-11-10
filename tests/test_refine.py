@@ -3,15 +3,22 @@ edits proposed for it — on runs a real batch made (the fake agent, the mock mo
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import shutil
+from contextlib import contextmanager
+from pathlib import Path
 
+import httpx
 import pytest
 
-from tuningfork.ops import refine
+from tuningfork.ops import refine, validate
 from tuningfork.ops.batch import execute_batch, prepare_batch
 from tuningfork.ops.common import OperationError
+from tuningfork.proxy.app import create_browse_app
 from tuningfork.specs import hash_tree
+from tuningfork.store import Store
 from tests.helpers import task_stack
 
 RULES = [{"if": "calls", "value": "write_file"}, {"if": "contains", "value": "row_count"}]
@@ -272,3 +279,138 @@ class TestProposals:
         changed = [line for hunk in proposal["diff"] for line in hunk["lines"] if line["op"] != " "]
         assert [line["op"] for line in changed] == ["-", "+"]
         assert shown["screens"] == [] and shown["refinement"]["id"] == made.id
+
+
+@contextmanager
+def copied(stack, *, keep_original: bool = False):
+    """The recordings folder copied whole, as a person copies one to keep or share it, and opened
+    there; the folder it was copied from no longer holding its proposals' saved texts, unless kept."""
+    copy = stack.tmp / "copy"
+    shutil.copytree(stack.store.home, copy, symlinks=True)
+    if not keep_original:
+        shutil.rmtree(stack.store.home / "variants")
+    store = Store(copy)
+    try:
+        yield store
+    finally:
+        store.close()
+
+
+def kept_in(store, proposal) -> Path:
+    """Where a recordings folder keeps a proposal's saved text, by the name its record keeps."""
+    return store.home / "variants" / "tally-report" / f"{proposal.data['variant']}.md"
+
+
+async def fetch(store, path: str) -> httpx.Response:
+    """A page's data as the web UI asks for it, from `tuningfork ui` on that recordings folder."""
+    transport = httpx.ASGITransport(app=create_browse_app(store), raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8788") as client:
+        return await client.get(path)
+
+
+class TestFromACopy:
+    """Issue #76: a refinement's page answered HTTP 500 from a copy of the recordings folder, or
+    the folder moved, once the folder it was made in no longer held its proposals' texts: each
+    proposal's record names the file where it was saved. Each is read where the folder it is opened
+    in keeps it, and a proposal whose text is gone is shown without it, taking no work."""
+
+    def test_a_copy_reads_its_own_saved_texts(self, stack):
+        made = start(stack, a_run(stack))
+        proposal = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="r", proposer={"via": "person"})
+        with copied(stack) as store:
+            found = refine.proposal(store, made.id, proposal.id)
+            assert found.saved() == (kept_in(store, proposal), found.text()) and KEYS["new"] in found.text()
+            answer = asyncio.run(fetch(store, f"/_tuningfork/api/refinements/{made.id}"))
+            assert answer.status_code == 200, answer.text
+            (item,) = answer.json()["proposals"]
+            changed = [line["op"] for hunk in item["diff"] for line in hunk["lines"] if line["op"] != " "]
+            assert item["missing"] is None and changed == ["-", "+"]
+            # A screen's arms name the copy's own file: a fork to the end is given it.
+            plan = refine.prepare_refinement_screen(store, made.id, [proposal.id], base_url=stack.url, n=2)
+            assert [arm.meta["variant_path"] for arm in plan.arms] == [str(kept_in(store, proposal))]
+
+    def test_where_it_was_saved_serves_a_copy_without_its_own(self, stack):
+        made = start(stack, a_run(stack))
+        proposal = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="r", proposer={"via": "person"})
+        with copied(stack, keep_original=True) as store:
+            shutil.rmtree(store.home / "variants")
+            assert refine.proposal(store, made.id, proposal.id).saved()[0] == Path(proposal.data["variant_path"])
+
+    def test_a_file_holding_another_text_is_never_taken_for_it(self, stack):
+        made = start(stack, a_run(stack))
+        proposal = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="r", proposer={"via": "person"})
+        with copied(stack, keep_original=True) as store:
+            own, original = kept_in(store, proposal), Path(proposal.data["variant_path"])
+            own.write_text("Another text.\n", encoding="utf-8")
+            found = refine.proposal(store, made.id, proposal.id)
+            assert found.saved()[0] == original
+            original.write_text("Another text again.\n", encoding="utf-8")
+            assert found.saved() is None
+            assert found.missing() == (f"proposal {proposal.id[:8]}'s saved text is missing: {own} holds another text, "
+                                       f"and {original}, where it was saved, holds another text")
+            # Two places: the hint names this folder's, where the text belongs.
+            assert found.remedy() == f"put its file back at {own}, from a copy of the recordings folder that still holds it"
+
+    @pytest.mark.skipif(os.name == "posix" and os.geteuid() == 0, reason="root reads a file whatever its mode")
+    def test_the_hint_is_for_this_folders_own_file(self, stack):
+        """A copy whose records name a folder this user cannot read, another person's say: the text
+        put back in the copy still brings it back, so the hint stays. Where the copy's own file is
+        there but unreadable, its permissions are the problem, and no file put back is the cure."""
+        made = start(stack, a_run(stack))
+        proposal = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="r", proposer={"via": "person"})
+        with copied(stack, keep_original=True) as store:
+            own, original = kept_in(store, proposal), Path(proposal.data["variant_path"])
+            own.unlink()
+            original.chmod(0)
+            try:
+                found = refine.proposal(store, made.id, proposal.id)
+                assert found.missing().endswith(f"{original}, where it was saved, cannot be read (Permission denied)")
+                assert found.remedy() == f"put its file back at {own}, from a copy of the recordings folder that still holds it"
+                own.write_text("Another text.\n", encoding="utf-8")
+                own.chmod(0)
+                assert found.remedy() is None
+            finally:
+                original.chmod(0o644)
+                own.chmod(0o644)
+
+    def test_a_text_two_of_its_places_name_is_taken_once_when_deleted(self, stack):
+        """A recordings folder reached through a link, its proposal saved under the link's path: both
+        of the proposal's places name one file, which deleting the refinement for good takes once."""
+        made = start(stack, a_run(stack))
+        alias = stack.tmp / "alias"
+        alias.symlink_to(stack.store.home, target_is_directory=True)
+        through = Store(alias)
+        try:
+            proposal = refine.add_proposal(through, made.id, edits=[KEYS], rationale="r", proposer={"via": "person"})
+        finally:
+            through.close()
+        assert Path(proposal.data["variant_path"]).parent.parent.parent == alias
+        assert refine.made_by(stack.store, refine.get(stack.store, made.id)).variants == [kept_in(stack.store, proposal)]
+
+    def test_a_proposal_whose_text_is_gone_is_shown_without_it_and_takes_no_work(self, stack):
+        made = start(stack, a_run(stack))
+        # The gone one first: the other's diff must still be its own, read after a text that is not there.
+        gone = refine.add_proposal(stack.store, made.id, edits=[{"old": KEYS["old"], "new": "Name the keys in report.json."}],
+                                   rationale="r", proposer={"via": "person"})
+        kept = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="r", proposer={"via": "person"})
+        Path(gone.data["variant_path"]).unlink()
+        said = f"proposal {gone.id[:8]}'s saved text is missing: {gone.data['variant_path']} is not there"
+        for masking in (None, stack.store.masking):  # as the page shows it, and as an agent is shown it
+            items = {item["id"]: item for item in refine.view(stack.store, made.id, masking=masking)["proposals"]}
+            added = [line["text"] for hunk in items[kept.id]["diff"] for line in hunk["lines"] if line["op"] == "+"]
+            assert items[kept.id]["missing"] is None and added == [KEYS["new"]]
+            assert items[gone.id]["missing"] == said and items[gone.id]["diff"] == []
+        answer = asyncio.run(fetch(stack.store, f"/_tuningfork/api/refinements/{made.id}"))
+        assert answer.status_code == 200 and len(answer.json()["proposals"]) == 2
+        for attempt in (
+            lambda: refine.prepare_refinement_screen(stack.store, made.id, [kept.id, gone.id], base_url=stack.url, n=2),
+            lambda: validate.prepare_validate(stack.store, made.id, gone.id, n=validate.MINIMUM, runs=validate.MINIMUM,
+                                              proxy_url=stack.url),
+        ):
+            with pytest.raises(OperationError) as refused:
+                attempt()
+            assert (refused.value.code, refused.value.field, refused.value.message) == ("text_missing", "proposals", said)
+            # One place, named in the sentence already.
+            assert refused.value.hint == "put its file back, from a copy of the recordings folder that still holds it"
+        # The other is screened as before.
+        assert refine.prepare_refinement_screen(stack.store, made.id, [kept.id], base_url=stack.url, n=2).arms

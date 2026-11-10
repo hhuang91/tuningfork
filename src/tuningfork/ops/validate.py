@@ -69,6 +69,9 @@ class ValidatePlan:
     #: How every part's runs are set up: as the checkpoint's run was, as its forks are
     #: (`ForkPlan.setup`).
     setup: Any = None
+    #: The file the plan found the proposal's text in (`Proposal.found`): the training runs are
+    #: planned with it, and the held-out runs are given it too (issue #76).
+    variant: Path | None = None
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -200,6 +203,7 @@ def prepare_validate(
     refinement = refine.get(store, refinement_ref)
     refine.refuse_closed(refinement)
     proposal = refine.proposal(store, refinement.id, proposal_ref)
+    variant, _ = proposal.found()  # its text where it is found, this recordings folder's own first
     screen = surviving_screen(store, refinement, proposal)
 
     checkpoint = load(store, refinement.run_id, str(refinement.step_idx))
@@ -285,7 +289,6 @@ def prepare_validate(
 
     proxy_url = (proxy_url or (proxy.url if proxy is not None else None) or default_proxy()).rstrip("/")
     base_url = f"{proxy_url}/v1"
-    variant = Path(proposal.data["variant_path"])
     baseline = refinement.folder / "baseline.md"
     forward = prepare_to_end(
         store, run.id, str(refinement.step_idx), n=n, concurrency=concurrency, variant=variant,
@@ -327,7 +330,7 @@ def prepare_validate(
         n=n, runs=runs, alpha=alpha, concurrency=concurrency, harness=harness, model=model,
         proxy_url=proxy_url, forward=forward, training_plans=training_plans, screen=screen,
         held_out_recorded=held_recorded, private_base=private_base, keep_private=keep_private,
-        max_output=forward.original.proxy.raw.get("max_output"), setup=setup, warnings=warnings,
+        max_output=forward.original.proxy.raw.get("max_output"), setup=setup, variant=variant, warnings=warnings,
     )
 
 
@@ -395,8 +398,18 @@ def execute_validate(
     from tuningfork.ops.batch import execute_batch
     from tuningfork.ops.forks import execute_to_end_plan
     from tuningfork.ops.private import run_verdict_only
-    from tuningfork.ops.refine import _replace
+    from tuningfork.ops.refine import _held, _replace
 
+    # The proposal's text, in the file the plan found it in and planned its runs with: gone or
+    # changed since, nothing runs, and no record says a validation started.
+    variant = plan.variant or plan.proposal.found()[0]
+    text, state = _held(variant, plan.proposal.id)
+    if text is None:
+        raise OperationError(
+            f"proposal {plan.proposal.id[:8]}'s saved text is no longer where the validation's plan found it: "
+            f"{variant} {state}",
+            hint="plan the validation again", code="text_missing", field="proposals",
+        )
     vid = uuid.uuid4().hex
     path = plan.refinement.folder / FOLDER / f"{vid}.json"
     tag = {"refinement": plan.refinement.id, "validation": vid}
@@ -416,7 +429,6 @@ def execute_validate(
         "forward": None, "training": None, "held_out": [], "complete": False, "status": "running",
     }
     _replace(path, record)
-    variant = Path(plan.proposal.data["variant_path"])
     baseline = plan.refinement.folder / "baseline.md"
     try:
         emit(progress, "validation", part="forward", id=vid)

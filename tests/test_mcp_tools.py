@@ -503,6 +503,38 @@ def test_a_refinement_of_a_run_given_another_text_says_so_to_an_agent(tmp_path, 
             assert not any("changed since" in line for line in answer.lines)
 
 
+def test_a_proposal_whose_saved_text_is_gone_is_said_to_an_agent(tmp_path, mock_server, monkeypatch):
+    """Issue #76: show_refinement failed outright where a proposal's saved text was gone. It shows
+    the rest, says which proposal cannot be screened and why, and the packet keeps what was tried
+    without a diff it no longer has."""
+    from pathlib import Path
+
+    from tuningfork.mcp.tools import Context, RefinementRef, show_refinement
+    from tuningfork.ops import refine
+    from tuningfork.ops.batch import execute_batch, prepare_batch
+    from tests.helpers import task_stack
+
+    with task_stack(tmp_path, mock_server, monkeypatch) as stack:
+        stack.spec.path.write_text(json.dumps(stack.spec.to_dict()), encoding="utf-8")
+        plan = prepare_batch(stack.store, stack.spec.path, base_url=f"{stack.url}/v1", workdir=stack.tmp / "batches",
+                             model="m", harness="fake", n=1)
+        (outcome,) = execute_batch(stack.store, plan).outcomes
+        made = refine.create(stack.store, outcome.run_id, "write_file", target_rules=[
+            {"if": "calls", "value": "write_file"}, {"if": "contains", "value": "row_count"}])
+        proposal = refine.add_proposal(stack.store, made.id, edits=[
+            {"old": "Write the totals to report.json.", "new": "Name the keys in report.json."}],
+            rationale="the check reads the keys", proposer={"via": "mcp"})
+        Path(proposal.data["variant_path"]).unlink()
+        shown = show_refinement(Context(store=stack.store, jobs=None), RefinementRef(refinement=made.id, evidence=True))
+    said = f"proposal {proposal.id[:8]}'s saved text is missing: {proposal.data['variant_path']} is not there"
+    (item,) = shown.data["proposals"]
+    assert item["missing"] == said and item["diff"] == []
+    assert f"{said}; the proposal cannot be screened until the person puts its text back" in shown.lines
+    (tried,) = shown.data["packet"]["tried_before"]
+    assert tried["proposal"] == proposal.id[:8] and tried["changed"] is None
+    assert tried["rationale"] == "the check reads the keys"
+
+
 def test_a_step_screen_at_the_ceiling_says_why_nothing_could_show():
     from tuningfork.ops import compact
 

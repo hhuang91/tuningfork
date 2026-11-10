@@ -481,8 +481,9 @@ Screens proposals at the step, each against a fresh arm of the original drawn fi
 exact test, Holm-corrected over the proposals named before the first sample. Before it samples,
 it says what an arm would need to survive, and it refuses to run when nothing could.
 
-- `--proposals a,b` — the family the correction counts (by default every proposal, if there are
-  at most 6); `-n N` — samples an arm, the original's included (default 20); `--alpha`.
+- `--proposals a,b` — the family the correction counts (by default every proposal whose saved text
+  is there, if there are at most 6); `-n N` — samples an arm, the original's included (default
+  20); `--alpha`.
 - `--to-end` — each arm's samples forks run to the end through the harness, the task's check
   deciding. They are drawn from several runs of the task at the same step (`--checkpoints`,
   default 4), each set up as the run being refined was (the same harness, model, harness options,

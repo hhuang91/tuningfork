@@ -216,7 +216,9 @@ def _tried(store: Store, refinement: Any) -> list[dict[str, Any]]:
         ]
         tried.append({
             "proposal": proposal["id"][:8],
-            "changed": [f"{line['op']} {line['text']}" for line in changed][:12],
+            # A proposal whose saved text is gone has no diff: its rationale and verdicts still say
+            # what was tried.
+            "changed": [f"{line['op']} {line['text']}" for line in changed][:12] if not proposal.get("missing") else None,
             "rationale": compact.clip(proposal["proposers"][0].get("rationale"), 300),
             "screened": verdicts or None,
         })

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 import httpx
@@ -18,6 +19,7 @@ from typer.testing import CliRunner
 
 from tuningfork.ops import approve, refine, trash, validate
 from tuningfork.ops.common import OperationError
+from tuningfork.store import Store
 from tests.helpers import control_headers
 from tests.test_validate import screened, stack  # noqa: F401 — `stack` is the fixture
 
@@ -114,6 +116,25 @@ class TestDeletedForGood:
         assert store.get_run(made.run_id) is not None
         assert (stack.tmp / "skills-src" / "tally-report" / "SKILL.md").is_file()
         assert trash.listing(store).empty
+
+    def test_from_a_copy_it_takes_the_copys_own_saved_texts_never_the_originals(self, stack):
+        """Issue #76: a proposal's record names its text where it was saved, in the folder it was
+        made in. Deleted for good from a copy of that folder, a refinement takes the copy's own."""
+        made, proposal = screened(stack)
+        screens = [experiment.id for experiment in stack.store.experiments(kind="screen", limit=50)]
+        copy = stack.tmp / "copy"
+        shutil.copytree(stack.store.home, copy, symlinks=True)
+        own, original = copy / "variants" / "tally-report" / f"{proposal.data['variant']}.md", Path(proposal.data["variant_path"])
+        store = Store(copy)
+        try:
+            assert refine.made_by(store, refine.get(store, made.id)).variants == [own]
+            trash.trash(store, "refinement", made.id)
+            removed = trash.purge(store, "refinement", made.id).to_json()
+            assert removed["removed"]["refinements"] == 1 and removed["removed"]["variants"] == 1 and not own.exists()
+        finally:
+            store.close()
+        assert original.is_file() and refine.get(stack.store, made.id).folder.is_dir()
+        assert all(stack.store.get_experiment(each) is not None for each in screens)
 
     def test_emptying_the_trash_takes_refinements_too(self, stack):
         store = stack.store
