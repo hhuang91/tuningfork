@@ -74,6 +74,8 @@ class PositionResult:
     #: Why the run's own token here seldom led back to the target, when it did: "too_fine" or
     #: "undecided" (see `_why_missed`).
     why_missed: str | None = None
+    #: The text the base wrote just after its token here, for reading.
+    after: str = ""
 
     def flips(self) -> list[ArmResult]:
         return [
@@ -96,6 +98,7 @@ class PositionResult:
             "position": self.position,
             "part": self.part,
             "context": self.context,
+            "after": self.after,
             "baseline": self.baseline.to_json(),
             "alternatives": [
                 {**arm.to_json(), "flips": arm in self.flips(),
@@ -176,6 +179,7 @@ def forking_report(
     target: Target,
     alpha: float = 0.05,
     contexts: dict[int, str] | None = None,
+    afters: dict[int, str] | None = None,
     parts: dict[int, str | None] | None = None,
     letters: Mapping[str, str] | None = None,
 ) -> ForkingReport:
@@ -216,6 +220,7 @@ def forking_report(
             position=position,
             part=(parts or {}).get(position),
             context=(contexts or {}).get(position, ""),
+            after=(afters or {}).get(position, ""),
             baseline=baseline,
             alternatives=alternatives,
             alpha=alpha,

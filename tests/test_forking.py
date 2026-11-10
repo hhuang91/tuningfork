@@ -119,6 +119,8 @@ class TestProbe:
         assert (forced.target.successes, forced.target.total) == (0, 6)
         assert forced.adjusted_p == pytest.approx(forced.p_value) and forced.p_value < 0.01
         assert position.flips() == [forced]
+        # The token in its sentence, for reading: the text the answer had on both sides of it.
+        assert position.context.endswith("call:⟦read_file⟧") and position.after.startswith("{path:")
         assert report.reproduced.point == 1.0
         assert position.weighted == pytest.approx(0.6, abs=1e-4)
         # what was forced is kept with each sample, and the prompt's ids are never stored
@@ -418,7 +420,7 @@ class TestContinuations:
         # In words, as the terminal prints them and MCP pages them: the forced token marked.
         said = found.text()
         assert "  forced ' search': 2 continuations" in said
-        assert "    A read_file(path='data.csv') — 2, what was counted" in said
+        assert "    A read_file(path='data.csv') — 2, target" in said
         assert "reasoning: ⟦ search⟧.\n" in said and 'tool call: call:search_files{pattern:<|"|>data.csv<|"|>}' in said
 
     async def test_narrowed_to_a_position_a_token_or_a_behaviour(self, store, served):

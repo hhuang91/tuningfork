@@ -106,7 +106,7 @@ export async function importView(root, _params, scope) {
   }
 
   function sessionsView(sessions) {
-    return panel("Which session?", h("div", { class: "stack", style: { gap: "6px" } },
+    return panel("Which session?", h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
       h("p", { class: "hint" }, `The file holds ${plural(sessions.length, "session")}: a run is one conversation.`),
       sessions.map((found) => h("label", { class: "target-choice" },
         h("input", { type: "radio", name: "session", value: found.id,
@@ -117,7 +117,7 @@ export async function importView(root, _params, scope) {
 
   /** A folder field for one skill, keeping what was typed across previews. */
   function folderField(key) {
-    const field = input(`skill_dir:${key}`, { placeholder: "optional: its folder on this machine" });
+    const field = input(`skill_dir:${key}`, { placeholder: "optional: its skill folder on this machine" });
     field.value = folders.get(key) || "";
     field.addEventListener("change", () => { folders.set(key, field.value); look(); });
     return field;
@@ -195,7 +195,7 @@ export async function importView(root, _params, scope) {
         + "tools (Hermes's export keeps none). Each step then offers that run's tools." }))),
     preview,
     panel("The run", h("div", { class: "stack" },
-      h("p", { class: "hint" }, "Every skill the conversation shows is kept with the run. Where you name a skill's folder "
+      h("p", { class: "hint" }, "Every skill the conversation shows is kept with the run. Where you name a skill folder "
         + "above, the whole folder is kept, scripts and references too; otherwise only its SKILL.md, as the model read it."),
       h("div", { class: "form-grid" },
         field("Label", label),
@@ -267,7 +267,7 @@ export async function scenarioFromRunView(root, [runId], scope) {
     if (key === pickedFor) return;
     pickedFor = key;
     const task = found.skill_dir_from === "task";
-    const why = (task ? "The folder of the task this run was launched from" : "The folder named when this chat was imported")
+    const why = (task ? "The skill folder its task file names" : "The skill folder named when this chat was imported")
       + (found.skill_dir_given
         ? `. This run was given another skill text, not the one this folder holds: ${found.skill_dir_given}. Each run `
           + "reads the folder as it is now, and an approved edit is written to it."
@@ -281,7 +281,7 @@ export async function scenarioFromRunView(root, [runId], scope) {
       skills, name: "run",
       fixed: found.skill_dir ? {
         path: found.skill_dir, why, changed: Boolean(found.skill_dir_changed), given: Boolean(found.skill_dir_given),
-        label: task ? "The task's folder, as it is now" : "The folder named at import, as it is now",
+        label: task ? "The task's skill folder, as it is now" : "The skill folder named at import, as it is now",
       } : null,
       copy: found.can_copy ? { where: `scenarios/<name>/${found.copy_dir}/` } : null,
     });
@@ -365,7 +365,7 @@ export async function scenarioFromRunView(root, [runId], scope) {
           + `a variant replaces it everywhere the model reads it. ${filed}`
         : `The skill it studies, which never came into the conversation: each run starts from the message chosen. ${filed}`
       : several ? "Choose the skill it studies: a scenario studies one, and starts where it came in."
-        : "No skill shows in the conversation: choose its folder below, and the scenario studies the skill in it.");
+        : "No skill shows in the conversation: choose its skill folder below, and the scenario studies the skill in it.");
     drawFolder();
     replace(steps, unknown ? null
       : [h("span", { class: "form-label" }, "Each run beside the chat: what it is given, then what it does"), stepsView(found, promptRun)]);
@@ -454,10 +454,10 @@ export async function scenarioFromRunView(root, [runId], scope) {
       // A way to the skill's folder chosen, and nothing named by it yet: never the run's own in its place.
       const chosen = picker.value();
       if (chosen.kind === "known" && !chosen.path) {
-        throw Object.assign(new Error("Choose the skill from the list, or another way to its folder."), { field: "skill_known-run" });
+        throw Object.assign(new Error("Choose the skill from the list, or another way to its skill folder."), { field: "skill_known-run" });
       }
       if (chosen.kind === "path" && !chosen.path) {
-        throw Object.assign(new Error("Name the skill's folder by its path, or another way to it."), { field: "skill_dir-run" });
+        throw Object.assign(new Error("Name the skill folder by its path, or another way to it."), { field: "skill_dir-run" });
       }
       return said;
     },
@@ -488,11 +488,11 @@ function scenarioPlan(plan) {
       : plan.check.reply_contains !== undefined ? ["the final reply holds ", h("span", { class: "mono" }, JSON.stringify(plan.check.reply_contains))]
         : plan.check.reply_matches !== undefined ? ["the final reply matches ", h("span", { class: "mono" }, `/${plan.check.reply_matches}/`)]
           : h("span", { class: "mono" }, JSON.stringify(plan.check));
-  return h("div", { class: "stack", style: { gap: "6px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
     kv([
       ["scenario", [h("span", { class: "mono" }, plan.name), h("span", { class: "muted" }, ", a task of its own on the Scenarios page")]],
       ["its skill", [h("span", { class: "mono" }, plan.skill), h("span", { class: "muted" }, plan.own_skill
-        ? " — a copy kept in the scenario's own folder" : " — an approved edit is written to its folder, "), plan.own_skill ? null : h("span", { class: "mono" }, plan.skill_dir)]],
+        ? " — a copy kept in the scenario's folder, standing in for the skill folder" : " — an approved edit is written to its skill folder, "), plan.own_skill ? null : h("span", { class: "mono" }, plan.skill_dir)]],
       ["each run", `continues ${plural(plan.context, "message")} of the conversation`
         + (plan.in_turn ? `, then ${plural(plan.in_turn, "message")} of the prompt's own turn, as already done` : "")
         + (plan.next_skill ? `; it stops where its model loads ${plan.next_skill.skill}` : "")],

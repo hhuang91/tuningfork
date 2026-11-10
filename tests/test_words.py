@@ -36,3 +36,11 @@ def test_a_page_phrase_finds_its_term():
     # `tuningfork glossary "full test runs"`: a word read on a page leads to the precise one.
     assert glossary.lookup("full test runs")[0].term == "validation"
     assert glossary.lookup("Wording")[0].term == "arm"
+
+
+def test_a_condition_is_never_a_set_up():
+    # The pages call a target the condition, and a run's set-up is a set-up in every front end:
+    # the word had meant both.
+    assert glossary.lookup("condition")[0].term == "target"
+    assert glossary.lookup("set-up")[0].term == "set-up"
+    assert not [term.term for term in glossary.TERMS if term.term == "condition"]

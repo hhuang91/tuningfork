@@ -915,7 +915,7 @@ CATALOG: dict[str, Kind] = {
         Kind(
             name="batch",
             lane=BACKGROUND,
-            summary="Run a task N times through its harness, each run in a fresh workspace and home.",
+            summary="Run a task N times through its harness, each run in a run folder of its own.",
             params=BatchParams,
             prepare=prepare_batch_job,
             execute=execute_batch_job,

@@ -257,7 +257,7 @@ function emptyState() {
           h("li", null, "Point your harness's OpenAI-compatible base URL at this proxy: ", h("code", { class: "mono" }, base),
             ". Every model call it makes is recorded as a step."),
           h("li", null, "Or let tuningfork start it: ", h("a", { href: "#/batch" }, "run a task"),
-            " from its task file, each run in a fresh workspace and home."),
+            " from its task file, each run in a run folder of its own."),
           h("li", null, "Then find where runs diverge, and resample or A/B a wording at that step."))
       : h("p", null, "This store has no recordings. Start `tuningfork serve` and run a harness through it."),
   );

@@ -102,8 +102,8 @@ blobs, snapshot objects, the folder a batch or a set of forks was laid out in wi
 copy its runs were given (`trash._remove_groups`) — with a two-minute grace for a recording in
 flight, swept once it has passed (`trash.sweep_if_due`: a running proxy looks every half
 minute, and a later deletion sweeps everything). A path a skill added, a scenario or a
-remaining launch's task file names stays where it is, the rest of its folder going
-(`trash._named`, `_clear`), and a batch's folder holding one stays. A launch's folder
+remaining launch's spec names stays where it is, the rest of its folder going
+(`trash._named`, `_clear`), and a batch's folder holding one stays. A run folder
 outside the recordings folder goes only where tuningfork marked its group as made for this
 recordings folder (`runner.GROUP_MARK`, `made_for`, `make_group`: 0700): a copy of the
 recordings folder, whose launches name the original's folders, removes none of them, nor its
@@ -113,7 +113,7 @@ record of the work, a chain its record and the skill each link left, and what wa
 — a scenario, a skill added — what it took: each goes only as itself, a chain by hand. A
 refinement goes with what it made (`refine.made_by`): its screens, its validations' forks and
 fresh training runs, its proposals' saved texts and its folder — never the run it studies, nor
-the changelog and old versions an approval wrote beside the skill's folder. One in the trash is
+the changelog and old versions an approval wrote beside the skill folder. One in the trash is
 shown as it was and takes no new work (`refine.refuse_closed`). A fork an experiment drew goes
 to the trash, and is deleted, only with its experiment, as a thread goes with its run
 (`trash.experiment_of_fork`): its verdict is the experiment's, kept in its sample, and taking
@@ -135,7 +135,7 @@ person named), a skill added from what a run's model read (its record's `origin`
 gone, the copy it kept, whichever that was), with what an approval kept beside it, forgotten too,
 a chain's record, a refinement's but what a person gave it (`GIVEN_TO_A_REFINEMENT`, a proposal
 only a person made), a scenario's conversation and spec but `GIVEN_TO_A_SCENARIO`, in the trash
-too — a run's or a task file's alike, since nothing records which — and its copy of a skill where
+too — a run's or a spec's alike, since nothing records which — and its copy of a skill where
 that is one of the skills read. What a mask took is looked for wherever else it stands — of an
 address, what reads as a key (`config.key_like`), never a word or a date its query held — as are
 tuningfork's own keys — never this process's variables, whose local defaults
@@ -185,7 +185,7 @@ given — its harness's own system prompt and tools, the chat's shown and never 
 steps from the prompt on, each by what a run does with it (`Start.steps`, `STEP_PARTS`: already
 done, where each run starts, made fresh by its model, past where it stops, after the person's next turn).
 The skill is the folder the person names, the import named or a launched run's task's (an approval
-writes there), else a copy in the scenario's own folder (`skill/<name>/`: the copy the run kept, or
+writes there), else a copy in the scenario's folder (`skill/<name>/`: the copy the run kept, or
 the SKILL.md the model read, given frontmatter where its harness showed none) — never the run's own
 copy, which its A/Bs read. Where that folder no longer holds what a launched run had — whole folders
 compared, as every copy keeps them (`experiments.differs_from_given`, `specs.kept_alike`) — what
@@ -196,7 +196,7 @@ another text — a chain's later link given a skill the link before changed, `ba
 the folder offered beside it, saying what the run was given and never
 that its task's file changed (the person's choice, issue #55); or, where an older run's record
 cannot tell, the folder taken, said to differ. The check is the person's, else a launched run's task's own, what it reads
-from the task's folder (`$TUNINGFORK_SPEC_DIR/…`) copied beside the spec; the inputs are a launched
+from the spec's folder (`$TUNINGFORK_SPEC_DIR/…`) copied beside the spec; the inputs are a launched
 run's workspace as the scenario's first call stands in it, from the snapshots, else the files the
 conversation's calls name are listed for the person to add; the eval is named by the scenario, a
 task of its own, never counted with the run's. Each run continues that conversation: the runner
@@ -219,7 +219,7 @@ workspace as it is, and the run counts, its result saying where it stopped (`sto
 A task file a person has becomes a scenario too (`scenarios.prepare_import`, `prepare_upload`,
 `execute_import`; the Scenarios page's Add a task file you have, `POST /scenarios/import`), planned
 before anything is written: by its path, its skill folder kept where it is, or its folder uploaded,
-the skill folder it holds copied into the scenario's own (`skill/<name>/`). Either way its input
+the skill folder it holds copied into the scenario's folder (`skill/<name>/`). Either way its input
 files, the conversation its runs continue, and what its check reads from its folder
 (`$TUNINGFORK_SPEC_DIR/…`, read inside it as the shell reads it, `//` too) come with it; a
 scenario whose check reads what its folder lacks says so before it runs. A form plans an upload by
@@ -227,7 +227,7 @@ its files' sizes, and makes it with the data of the files it takes alone (`scena
 plan's `taken`). A new scenario's page and
 Make a scenario name the skill alike (`ui/static/js/skillpick.js`): the scenario's name, the
 harness (of a run), the skill's name, then its folder — an existing skill the Skills page lists, or
-a path, a relative one shown after the scenario's own folder it is taken from, and of a run a copy
+a path, a relative one shown after the scenario's folder it is taken from, and of a run a copy
 of what it had — each greyed where the run says it, but a folder that has changed since the run,
 offered beside a copy of what the run had (`copy_skill`), and one the run was never given, offered
 beside the copy, which is chosen to begin with (`skill_dir_given`). A scenario's input files go into
@@ -242,7 +242,7 @@ variables, those its task names in `check_env`, and those the configs name for e
 `config.json`, read as its other settings are, once where a batch, fork or trial is planned,
 `specs.check_env_sources` — never tuningfork's keys), and a run's check runs in the sandbox its
 run ran in (`Sandbox.check_command`): the workspace as
-`/home/user/project`, an empty home, the task's folder shown read-only (`Sandbox.shows`: never
+`/home/user/project`, an empty home, the spec's folder shown read-only (`Sandbox.shows`: never
 one of tuningfork's own, `own`, nor one holding `/tmp` or `/home`), a Python environment on its
 `PATH` that a hidden folder holds shown too, and what is hidden inside a shown folder hidden
 still. A check tried (`ops/checks.py`) and one run along a run run in one like it wherever
@@ -257,7 +257,7 @@ variable it got whose name is a secret's stands
 characters or more as a mask takes a value (`config._FOUND`). A run's result, its launch's exit
 and its check along it keep it so, masked once. A check that prints what it found wrong, one finding a line, gets a tally
 (`ops/tally.py`; `tuningfork tally`, MCP's tally_failures, the divergence and experiment pages):
-each finding counted across a task's failed runs by condition, or a screen's failed forks by
+each finding counted across a task's failed runs by set-up, or a screen's failed forks by
 arm, its numbers and colours masked and a run counted once, the most common first — the failure to fix
 first, not the first one read. Run along a run (`ops.checks.check_along`; `tuningfork check-along`, the
 `check-along` job kind; the benchmark's driver does it for the baseline before T starts) — on its
@@ -370,7 +370,7 @@ verdicts leave. Every part is set up as the checkpoint's run was, as its forks a
 sandbox and clock; an MCP server, recorded by name only, reaches none of them, and the plan
 says so once.
 It is refused when the skill's file, its other files or the training eval
-changed since the checkpoint's run, or the run was given another text than the skill's folder holds
+changed since the checkpoint's run, or the run was given another text than the skill folder holds
 — said in those words, as the refinement says it from its start (`refine.source_differences`,
 `source_note`, and `shown_source` wherever one recorded before is shown or started again) — and unless the proposal survived its latest complete
 screen (`validate.latest_screen`: a screen of more proposals, or one run to the end, can undo
@@ -475,7 +475,7 @@ recorded) and set up as it was (a harness option changes what the model is told:
 told otherwise departs from the recording at its first step; an MCP server, recorded by
 name only, is not carried, and the plan warns). Where bubblewrap runs, every launch runs in a sandbox (`sandbox.py`): it sees
 its home as `/home/user` and works in `/home/user/project`, the same in every run, because
-a few digits of a launch's own folder name were seen to change what the model did; the
+a few digits of a run folder's path were seen to change what the model did; the
 rest of the machine read-only, `/tmp` and its processes its own, and the recordings folder,
 the runs' folder and the spec's folder empty inside; its check runs there too, the spec's
 folder shown to it. Where the person's home is a link, it is shown as one, to the folder it
@@ -484,7 +484,7 @@ mount of its own, it would show what is hidden in it. A launch records its sandb
 a sandboxed run is refused without one, and a batch's plan warns when there is none.
 `TUNINGFORK_SANDBOX_HIDE` names folders every launch sees empty besides tuningfork's own, as
 PATH is written — a benchmark's folder of tasks, whose checks and keys an agent given the file
-system would otherwise read; a check sees them empty too, but for its own task's folder, where
+system would otherwise read; a check sees them empty too, but for its spec's folder, where
 its scripts and keys belong. `TUNINGFORK_SANDBOX=off` turns it off — the suite's `conftest.py` does, and
 `tests/test_sandbox.py` turns it back on where bubblewrap can run. `TUNINGFORK_CLOCK=YYYY-MM-DD
 HH:MM:SS` starts every launch's clock at that instant (libfaketime under `LD_PRELOAD`, monotonic
@@ -539,7 +539,7 @@ however many came after it. The list names each job by the sidebar section of th
 (`KIND_SECTION` in `ui/static/js/jobs.js`) and, finished, what it made, leading there (`madeLink`,
 the same file); a finished job's page hands off to what it made — it says what it found in a line
 (`found` in `ui/static/js/results.js`: the verdict the experiment's page leads with, from the same
-helpers, where that page has one), with what was counted, the rates, what was left out or is still
+helpers, where that page has one), with the condition, the rates, what was left out or is still
 open in that page's words, and the runs it made, its log folded below — and the note when it ends
 leads there. A question at a held call and a check tried keep their answers on the job's page,
 their only home once the call is decided or the tester closed.
@@ -620,9 +620,11 @@ loop and the ways in — and its words have a page of their own, `#/words`, each
 `ops/glossary.py`. Each page leads with its take-away: a run its verdict strip; the divergence
 page the step whose behaviour best predicts the verdict, in a callout with the ways to it, then the
 runs side by side one step at a time, from the first split, every step a click away (`atStep` in
-`views/compare.js`: the first split is often not the step that decides); a forking-token probe the
-forced tokens that changed what the model did, each beside the run's own token there — what each
-led to, and how often it did what was counted (`flipsTable` in `results.js`);
+`views/compare.js`: the first split is often not the step that decides); a forking-token probe each
+position where a forced token changed what the model did, as a tree under its place in the answer:
+the token boxed in its sentence, a word or two each side, and under it the original token and each
+forced one, the model's chance of each and how often the condition was met, a badge after the rate
+a forced one moved, the behaviours each led to a link away (`flipsTree` in `results.js`);
 Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model, a
 word and a colour each, the server in the status strip's words (`serverWord`), and what that means
 in at most three sentences (`whatItMeans`); a refinement its four stages in a line (`stagesOf` in
@@ -848,7 +850,7 @@ profile, the pages and the terminal — but a password whose part before an unes
 `tests/test_store_masking.py` fails on code elsewhere that masks or writes a blob itself, and
 `tests/test_canaries.py` plants a key in the loop's inputs and searches every row, blob and file
 for it, and every answer an agent is given over MCP, but the files kept as they were
-(`KEPT_AS_IT_WAS`: a launch's folders, the workspace's snapshots, a scenario's inputs, the
+(`KEPT_AS_IT_WAS`: run folders, the workspace's snapshots, a scenario's inputs, the
 wordings tried), what a copy of the skill a launched run was given holds as given, or a
 refinement's copy of it (`GIVEN_COPIES`, `GIVEN_TO_A_REFINEMENT`), and what a scenario's spec
 takes from its run's task as written (`GIVEN_TO_A_SCENARIO`). Never report a rate without its
@@ -880,9 +882,10 @@ than on a hardcoded assumption about which server is running.
 - The UI puts every string on the page as a text node — payloads are full of markup-looking
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
 - The web UI says some terms more plainly than the CLI, MCP and the docs, which keep the precise
-  words: an arm is a *wording*, a target *what you count* (in a result, *what was counted*, its
-  label on a line of its own; a refinement's, *what the model should do*), a screen a *test at this
-  step*, a validation *full test runs*, a spec a *task file*.
+  words: an arm is a *wording*, a target the *condition* (over a result, *Condition* on a line of
+  its own; a probe's rows, *condition met*; a refinement's, *what the model should do*), a screen a
+  *test at this step*, a validation *full test runs*, a spec a *task file*. A run's set-up is a
+  *set-up* in every front end, so a condition is never a set-up: the word had meant both.
   `ui/static/js/words.js` holds the phrase for each term the glossary defines (a term's `ui`;
   `tests/test_words.py` holds the two together), the Words page shows both, and `tuningfork
   glossary` finds a term by its page phrase too. A sentence the server writes — a refusal, a plan's
@@ -893,6 +896,15 @@ than on a hardcoded assumption about which server is running.
   before what it is not ("a lead, not a verdict"); the plain phrase first, the precise term after
   it, muted or in a tooltip; help under a field says what to type, why it matters goes in a
   tooltip; buttons are verb phrases, with an ellipsis only where a form opens.
+- A place on disk is shown, never only described: a folder is drawn as the tree it is, each line
+  with what it is for beside it (`folderTree` in `ui/static/js/folders.js`), the part of a path
+  inside the recordings folder shown from there. Their names are the glossary's, the same in
+  every front end but one: the *skill folder* (a batch copies it, an approval writes it), the
+  *recordings folder*, a *run folder* and its *workspace*, a *copy* of a skill (a batch's, a
+  scenario's, an import's, a refinement's, a skill added as a copy; a scenario's and an added one
+  stand in for a skill folder); and the *task file*, which the CLI and the docs call a spec. The
+  Words page draws them in one diagram, where things live (`whereThingsLive`); a folder's tree
+  links to it. Plain words had made "its own folder" of three different folders.
 - A page reads top to bottom in the order the work goes: what to do first, then what it made.
   What are alternatives, or run beside what is read, sit side by side — the two ways to propose
   an edit, the work on a run's step beside the run. On a narrow page alternatives stack, and the
@@ -903,17 +915,17 @@ than on a hardcoded assumption about which server is running.
   gate's, and a change in how often a task's check passes (an A/B or a screen run to the end).
   Any other significant result is the accent's colour, said in words with its direction —
   tuningfork is never told whether more of a behaviour is wanted. A rate is never green or red,
-  a pass rate included: its bar is the accent's (a variant's teal), the verdict it counts said in
+  a pass rate included: its bar is the accent's (a variant's cyan), the verdict it counts said in
   its label. One meaning a colour, the legend written beside the tokens in `app.css` and shown in
   a line on the Guide: amber (`warn`) a caution — not counted, unfinished, paused, held,
   something missing or gone wrong (a failed call or job is one, never a verdict's red); the
   accent what can be acted on, what is current or significant, and the model's own answer;
-  purple a skill's own words; teal (`change`, with a pencil) what a person or tuningfork changed
+  purple a skill's own words; cyan (`change`, with a pencil) what a person or tuningfork changed
   — an edit at a breakpoint, a variant swapped in — on chips, outlines and banners, never a
-  step's border; everything else grey, what is fine included (found, done, a file that matches,
-  every role but the assistant's). Red keeps only what every page means by it besides: a diff's
-  removed lines beside its green added ones, a button that deletes, a field or an action to put
-  right.
+  step's border, and kept off green (a pale teal fill had read as a pass); everything else grey,
+  what is fine included (found, done, a file that matches, every role but the assistant's). Red
+  keeps only what every page means by it besides: a diff's removed lines beside its green added
+  ones, a button that deletes, a field or an action to put right.
 - tuningfork's own endpoints (`/_tuningfork/`) answer only to a loopback Host, refuse
   cross-site state changes by Origin, and accept no state change without the access token
   (`api/guard.py`): a loopback port is reachable from any page in the user's browser. Keep new endpoints under

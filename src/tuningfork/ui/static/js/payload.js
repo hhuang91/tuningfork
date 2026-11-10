@@ -1,7 +1,7 @@
 // Rendering what crossed the wire: messages, skills inside them, tool calls, responses.
 // Shared by the step view, held calls and comparisons.
 
-import { h, chip, count, firstLine, longText, numbered, pretty } from "./dom.js";
+import { h, chip, count, firstLine, icon, longText, numbered, pretty } from "./dom.js";
 
 // A content value's text: a string, or a list of parts or blocks (OpenAI parts; Anthropic
 // text, thinking and tool_result blocks, when a held request is shown in its own format).
@@ -129,9 +129,9 @@ export function skillMark(span, { recorded = true } = {}) {
 /** Whether the text the model read is, byte for byte, a skill file the run recorded. */
 export function fileChip(span, recorded) {
   if (span.file && span.match === "body") {
-    return chip(`✓ ${span.file}`, "muted", "The text matches this file's body; the harness left out its frontmatter. Line numbers are the file's");
+    return chip([icon("check"), span.file], "muted", "The text matches this file's body; the harness left out its frontmatter. Line numbers are the file's");
   }
-  if (span.file) return chip(`✓ ${span.file}`, "muted", "The text matches this file byte for byte, so its line numbers are the file's");
+  if (span.file) return chip([icon("check"), span.file], "muted", "The text matches this file byte for byte, so its line numbers are the file's");
   if (!recorded) {
     return chip("skill files not recorded", "muted", "A batch run records its skill files when it finishes; this run has none recorded (yet)");
   }

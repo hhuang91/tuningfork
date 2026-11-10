@@ -42,6 +42,12 @@ def _context(stream: Any, position: int, width: int = 40) -> str:
     return f"…{before[-width:]}⟦{stream.token_text(position)}⟧"
 
 
+def _after(stream: Any, position: int, width: int = 40) -> str:
+    """What the base went on to write after the position's token, for reading: the page shows a
+    probed token in its sentence, the words on both sides of it."""
+    return stream.text(position + 1, min(len(stream), position + 13))[:width]
+
+
 def _seconds_per_token(step: Any) -> float | None:
     timings, usage = step.timings or {}, step.usage or {}
     total, first, generated = timings.get("total_ms"), timings.get("ttft_ms"), usage.get("completion_tokens")
@@ -273,7 +279,7 @@ def forking_result(store: Store, experiment: Any) -> Any:
             Outcome("error", "error", sample.error) if sample.error
             else forking_outcome(store.sample_response(sample), normalizers)
         )
-    contexts, parts = {}, {}
+    contexts, afters, parts = {}, {}, {}
     record = store.token_stream(settings.get("base_stream") or "")
     if record is not None:
         stream = TokenStream.from_json(store.token_stream_data(record))
@@ -281,10 +287,11 @@ def forking_result(store: Store, experiment: Any) -> Any:
             position = arm["position"]
             if position < len(stream):
                 contexts[position] = _context(stream, position)
+                afters[position] = _after(stream, position)
                 parts[position] = stream.part(position)
     return forking_report(
         arms, outcomes, per_arm=per_arm, target=target_from_spec(settings.get("target")),
-        alpha=float(settings.get("alpha") or 0.05), contexts=contexts, parts=parts,
+        alpha=float(settings.get("alpha") or 0.05), contexts=contexts, afters=afters, parts=parts,
         letters=target_letters(store, settings.get("target")),
     )
 
@@ -505,8 +512,8 @@ class Continuations:
                 for behaviour in token["behaviours"]:
                     first = behaviour[0]
                     counted = sum(1 for c in behaviour if c.counted)
-                    said = ("" if not counted else ", what was counted" if counted == len(behaviour)
-                            else f", what was counted in {counted} of {len(behaviour)}")
+                    said = ("" if not counted else ", target" if counted == len(behaviour)
+                            else f", target in {counted} of {len(behaviour)}")
                     lines.append(f"    {first.letter or '-'} {first.outcome.label} — {len(behaviour)}{said}")
                     for continuation in behaviour:
                         lines.append(f"      #{continuation.idx}")

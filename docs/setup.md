@@ -321,7 +321,7 @@ is a model you run yourself: nothing is said, and everything works.
 ## The harnesses
 
 tuningfork launches three harnesses itself, for batches, forks and validations: each run in a
-fresh workspace and a fresh home, against your local model only. None sees your own settings
+run folder of its own, against your local model only. None sees your own settings
 or memory files, and none needs an API key.
 
 | | Hermes Agent | Claude Code | OpenClaw |
@@ -419,20 +419,20 @@ sudo apparmor_parser -r /etc/apparmor.d/bwrap
 Under WSL, bubblewrap works without it.
 
 The model reads `/home/user` and `/home/user/project`. Without the sandbox, each launch sees its
-own folders under the recordings folder, and a few digits of a fork's folder name were seen to
-decide whether the model wrote a file or only said it did: resampled at the same step, two forks
-whose requests differed only in that number wrote it 5 times in 20 and 20 times in 20.
+run folder at its real path in the recordings folder, and a few digits of a fork's folder name were
+seen to decide whether the model wrote a file or only said it did: resampled at the same step, two
+forks whose requests differed only in that number wrote it 5 times in 20 and 20 times in 20.
 
 Inside, the rest of the machine is read-only, `/tmp` and the process list are the launch's own,
-and the recordings folder and the task's spec folder are empty: the harness can read neither
+and the recordings folder and the spec's folder are empty: the harness can read neither
 earlier runs nor the check. `TUNINGFORK_SANDBOX_HIDE` names more folders every launch sees
 empty, as `PATH` is written: a benchmark's folder of tasks, say. A check sees them empty too,
-but for its own task's folder, so keep a check's scripts and keys there. `tuningfork connections
+but for its spec's folder, so keep a check's scripts and keys there. `tuningfork connections
 show` says whether launches run in the sandbox, a batch's plan warns when they cannot, and a
 fork of a sandboxed run is refused without one. `TUNINGFORK_SANDBOX=off` turns it off.
 
 A run's check runs in the same sandbox once the run ends, since it can run what the model left
-in the workspace. It works in `/home/user/project`, sees the task's folder read-only, which no
+in the workspace. It works in `/home/user/project`, sees the spec's folder read-only, which no
 launch sees, and has an empty home of its own. Of your environment variables it gets only
 `PATH`, `HOME`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `USER`, those its task names in
 [`check_env`](#a-task), and those the machine's config names for every check; without the
@@ -450,7 +450,7 @@ other settings.
 A tool's cache starts empty, so a check that installs a package each time (`uv run --with …`)
 downloads it. It writes nowhere but the workspace, its own home and its own `/tmp`, and it cannot
 read the run's home. A check tried with `tuningfork recheck`, or run along a run, runs the same
-way. Keep a task file in a folder of its own: one directly in `/tmp`, or in the recordings folder
+way. Keep a spec in a folder of its own: one directly in `/tmp`, or in the recordings folder
 itself, leaves its check without what is kept beside it, since a check never sees either, and a
 batch's plan says so.
 
@@ -526,7 +526,7 @@ tuningfork's own settings under a `tuningfork` key.
 }
 ```
 
-- **`skill_dir`** is the skill's folder, relative to the spec. Every run is given a copy of the
+- **`skill_dir`** is the skill folder, relative to the spec. Every run is given a copy of the
   whole folder, so keep anything the model should not read — an edited variant, a check
   script — outside it.
 - **`files`** are the task's input files, placed in each run's workspace: `{"path", "content"}`
@@ -594,9 +594,9 @@ read — and what tuningfork made of it.
 |---|---|
 | `tuningfork.db`, `blobs/` | Every call a harness made through the proxy and its answer, with the server's errors; runs and their results, experiments and their samples, jobs, the servers that answered, and what each launch was given |
 | `snapshots.git` | Each launched run's workspace at every call, and the skill it was given |
-| `batches/`, `forks/` | The folders runs were launched in, unless `--workdir` put them elsewhere: each run's workspace as it left it, and its harness's home — the harness's own record of the conversation, its logs and its settings — with the skill the runs were given |
+| `batches/`, `forks/` | Run folders, unless `--workdir` put them elsewhere: each run's workspace as it left it, and its harness's home — the harness's own record of the conversation, its logs and its settings — and, in a batch's folder, the copy of the skill it gave its runs |
 | `imports/` | Each imported chat, and the skills it showed |
-| `scenarios/` | Each scenario's task file, the conversation its runs continue, its input files, what its check reads from its task's folder, and its copy of a skill where it keeps one |
+| `scenarios/` | Each scenario's spec, the conversation its runs continue, its input files, what its check reads from its spec's folder, and its copy of a skill where it keeps one |
 | `skills/` | The skills you added: a record of each, and tuningfork's copy where it keeps one. Forgetting a skill moves its copy to `skills/.forgotten/` |
 | `refinements/` | Each refinement's evidence, the skill it refines, its proposals, test results and approval |
 | `variants/` | Wordings saved to be tested: each refinement's proposals, and a wording given as text rather than as a file |
@@ -626,9 +626,9 @@ Kept as it was:
 - **What a run is given,** since a fork runs it again: its task's text, input files and check, its
   skill, a wording tested, and the copies a scenario, a skill added or a refinement makes of them.
 - **The test an experiment declared,** read again whenever the experiment is judged.
-- **What a run did on the machine:** its workspace at every call, and the folder it was launched
-  in, with the harness's own record of the conversation.
-- **What you brought:** a task file you made a scenario of, with what its check reads; a skill
+- **What a run did on the machine:** its workspace at every call, and its run folder, with the
+  harness's own record of the conversation.
+- **What you brought:** a spec you made a scenario of, with what its check reads; a skill
   folder you named or added.
 
 ### Who can read it
@@ -680,7 +680,7 @@ in a Lima VM, run these steps there: in the distro's shell, or in the VM's
      every file new would keep every blob and snapshot object a deletion in it would take, until
      a later deletion or a proxy serving the copy swept them.
    - **It leaves out `batches/` and `forks/`**, each run's workspace and its harness's home. A
-     copy's runs name the original's launch folders, which a deletion in a copy never touches, so
+     copy's runs name the original's run folders, which a deletion in a copy never touches, so
      a copy of them would stay whole, the deleted runs' included.
 2. **Delete for good, with nothing else open on the copy** — `serve`, `ui`, `tuningfork mcp` — so
    the database's log is emptied. `tuningfork trash run <id> --home <copy>` sets a run aside,
@@ -689,7 +689,7 @@ in a Lima VM, run these steps there: in the distro's shell, or in the VM's
    included. `tuningfork runs --home <copy>` lists the runs, and `tuningfork ui --home <copy>`
    shows everything, closed again before `trash empty`.
 3. **Delete any folder inside the copy that `--workdir` named** (`rm -rf <copy>/<folder>`). It
-   holds launch folders too, and step 1 leaves out only `batches/` and `forks/`.
+   holds run folders too, and step 1 leaves out only `batches/` and `forks/`.
 4. **Delete the keys from it:** `rm -f <copy>/.access-token <copy>/.mcp-token <copy>/.proposer-key`.
 5. **Look at what is left**, below. Only then send it, moving it first to Windows or the Mac if
    you send from there, and remove every copy once it is shared: unlike the recordings folder, a
@@ -706,13 +706,13 @@ What is left to look at:
   folder holds what one recorded: `tuningfork scan --home <copy>` says where, run by run, never the
   key, and prints the `trash` commands that set it aside, to delete for good as in step 2.
 - **What is kept as it was:** the snapshots; the wordings tested; a scenario's input files, what its
-  check reads, and its task file's check, expected output and expectations; the copies of skills —
-  in `skills/`, a scenario's, a refinement's, a folder you named for an import; and each task
-  file's text and check, which the database keeps as you wrote them. Git keeps `snapshots.git`
+  check reads, and its spec's check, expected output and expectations; the copies of skills —
+  in `skills/`, a scenario's, a refinement's, a folder you named for an import; and each spec's
+  text and check, which the database keeps as you wrote them. Git keeps `snapshots.git`
   compressed, so a plain search does not find what it holds:
   `tuningfork files <run> <k> --home <copy>` shows a workspace.
 - **What names this machine:** the database and the records beside it — `config.json`, `skills/`,
-  `refinements/`, `chains/`, a scenario's task file — name its folders, your user name among them;
+  `refinements/`, `chains/`, a scenario's spec — name its folders, your user name among them;
   the database also names the servers that answered.
 
 ## Environment variables

@@ -39,7 +39,7 @@ export async function diffView(root, [first, second]) {
         ? `The runs behaved identically for all ${plural(report.steps.length, "step")}.`
         : `Agreed for ${plural(report.agreed_steps, "step")}, then diverged at step ${at}.`))),
     report.mixed_skills ? mixedSkillsBanner() : null,
-    h("div", { class: "runs-pair", style: { marginBottom: "16px" } }, runCard("A", runA), runCard("B", runB)),
+    h("div", { class: "runs-pair", style: { marginBottom: "var(--space-4)" } }, runCard("A", runA), runCard("B", runB)),
     h("div", { class: "stack" },
       at === null ? null : panel(`Step ${at}, side by side`, sideBySide),
       panel("Step by step", h("div", { class: "table-wrap" }, h("table", { class: "table" },
@@ -90,7 +90,7 @@ function conditionLabel(condition) {
 }
 
 function conditionsBanner(task, conditions) {
-  return h("div", { class: "banner banner-warn", style: { marginBottom: "14px" } },
+  return h("div", { class: "banner banner-warn", style: { marginBottom: "var(--space-3-5)" } },
     h("strong", null, `These runs span ${conditions.length} set-ups. `),
     "Compare within one: ",
     conditions.map((condition, position) => [
@@ -100,7 +100,7 @@ function conditionsBanner(task, conditions) {
 }
 
 function mixedSkillsBanner() {
-  return h("div", { class: "banner banner-warn", style: { marginBottom: "14px" } }, h("strong", null, "These runs used different versions of the skill. "),
+  return h("div", { class: "banner banner-warn", style: { marginBottom: "var(--space-3-5)" } }, h("strong", null, "These runs used different versions of the skill. "),
     "A difference between them may be the wording change rather than the model.");
 }
 
@@ -378,12 +378,12 @@ function nextStep(step, index, { resampledAbove = false } = {}) {
   const example = took[0][0].run_ids[0];
   return h("div", null,
     resampledAbove ? null : [
-      h("p", { class: "hint", style: { marginBottom: "6px" } }, "A handful of runs cannot tell you how often each happens. Resample the step to measure it:"),
+      h("p", { class: "hint", style: { marginBottom: "var(--space-1-5)" } }, "A handful of runs cannot tell you how often each happens. Resample the step to measure it:"),
       live.mode === "live"
         ? h("a", { class: "btn btn-primary", href: `#/runs/${example}/${index}?start=resample`, "data-control": true }, `Resample step ${index}…`)
         : command(`tuningfork resample ${short(example)} ${index} -n 20`),
     ],
-    h("p", { class: "hint", style: { margin: resampledAbove ? "0 0 6px" : "10px 0 6px" } },
+    h("p", { class: "hint", style: { margin: resampledAbove ? "0 0 var(--space-1-5)" : "var(--space-2-5) 0 var(--space-1-5)" } },
       `${resampledAbove ? "Look" : "Or look"} inside the step: how sure ${took.length > 1 ? "each run's model was of each token, and which token split them" : "the model was of each token"}.`),
     h("div", { class: "run-chips" }, took.map(([group, letter]) =>
       h("a", { class: "btn btn-small", href: `#/runs/${group.run_ids[0]}/${index}?view=tokens` },
@@ -394,7 +394,7 @@ function nextStep(step, index, { resampledAbove = false } = {}) {
  *  props that show it in the section above. */
 function stepsTable(report, link) {
   const behaviours = (step) =>
-    h("div", { class: "stack", style: { gap: "4px" } }, step.groups.map((group) =>
+    h("div", { class: "stack", style: { gap: "var(--space-1)" } }, step.groups.map((group) =>
       h("div", null, outcome(group.outcome), h("span", { class: "faint small" }, `  ×${group.run_ids.length}`))));
   const rows = report.steps.map((step) =>
     h("tr", { class: [step.diverged && "diverged", step.index === report.divergence_index && "first-divergence"] },

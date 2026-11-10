@@ -881,7 +881,7 @@ def create_app(
                        results=settings.mcp_results, max_wait=settings.mcp_max_wait)
     served = [
         *([Route(f"{PREFIX}/mcp", mcp, methods=["GET", "POST", "DELETE"])] if mcp else []),
-        *control_routes(engine=engine, gate=gate, bus=bus, access=access, jobs=jobs),
+        *control_routes(engine=engine, gate=gate, bus=bus, access=access, jobs=jobs, home=str(recorder.store.home)),
         *job_routes(store=recorder.store, runner=jobs),
         *connection_routes(),
         *scenario_routes(store=recorder.store, writable=True),
@@ -977,7 +977,7 @@ def create_browse_app(store: Any, *, host: str | None = None) -> Starlette:
     async def status(request: Request) -> Response:
         return JSONResponse({
             "live": False, "paused": False, "breakpoints": [], "holds": [],
-            "auth": {"required": False, "valid": False},
+            "auth": {"required": False, "valid": False}, "home": str(store.home),
         })
 
     @asynccontextmanager

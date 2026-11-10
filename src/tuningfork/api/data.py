@@ -196,7 +196,7 @@ def data_routes(*, store: Store, adapters: Sequence[Any]) -> list[Route]:
         return await threaded(build)
 
     async def tally(request: Request) -> Response:
-        """What the checks said, counted: `?task=<id>` for a task's failed runs by condition, or
+        """What the checks said, counted: `?task=<id>` for a task's failed runs by set-up, or
         `?screen=<experiment id>` for each arm's failed forks of a screen run to the end."""
         from tuningfork.ops.tally import tally_screen, tally_task
 

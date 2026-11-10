@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -148,6 +149,11 @@ def test_a_run_shows_what_each_call_changed_and_a_fork_after_it_is_warned(stack)
     assert [step["changed"] for step in detail["steps"]] == [[], [{"status": "A", "path": "report.json"}], []]
     # What the run page says of its launch: here unsandboxed (the suite turns the sandbox off).
     assert detail["launch"]["sandbox"] is None and "harness_settings" in detail["launch"]
+    # Its run folder, drawn as the tree it is: the workspace and the harness's home side by side,
+    # and the copy of the skill it was given, the batch's, beside the run folders.
+    launch = detail["launch"]
+    folder = Path(launch["workspace"]).parent
+    assert Path(launch["home"]).parent == folder and (folder.parent / "skill-snapshot") in Path(launch["skill_copy"]).parents
     # At the end, what the whole run changed; before a step, what the step before changed.
     end = workspace_at(stack.store, run.id, "end")
     assert (end.since, end.changes) == ("the start", [("A", "report.json")])

@@ -159,7 +159,7 @@ def check_spec(data: Any, *, home: Path | str | None = None, name: str | None = 
             }
             checked.warnings.append(
                 f"the skill folder is a relative path: it is resolved against the scenario's "
-                f"own folder, {where}, so it needs the scenario's name first"
+                f"folder, {where}, so it needs the scenario's name first"
             )
         else:
             found = resolve_path(skill_dir, folder(home, name) if named else None)
@@ -608,10 +608,10 @@ def _take_files(plan: ImportPlan, beside: _Beside) -> None:
                 plan.beside[_placed(top, sub)] = data
                 read.add(top)
     if read:
-        plan.notes.append(f"its check reads {', '.join(sorted(read))} from its task's folder: copied beside the scenario's "
+        plan.notes.append(f"its check reads {', '.join(sorted(read))} from its task file's folder: copied beside the scenario's "
                           "evals.json, where no run sees it")
     if unread:
-        plan.warnings.append(f"its check reads {', '.join(dict.fromkeys(unread))} from its task's folder, which is not "
+        plan.warnings.append(f"its check reads {', '.join(dict.fromkeys(unread))} from its task file's folder, which is not "
                              f"{beside.where}: put it beside the scenario's evals.json")
     if plan.inputs:
         plan.notes.append(f"{len(plan.inputs)} input file(s) copied into the scenario's inputs/")
@@ -716,7 +716,7 @@ def prepare_upload(home: Path | str, name: str, files: dict[str, bytes | Unsent]
             plan.skill = {f"{SKILL_FOLDER}/{own}/{sub}": each for sub, each in beside.tree(given).items()}
             data["tuningfork"]["skill_dir"] = f"{SKILL_FOLDER}/{own}"
             plan.skill_dir, plan.has_skill = f"{SKILL_FOLDER}/{own}", True
-            plan.notes.append(f"its skill folder, {given}, is copied into the scenario's own folder ({SKILL_FOLDER}/{own}/): "
+            plan.notes.append(f"its skill folder, {given}, is copied into the scenario's folder ({SKILL_FOLDER}/{own}/): "
                               "an approved edit is written to that copy, never back to yours")
         else:
             # Not in what was uploaded: a folder on this machine, where its path names one.
@@ -794,7 +794,7 @@ class ScenarioSummary:
 
 
 def _results(runs: list[Any], tasks: set[str]) -> list[dict[str, Any]]:
-    """Each task's pass rate under each condition it was run under, newest first."""
+    """Each task's pass rate under each set-up it was run under, newest first."""
     from tuningfork.analysis.conditions import conditions
 
     found = []

@@ -102,7 +102,7 @@ export function whatItMeans({ server = {}, harnesses = [], sandbox = null, propo
   const greyed = Object.entries(server.token_work || {}).filter(([, reason]) => reason).map(([work]) => TOKEN_CONTROLS[work] || work);
   if (greyed.length) lines.push(`${listed(greyed)} ${greyed.length === 1 ? "is" : "are"} greyed out on this server.`);
   if (sandbox && !sandbox.available) {
-    lines.push("Runs tuningfork starts are not sandboxed, so their folders' paths differ from run to run, and the model reads them.");
+    lines.push("Runs tuningfork starts are not sandboxed: each sees its run folder at its real path, which differs from run to run, and the model reads it.");
   }
   if (proposer.remote) {
     lines.push(!proposer.allow_remote
@@ -254,7 +254,7 @@ export async function connectionsView(root, _, scope) {
         : h("p", { class: "muted small" }, `Nothing is measured on this server yet. “${LABELS.testServer}”, at the top of the page, measures it.`),
       // What the check rules out is greyed wherever it is offered, saying the same.
       ruledOut.length
-        ? h("div", { class: "stack", style: { gap: "4px" } },
+        ? h("div", { class: "stack", style: { gap: "var(--space-1)" } },
             h("div", { class: "label" }, "Greyed out on this server"),
             ruledOut.map((reason) => h("div", { class: "small warn-text" }, `${reason}.`)))
         : null,
@@ -364,7 +364,7 @@ export async function connectionsView(root, _, scope) {
   }
 
   function switchPreview(plan) {
-    return h("div", { class: "stack", style: { gap: "8px" } },
+    return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
       plan.differences.length
         ? h("table", { class: "table" },
             h("thead", null, h("tr", null, h("th", null, "what"), h("th", null, "now"), h("th", null, "after"))),
@@ -484,12 +484,12 @@ export async function connectionsView(root, _, scope) {
         sandbox.available ? chip(`bubblewrap ${sandbox.version || ""}`.trim(), "muted") : chip("off", "warn")),
       sandbox.available
         ? kv([
-            ["every run tuningfork starts sees", h("span", null, "its folder ", h("span", { class: "mono" }, sandbox.workspace), ", its home ", h("span", { class: "mono" }, sandbox.home))],
-            ["hidden from it", "the recordings folder, the runs' folders and the task file's folder; the rest of the machine read-only"],
+            ["every run tuningfork starts sees", h("span", null, "its workspace at ", h("span", { class: "mono" }, sandbox.workspace), ", its home at ", h("span", { class: "mono" }, sandbox.home))],
+            ["hidden from it", "the recordings folder, the run folders and the task file's folder; the rest of the machine read-only"],
             ["a run's check", "runs there too, with the task file's folder read-only, a few of your environment variables like PATH, and those its task names"],
           ])
         : h("div", { class: "banner banner-warn" },
-            `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its own folders, whose paths differ from run to run, and the model reads them. Their checks run on this machine itself.`),
+            `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its run folder at its real path, which differs from run to run, and the model reads it. Their checks run on this machine itself.`),
       // What the configs let every check read, with the sandbox or without it, each by the
       // file that names it. The same problem the proxy panel says — the machine's config that
       // cannot be read at all — is not said twice; any other is.
@@ -531,7 +531,7 @@ export async function connectionsView(root, _, scope) {
         .map((problem) => h("div", { class: "banner banner-warn" }, h("strong", null, "Cannot run here: "), problem)),
       pre.notes.map((note) => h("div", { class: "banner" }, note)),
       h("details", { class: "fold" }, h("summary", null, "Use another program"),
-        h("div", { class: "stack", style: { gap: "8px", marginTop: "8px" } },
+        h("div", { class: "stack", style: { gap: "var(--space-2)", marginTop: "var(--space-2)" } },
           program,
           h("div", { class: "form-actions" },
             h("button", { class: "btn btn-small", type: "button", "data-control": true, onclick: guard(() => save(program.value.trim() || null)) }, "Save"),
@@ -549,7 +549,7 @@ export async function connectionsView(root, _, scope) {
       // A config that cannot be read stops every call the proxy would send, until it is fixed.
       proxy.config_problem ? h("div", { class: "banner banner-warn" }, `${capital(proxy.config_problem)}. Nothing is sent anywhere until it is fixed.`) : null,
       kv([
-        ["recordings", h("span", { class: "mono" }, proxy.home)],
+        ["recordings folder", h("span", null, h("span", { class: "mono" }, proxy.home), h("span", { class: "muted" }, " · "), h("a", { href: "#/words?place=recordings-folder" }, "where things live"))],
         ["listening on", h("span", { class: "mono" }, `${proxy.host}:${proxy.port}`)],
         ["calls at once", String(proxy.max_inflight)],
         ["output a call", proxy.max_output

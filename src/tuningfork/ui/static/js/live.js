@@ -13,6 +13,7 @@ export const live = {
   breakpoints: [],
   holds: [], // pending only, oldest first
   jobs: [], // queued and running
+  home: null, // the recordings folder: a path inside it is shown from there (`placeOf`)
 };
 
 const listeners = new Set();
@@ -101,6 +102,7 @@ const pendingOnly = (holds) =>
 function apply(event) {
   switch (event.type) {
     case "snapshot":
+      live.home = event.home || live.home;
       live.paused = Boolean(event.paused);
       live.breakpoints = event.breakpoints || [];
       live.holds = pendingOnly(event.holds || []);

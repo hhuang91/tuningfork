@@ -418,8 +418,8 @@ first terminal.
   memory files, and needs no API key.
 - **[bubblewrap](https://github.com/containers/bubblewrap)**, on Linux:
   `sudo apt install bubblewrap`. With it, every run tuningfork launches sees the same home and
-  folder, `/home/user` and `/home/user/project`, as an installation would; without it, each
-  run sees its own folders, whose names differ from run to run, and the model reads them. We
+  folder, `/home/user` and `/home/user/project`, as an installation would; without it, each run
+  sees its run folder at its real path, which differs from run to run, and the model reads it. We
   used 0.11.1.
 
 Everything stays on your machine: the model server, the proxy and the harness all listen on
@@ -1416,8 +1416,8 @@ prints a second table, for Hermes: 0/8 with the original wording, 8/8 with the v
 
 The proxy serves the web UI at the address it printed, with its token:
 
-- **Runs** — the task split into its conditions, one per harness and wording, each with its
-  pass rate; *Where do they diverge?* on each compares runs of that condition only.
+- **Runs** — the task split into its set-ups, one per harness and wording, each with its
+  pass rate; *Where do they diverge?* on each compares runs of that set-up only.
 - **A run** — its conversation top to bottom, each step's answer where it happened,
   reasoning included, and the skill marked inside it and mapped to `SKILL.md` line by
   line. Click the `Write` step for its details and the workspace as the call found it;
@@ -1451,7 +1451,7 @@ proxy runs. Open the address `tuningfork serve` printed — the one with `?token
    **Jobs** → *Start…*, from a list of runs. The plan says what will be sent, through the
    proxy, and how long it may take. The finished job links the experiment.
 4. *A/B a wording…* opens an editor holding the skill as that run was given it. Make the
-   change `SKILL.v2.md` makes — or paste the file — name it, and choose what to count:
+   change `SKILL.v2.md` makes — or paste the file — name it, and choose the condition:
    *What the model does matches a pattern*, `row_count`. Nothing is chosen for you. The
    plan shows where the skill sits in the context, and any part of your edit the model
    never sees at this step. The variant is saved in the recordings folder when the A/B
@@ -1875,18 +1875,20 @@ heatmap — by entropy, or by how close the top two were — with the reasoning 
 many of the likeliest forks are in it. An answer not scored yet offers *Score this answer*.
 Click a token for what else the model weighed there; *Select to probe*, then *Find forking
 tokens at these…*, opens the probe's form beside the run, those positions filled in. The form
-shows its plan before anything runs: the tokens it will force, what you count, what it can
+shows its plan before anything runs: the tokens it will force, the condition, what it can
 detect with that many continuations, and how long it may take.
 
-*What to count* can be the answer's own behaviour, a regular expression, or a behaviour you
-describe: *Calls the tool* `search_files`, *Mentions* `data.csv`, every condition holding.
-Whichever you choose, the form sets it against every behaviour already seen at the step — the
-run's own, other runs of the task there, the samples drawn there — and marks which would
-count, before anything is sampled.
+The *Condition* can be the answer's own behaviour, a regular expression, or a behaviour you
+describe: *Calls the tool* `search_files` and *Mentions* `data.csv`, both holding. Whichever
+you choose, the form sets it against every behaviour already seen at the step — the run's own,
+other runs of the task there, the samples drawn there — and marks which would match, before
+anything is sampled.
 
-The result is on the experiment's page: the answer it forked from, with the probed tokens
-ringed — doubled where a forced token changed what the model did — then each position, the
-run's own token and each forced one, with where it flips. *In the answer* opens a position's
+The result is on the experiment's page. It leads with each position where a forced token
+changed what the model did: the token boxed in its sentence, and under it the original token
+and each forced one, with how often the condition was met after each. Then come the answer it
+forked from, with the probed tokens ringed — doubled where a forced token changed what the
+model did — and each position's table. *In the answer* opens a position's
 token there; *On the step* opens it on the step's own Tokens view, where every token a probe
 forced is ringed and says what each probe found.
 

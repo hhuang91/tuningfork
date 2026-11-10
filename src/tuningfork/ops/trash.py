@@ -282,7 +282,7 @@ def _outside(store: Store, plan: Purge) -> list[str]:
     launched = [folder for workspace, harness_home in plan.launches.values()
                 if (folder := _launch_folder(home, workspace, harness_home)) is not None]
     groups = sorted({str(folder.parent) for folder in launched if not _inside(home, folder, 1)})
-    notes = [f"the folders tuningfork made for its launches outside the recordings folder go too, in "
+    notes = [f"the run folders outside the recordings folder go too, in "
              f"{', '.join(groups)}"] if groups else []
     batches = [group for group, chain in _groups(store, plan).items() if not chain]
     folders = launched + [(imports(home) / run).resolve() for run in plan.runs] + batches
@@ -292,7 +292,7 @@ def _outside(store: Store, plan: Purge) -> list[str]:
 def _kept_note(named: Sequence[Path], folders: Sequence[Path]) -> list[str]:
     """What stays in the folders a deletion removes, said before it: each path named there."""
     kept = sorted({str(path) for folder in folders for path in named if path == folder or folder in path.parents})
-    return [f"what a skill added, a scenario or a task file names in them stays, and the rest goes: "
+    return [f"what a skill added, a scenario or a spec names in them stays, and the rest goes: "
             f"{', '.join(kept)}"] if kept else []
 
 
@@ -305,7 +305,7 @@ def _refinement_goes(store: Store, refinement: Any) -> dict[str, Any]:
     notes = list(goes["notes"]) + _kept_note(_named(store, store.home.resolve()), [Path(refinement.folder).resolve()])
     if refinement.status == "approved":
         notes.append(f"refinement {refinement.id[:8]} is approved: its approval and the evidence kept in it go "
-                     "too; the skill's changelog and its old versions, beside the skill's folder, stay")
+                     "too; the skill's changelog and its old versions, beside the skill folder, stay")
     return {**goes, "refinements": 1, "variants": len(made.variants), "notes": notes}
 
 

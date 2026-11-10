@@ -94,9 +94,19 @@ TERMS: tuple[Term, ...] = (
          "recording", aka=("--no-cache-prompt", "cache_prompt", "fresh prompts"),
          see=("server", "screen", "sliding-window cache"),
          where="llama-server's command line: --no-cache-prompt; tuningfork connections check"),
-    Term("skill", "A folder with a SKILL.md: the instructions a harness gives the model for one kind of task. "
-         "What tuningfork helps you improve, one measured change at a time.",
-         "recording", aka=("SKILL.md",), see=("skill version", "refinement"), where="Skills page; tuningfork skills"),
+    Term("skill", "The instructions a harness gives the model for one kind of task: a SKILL.md and the files it "
+         "uses, kept in a skill folder. What tuningfork helps you improve, one measured change at a time.",
+         "recording", aka=("SKILL.md",), see=("skill folder", "skill version", "refinement"), where="Skills page; tuningfork skills"),
+    Term("skill folder", "The folder holding a skill's SKILL.md and the files it uses: one a spec names, or one you "
+         "added where it is. A batch copies it once as it starts and gives each of its runs that copy. Nothing writes "
+         "to it but an approval, which keeps the old text and a changelog beside the folder, never inside it.",
+         "recording", aka=("skill_dir",), see=("skill", "copy of a skill", "approval", "recordings folder"),
+         where="a skill's page: Where its SKILL.md is kept; Words page: where things live"),
+    Term("recordings folder", "Where tuningfork keeps what it records: every call, a run folder for each run it "
+         "started (unless --workdir names another place), and the copies and records beside them. ~/.tuningfork, or "
+         "the folder TUNINGFORK_HOME or --home names; readable only by you when tuningfork makes it.",
+         "recording", aka=("--home", "TUNINGFORK_HOME"), see=("run folder", "copy of a skill", "skill folder"),
+         where="Connections page; Words page: where things live"),
     Term("skill version", "A fingerprint of the skill files a run was given. Runs with one fingerprint read the same "
          "skill byte for byte; their pass rate is never pooled with another version's.",
          "recording", aka=("fingerprint",), see=("skill", "pass rate"), where="Skills page; tuningfork skill <name>",
@@ -135,11 +145,12 @@ TERMS: tuple[Term, ...] = (
     Term("task", "One thing to ask the harness, named `<skill>/<eval id>`: a prompt, its input files, and a check.",
          "tasks", aka=("eval",), see=("spec", "check", "batch")),
     Term("spec", "A file of tasks for one skill (the evals.json convention): each eval's prompt, files, check and "
-         "options, and the skill's folder.",
+         "options, and the skill folder it names.",
          "tasks", aka=("evals.json",), see=("task", "scenario"), ui="task file"),
     Term("scenario", "A spec kept in the recordings folder, with its input files beside it: written and edited on "
-         "the Scenarios page instead of by hand.",
-         "tasks", see=("spec",), where="Scenarios page"),
+         "the Scenarios page instead of by hand. Its folder, scenarios/<name>/, also holds the conversation its runs "
+         "continue, where it was made from a run, and a copy of the skill where it keeps one.",
+         "tasks", see=("spec", "copy of a skill"), where="Scenarios page"),
     Term("starting prompt", "The user turn a scenario's runs start from: the turn after which its skill first came "
          "into the chat it was made from, or another of the person's turns the skill can still come in after; in "
          "the person's own words, or in words of your own.",
@@ -161,22 +172,38 @@ TERMS: tuple[Term, ...] = (
          "A finding every run made, the passing ones too, is a mistake they all made — and refined where it was "
          "made, not where the runs that repaired it later differ.",
          "tasks", see=("check", "checkpoint"), where="a task's tally; tuningfork check-along --task <id>"),
-    Term("batch", "A task run N times through the harness, each run in a fresh workspace and home: the pass rate "
-         "of one skill version, with its interval.",
+    Term("batch", "A task run N times through the harness, each run in a run folder of its own, all from one copy "
+         "of the skill made as the batch starts: the pass rate of one skill version, with its interval.",
          "tasks", see=("launch", "pass rate"), where="Runs → Run a task…; tuningfork batch <spec> -n 8"),
-    Term("launch", "A harness tuningfork started, with its own workspace and home. Every model call it makes — its "
+    Term("launch", "A harness tuningfork started, in a run folder of its own. Every model call it makes — its "
          "subagents' too — is attributed to it as it arrives.",
-         "tasks", see=("batch", "fork", "workspace", "sandbox"), ui="a run tuningfork started"),
+         "tasks", see=("batch", "fork", "run folder", "sandbox"), ui="a run tuningfork started"),
+    Term("run folder", "The folder each run tuningfork starts gets in the recordings folder: batches/<batch>/<n>/ for "
+         "a batch's, forks/<group>/<n>/ for a fork's, unless --workdir names another place. Its home/ is the "
+         "harness's home: its settings, its logs and its record of the conversation, with the skill installed in it. "
+         "Its workspace/ holds the task's input files and what the agent wrote, and reply.txt its final reply. In the "
+         "sandbox the run sees home/ as /home/user and workspace/ as /home/user/project.",
+         "tasks", aka=("launch folder", "--workdir"), see=("workspace", "launch", "sandbox", "copy of a skill"),
+         where="a run's page: About this run; Words page: where things live"),
+    Term("copy of a skill", "A skill's files, or only its SKILL.md where that is all tuningfork saw, as tuningfork "
+         "kept them at one moment in the recordings folder: the one a batch makes as it starts and gives each of its "
+         "runs, a scenario's where it keeps one, an import's, a refinement's, and a skill you added as a copy. A "
+         "scenario's copy and a skill added as a copy stand in for a skill folder: an approval writes to them.",
+         "tasks", aka=("copy of the skill", "skill-snapshot", "skill snapshot"), see=("skill folder", "run folder", "scenario"),
+         where="Words page: where things live"),
     Term("sandbox", "Where every launch runs when bubblewrap can (Linux): its home is /home/user and it works in "
          "/home/user/project, the same in every run, with the harness's files where it installs them. The model reads "
-         "those paths, and a few digits of a run's own folder were seen to change what it did. The rest of the machine "
-         "is read-only, and the recordings and the task's spec folder are hidden. A run's check runs there too, its "
-         "task's folder shown to it. Without it, each launch sees its own folders, and a batch's plan warns.",
-         "tasks", aka=("bubblewrap", "bwrap", "TUNINGFORK_SANDBOX"), see=("launch", "workspace"),
+         "those paths, and a few digits of a run folder's path were seen to change what it did. The rest of the "
+         "machine is read-only, and the recordings folder and the spec's folder are hidden. A run's check runs there "
+         "too, the spec's folder shown to it. Without it, each launch sees its run folder at its real path, which "
+         "differs from run to run, and a batch's plan warns.",
+         "tasks", aka=("bubblewrap", "bwrap", "TUNINGFORK_SANDBOX"), see=("launch", "run folder", "workspace"),
          where="Connections page; tuningfork connections show"),
-    Term("workspace", "The folder a launched harness works in: the task's input files, snapshotted at the start and "
-         "the end, so a check can be tried again on what the run left.",
-         "tasks", see=("launch",), where="tuningfork files <run> <k>"),
+    Term("workspace", "The folder in a run folder where the agent works. It starts with the task's input files and "
+         "ends with what the agent wrote, and the check runs there. It is snapshotted at the start, as each call found "
+         "it, and at the end, so a check can be tried again on what the run left. In the sandbox the run sees it as "
+         "/home/user/project.",
+         "tasks", see=("run folder", "launch"), where="a step's Workspace; tuningfork files <run> <k>"),
     Term("fork", "A run replayed from a recording up to a step and live from there: the same history, then the model "
          "decides again — and the task's check judges where it ends.",
          "tasks", see=("to the end", "launch"), where="at a step: Fork from here…; tuningfork fork <run> <k>"),
@@ -209,13 +236,14 @@ TERMS: tuple[Term, ...] = (
          "experiments", aka=("ab",), see=("variant", "target", "arm"), where="at a step: A/B a wording…; tuningfork ab <run> <k>"),
     Term("arm", "One side of an A/B or a screen: the original wording, or one variant of it.",
          "experiments", see=("A/B", "screen"), ui="wording"),
-    Term("variant", "Another wording of a skill, saved in the recordings folder — never inside the skill's folder, "
+    Term("variant", "Another wording of a skill, saved in the recordings folder, never inside the skill folder, "
          "which every run is given a copy of.",
          "experiments", see=("A/B", "proposal"), where="Skills page"),
     Term("target", "What should happen at the step, declared before anything is sampled: a behaviour's letter, a "
          "pattern, or conditions in words. Run to the end, the target is the task's check.",
          "experiments", see=("A/B", "refinement"),
-         ui="what you count (in a result, what was counted); in a refinement, what the model should do"),
+         ui="condition (over a result, Condition; a probe's rows, condition met); "
+            "in a refinement, what the model should do"),
     Term("to the end", "Each sample a fork run to the end of the task and judged by its check, instead of the one "
          "answer at the step: whether a change at the step carries through.",
          "experiments", aka=("each to the end", "--to-end"), see=("fork", "sample"),
@@ -263,9 +291,9 @@ TERMS: tuple[Term, ...] = (
          "checkpoint to the end it passes at least as often as the original; its own task and the held-out tasks "
          "are not significantly worse; a held-out task the original fails improves; the skill's file is unchanged.",
          "refining", see=("validation", "approval"), ui="approval checks"),
-    Term("approval", "A person writing an edit into the skill's own file, after typing the code that names exactly "
-         "what is written where. A backup and a changelog entry go beside the skill's folder.",
-         "refining", see=("gate", "skill version"), where="a refinement's page; tuningfork refine approve <id>"),
+    Term("approval", "A person writing an edit into the SKILL.md in the skill folder, after typing the code that "
+         "names exactly what is written where. The old text and a changelog entry go beside the skill folder.",
+         "refining", see=("gate", "skill version", "skill folder"), where="a refinement's page; tuningfork refine approve <id>"),
     # --- running things
     Term("job", "Work started from the web UI or over MCP, run inside `serve` on a worker thread: a batch, a "
          "resample, a screen. A record of the work; what it made is kept on its own.",
@@ -273,8 +301,8 @@ TERMS: tuple[Term, ...] = (
     Term("chain", "A task run N times in order, each run given the skill as the run before left it — patched "
          "by the model during the task, or by the harness's own review after it. How a harness's "
          "self-improvement accumulates, measured link by link: each version of the skill, who changed it, and "
-         "the last link's folder as what the loop made. Told (`--tell`), each link's harness also gets the "
-         "check's verdict and output as the user's next turn, before its review. Its runs are not "
+         "the copy of the skill the last link left as what the loop made. Told (`--tell`), each link's harness "
+         "also gets the check's verdict and output as the user's next turn, before its review. Its runs are not "
          "independent samples.",
          "working", aka=("link",), see=("batch", "launch", "spend"),
          where="Runs → Run a task, as a chain; tuningfork chain run"),
@@ -294,9 +322,9 @@ TERMS: tuple[Term, ...] = (
          "`<home>/.access-token`. Reading needs none.",
          "working", aka=("token",), where="tuningfork token"),
     # --- how results are judged
-    Term("condition", "What a run was given besides its task: the harness, the model, the skill version and the "
-         "server. Pass rates are kept apart per condition: runs under two are never pooled.",
-         "statistics", see=("pass rate", "skill version"), where="Runs page; tuningfork tasks", ui="set-up"),
+    Term("set-up", "What a run was given besides its task: the harness, the model, the skill version and the "
+         "server. Pass rates are kept apart per set-up: runs under two are never pooled.",
+         "statistics", see=("pass rate", "skill version"), where="Runs page; tuningfork tasks"),
     Term("pass rate", "The share of a skill version's runs whose check passed, always with its interval; runs that "
          "timed out or were edited at a breakpoint are left out and counted apart.",
          "statistics", see=("Wilson interval", "check")),

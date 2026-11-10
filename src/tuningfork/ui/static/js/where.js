@@ -66,7 +66,7 @@ export function whereForm(task, { condition = null, screen = null } = {}) {
   return form;
 }
 
-/** Where it held: each condition's runs — or each arm's forks — by verdict, where it was first
+/** Where it held: each set-up's runs — or each arm's forks — by verdict, where it was first
  *  seen or made, the step that names that call in each run, and the runs one by one. */
 export function whereResult(found, { only = null, of = "run" } = {}) {
   const kind = found.probe?.kind;
@@ -83,7 +83,7 @@ function groupView(group, kind) {
   const split = group.split || {};
   const when = kind === "file" ? "at the end" : "at some step";
   const seen = seenWords(group, kind);
-  return h("div", { class: "stack", style: { gap: "6px", marginBottom: "12px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-1-5)", marginBottom: "var(--space-3)" } },
     h("div", null, h("strong", null, group.label), h("span", { class: "muted small" }, `  ${group.passed} passed, ${group.failed} failed`)),
     h("div", { class: "group-rates" },
       split.passing ? h("span", null, h("span", { class: "what" }, `held ${when}, of the passing runs`), rateBar(split.passing)) : null,

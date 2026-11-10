@@ -47,7 +47,7 @@ class TestVersions:
 
         newest, oldest = found.versions
         assert (newest.text, oldest.text) == (VARIANT, original)
-        assert newest.known_as == ["saved variant keys"] and oldest.known_as == ["its own file now"]
+        assert newest.known_as == ["saved variant keys"] and oldest.known_as == ["in its skill folder now"]
         (fixed,), (unfixed,) = newest.conditions, oldest.conditions
         assert (fixed["passed"]["successes"], fixed["passed"]["total"]) == (2, 2)
         assert unfixed["passed"]["successes"] == 0
@@ -150,6 +150,31 @@ class TestVersions:
         # The scenarios that run it: the Skills page's way to run it again.
         assert found.scenarios == ["another"] and found.to_json()["scenarios"] == ["another"]
 
+    def test_each_folder_says_what_it_is_and_which_task_files_name_it(self, stack):
+        """Asked for by the user (2026-11-05): the skill page drew three folders alike, each
+        "Its own folder", where one was the folder approvals write and two were copies scenarios
+        kept in its place. Each now says what it is, and which scenarios' task files name it."""
+        batch(stack, n=1)
+        scenarios = stack.store.home / "scenarios"
+        kept = scenarios / "kept-copy"
+        (kept / "skill" / "tally-report").mkdir(parents=True)
+        (kept / "skill" / "tally-report" / "SKILL.md").write_text(stack.skill.read_text(encoding="utf-8"), encoding="utf-8")
+        (kept / "evals.json").write_text(json.dumps(
+            {"skill_name": "tally-report", "tuningfork": {"skill_dir": "skill/tally-report"}, "evals": []}), encoding="utf-8")
+        (scenarios / "names-it").mkdir()
+        (scenarios / "names-it" / "evals.json").write_text(json.dumps(
+            {"skill_name": "tally-report", "tuningfork": {"skill_dir": str(stack.skill.parent)}, "evals": []}), encoding="utf-8")
+
+        found = skills.skill(stack.store, "tally-report").to_json()
+        by_kind = {folder["kind"]: folder for folder in found["folders"]}
+        assert sorted(by_kind) == ["folder", "scenario"]
+        own, copy = by_kind["folder"], by_kind["scenario"]
+        resolved = lambda named: {(str(Path(each["path"]).resolve()), each["scenario"]) for each in named}  # noqa: E731
+        assert Path(own["path"]) == stack.skill.parent.resolve() and own["scenario"] is None
+        assert resolved(own["named_by"]) == {
+            (str(Path(stack.spec.path).resolve()), None), (str((scenarios / "names-it" / "evals.json").resolve()), "names-it")}
+        assert copy["scenario"] == "kept-copy" and resolved(copy["named_by"]) == {(str((kept / "evals.json").resolve()), "kept-copy")}
+
 
 class TestSkillOf:
     """A run's skill is named by the folder its top SKILL.md was recorded in."""
@@ -241,4 +266,18 @@ class TestGlossary:
         found = CliRunner().invoke(cli, ["glossary", "screen"])
         assert found.exit_code == 0 and found.output.startswith("screen"), found.output
         every = CliRunner().invoke(cli, ["glossary"])
+        # Every term, and an exit of 0: a line left after the table named a variable that was
+        # never set, and the whole list ended in a NameError (found while adding the folders).
+        assert every.exit_code == 0 and every.exception is None, every.output
         assert all(title in every.output for _, title in glossary.GROUPS)
+
+    def test_the_folders_have_one_name_each(self):
+        """Asked for by the user (2026-11-05): the pages named a skill's folder, a run's and the
+        recordings folder in many ways. Each has one name, defined here, and the Words page draws
+        them together (`whereThingsLive`)."""
+        for name in ("skill folder", "recordings folder", "run folder", "workspace", "copy of a skill"):
+            (found,) = [term for term in glossary.TERMS if term.term == name]
+            assert found.ui is None, name  # the same words on the pages as in the terminal
+        assert glossary.lookup("skill_dir")[0].term == "skill folder"
+        assert glossary.lookup("--home")[0].term == "recordings folder"
+        assert glossary.lookup("skill-snapshot")[0].term == "copy of a skill"

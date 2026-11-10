@@ -100,7 +100,7 @@ def p_text(value: Any) -> str:
 
 
 def task(summary: dict[str, Any]) -> dict[str, Any]:
-    """A task with its pass rate under each condition: harness, model, skill version, server."""
+    """A task with its pass rate under each set-up: harness, model, skill version, server."""
     check = summary.get("check")
     return {
         "task_id": summary.get("task_id"),
@@ -1054,7 +1054,7 @@ def task_lines(found: dict[str, Any]) -> list[str]:
     conditions = found.get("conditions") or []
     if len(conditions) <= 1:
         return [f"{found.get('task_id')}: {found.get('runs')} run(s), passed {rate_text(found.get('passed'))}"]
-    lines = [f"{found.get('task_id')}: {found.get('runs')} run(s) under {len(conditions)} conditions:"]
+    lines = [f"{found.get('task_id')}: {found.get('runs')} run(s) under {len(conditions)} set-ups:"]
     for condition in conditions:
         lines.append(
             f"  {condition.get('harness')} · {condition.get('model')} · skill {condition.get('skill_version')}:"
@@ -1134,7 +1134,7 @@ def tally_lines(view: dict[str, Any]) -> list[str]:
 
 
 def where(report: dict[str, Any], show: int = 12) -> dict[str, Any]:
-    """Where a question held along a task's runs, small enough for an agent: each condition's split
+    """Where a question held along a task's runs, small enough for an agent: each set-up's split
     by verdict with its intervals, where it was first seen or made, the step that names that call in
     each run, and a few of the runs."""
     kind = (report.get("probe") or {}).get("kind")
@@ -1168,7 +1168,7 @@ def where(report: dict[str, Any], show: int = 12) -> dict[str, Any]:
 
 
 def where_lines(view: dict[str, Any]) -> list[str]:
-    """Where a question held, in sentences: the question, then each condition's split by verdict,
+    """Where a question held, in sentences: the question, then each set-up's split by verdict,
     where it was first seen or made, and the step that names that call in each run."""
     from tuningfork.ops.where import reference_text, seen_text, split_text
 

@@ -38,6 +38,8 @@ class TestAFolderOnThisMachine:
         (own,) = skills.skill(store, "tally-report").folders
         assert own.path == mine and own.text == SKILL and own.added["kind"] == "folder"
         assert own.to_json()["added"]["origin"] == {"folder": str(mine)}
+        # Drawn on the skill page as what it is: a folder on this machine, its approvals' target.
+        assert (own.kind, own.scenario, own.named_by) == ("folder", None, [])
 
     def test_a_folder_without_its_skill_md_twice_or_one_tuningfork_keeps_is_refused(self, store, tmp_path):
         empty = tmp_path / "empty"
@@ -70,6 +72,7 @@ class TestUploaded:
         assert not list(addskill.root(store.home).glob(".incoming-*"))
         (own,) = skills.skill(store, "tally-copy").folders
         assert own.added["kind"] == "copy" and own.added["origin"] == {"upload": {"files": 2}} and own.text == SKILL
+        assert (own.kind, own.scenario) == ("copy", None)  # tuningfork's copy, which approvals write
 
     def test_a_path_outside_the_copy_no_skill_md_or_a_bad_name_is_refused(self, store):
         for outside in ("../evil.md", "/etc/x", "C:/x"):
@@ -185,11 +188,11 @@ def test_a_person_adds_and_forgets_a_skill_from_the_terminal(store, tmp_path):
     assert copied.exit_code == 0 and "a copy kept in the recordings folder" in copied.output, copied.output
     # Its page in the terminal says how each was added, as the web page does.
     shown = runner.invoke(app, ["skill", "tally-copy", *home])
-    assert f"added: tuningfork's copy, copied from {mine}" in shown.output, shown.output
+    assert f"you added it, as a copy (copied from {mine})" in shown.output, shown.output
     shown = runner.invoke(app, ["skill", "tally-report", *home])
-    assert "added: a folder on this machine, remembered where it is" in shown.output, shown.output
+    assert "you added it, where it is" in shown.output, shown.output
     both = runner.invoke(app, ["add-skill", *home])
-    assert both.exit_code != 0 and "name the skill's folder, or a run with --run" in both.output
+    assert both.exit_code != 0 and "name the skill folder, or a run with --run" in both.output
     forgot = runner.invoke(app, ["forget-skill", "tally-copy", *home])
     assert forgot.exit_code == 0 and "its copy is moved aside to" in forgot.output, forgot.output
     assert [each.name for each in addskill.added(store.home)] == ["tally-report"]

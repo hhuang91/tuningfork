@@ -28,7 +28,7 @@ export function checkPicker({ check = null, own = null, editable = true, onChang
   const value = () => ({ kind, text: kind === "shell" ? shell : kind === "own" || kind === "none" ? "" : reply });
   // The check as a spec holds it — what a trial tries.
   const written = () => (kind === "own" ? own : kind === "shell" ? shell : kind === "none" ? null : { [kind]: reply });
-  const body = h("div", { class: "stack", style: { gap: "6px" } });
+  const body = h("div", { class: "stack", style: { gap: "var(--space-1-5)" } });
   const testerSlot = h("div");
   let opened = null;
   const changed = () => {
@@ -70,7 +70,7 @@ export function checkPicker({ check = null, own = null, editable = true, onChang
   function draw() {
     if (kind === "own") {
       return replace(body,
-        h("p", { class: "form-help" }, "The check the run's task had, as its task file words it, with any file it reads from the task's folder."),
+        h("p", { class: "form-help" }, "The check the run's task had, as its task file words it, with any file it reads from the task file's folder."),
         h("pre", { class: "code small" }, typeof own === "string" ? own : JSON.stringify(own)));
     }
     if (kind === "shell") {
@@ -83,7 +83,7 @@ export function checkPicker({ check = null, own = null, editable = true, onChang
         changed();
       });
       return replace(body,
-        h("p", { class: "form-help" }, "Runs as you, in the run's workspace — a fresh folder holding the task's input files, where the harness worked. It passes when it exits 0. $TUNINGFORK_REPLY names a file holding the agent's final reply, and $TUNINGFORK_SPEC_DIR the scenario's folder: a longer check can be a script there, where the agent cannot read it."),
+        h("p", { class: "form-help" }, "Runs as you, in the run's workspace, which holds the task's input files and what the harness wrote. It passes when it exits 0. $TUNINGFORK_REPLY names a file holding the agent's final reply, and $TUNINGFORK_SPEC_DIR the scenario's folder: a longer check can be a script there, where the agent cannot read it."),
         text);
     }
     if (kind === "reply_contains" || kind === "reply_matches") {
@@ -125,7 +125,7 @@ export function checkTester({ check, task, files, scope, runs = null,
   let rows = 0;
 
   const runSelect = h("select", { class: "field", name: "trial_run" }, h("option", { value: "" }, "Loading the task's runs…"));
-  const fileList = h("div", { class: "stack", style: { gap: "8px" } });
+  const fileList = h("div", { class: "stack", style: { gap: "var(--space-2)" } });
   const addFile = (path = "", content = "") => {
     const index = rows++;
     const row = h("div", { class: "file-row file-text" },
@@ -172,7 +172,7 @@ export function checkTester({ check, task, files, scope, runs = null,
         .filter((entry) => entry.path);
       return { check: current, reply: textOf(element, "trial_reply"), files: given };
     },
-    render: (plan) => h("div", { class: "stack", style: { gap: "6px" } },
+    render: (plan) => h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
       h("p", { class: "hint" }, describe(plan)),
       plan.unsandboxed
         ? h("div", { class: "banner banner-warn" },

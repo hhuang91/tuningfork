@@ -49,7 +49,7 @@ export async function stepView(root, [reference, index], scope) {
         walk(previous, "← previous"), walk(next, "next →"))),
     summaryStrip(step),
     banners(step),
-    h("div", { class: "grid-2", style: { marginTop: "14px" } },
+    h("div", { class: "grid-2", style: { marginTop: "var(--space-3-5)" } },
       h("div", { class: "stack" },
         panel("Context", contextEl, {
           meta: h("span", { class: "muted" }, `${plural(messages.length, "message")} · ${plural((step.request?.tools || []).length, "tool")} offered`),

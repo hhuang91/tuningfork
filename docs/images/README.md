@@ -94,12 +94,12 @@ answers. The servers send nothing to the model to take the stills.
 The script plays it on the lab, reading the page's own screencast frame by frame while it clicks
 and types, with a pointer drawn where each click lands. ffmpeg (`FFMPEG` names it where it is not
 on the PATH) puts the frames together, one palette for all of them, dithered so that a colour few
-pixels hold, a variant's teal, still reads as itself. What it plays:
+pixels hold, a variant's cyan, still reads as itself. What it plays:
 
 1. **Runs** → run `tally-report/1#demo.2` → step 1's **Work from here** → **A/B a wording…**
 2. In the editor, `Write the totals to report.json.` becomes
    `Write the totals to report.json, using the keys row_count and amount_total.`
-3. Under *What to count*, *A behaviour I describe*: *Calls the tool* `write_file`, then
+3. Under *Condition*, *A behaviour I describe*: *Calls the tool* `write_file`, then
    *+ Add a condition* twice, for *Mentions* `row_count` and *Mentions* `amount_total`. The
    suggested name and 20 samples for each wording stay as they are, and it starts.
 4. Its job runs, and its page says what it found. *See the result* opens the A/B's own page: the

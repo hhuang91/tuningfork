@@ -440,7 +440,7 @@ class TestTheBatchPlan:
         assert data["sandbox"] is None
         (note,) = data["notes"]
         assert note["level"] == "warning" and "bubblewrap is not installed" in note["message"]
-        assert "differ from run to run" in note["message"]
+        assert "its run folder at its real path, which differs from run to run" in note["message"]
 
 
 class TestInBubblewrap:

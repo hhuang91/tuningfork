@@ -109,7 +109,7 @@ export function readVariant(form) {
  *  `exploratory: false` leaves that choice out. */
 export function targetPicker(targets, {
   run = null, idx = null, exploratory = true,
-  legend = `${LABELS.whatToCount} (chosen before sampling)`,
+  legend = `${LABELS.condition} (chosen before sampling)`,
 } = {}) {
   const clusters = targets.behaviours?.clusters || [];
   const resample = targets.resample;
@@ -178,7 +178,7 @@ export function targetPicker(targets, {
 export function readTarget(form) {
   const kind = form.querySelector('[name="target_kind"]:checked')?.value;
   if (!kind) {
-    throw Object.assign(new Error("Choose what to count before sampling: a behaviour, a pattern, or nothing declared."), { field: "target_kind" });
+    throw Object.assign(new Error("Choose the condition before sampling: a behaviour, a pattern, or nothing declared."), { field: "target_kind" });
   }
   if (kind === "letter") {
     const letter = form.querySelector('[name="target"]:checked')?.value;

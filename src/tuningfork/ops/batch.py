@@ -319,8 +319,8 @@ def prepare_batch(
     if sandbox is None and not sandbox_turned_off():
         notes.append(Note(
             "warning",
-            f"runs are not sandboxed: {unsandboxed}. Each sees its own folders, whose paths "
-            "differ from run to run, and the model reads them; and the task's check runs on this "
+            f"runs are not sandboxed: {unsandboxed}. Each sees its run folder at its real path, which "
+            "differs from run to run, and the model reads it; and the task's check runs on this "
             "machine itself, where it can run what the model wrote",
         ))
     if sandbox is not None and sandbox.clock_problem:
@@ -345,8 +345,8 @@ def prepare_batch(
     if sandbox is not None and check_kind(item.tuningfork.check) == "shell" and not sandbox.shows(spec.directory):
         notes.append(Note(
             "warning",
-            f"the task file is in {spec.directory}, which a sandboxed check never sees: the check will not "
-            "find what is kept beside the task file. Move the task file into a folder of its own",
+            f"the spec is in {spec.directory}, which a sandboxed check never sees: the check will not "
+            "find what is kept beside the spec. Move the spec into a folder of its own",
         ))
     if item.tuningfork.held_out:
         notes.append(Note(

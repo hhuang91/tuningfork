@@ -201,7 +201,7 @@ export function heatmap(view, { onProbe = null, probeOff = null, marks = null, f
         h("button", { class: "btn btn-small", type: "button", "data-control": true, onclick: () => probing([position]) }, "Find forking tokens here…")) : null,
       onProbe && probeOff && !token.redacted ? [
         h("div", { class: "actions" }, h("span", { class: "btn btn-small", "aria-disabled": "true", title: probeOff }, "Find forking tokens here…")),
-        h("div", { class: "muted small", style: { marginTop: "4px" } }, `${probeOff}. `, h("a", { href: "#/connections" }, "Connections"))] : null);
+        h("div", { class: "muted small", style: { marginTop: "var(--space-1)" } }, `${probeOff}. `, h("a", { href: "#/connections" }, "Connections"))] : null);
     detail.hidden = false;
   }
 
@@ -212,8 +212,8 @@ export function heatmap(view, { onProbe = null, probeOff = null, marks = null, f
       h("div", { class: "label" }, mark.flips ? "Probed here: a forced token changed what the model did" : "Probed here: no forced token decided what the model did"),
       mark.probes.map(({ experiment, position }) => h("div", { class: "tk-probe" },
         h("a", { class: "mono", href: `#/experiments/${experiment.id}?at=${position.position}` }, `probe ${short(experiment.id)}`),
-        h("span", { class: "small muted" }, "did what was counted:"),
-        h("span", { class: "small muted" }, arm(position.baseline, "the run's own")),
+        h("span", { class: "small muted" }, "condition met:"),
+        h("span", { class: "small muted" }, arm(position.baseline, "original")),
         position.alternatives.map((alt) => h("span", { class: ["small", alt.flips ? "tk-probe-flip" : "muted"] },
           arm(alt, "forced") + (alt.flips ? `, ${alt.direction === "away" ? "less" : "more"} often` : ""))))));
   }
@@ -356,20 +356,20 @@ export function tokensPanel({ run, idx, scope, onProbe, focus = null }) {
 
   function unscored(work) {
     if (live.mode !== "live") {
-      return h("div", { class: "stack", style: { gap: "6px" } },
+      return h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
         h("p", { class: "muted" }, "This answer has not been scored yet. Scoring sends its exact context once more, with the answer forced token by token, and reads how sure the model was of each. From a terminal, with the model server running:"),
         command(`tuningfork tokens ${short(run.id)} ${idx} --score`));
     }
     if (work.score) {
       // The server's check found it cannot: greyed, with the words that would refuse it.
-      return h("div", { class: "stack", style: { gap: "6px" } },
+      return h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
         h("p", { class: "muted" }, "Not scored yet. Scoring sends this step's exact context once more, with the answer forced token by token, and reads how sure the model was of each."),
         h("div", { class: "actions" }, h("span", { class: "btn btn-small", "aria-disabled": "true", title: work.score }, "Score this answer")),
         h("div", { class: "muted small" }, `${work.score}. `, h("a", { href: "#/connections" }, "Connections")));
     }
     const status = h("div", { class: "muted small" });
     const button = h("button", { class: "btn btn-primary btn-small", type: "button", "data-control": true, onclick: guard(score) }, "Score this answer");
-    return h("div", { class: "stack", style: { gap: "6px" } },
+    return h("div", { class: "stack", style: { gap: "var(--space-1-5)" } },
       h("p", { class: "muted" }, "Not scored yet. Scoring sends this step's exact context once more, with the answer forced token by token, and reads how sure the model was of each — one call, about as long as the answer took."),
       h("div", { class: "actions" }, button, status));
 

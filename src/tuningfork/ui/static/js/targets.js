@@ -5,7 +5,7 @@
 // report will use — among the behaviours already seen at the step.
 
 import { api, enc, query } from "./api.js";
-import { h, outcome, replace } from "./dom.js";
+import { h, icon, outcome, replace } from "./dom.js";
 import { LABELS } from "./words.js";
 
 const KINDS = [
@@ -34,7 +34,7 @@ export function describeBuilder({ onUse = () => {} } = {}) {
 
   function add(kind) {
     const value = h("input", { class: "field", type: "text", "aria-label": "Value" });
-    const which = h("select", { class: "field", "aria-label": "Condition", onchange: () => shape() },
+    const which = h("select", { class: "field", "aria-label": "Kind of condition", onchange: () => shape() },
       KINDS.map(([key, label]) => h("option", { value: key, selected: key === kind }, label)));
     // The value and its × go to a line of their own together where the row is narrow.
     const row = h("div", { class: "rule" }, which, h("span", { class: "rule-value" }, value,
@@ -110,18 +110,18 @@ export function seenPreview({ run, idx, onTools = () => {} }) {
     const parts = [
       h("div", { class: "label" }, seen.target === null
         ? "Behaviours seen at this step"
-        : `What it would count, of the behaviours seen at this step: ${counted} of ${total}`),
+        : `What it would match, of the behaviours seen at this step: ${counted} of ${total}`),
       h("ul", { class: "seen-list" }, seen.behaviours.map((found) =>
         h("li", { class: ["seen", found.matches === true && "seen-yes", found.matches === false && "seen-no"] },
           h("span", { class: "seen-mark", title: found.matches === null ? "" : found.matches ? LABELS.matches : LABELS.noMatch },
-            found.matches === null ? "·" : found.matches ? "✓" : "✗"),
+            found.matches === null ? "·" : icon(found.matches ? "check" : "x")),
           outcome(found),
           h("span", { class: "muted small" }, Object.entries(found.seen).map(([where, n]) => `${where} ${n}`).join(" · ") + fared(found))))),
     ];
     const judged = split(seen);
     if (judged) parts.push(judged);
-    parts.push(h("p", { class: "form-help" }, "These are earlier answers, shown so you can see what your choice would count. They are not the samples the test will draw."));
-    return h("div", { class: "stack", style: { gap: "4px" } }, ...parts);
+    parts.push(h("p", { class: "form-help" }, "These are earlier answers, shown so you can see what your choice would match. They are not the samples the test will draw."));
+    return h("div", { class: "stack", style: { gap: "var(--space-1)" } }, ...parts);
   }
 
   // How the recorded runs that took a behaviour fared: a target should count the passing runs'.

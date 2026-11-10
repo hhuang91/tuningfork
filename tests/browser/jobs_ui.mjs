@@ -271,7 +271,7 @@ try {
     // A probe that saw no flip says what it could have seen, as its own page does: no caution.
     probeNull: ["With 8 continuations a token, only a token that changes about 5 of its 8 would show. A smaller shift can be real and go unseen.", 0],
     // What a probe or a test leaves open, in its own page's words; what to do about it is said there.
-    probeOpen: ["Still undecided there. At [12], the run's own token led elsewhere more often than to its own behaviour, so a later token decided it."],
+    probeOpen: ["Still undecided there. At [12], the original token led elsewhere more often than to its own behaviour, so a later token decided it."],
     unfinished: [
       "Not every wording drew what was planned. Its rates are over what was drawn, with no verdict. Stopping when one looks good is how false discoveries are made.",
       "1 fork of the original timed out, counted as a failure.",
@@ -374,7 +374,7 @@ try {
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "A/B a wording at this step").click()`);
   await until(() => page.eval(`!!document.querySelector('.plan-form [name="variant_text"]')`), "the A/B form");
   check(await page.eval(`document.querySelector('[name="variant_text"]').value.includes("Write the totals to report.json.")`), "the editor starts from the skill as the run was given it");
-  await until(() => page.eval(`(document.querySelector(".plan-status")?.textContent || "").includes("Choose what to count before sampling")`), "the form to ask for a target first");
+  await until(() => page.eval(`(document.querySelector(".plan-status")?.textContent || "").includes("Choose the condition before sampling")`), "the form to ask for a target first");
   check(await page.eval(`!!document.querySelector(".plan-status .form-note-box") && !document.querySelector(".plan-status .form-error-box")`),
     "and asks it as a note: a form nobody has touched has done nothing wrong (found in review: it opened in red)");
   check(await page.eval(`![...document.querySelectorAll('[name="target_kind"]')].some((radio) => radio.checked)`), "no target is chosen for you");
@@ -401,7 +401,7 @@ try {
   check(variants.some((variant) => variant.name === variantName), "the variant was saved when the A/B started");
   await until(() => page.eval(`!!document.querySelector(".verdict-block.significant")`), "the verdict on the job page");
   // The job's page says it in a line, with what it counts, and leaves the behaviours' table to the A/B's page.
-  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "What was counted:"
+  check(await page.eval(`document.querySelector(".verdict-block .verdict-target .label")?.textContent === "Condition:"
     && !document.querySelector(".table tr.is-target") && !document.querySelector(".diff-line")`),
     "the A/B's job page says what it found and what it counts, and leaves the rest to the A/B's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
@@ -417,7 +417,7 @@ try {
     return block.classList.contains("significant") && !block.classList.contains("tone-ok")
       && block.firstElementChild.classList.contains("verdict-target")
       && block.querySelector(".verdict-target-text").textContent.startsWith("A from resample ")
-      && block.querySelector(".verdict-big").textContent === "What was counted happened less often with the variant: 0 of 6 samples, against 6 of 6 with the original. That is more than chance would explain.";
+      && block.querySelector(".verdict-big").textContent === "The condition was met less often with the variant: 0 of 6 samples, against 6 of 6 with the original. That is more than chance would explain.";
   })()`), "the result says the target first, then which way the variant moved it, in the accent's colour, not green");
   const marked = await page.eval(`[...document.querySelectorAll(".table tr.is-target")].map((row) =>
     [row.querySelector(".chip.tone-target")?.textContent, row.children[2].textContent.split(" ")[0]].join(":")).join(",")`);
@@ -452,12 +452,29 @@ try {
 
   await page.eval(`location.hash = "#/runs/${launched}"`);
   await until(() => page.eval(`[...document.querySelectorAll("a.btn")].some((a) => a.textContent === "Run this task again…")`), "the run's way to run it again");
+  // Where it ran, as the tree it is (asked for by the user, 2026-11-05): its batch's folder in the
+  // recordings folder, the copy of the skill the batch gave its runs, and its own run folder
+  // marked, with the harness's home and the workspace in it.
+  await page.eval(`(() => { [...document.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent.includes("About this run")).open = true; return true; })()`);
+  await until(() => page.eval(`!!document.querySelector("details.fold-panel .folder-tree")`), "its run folder, drawn");
+  check(await page.eval(`(() => {
+    const tree = document.querySelector("details.fold-panel .folder-tree");
+    const names = [...tree.querySelectorAll(".tree-name")].map((name) => name.textContent).join();
+    return tree.querySelector(".tree-root .mono").textContent.startsWith("batches/")
+      && names === "skill-snapshot/tally-report/,0/,home/,workspace/,reply.txt" && tree.querySelector(".is-mark .tree-name").textContent === "0/";
+  })()`), "a launched run's page draws its run folder: the batch's copy of the skill, and its own folder with its home and workspace");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "Run this task again…").click()`);
   await until(() => page.eval(`document.querySelector('.plan-form [name="harness"]')?.value === "fake"`), "the batch form, as the run was launched");
   await planShows(page, "tally-lab/1");
   check(await page.eval(`document.querySelector('.plan-form [name="scenario"]').value === "" && !document.querySelector('.plan-form [name="spec"]').disabled`),
     "a run's task file is named by its path, no scenario chosen, the path open to edit");
   check(await page.eval(`document.querySelector(".check-command pre")?.textContent.includes("row_count")`), "the check is shown whole, as the shell command it is");
+  check(await page.eval(`(() => {
+    const tree = document.querySelector(".plan-preview .folder-tree");
+    const names = [...tree.querySelectorAll(".tree-name")].map((name) => name.textContent);
+    return tree.querySelector(".tree-root .mono").textContent === "batches/<batch>/"
+      && names[0] === "skill-snapshot/tally-report/" && names.slice(-3).join() === "home/,workspace/,reply.txt";
+  })()`), "the plan draws where the runs go: the batch's copy of the skill, and a run folder for each run");
   check(await page.eval(`document.querySelector(".plan-preview > .stack > :first-child")?.classList.contains("check-command")`), "how a run passes comes first in the plan");
   check(await page.eval(`[...document.querySelector('.plan-form [name="eval"]').options].some((option) => option.textContent.includes(" — "))`),
     "the spec's task is offered by what it asks");
@@ -472,7 +489,15 @@ try {
   check(await page.eval(`(() => { const options = document.querySelector('.plan-form [name="eval"]').options;
     return options.length === 1 && options[0].value === "" && options[0].textContent === "its first task"; })()`),
     "another spec typed in puts the task list back to its first");
+  // A path typed greys the scenarios beside it, as a scenario chosen greys the path (found in
+  // use: a skill's Run it… filled the path in, the scenarios left open as if both counted).
+  const scenarioGreyed = `(() => { const scenario = document.querySelector('.plan-form [name="scenario"]');
+    return scenario.disabled && Number(getComputedStyle(scenario).opacity) < 1; })()`;
+  check(await page.eval(scenarioGreyed), "a task file's path typed in, the scenarios beside it are greyed out");
+  await page.type(`document.querySelector('.plan-form [name="spec"]')`, "");
+  check(await page.eval(`!document.querySelector('.plan-form [name="scenario"]').disabled`), "the path cleared, the scenarios open");
   await page.type(`document.querySelector('.plan-form [name="spec"]')`, specPath);
+  check(await page.eval(scenarioGreyed), "the path typed back, the scenarios greyed again");
   await planShows(page, "tally-lab/1");
   await startButtonReady(page, "Start the runs");
   await page.type(`document.querySelector('.plan-form [name="n"]')`, "2");
@@ -546,7 +571,7 @@ try {
     "the forks' job page says how many passed the task's check, and links each fork: forks are in no list of runs");
 
   await openStepOf(page, launched, 1, "ab&reach=end");
-  check(!(await page.eval(`!!document.querySelector(".target-picker legend")?.textContent.includes("What to count")`)), "to the end, the target is the task's check: no picker");
+  check(!(await page.eval(`!!document.querySelector(".target-picker legend")?.textContent.includes("Condition")`)), "to the end, the target is the task's check: no picker");
   await page.type(`document.querySelector('[name="variant_text"]')`,
     (await page.eval(`document.querySelector('[name="variant_text"]').value`)).replace("Write the totals to report.json.", "Write the totals to report.json, using the keys row_count and amount_total."));
   await page.type(`document.querySelector('[name="variant_name"]')`, `to-end-${Date.now().toString(36)}`);
@@ -671,12 +696,12 @@ try {
     "before its first save a scenario says it is not saved, and takes no files");
   await page.type(`document.querySelector('[name="skill_name"]')`, "tally-scenario");
   // The skill folder: one the Skills page lists, or a path — a relative one shown after the
-  // scenario's own folder, where it is taken from.
+  // scenario's folder, where it is taken from.
   await page.eval(`document.querySelector('input[name="skill-from-editor"][value="path"]').click()`);
   await page.type(`document.querySelector('[name="skill_dir-editor"]')`, "skill");
   await until(() => page.eval(`(() => { const base = document.querySelector(".path-base");
     return !!base && !base.hidden && base.textContent === ${JSON.stringify(`${health.home}/scenarios/${scenarioName}/`)}; })()`), "the scenario's folder before a relative path");
-  check(true, "a relative skill folder is shown after the scenario's own folder, where it is taken from");
+  check(true, "a relative skill folder is shown after the scenario's folder, where it is taken from");
   await page.type(`document.querySelector('[name="skill_dir-editor"]')`, `${health.home}/lab-task/tally-report`);
   await until(() => page.eval(`(document.querySelector(".path-line.path-ok")?.textContent || "").includes("holds a SKILL.md")`), "the skill folder, resolved");
   check(await page.eval(`document.querySelector(".path-base").hidden && document.querySelector('[name="skill_name"]').value === "tally-scenario"`),
@@ -1327,31 +1352,50 @@ try {
   const forkJobId = await until(async () => jobIdIn(await page.eval("location.hash")), "the probe's job page");
   const forkJob = await finished(forkJobId, 120000);
   check(forkJob.status === "done" && forkJob.result.forking.flips === 1, "the probe found the token that decides the answer");
-  // Its job's page says so in a line, which token beside the run's own in another, and hands off
+  // Its job's page says so in a line, which token beside the original in another, and hands off
   // to the probe's own page for the rest.
   await until(() => page.eval(`(document.querySelector(".verdict-big")?.textContent || "") === "1 forced token changed what the model did"`), "what the probe found, on its job's page");
   const flipLine = await page.eval(`[...document.querySelectorAll(".verdict-block ul.verdict-lines li")].map((li) => li.textContent).join(" | ")`);
-  check(flipLine === `At [${forkSpot.position}], "search_files" forced in place of the run's own "read_file": what was counted happened in 0 of 6 continuations, against 6 of 6.`,
-    `and names the token, beside the run's own, with what each did (${flipLine})`);
-  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".flips-table")`),
-    "the probe's job page says what it found in lines, and leaves the tables to the probe's page");
+  check(flipLine === `At [${forkSpot.position}], "search_files" forced in place of the original "read_file": the condition was met in 0 of 6 continuations, against 6 of 6.`,
+    `and names the token, beside the original, with what each did (${flipLine})`);
+  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".fork-tree")`),
+    "the probe's job page says what it found in lines, and leaves the tree and the tables to the probe's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && [...document.querySelectorAll(".chip")].some((c) => c.textContent === "less often")`), "the result, marked where it forks");
   check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => /^(less|more) often$/.test(c.textContent)).every((c) => c.classList.contains("tone-accent"))`),
     "a forced token that changed what the model did is the accent's colour, its direction in words: a result, not a check's red");
-  // The block the page leads with: what was counted on a line of its own, then the forced token
-  // beside the run's own — what each led to, how many did what was counted, which way it moved.
+  // The block the page leads with: the condition on a line of its own, then a tree from the token
+  // boxed in its sentence, its place in the answer over it: the original token and the forced one a
+  // row each, the model's chance of each, how often each met the condition and a badge after the
+  // rate the forced one moved, every column read from the left; the behaviour breakdown a link away
+  // (the user's drawing, 2026-11-06: no "the run's own" to explain, the sentence shows it; their
+  // look, 2026-11-09: the place heads the tree, the badge has no column of its own, and the link,
+  // under the trees, named for what it leads to).
   const probeLead = await page.eval(`(() => {
     const block = document.querySelector(".verdict-block");
-    const rows = [...block.querySelectorAll(".flips-table tbody tr")].map((row) => [...row.children].map((cell) => cell.textContent.trim()));
-    return { label: block.querySelector(".verdict-target .label").textContent, rows };
+    const at = block.querySelector(".fork-tree tr.fork-at");
+    return {
+      label: block.querySelector(".verdict-target .label").textContent,
+      boxed: at?.querySelector(".fork-token")?.textContent, before: at?.querySelector(".fork-before")?.textContent,
+      after: at?.querySelector(".fork-after")?.textContent,
+      link: [...block.querySelectorAll(":scope > button")].map((button) => button.textContent).join(","),
+      heads: [...block.querySelectorAll(".fork-tree thead th")].map((th) => th.textContent).join(","),
+      fromLeft: [...block.querySelectorAll(".fork-tree th, .fork-tree td")].every((cell) => ["left", "start"].includes(getComputedStyle(cell).textAlign)),
+      marked: [...block.querySelectorAll(".fork-tree tr.fork-branch td:first-child span")].map((span) => span.className).join(","),
+      rows: [...block.querySelectorAll(".fork-tree tr.fork-branch")].map((row) => [...row.children].map((cell) => cell.textContent.trim())),
+    };
   })()`);
-  const [place, own, forced] = probeLead.rows;
-  check(probeLead.label === "What was counted:" && probeLead.rows.length === 3 && place[0].startsWith(`[${forkSpot.position}]`)
-    && own[0] === "the run's own" && own[1].startsWith('"read_file"') && own[2].includes("read_file(") && own[3].startsWith("6/6")
-    && forced[0] === "forced" && forced[1].startsWith('"search_files"') && forced[2].includes("search_files(") && forced[3].startsWith("0/6")
-    && forced[4].startsWith("less often"),
-    `the probe's page leads with the forced token beside the run's own: what each led to, how often it was counted, and which way it moved (${JSON.stringify(probeLead.rows)})`);
+  const [own, forced] = probeLead.rows;
+  check(probeLead.label === "Condition:" && probeLead.boxed === "read_file" && probeLead.before.endsWith("call:") && probeLead.after.startsWith("{path:")
+    && probeLead.link === "Behaviour breakdown" && probeLead.heads === `[${forkSpot.position}] tool call,chance of token,condition met`
+    && probeLead.fromLeft && probeLead.marked === "fork-original,fork-forced"
+    && probeLead.rows.length === 2 && own.length === 3 && own[0] === '"read_file"' && own[2].startsWith("6/6") && !own[2].includes("often")
+    && forced[0] === '"search_files"' && forced[2].startsWith("0/6") && forced[2].endsWith("less often"),
+    `the probe's page leads with a tree from the token in its sentence, its place over it: the original token and the forced one, how often each met the condition, and a badge after the rate one moved (${JSON.stringify(probeLead)})`);
+  await page.eval(`[...document.querySelectorAll(".verdict-block > button")].find((button) => button.textContent === "Behaviour breakdown").click()`);
+  check(await page.eval(`(() => { const section = document.querySelector(".panel.continuations"), box = section?.getBoundingClientRect();
+    return !!section?.querySelector(".probe-behaviours") && !!box && box.top >= -1 && box.top < innerHeight; })()`),
+    "the behaviour breakdown is a link away: every behaviour below, with the tokens whose continuations ended in it");
 
   console.log("from a probe's result to the token it forced, and back");
   const probeId = forkJob.result.experiment.id;
@@ -1408,11 +1452,11 @@ try {
     marks: [...token.querySelectorAll("mark.forced")].map((mark) => mark.textContent + (mark.classList.contains("changed") ? "*" : "")),
     texts: [...token.querySelectorAll(".written-text")].map((text) => text.textContent),
   }))`);
-  check(wrote[0].head.startsWith('the run\'s own "read_file"') && wrote[1].head.startsWith('forced "search_files"')
+  check(wrote[0].head.startsWith('original "read_file"') && wrote[1].head.startsWith('forced "search_files"')
     && wrote[0].marks.length === 6 && wrote[0].marks.every((mark) => mark === "read_file")
     && wrote[1].marks.length === 6 && wrote[1].marks.every((mark) => mark === "search_files*")
     && wrote[1].texts.every((text) => text.startsWith("tool callsearch_files{pattern:")),
-    `each continuation's text from the token forced on, the run's own first, a forced token marked as a change (${JSON.stringify(wrote.map((token) => [token.head, token.marks[0], token.texts[0]]))})`);
+    `each continuation's text from the token forced on, the original first, a forced token marked as a change (${JSON.stringify(wrote.map((token) => [token.head, token.marks[0], token.texts[0]]))})`);
   // The arrow keys move between the groupings, and what was opened by token stays open: shown again
   // at once from what it read, nothing asked again (found in review: a fold asked again at every
   // draw, its text "Loading…" meanwhile).
@@ -1660,7 +1704,8 @@ try {
     const test = document.querySelector('.stage-panel[data-stage="test"]');
     const follows = (a, b) => !!a && !!b && Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     return {
-      order: stagePanels.map((panel) => panel.dataset.stage + ":" + panel.querySelector(".stage-num").textContent).join(",") === "propose:✓,test:✓,validate:3,approve:4"
+      // A stage done shows a tick, drawn (an svg), where the others show their number.
+      order: stagePanels.map((panel) => { const num = panel.querySelector(".stage-num"); return panel.dataset.stage + ":" + (num.querySelector("svg.icon") ? "done" : num.textContent); }).join(",") === "propose:done,test:done,validate:3,approve:4"
         && follows(document.querySelector(".evidence-panel"), stagePanels[0])
         && follows(test.querySelector(".proposal-list"), test.querySelector(".screen-panel"))
         && follows(test.querySelector(".screen-panel"), test.querySelector(".table-wrap"))
@@ -1780,8 +1825,17 @@ try {
   await page.click("Approve…", `document.querySelector(".validation")`);
   await until(() => page.eval(`!!document.querySelector(".approve-code strong")`), "the approval's plan");
   const code = await page.eval(`document.querySelector(".approve-code strong").textContent`);
-  check(await page.eval(`document.querySelector(".approve-panel").textContent.includes(${JSON.stringify(`${health.home}/lab-task/tally-report/SKILL.md`)})`),
-    "approving shows the file it writes");
+  // What approving writes, as the tree it is (asked for by the user, 2026-11-05: a path is never
+  // only a sentence): the SKILL.md in the skill folder, and beside the folder its old text and the
+  // changelog, the part inside the recordings folder shown from there.
+  check(await page.eval(`(() => {
+    const tree = document.querySelector(".approve-panel .folder-tree");
+    const names = [...tree.querySelectorAll(".tree-name")].map((name) => name.textContent).join();
+    const root = tree.querySelector(".tree-root");
+    return names === "tally-report/,SKILL.md,tally-report.history/,tally-report.changelog.md"
+      && tree.querySelector(".is-mark .tree-name").textContent === "SKILL.md"
+      && root.querySelector(".mono").textContent === "lab-task/" && root.querySelector(".chip").title === ${JSON.stringify(health.home)};
+  })()`), "approving shows what it writes as a tree: the SKILL.md in the skill folder, its old text and the changelog beside the folder");
   check(await page.eval(`[...document.querySelectorAll(".approve-panel .diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))`),
     "and the edit, as a line diff");
   await page.type(`document.querySelector('.approve-panel [name="confirm"]')`, "00000000");
@@ -1793,7 +1847,7 @@ try {
   await until(() => page.eval(`document.querySelector(".approve-panel h3")?.textContent === "Written"`), "the edit, written");
   const approved = await api(`/refinements/${made.id}`);
   check(approved.approval?.state === "applied" && approved.refinement.status === "approved",
-    "the typed code writes it: the skill's own file, its old text and a changelog beside its folder");
+    "the typed code writes it: the SKILL.md in the skill folder, its old text and a changelog beside the folder");
   const writtenView = await page.eval(`(() => {
     const block = document.querySelector(".evidence-panel .verdict-block");
     return {
@@ -1804,12 +1858,12 @@ try {
       about: document.querySelector("details.about-refinement").textContent,
     };
   })()`);
-  check(writtenView.headline === `Approved: proposal ${keysFix.id.slice(0, 8)}, written to the skill's own file` && writtenView.green,
+  check(writtenView.headline === `Approved: proposal ${keysFix.id.slice(0, 8)}, written to the skill folder` && writtenView.green,
     `and the page says so first, with the evidence it stood on (${writtenView.headline})`);
   check(writtenView.row === "approved,beat the original,passed the approval checks" && writtenView.card, `the approved proposal picked out, in the evidence and its card (${writtenView.row})`);
   check(writtenView.about.includes(`${health.home}/lab-task/tally-report/SKILL.md`), "About this refinement says where it wrote");
   const writtenStages = await stages();
-  check(writtenStages.endsWith("Approve: written to the skill's own file: done") && !writtenStages.includes(": current")
+  check(writtenStages.endsWith("Approve: written to the skill folder: done") && !writtenStages.includes(": current")
     && !(await page.eval(`!!document.querySelector('.stepper [aria-current="step"]')`)),
     `written, every stage is done and none is current (${writtenStages})`);
 
@@ -1937,6 +1991,18 @@ try {
     "a word looked up narrows the table, on the Words page the sidebar marks");
   await page.type(`document.querySelector('.panel input[type="search"]')`, "");
   check(await page.eval(`document.querySelectorAll(".glossary .term-row").length === ${words}`), `cleared, all ${words} words`);
+  // Above the words, where the folders they name are: folded away for a word looked up, opened
+  // with the place a folder's tree links to marked (asked for by the user, 2026-11-05).
+  check(await page.eval(`!document.querySelector("details.where-panel").open`), "a word looked up folds where things live away");
+  await page.eval(`location.hash = "#/words?place=run-folder"`);
+  await until(() => page.eval(`!!document.querySelector('.where-things-live [data-place="run-folder"].flash')`), "where things live, the run folder marked");
+  check(await page.eval(`(() => {
+    const diagram = document.querySelector(".where-things-live");
+    const places = [...diagram.querySelectorAll("[data-place]")].map((box) => box.dataset.place).join();
+    return places === "your-files,recordings-folder,seen,skill-folder,task-file,copy,run-folder,kept,sandbox"
+      && diagram.closest("details").open
+      && diagram.querySelector(".place-head .place-where").textContent === ${JSON.stringify(health.home)};
+  })()`), "the Words page draws where things live, the recordings folder by its path, and a link marks the place it names");
   // A word named on the Guide's address, as links made before the page had its own, lands there too.
   await page.eval(`location.hash = "#/guide?term=validation"`);
   await until(() => page.eval(`location.hash === "#/words?term=validation" && document.querySelector('.panel input[type="search"]')?.value === "validation"`), "a word named in the address");
@@ -1948,6 +2014,17 @@ try {
   await until(() => page.eval(`!!document.querySelector(".markdown .md-front")`), "its SKILL.md, rendered with its frontmatter as fields");
   check(await page.eval(`!!document.querySelector(".markdown h1") && document.querySelector(".markdown").textContent.includes("report.json")`), "the text, as Markdown");
   const skill = await api("/skills/tally-report");
+  // Its folders, each drawn as the tree it sits in: the skill folder approvals write leads, marked,
+  // and copies scenarios keep in its place follow (asked for by the user, 2026-11-05: three
+  // folders had each been "Its own folder").
+  check(await page.eval(`(() => {
+    const panel = [...document.querySelectorAll(".panel")].find((each) => each.querySelector("h2")?.textContent === "Where its SKILL.md is kept");
+    const first = panel?.querySelector(".folder-tree .is-mark");
+    const kinds = [...panel.querySelectorAll(".folder-tree .is-mark .chip")].map((chip) => chip.textContent);
+    return first?.querySelector(".tree-name").textContent === "tally-report/" && kinds[0] === "skill folder"
+      && kinds.slice(1).every((kind) => kind === "skill folder" || kind === "stands in for the skill folder")
+      && !document.querySelector("main").textContent.includes("Its own folder");
+  })()`), "the skill page draws each folder holding its SKILL.md as the tree it sits in, the skill folder first");
   // A skill is a way in: run it again from a scenario that names it, or make one with its folder filled in.
   const ways = await page.eval(`[...document.querySelectorAll(".page-head .actions a")].map((a) => a.textContent + "=" + a.getAttribute("href")).join(" | ")`);
   check(ways.includes("Make a scenario for it…=#/scenarios/new?skill=tally-report&skill_dir=")
@@ -2000,7 +2077,7 @@ try {
     && document.querySelector(".plan-box .label").textContent === "What will be added"`), "the plan says it is a folder the skill lists already, and what will be added");
   await page.click("Add it");
   await until(() => page.eval(`location.hash === "#/skills/tally-report" && !!document.querySelector(".added-line")`), "the skill's page, its folder marked added");
-  check(await page.eval(`document.querySelector(".added-line").textContent.includes("added: a folder on this machine")`), "its folder, marked added where it is");
+  check(await page.eval(`document.querySelector(".added-line").textContent.includes("you added it, where it is")`), "its folder, marked added where it is");
   // A folder uploaded from the browser: kept as tuningfork's copy.
   const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -2023,8 +2100,9 @@ try {
   rmSync(uploadRoot, { recursive: true, force: true });
   const helloSkill = await api("/skills/hello-skill");
   check(helloSkill.folders[0].added.kind === "copy" && helloSkill.folders[0].text.includes("Say hello.")
-    && await page.eval(`document.querySelector(".added-line").textContent.includes("never back to where it came from")`),
-    "an uploaded folder is kept as tuningfork's copy, and its page says approvals write to the copy");
+    && await page.eval(`document.querySelector(".added-line").textContent.includes("you added it, as a copy")
+      && document.querySelector(".folder-trees .is-mark").textContent.includes("never back to where it came from")`),
+    "an uploaded folder is kept as tuningfork's copy, and its tree says approvals write to the copy");
   // The skill a run had, kept under a name of its own: from the run's own page.
   await page.eval(`location.hash = "#/runs/${run.id}"`);
   await until(() => page.eval(`!!document.querySelector(".about-run")`), "the run's About");
@@ -2319,9 +2397,9 @@ try {
   await page.type(`document.querySelector('input[name="scenario_name"]')`, "from-a-launch");
   await planShows(page, "data.csv");
   await page.eval(`document.querySelector('input[name="skill-from-run"][value="copy"]').click()`);
-  await planShows(page, "a copy kept in the scenario's own folder");
+  await planShows(page, "a copy kept in the scenario's folder");
   await page.eval(`document.querySelector('input[name="skill-from-run"][value="fixed"]').click()`);
-  await until(() => page.eval(`!(document.querySelector(".plan-preview")?.textContent || "").includes("a copy kept in the scenario's own folder")`),
+  await until(() => page.eval(`!(document.querySelector(".plan-preview")?.textContent || "").includes("a copy kept in the scenario's folder")`),
     "the task's folder chosen again");
   check(true, "the copy of what the run had is planned when chosen, and the task's folder again when chosen back");
   await startButtonReady(page, "Make the scenario");

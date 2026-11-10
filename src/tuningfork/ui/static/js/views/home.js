@@ -4,7 +4,8 @@
 // shows them.
 
 import { api } from "../api.js";
-import { ago, chip, command, h, loading, panel, plural, replace, short, verdict, when } from "../dom.js";
+import { ago, chip, command, foldPanel, h, icon, loading, panel, plural, replace, short, verdict, when } from "../dom.js";
+import { whereThingsLive } from "../folders.js";
 import { kindLabel } from "../jobs.js";
 import { live } from "../live.js";
 import { LABELS } from "../words.js";
@@ -37,7 +38,8 @@ export async function homeView(root, _, scope) {
       panel("How the pieces fit", [
         mapView(terms),
         h("div", { class: "map-notes" },
-          h("p", null, h("strong", null, "Record. "), "A scenario is a task file kept here: a skill's tasks, each with its check. A batch starts the harness once for each run, in a fresh folder, and the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way, and a chat it already had can be imported as a run. Any run can become a scenario, whose runs continue its conversation."),
+          h("p", null, h("strong", null, "Record. "), "A scenario is a task file kept here: a skill's tasks, each with its check. A batch starts the harness once for each run, in a run folder of its own, and the proxy records every model call as a step of that run. Your own harness, pointed at the proxy, is recorded the same way, and a chat it already had can be imported as a run. Any run can become a scenario, whose runs continue its conversation. ",
+            h("a", { href: "#/words?place=recordings-folder" }, "Where things live"), " shows each folder tuningfork keeps, and what a run is given."),
           h("p", null, h("strong", null, "Measure. "), "At any step, an experiment sends the step's exact request again, with everything before it held fixed, and counts what the model does there. To judge each try by whether the whole run then passes, each sample is a fork of the run: replayed to the step, live after it, and judged by the task's check."),
           h("p", null, h("strong", null, "Improve. "), "A refinement declares what the model should do at a step, then tests small edits there against the original wording. An edit that beats the original gets full test runs, held-out tasks included, and is written back only when a person approves it: a new version of the skill, measured again from the top."),
           h("p", { class: "muted small" }, "Jobs are how the web UI starts work: a batch, a resample, a test at a step, full test runs, each run inside `tuningfork serve`. A job is a record of the work. What it made, runs and experiments, is kept on its own."),
@@ -47,17 +49,32 @@ export async function homeView(root, _, scope) {
       lookUp(words)));
 }
 
-/** tuningfork's words on a page of their own, looked up as they are typed. */
+/** tuningfork's words on a page of their own, looked up as they are typed; above them, folded,
+ *  where the folders they name are and what goes between them. A folder's tree links here with
+ *  the place (`?place=`): the picture opens, the place marked. The look-up field stays in sight. */
 export async function wordsView(root, _, scope) {
   replace(root, loading());
   const words = await api.get("/glossary").catch(() => null);
-  const found = glossaryPanel(words, scope.query?.get("term") || "");
+  const term = scope.query?.get("term") || "";
+  const place = scope.query?.get("place") || "";
+  const found = glossaryPanel(words, term);
+  const diagram = whereThingsLive({ home: live.home });
+  const where = foldPanel("Where things live", diagram, { open: Boolean(place), className: "where-panel",
+    meta: h("span", { class: "muted" }, "your files, the recordings folder, what the agent sees") });
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Words"),
       h("p", { class: "sub" }, "tuningfork's own words, each as it means it here. The same list in a terminal: ",
         h("code", null, "tuningfork glossary [word]"), "."))),
-    found);
-  found.querySelector('input[type="search"]')?.focus({ preventScroll: true });
+    h("div", { class: "stack" }, where, found));
+  const box = place ? diagram.querySelector(`[data-place="${CSS.escape(place)}"]`) : null;
+  if (box) {
+    if (box.tagName === "DETAILS") box.open = true;
+    box.scrollIntoView({ block: "center" });
+    box.classList.add("flash");
+    setTimeout(() => box.classList.remove("flash"), 1600);
+  } else {
+    found.querySelector('input[type="search"]')?.focus({ preventScroll: true });
+  }
 }
 
 /** On the Guide, the way to the words with one typed. */
@@ -80,7 +97,7 @@ function colours() {
   return h("p", { class: "colours" }, h("strong", null, "Colours. "),
     chip("pass", "ok"), " ", chip("fail", "bad"), " Green and red are a check's verdict. ",
     chip("not counted", "warn"), " Amber is a caution. ",
-    chip("edited", "change"), " Teal is what a person or tuningfork changed. ",
+    chip("edited", "change"), " Cyan is what a person or tuningfork changed. ",
     chip("skill", "skill"), " Purple is a skill's own words. ",
     chip("tool call", "accent"), " Indigo is what you can act on, what is current or significant, every rate, and the model's own answer. "
       + "Everything else is grey.");
@@ -163,7 +180,7 @@ function setup(runs, scenarios, connections) {
   ];
   const done = items.filter((item) => item.done).length;
   const list = h("ol", { class: "checklist" }, items.map((item) => h("li", { class: item.done ? "done" : "todo" },
-    h("span", { class: "check-mark", "aria-label": item.done ? "done" : "to do" }, item.done ? "✓" : "○"),
+    h("span", { class: "check-mark", role: "img", "aria-label": item.done ? "done" : "to do" }, icon(item.done ? "check" : "circle")),
     h("div", null, h("strong", null, item.title), h("div", { class: "muted small" }, item.body)))));
   // The recommendation stays in sight when the finished checklist folds away.
   if (done === items.length) {
@@ -267,7 +284,7 @@ function mapView(terms) {
       s("text", { class: "map-sub", x: x + 12, y: y + 43 }, sub));
   });
   const lanes = LANES.map((text, row) => s("text", { class: `map-lane lane-${row}`, x: X0, y: Y0 + row * DY - 12 }, text));
-  return h("div", { class: "map" }, s("svg", { viewBox: "0 0 960 372", role: "img",
+  return h("div", { class: "map" }, s("svg", { viewBox: "0 0 960 372", role: "group",
     "aria-label": "How tuningfork's pieces relate: record a task, measure a step, improve the skill, and back to the skill" },
     s("defs", null, s("marker", { id: "map-arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" },
       s("path", { d: "M 0 0 L 10 5 L 0 10 z", class: "map-arrowhead" }))),
@@ -280,7 +297,7 @@ function mapView(terms) {
 const WORKFLOWS = [
   {
     question: "Does this skill work?",
-    answer: "A task run N times, each in a fresh workspace: a pass rate with its interval, kept apart for each version of the skill.",
+    answer: "A task run N times, each in a run folder of its own: a pass rate with its interval, kept apart for each version of the skill.",
     steps: ["Write a scenario: the task's prompt, its input files and its check", "Run a task… — the harness, and how many runs", "Each version's rate: on Runs, and on the skill's page"],
     cli: "tuningfork batch evals.json -n 8", href: "#/batch", go: "Run a task…",
   },
@@ -304,8 +321,8 @@ const WORKFLOWS = [
   },
   {
     question: "Would other wording change what the model does here?",
-    answer: "An A/B at the step: your edit of the skill against the original wording, counting what you chose before anything is sampled.",
-    steps: ["At the step: A/B a wording…", "Edit the text, and choose what to count: a behaviour's letter, a pattern, or conditions in words", "Read the shift, and whether it is beyond chance; with nothing declared, every behaviour is compared"],
+    answer: "An A/B at the step: your edit of the skill against the original wording, counting how often each meets a condition chosen before anything is sampled.",
+    steps: ["At the step: A/B a wording…", "Edit the text, and choose the condition: a behaviour's letter, a pattern, or a behaviour described in words", "Read the shift, and whether it is beyond chance; with nothing declared, every behaviour is compared"],
     cli: "tuningfork ab <run> <step> --variant SKILL.v2.md --target A", href: "#/runs", go: "Choose a run",
   },
   {

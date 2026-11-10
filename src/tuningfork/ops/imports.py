@@ -487,8 +487,8 @@ def prepare_import(
     plan.study = skill or (names[0] if len(names) == 1 else None)
 
     if not names:
-        warnings.append("no skill shows in the conversation: an A/B or a refinement needs one; name the skill's folder "
-                        "(--skill-dir, or the import page's folder field)")
+        warnings.append("no skill shows in the conversation: an A/B or a refinement needs one; name the skill folder "
+                        "(--skill-dir, or the import page's skill folder field)")
     for held, folder in folders.items():
         shown = next((found for found in skills if found.name == held), None)
         if shown is None:
@@ -502,8 +502,8 @@ def prepare_import(
     extracted = [found.name for found in skills if found.name not in folders]
     if extracted:
         warnings.append(f"the SKILL.md of {_listed(extracted)} is extracted from what the model read: the rest of "
-                        "its folder — scripts, templates, references — the chat never showed; name the skill's folder "
-                        "(--skill-dir, or the import page's folder field) to keep it whole")
+                        "its folder — scripts, templates, references — the chat never showed; name the skill folder "
+                        "(--skill-dir, or the import page's skill folder field) to keep it whole")
     if plan.study is None and len(names) > 1:
         notes.append(f"it keeps {len(names)} skills, {_listed(names)}: an A/B, a refinement or a scenario names "
                      "the one it studies")
@@ -1104,7 +1104,7 @@ def _studied(run: Any, chat: Chat, harness: str, skill: str | None = None, folde
         return Studied(_bare(shown[0].name), shown[0])
     if not shown:
         raise OperationError(f"no skill shows in run {run.id[:8]}'s conversation, and it kept none: a scenario studies "
-                             "one — name its folder (--skill-dir, or “Skill folder” on the scenario's form)", field="skill_dir")
+                             "one — name its skill folder (--skill-dir, or “Skill folder” on the scenario's form)", field="skill_dir")
     raise OperationError(f"run {run.id[:8]}'s conversation shows {len(shown)} skills: name the one the scenario studies",
                          hint=f"the skills in it: {', '.join(found.name for found in shown)}", code="choose_skill",
                          field="skill")
@@ -1235,7 +1235,7 @@ def prepare_scenario(
     task = launch.eval if launch is not None and isinstance(launch.eval, dict) else {}
     folder = None
     if skill_dir and copy_skill:
-        raise OperationError("the skill's folder, or a copy of what the run had: not both", code="bad_params",
+        raise OperationError("the skill folder, or a copy of what the run had: not both", code="bad_params",
                              field="skill_dir")
     if skill_dir:
         folder = resolve_path(str(skill_dir)).path
@@ -1305,20 +1305,20 @@ def prepare_scenario(
                 else "the SKILL.md the model read — the rest of its folder, scripts and references, the chat never showed")
         if other:
             notes.append(f"run {run.id[:8]} was given another skill text than {default_folder} holds — {given.words}: the "
-                         f"scenario keeps {what}, in its own folder ({own}), where an approved edit is written; name the "
-                         f"task's folder (--skill-dir {default_folder}, or “The task's folder, as it is now” on the "
-                         "scenario's form) to tune that one")
+                         f"scenario keeps {what}, in the scenario's folder ({own}), where an approved edit is written; "
+                         f"name the task's skill folder (--skill-dir {default_folder}, or “The task's skill folder, as it "
+                         "is now” on the scenario's form) to tune that one")
         elif copy_skill:
-            notes.append(f"the scenario keeps {what}, in its own folder ({own}), where an approved edit is written")
+            notes.append(f"the scenario keeps {what}, in the scenario's folder ({own}), where an approved edit is written")
         else:
-            warnings.append(f"no folder of {studied.name}'s own was found: the scenario keeps {what}, in its own folder "
-                            f"({own}), where an approved edit is written; name the skill's folder (--skill-dir, or “Skill "
-                            "folder” on the scenario's form) to tune that one")
+            warnings.append(f"no skill folder was found for {studied.name}: the scenario keeps {what}, in the scenario's "
+                            f"folder ({own}), where an approved edit is written; name the skill folder (--skill-dir, or "
+                            "“Skill folder” on the scenario's form) to tune that one")
         if made_up:
             notes.append(f"the model read {studied.name} without its frontmatter: the scenario's SKILL.md is given "
                          "one, its name and a description, so that the harness lists it")
     else:
-        raise OperationError(f"no copy of {studied.name} to give the scenario's runs: name its folder (--skill-dir, "
+        raise OperationError(f"no copy of {studied.name} to give the scenario's runs: name its skill folder (--skill-dir, "
                              "or “Skill folder” on the scenario's form)",
                              field="skill_dir")
 
@@ -1328,10 +1328,10 @@ def prepare_scenario(
         check_files, unread = _check_files(check, spec_dir)
         notes.append(f"its check is task {run.task_id or '-'}'s own, as run {run.id[:8]} was launched with it")
         if check_files:
-            notes.append(f"its check reads {', '.join(sorted(check_files))} from the task's folder ({spec_dir}): "
+            notes.append(f"its check reads {', '.join(sorted(check_files))} from the spec's folder ({spec_dir}): "
                          "copied beside the scenario's spec, where no run sees it")
         if unread:
-            warnings.append(f"its check reads {', '.join(unread)} from the task's folder, which the scenario does not "
+            warnings.append(f"its check reads {', '.join(unread)} from the spec's folder, which the scenario does not "
                             "copy: put what it needs beside the scenario's spec")
     cautions, said = start_notes(start, studied.name, check)
     warnings.extend(cautions)
@@ -1351,7 +1351,7 @@ def prepare_scenario(
     if (launch is not None and not launch.settings.get("sandbox") and launch.workspace and start.context.messages
             and launch.workspace in json.dumps(start.context.to_json(), ensure_ascii=False)):
         warnings.append(f"the conversation names run {run.id[:8]}'s own workspace, {launch.workspace}: each run of the "
-                        "scenario works in a folder of its own, the same in every run only in the sandbox")
+                        "scenario works in a workspace of its own, at the same path in every run only in the sandbox")
     if (task.get("tuningfork") or {}).get("held_out"):
         warnings.append(f"run {run.id[:8]} is of a held-out eval, which judges edits: the scenario is not held out, and "
                         "an edit it shapes was shaped by what the held-out eval was to judge")

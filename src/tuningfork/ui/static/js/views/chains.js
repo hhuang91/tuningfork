@@ -5,6 +5,8 @@
 import { api, enc } from "../api.js";
 import { ago, chip, crumbs, h, kv, loading, panel, plural, rateBar, replace, short, when } from "../dom.js";
 import { costOf } from "../cost.js";
+import { placeOf } from "../folders.js";
+import { live } from "../live.js";
 import { diffView } from "./refine.js";
 
 // A chain running is current; one that failed, a caution; done or cancelled, only so.
@@ -58,7 +60,7 @@ export async function chainView(root, [id]) {
         ["passed", chain.rate ? [rateBar(chain.rate), h("span", { class: "muted small" }, chain.not_counted ? `  ${chain.not_counted} not counted: the skill changed during them, or they timed out` : "")] : null],
         ["state", [chip(chain.status, STATUS_TONE[chain.status] || "muted"), chain.stopped ? h("span", { class: "muted" }, `  ${chain.stopped}`) : null]],
         ["cost", costOf({ chain: chain.id })],
-        ["the skill it left", chain.final_skill ? h("span", { class: "mono" }, chain.final_skill) : null],
+        ["the skill it left", chain.final_skill ? placeOf(chain.final_skill, live.home) : null],
       ])),
       panel("Link by link", links.map(linkView), {
         meta: h("span", { class: "muted" }, "A link the skill changed during, or that timed out, is not counted in the rate."),
@@ -74,7 +76,7 @@ function linkView(link) {
     : chip("no verdict", "muted", link.exclusion || undefined);
   const changed = (link.changed || []).map((path) => path.split("/").slice(1).join("/") || path);
   const hunks = link.diff?.hunks || [];
-  return h("div", { class: "stack", style: { gap: "6px", marginBottom: "14px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-1-5)", marginBottom: "var(--space-3-5)" } },
     h("div", null, h("strong", null, `Link ${link.index}  `), verdictChip,
       link.usable === false && link.exclusion !== "timed out"
         ? [" ", chip("not counted", "warn", link.exclusion || undefined)] : null,

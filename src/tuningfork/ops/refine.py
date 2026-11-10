@@ -201,7 +201,7 @@ def source_note(source: dict[str, Any] | None, run: str) -> str | None:
         return (f"run {run[:8]} was given another skill text than {folder} holds — {source.get('given')}: proposals "
                 "edit the run's copy, which the folder does not hold, so none can be validated or approved; to tune that "
                 "text, refine a run of a scenario of this run that keeps a copy of what it had (`tuningfork scenario`, "
-                "or Make a scenario… on the run's page), whose task file needs a held-out eval to approve an edit")
+                "or Make a scenario… on the run's page), whose spec needs a held-out eval to approve an edit")
     known = source.get("origin") != "unknown"
     if not source.get("matches"):
         return ("the skill's file has changed since this run was given it" if known

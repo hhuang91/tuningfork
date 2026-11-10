@@ -5,7 +5,8 @@
 // whole, always, before anything starts — or a check of the final reply, said in words.
 
 import { api, enc } from "../api.js";
-import { command, crumbs, h, kv, loading, longText, panel, plural, replace } from "../dom.js";
+import { chip, command, crumbs, h, kv, loading, longText, panel, plural, replace } from "../dom.js";
+import { copyChip, folderTree, nameOf, seenAs } from "../folders.js";
 import { field, input, numberOf, planForm, textOf } from "../forms.js";
 import { live } from "../live.js";
 import { LABELS } from "../words.js";
@@ -32,10 +33,10 @@ export async function batchView(root, _, scope) {
   }
 
   const head = h("div", { class: "page-head" }, h("div", null, h("h1", null, "Run a task"),
-    h("p", { class: "sub" }, "Each run starts in a fresh folder. In a batch every run gets the same skill. In a chain each run gets the skill the run before it left behind.")));
+    h("p", { class: "sub" }, "Each run starts in a run folder of its own. In a batch every run gets the same copy of the skill. In a chain each run gets the skill the run before it left behind.")));
   if (live.mode !== "live") {
     replace(root, crumbs([["Scenarios", "#/scenarios"], ["Run a task"]]), head,
-      panel("From a terminal", h("div", { class: "stack", style: { gap: "8px" } },
+      panel("From a terminal", h("div", { class: "stack", style: { gap: "var(--space-2)" } },
         h("p", { class: "hint" }, "Starting runs needs a running proxy (tuningfork serve). Or:"),
         command(`tuningfork batch ${prefill.spec || "<evals.json>"} -n 5 --harness ${prefill.harness}`))));
     return;
@@ -49,18 +50,25 @@ export async function batchView(root, _, scope) {
   const task = h("select", { class: "field", name: "eval" },
     h("option", { value: prefill.eval || "" }, prefill.eval ? `task ${prefill.eval}` : "its first task"));
   const anotherSpec = () => replace(task, h("option", { value: "" }, "its first task"));
-  // A task file by its path is the scenario's alternative, on the same line: open only while no
-  // scenario is chosen, greyed while one is.
+  // A task file by its path is the scenario's alternative, on the same line. Whichever is filled
+  // in greys the other: a scenario chosen, the path; a path typed, the scenarios (found in use: a
+  // skill's Run it… filled the path in and left the scenarios open beside it, as if both counted).
   // Both read the field's help out with them: it says the two are alternatives.
   const scenarioSelect = h("select", { class: "field", name: "scenario", id: "batch-scenario", "aria-describedby": "batch-scenario-help" },
     h("option", { value: "" }, "— no scenario —"),
     scenarios.map((each) => h("option", { value: each.name, selected: each.name === prefill.scenario }, each.name)));
   const specInput = input("spec", {
-    value: prefill.spec, placeholder: "/path/to/evals.json", oninput: anotherSpec,
+    value: prefill.spec, placeholder: "/path/to/evals.json",
+    oninput: () => {
+      choose();
+      anotherSpec();
+    },
     "aria-label": "Task file, by its path", "aria-describedby": "batch-scenario-help",
   });
+  // A scenario chosen wins, as the form reads them: only a link can fill in both.
   const choose = () => {
     specInput.disabled = scenarioSelect.value !== "";
+    scenarioSelect.disabled = !specInput.disabled && specInput.value.trim() !== "";
   };
   scenarioSelect.addEventListener("change", () => {
     choose();
@@ -84,10 +92,10 @@ export async function batchView(root, _, scope) {
       h("div", { class: "form-field wide" },
         h("label", { class: "form-label", for: "batch-scenario" }, "Scenario"),
         h("div", { class: "field-or" }, scenarioSelect, h("span", { class: "or" }, "or"), specInput),
-        h("span", { class: "form-help", id: "batch-scenario-help" }, "A scenario is a task file kept in the recordings folder. With none chosen, name a task file (an evals.json) on the proxy's machine by its path.")),
+        h("span", { class: "form-help", id: "batch-scenario-help" }, "A scenario is a task file kept in the recordings folder. With none chosen, name a task file (an evals.json) on the proxy's machine by its path. Clear the path to choose a scenario.")),
       field("Task in the file", task, { help: "A task file can hold several tasks. Each run does this one.", wide: true }),
       field("Run as", h("select", { class: "field", name: "mode" },
-        h("option", { value: "batch" }, "a batch: every run given the skill fresh"),
+        h("option", { value: "batch" }, "a batch: every run given the same copy of the skill"),
         h("option", { value: "chain" }, "a chain: each run starts from the skill the one before left")),
         { help: "A chain measures the harness's own self-improvement, link by link. Its runs are not independent samples.", wide: true }),
       field("Runs", input("n", { type: "number", value: 5, min: 1, max: 200 })),
@@ -155,8 +163,44 @@ export async function batchView(root, _, scope) {
   replace(root, crumbs([["Scenarios", "#/scenarios"], ["Run a task"]]), head, panel("The task", element, { className: "start-panel" }));
 }
 
+/** Where the runs go, drawn as the tree it will be: a folder in the recordings folder, the copy
+ *  of the skill each run is given, and a run folder for each run, with the paths the agent sees
+ *  (the same in every run in a sandbox; with none, each run's own, and a note says why). A
+ *  chain's links each start from the skill the link before left. */
+function runsTree(plan) {
+  if (!plan.workdir) return null;
+  const chain = plan.kind === "chain";
+  const seen = (path) => (plan.sandbox ? seenAs(path) : null);
+  const skill = plan.skill_dir ? nameOf(plan.skill_dir) : null;
+  const last = plan.n - 1;
+  const runs = {
+    name: last ? `0/ … ${last}/` : "0/", note: chain ? "a run folder for each link, in order" : last ? `a run folder for each of the ${plan.n} runs` : "its run folder",
+    children: [
+      { name: "home/", note: [skill ? "the harness's home: its settings and logs, and the skill installed in it" : "the harness's home: its settings and logs", seen(plan.sandbox?.home)] },
+      { name: "workspace/", note: ["the task's input files, then what the agent wrote", seen(plan.sandbox?.workspace)] },
+      { name: "reply.txt", note: "its final reply" },
+    ],
+  };
+  // A variant swapped in is the copy's SKILL.md: a change, in the legend's cyan.
+  const variant = plan.skill_file
+    ? [{ name: "SKILL.md", skill: true, role: chip(nameOf(plan.skill_file).replace(/\.md$/, ""), "change", "A saved wording, swapped in for the skill's SKILL.md"),
+        note: "a variant, swapped in for its SKILL.md" }]
+    : [];
+  const items = chain
+    ? [skill ? { name: last ? `skill-snapshot-0/ … skill-snapshot-${last}/` : "skill-snapshot-0/", role: copyChip(),
+        note: "the copy each link is given: the first of the skill folder, each later one of what the link before left" } : null,
+        runs,
+        skill ? { name: last ? `skill-left-0/ … skill-left-${last}/` : "skill-left-0/", note: "the skill as each link left it: the next link starts from it" } : null]
+    : [skill ? { name: `skill-snapshot/${skill}/`, role: copyChip(), note: "the skill folder, copied as the batch starts: every run gets this text", children: variant } : null,
+        runs];
+  return h("div", null, h("div", { class: "label" }, "Where the runs go"),
+    folderTree({ path: chain && plan.chain ? `${plan.workdir}/${plan.chain}` : `${plan.workdir}/<batch>`, home: live.home }, items.filter(Boolean)),
+    h("p", { class: "tree-also" }, chain ? null : "tuningfork names <batch> when the runs start. ",
+      h("a", { href: "#/words?place=run-folder" }, "Where things live"), " shows what every run is given."));
+}
+
 function batchPreview(plan) {
-  return h("div", { class: "stack", style: { gap: "8px" } },
+  return h("div", { class: "stack", style: { gap: "var(--space-2)" } },
     // How a run passes, first: what every number this batch produces will mean.
     h("div", { class: "check-command" },
       plan.check_kind === "shell"
@@ -181,14 +225,7 @@ function batchPreview(plan) {
       ["harness options", plan.harness_options && Object.keys(plan.harness_options).length
         ? h("span", { class: "mono" }, JSON.stringify(plan.harness_options))
         : null],
-      ["where", plan.workdir
-        ? h("span", null, "each run in a fresh folder under ", h("span", { class: "mono" }, plan.workdir), ", its workspace holding the task's input files")
-        : "—"],
-      // What the harness sees, which is what the model reads: the same home and folder in
-      // every run, or each run's own folders when there is no sandbox (a note says why).
-      ["sees", plan.sandbox
-        ? h("span", null, "in a sandbox, every run works in ", h("span", { class: "mono" }, plan.sandbox.workspace), ", its home ", h("span", { class: "mono" }, plan.sandbox.home))
-        : "its own folders"],
     ]),
+    runsTree(plan),
     (plan.notes || []).map((note) => h("div", { class: ["banner", note.level === "warning" ? "banner-warn" : ""] }, note.message)));
 }
