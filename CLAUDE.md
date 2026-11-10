@@ -112,7 +112,8 @@ database's log emptied once no other process reads it (`Store.checkpoint`). A jo
 record of the work, a chain its record and the skill each link left, and what was made of a run
 — a scenario, a skill added — what it took: each goes only as itself, a chain by hand. A
 refinement goes with what it made (`refine.made_by`): its screens, its validations' forks and
-fresh training runs, its proposals' saved texts and its folder — never the run it studies, nor
+fresh training runs, its proposals' saved texts where the recordings folder it is deleted from
+keeps them (a copy's own, never the original's) and its folder — never the run it studies, nor
 the changelog and old versions an approval wrote beside the skill folder. One in the trash is
 shown as it was and takes no new work (`refine.refuse_closed`). A fork an experiment drew goes
 to the trash, and is deleted, only with its experiment, as a thread goes with its run
@@ -318,7 +319,11 @@ resolved to an exact replacement of the text as shown, so none shifts another) c
 most 10 lines — a person's whole text only warns — never the frontmatter, and it must change what the model
 saw at the step; it is saved as a variant, with who proposed it, why, and the packet they
 were shown (`ops/packet.py`: built from the run's own task's records only, never sampled
-for, and masked as it is built). A screen (`ops/screen.py`; `analysis/screen.py`) draws a
+for, and masked as it is built). Its text is read by the variant's name from the recordings
+folder the refinement is opened in — a copy of the folder keeps its own — else from where its
+record says it was saved, and only from a file whose text's digest begins with the proposal's
+id (`Proposal.saved`; issue #76): one found nowhere is shown saying so, and nothing screens,
+validates or approves it. A screen (`ops/screen.py`; `analysis/screen.py`) draws a
 fresh original arm first, then each proposal, and tests each against it — Fisher, Holm over
 the proposals named before sampling; an unfinished screen has rates and no verdict. Run to the end
 (`prepare_screen_to_end`, `refine screen --to-end`, the `screen-to-end` job kind), each

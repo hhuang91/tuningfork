@@ -368,12 +368,14 @@ export async function refinementView(root, [id], scope) {
     else if (pick) validated = "pass the approval checks";
     else if (records.some((record) => record.complete)) validated = "do not pass the approval checks";
     else if (records.length) validated = "unfinished: no verdict";
-    else validated = won.length ? "none yet" : "wait for a proposal that beat the original";
+    else if (!won.length) validated = "wait for a proposal that beat the original";
+    else if (validatable().length) validated = "none yet";
+    else validated = won.length === 1 ? "the proposal's text is missing" : "the proposals' texts are missing";
 
     let approved;
     if (approval?.state === "applied") approved = "written to the skill folder";
     else if (approval) approved = "interrupted: see above";
-    else if (pick) approved = `proposal ${short(pick)} is ready`;
+    else if (pick) approved = gone(pick) ? `proposal ${short(pick)}'s text is missing` : `proposal ${short(pick)} is ready`;
     else approved = "waits for full test runs that pass the approval checks";
 
     return [
@@ -482,6 +484,11 @@ export async function refinementView(root, [id], scope) {
     return (shown.validations || []).find((record) => record.complete && record.gate?.passed)?.proposal || null;
   }
 
+  /** Whether a proposal's saved text is gone: never ready to approve, whatever its evidence. */
+  function gone(pid) {
+    return Boolean(shown.proposals.find((each) => each.id === pid)?.missing);
+  }
+
   /** A proposal's validation to show: the approved one, else one meeting the gate, else its newest. */
   function validationOf(pid) {
     const its = (shown.validations || []).filter((record) => record.proposal === pid);
@@ -523,10 +530,10 @@ export async function refinementView(root, [id], scope) {
     const record = validationOf(item.id);
     const approved = shown.approval?.proposal === item.id;
     // Each proposal by what it changes: the line, and the id the lines above name it by.
-    return h("tr", { class: item.id === pick ? "is-chosen" : null },
+    return h("tr", { class: item.id === pick && !item.missing ? "is-chosen" : null },
       h("td", { class: "edit-cell" }, jump(editLine(item), `[data-proposal="${item.id}"]`, "Its edit in full, below"),
         h("div", { class: "faint small" }, h("span", { class: "mono" }, short(item.id)),
-          approved ? [" ", chip("approved", "ok")] : item.id === pick ? [" ", chip("ready to approve", "ok")] : null)),
+          approved ? [" ", chip("approved", "ok")] : item.id === pick && !item.missing ? [" ", chip("ready to approve", "ok")] : null)),
       h("td", null, verdict
         ? [verdictChip(verdict), " ", h("span", { class: "small" }, screenLine(verdict), " · ",
             h("a", { href: `#/experiments/${verdict.screen}` }, `test ${short(verdict.screen)}`))]
@@ -553,7 +560,11 @@ export async function refinementView(root, [id], scope) {
         ? verdictBox("tone-ok", `Approved: proposal ${short(approval.proposal)}, written to the skill folder`, behind(approval.proposal))
         : verdictBox("tone-warn", `The approval of proposal ${short(approval.proposal)} did not finish: see above`, behind(approval.proposal));
     }
-    if (pick) return verdictBox("tone-ok", `Proposal ${short(pick)} passes the approval checks, and is ready to approve`, behind(pick));
+    if (pick) {
+      return gone(pick)
+        ? verdictBox("tone-warn", `Proposal ${short(pick)} passes the approval checks, but its saved text is missing`, behind(pick))
+        : verdictBox("tone-ok", `Proposal ${short(pick)} passes the approval checks, and is ready to approve`, behind(pick));
+    }
     const judged = (shown.validations || []).find((record) => record.complete);
     if (judged) return verdictBox("tone-bad", `Proposal ${short(judged.proposal)} does not pass the approval checks`, behind(judged.proposal));
     const survived = items.filter((item) => standingOf(item)?.survives);
@@ -634,7 +645,7 @@ export async function refinementView(root, [id], scope) {
   // the test right below them.
   function drawProposals() {
     const items = shown.proposals;
-    for (const pid of [...selected]) if (!items.some((each) => each.id === pid)) selected.delete(pid);
+    for (const pid of [...selected]) if (!items.some((each) => each.id === pid && !each.missing)) selected.delete(pid);
     const ticking = acting() && items.length;
     replace(proposalsEl,
       h("h3", { class: "stage-part" }, `Proposals (${items.length})`,
@@ -646,7 +657,8 @@ export async function refinementView(root, [id], scope) {
 
   function proposalCard(item, ticking) {
     const ticked = selected.has(item.id);
-    const box = ticking
+    // A proposal whose saved text is gone cannot be tested: nothing to tick.
+    const box = ticking && !item.missing
       ? h("input", {
           type: "checkbox", checked: ticked, "aria-label": `Test proposal ${short(item.id)}`, "data-control": true,
           onchange: (event) => {
@@ -661,23 +673,27 @@ export async function refinementView(root, [id], scope) {
     const latest = screenedOf(item);
     const pick = chosen() === item.id;
     const approved = shown.approval?.proposal === item.id;
-    return h("div", { class: ["proposal", ticked && "selected", pick && "chosen"], dataset: { proposal: item.id } },
+    return h("div", { class: ["proposal", ticked && "selected", pick && !item.missing && "chosen"], dataset: { proposal: item.id } },
       h("div", { class: "proposal-head" },
         box,
         h("span", { class: "mono" }, short(item.id)),
-        approved ? chip("approved", "ok") : pick ? chip("ready to approve", "ok") : null,
+        approved ? chip("approved", "ok") : pick && !item.missing ? chip("ready to approve", "ok") : null,
         chip(`${plural(item.changed, "line")} changed`, "muted"),
         item.proposers.map((entry) => whoChip(entry)),
         latest ? verdictChip(latest) : chip("untested", "warn")),
       h("p", { class: "proposal-why" }, h("span", { class: "label" }, "Why  "), first.rationale || "—"),
       (item.warnings || []).map((warning) => h("div", { class: "banner banner-warn" }, warning)),
-      diffView(item.diff),
+      // Where its text was looked for, in the server's words, in place of a diff it cannot draw.
+      item.missing
+        ? [h("div", { class: "banner banner-warn" }, item.missing),
+            acting() ? h("p", { class: "hint" }, "Until its text is back, it cannot be tested or approved.") : null]
+        : diffView(item.diff),
       item.screens.length
         ? h("ul", { class: "small proposal-screens" }, item.screens.map((verdict) =>
             h("li", null, verdictChip(verdict), " ", screenLine(verdict),
               " — ", h("a", { href: `#/experiments/${verdict.screen}` }, `test ${short(verdict.screen)}`))))
         : null,
-      h("p", { class: "faint small" }, "Saved as the variant ", h("span", { class: "mono" }, item.variant),
+      item.missing ? null : h("p", { class: "faint small" }, "Saved as the variant ", h("span", { class: "mono" }, item.variant),
         ": an A/B or a batch can take it as it is."));
   }
 
@@ -707,8 +723,8 @@ export async function refinementView(root, [id], scope) {
     } else {
       screenForm?.refresh();
     }
-    // Drawn again when the survivors change: a form left as typed otherwise, and open as it was.
-    const names = survivors().map((each) => each.id).join(",");
+    // Drawn again when what may be validated changes: a form left as typed otherwise, and open as it was.
+    const names = validatable().map((each) => each.id).join(",");
     if (!names) {
       replace(validateEl);
       validateForm = null;
@@ -722,10 +738,15 @@ export async function refinementView(root, [id], scope) {
     if (fold) fold.open = true;
   }
 
-  /** Proposals whose latest finished screen kept them (`standingOf`): what may be validated, as the
+  /** Proposals whose latest finished screen kept them (`standingOf`): what beat the original, as the
    *  approval checks' G0 reads it. */
   function survivors() {
     return shown.proposals.filter((each) => standingOf(each)?.survives);
+  }
+
+  /** What may be validated: a survivor whose saved text is there. */
+  function validatable() {
+    return survivors().filter((each) => !each.missing);
   }
 
   // The two ways to propose, side by side: alternatives, either one making proposals. What the
@@ -883,7 +904,7 @@ export async function refinementView(root, [id], scope) {
   }
 
   function validatePanel() {
-    const choices = survivors();
+    const choices = validatable();
     const choose = h("select", { class: "field", name: "proposal" },
       choices.map((each) => h("option", { value: each.id }, `${short(each.id)} — ${plural(each.changed, "line")} changed`)));
     const form = planForm({
@@ -926,8 +947,12 @@ export async function refinementView(root, [id], scope) {
   function drawValidations() {
     const records = shown.validations || [];
     if (!records.length) {
-      replace(validationsEl, h("p", { class: "muted" }, survivors().length
+      const won = survivors();
+      const lost = won.length && !validatable().length;
+      replace(validationsEl, h("p", { class: lost ? "warn-text" : "muted" }, validatable().length
         ? "No full test runs yet."
+        : won.length === 1 ? `Proposal ${short(won[0].id)} beat the original, but its saved text is missing: its card above says where it was looked for.`
+        : won.length ? "The proposals that beat the original are missing their saved texts: each one's card above says where its text was looked for."
         : "Full test runs wait for a proposal that beat the original in a test at this step."));
       return;
     }
@@ -947,6 +972,8 @@ export async function refinementView(root, [id], scope) {
       replace(approveLine, h("p", null, `Proposal ${short(approval.proposal)} is written to the skill folder. About this refinement, at the foot of the page, says where.`));
     } else if (approval) {
       replace(approveLine, h("p", { class: "warn-text" }, "The approval did not finish: the banner above says what happened."));
+    } else if (record && gone(pick)) {
+      replace(approveLine, h("p", { class: "warn-text" }, `Proposal ${short(pick)} passes the approval checks, but its saved text is missing: approving it waits until the text is back.`));
     } else if (record) {
       replace(approveLine, h("p", null, `Proposal ${short(pick)} passes the approval checks.`),
         acting() && record.gate?.passed
@@ -965,7 +992,7 @@ export async function refinementView(root, [id], scope) {
     const counts = record.counts || {};
     const rows = [["forks", "from this step to the end", counts.forward], ["the task", "full runs of the task", counts.training],
       ...(counts.held_out || []).map((entry) => [`held out: ${entry.eval}`, "full runs, verdicts only", entry])];
-    const approvable = gate.passed && acting() && !shown.approval;
+    const approvable = gate.passed && acting() && !shown.approval && !gone(record.proposal);
     return h("div", { class: "proposal validation", dataset: { validation: record.id } },
       h("div", { class: "proposal-head" },
         h("span", { class: "mono" }, short(record.id)),
@@ -1312,8 +1339,9 @@ export function diffView(hunks) {
 }
 
 /** A proposal's edit in a line: the first line it adds — or, where it only removes, the first it
- *  removes — and how many more lines it changes. */
+ *  removes — and how many more lines it changes; or, where its saved text is gone, a chip saying so. */
 function editLine(item) {
+  if (item.missing) return chip("text missing", "warn", "Its saved text is not where it was looked for: its card below says where");
   const changed = (item.diff || []).flatMap((hunk) => hunk.lines).filter((line) => line.op !== " ");
   // A line with words in it names the edit: a blank one added before a paragraph does not.
   const first = changed.find((line) => line.op === "+" && line.text.trim())

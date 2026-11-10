@@ -1214,6 +1214,8 @@ def show_refinement(context: Context, args: RefinementRef) -> Answer:
     said = refine.source_note(found.get("source"), found["run"])
     if said:
         lines.append(f"note: {said}")
+    lines += [f"{item['missing']}; the proposal cannot be screened until the person puts its text back"
+              for item in shown["proposals"] if item.get("missing")]
     for screen in shown["screens"][:1]:
         lines += compact.screen_lines(compact.screen(screen["report"]))
     if shown["validations"]:
@@ -1241,6 +1243,7 @@ def capped_proposals(items: list[dict[str, Any]]) -> Any:
             "id": item["id"][:8],
             "changed": item["changed"],
             "diff": [line for hunk in item["diff"] for line in hunk["lines"] if line["op"] != " "][:12],
+            **({"missing": item["missing"]} if item.get("missing") else {}),
             "proposers": [{key: p.get(key) for key in ("via", "client", "model") if p.get(key)} for p in item["proposers"]],
             "rationale": compact.clip(item["proposers"][0].get("rationale"), 300),
             "screens": [
