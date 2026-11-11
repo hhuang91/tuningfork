@@ -2,7 +2,7 @@
 is read along its runs, the turning point found on it, and each front end's way to them.
 
 The tree is by move — the tools a step called, a reply whatever its words — because that is where
-runs part: compared exactly, find-the-file's twenty runs were twelve behaviours at the step that
+runs part: compared exactly, find-the-file's twenty runs were ten behaviours at the step that
 decided them, and the step-by-step comparison named a later step, where the runs that gave up had
 "ended"."""
 
