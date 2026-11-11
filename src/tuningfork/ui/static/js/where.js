@@ -7,10 +7,10 @@
 
 import { api, query } from "./api.js";
 import { failure, h, loading, plural, rateBar, replace, short } from "./dom.js";
-import { field, input, textOf } from "./forms.js";
+import { field, input, textOf, ways } from "./forms.js";
 import { formatP } from "./results.js";
 
-/** The question's form and, once asked, its answer: `condition` keeps one condition's runs;
+/** The question's form and, once asked, its answer: `condition` keeps one set-up's runs;
  *  `screen`, a screen run to the end, asks its forks instead, arm by arm — where no run of the
  *  task passed, a screen's passing forks are the passing runs there are. */
 export function whereForm(task, { condition = null, screen = null } = {}) {
@@ -47,21 +47,25 @@ export function whereForm(task, { condition = null, screen = null } = {}) {
   }
 
   const form = h("form", { class: "stack", onsubmit: ask },
-    h("fieldset", { class: "target-picker" }, h("legend", null, screen ? "The question, asked of every fork, wording by wording" : "The question, asked of every run"),
-      h("label", { class: "target-choice" },
-        h("input", { type: "radio", name: "where_kind", value: "file", checked: true }),
-        h("span", null, h("strong", null, `Of what the ${of}s wrote`),
-          h("span", { class: "muted small" }, " — at the start, after each call that changed the files, and at the end"))),
-      h("div", { class: "form-grid" },
-        field("File", file),
-        field("Contains", contains, { help: "^ and $ are each line's ends." }),
-        field("At least", atLeast, { help: "Matches that make it hold." })),
-      h("label", { class: "target-choice" },
-        h("input", { type: "radio", name: "where_kind", value: "answer" }),
-        h("span", null, h("strong", null, "Of the model's answers"),
-          h("span", { class: "muted small" }, " — tried at every step: a tool call's name and arguments, a script's code, a reply's words"))),
-      field("Pattern", pattern, { wide: true })),
-    h("div", null, h("button", { class: "btn btn-primary", type: "submit" }, `Ask every ${of}`)),
+    ways("where_kind", [
+      {
+        value: "file", label: "Files", checked: true,
+        note: `What the ${of}s wrote: looked for at the start, after each call that changed the files, and at the end.`,
+        body: h("div", { class: "form-grid" },
+          field("File", file),
+          field("Contains", contains, { help: "^ and $ are each line's ends." }),
+          field("At least", atLeast, { help: "Matches that make it hold." })),
+      },
+      {
+        value: "answer", label: "Answers",
+        note: "What the model did, tried at every step: a tool call's name and arguments, a script's code, a reply's words.",
+        body: field("Pattern", pattern, { wide: true }),
+      },
+    ], {
+      legend: "About",
+      about: `One question, asked of every ${of} and lined up with the verdicts: the call that made the difference. A lead, not a verdict.`,
+    }),
+    h("div", null, h("button", { class: "btn btn-primary", type: "submit" }, "Ask")),
     result);
   return form;
 }
@@ -74,53 +78,53 @@ export function whereResult(found, { only = null, of = "run" } = {}) {
   const asked = groups.reduce((total, group) => total + group.runs.length, 0);
   return h("div", { class: "stack" },
     h("p", null, h("strong", null, found.probe?.description || ""), h("span", { class: "muted small" }, `  asked of ${plural(asked, of)}`)),
-    groups.length ? groups.map((group) => groupView(group, kind)) : h("p", { class: "muted" }, `No ${of} was asked.`),
+    groups.length ? groups.map((group) => groupView(group, kind, of)) : h("p", { class: "muted" }, `No ${of} was asked.`),
     found.skipped?.length ? h("p", { class: "faint small" }, `Passed over: ${found.skipped.slice(0, 3).join("; ")}`) : null,
-    h("p", { class: "hint", title: "Fisher's exact test; Wilson score intervals" }, "A lead to read, never a verdict. A split is said to go one way when chance would make one that large less than one time in five (p under 0.2). Intervals are 95%."));
+    h("p", { class: "hint", title: "Fisher's exact test; Wilson score intervals" }, "A lead, not a verdict. A difference is said to go one way when chance would make one that large less than one time in five (p under 0.2). Intervals are 95%."));
 }
 
-function groupView(group, kind) {
+function groupView(group, kind, of = "run") {
   const split = group.split || {};
   const when = kind === "file" ? "at the end" : "at some step";
-  const seen = seenWords(group, kind);
+  const seen = seenWords(group, kind, of);
   return h("div", { class: "stack", style: { gap: "var(--space-1-5)", marginBottom: "var(--space-3)" } },
     h("div", null, h("strong", null, group.label), h("span", { class: "muted small" }, `  ${group.passed} passed, ${group.failed} failed`)),
     h("div", { class: "group-rates" },
-      split.passing ? h("span", null, h("span", { class: "what" }, `held ${when}, of the passing runs`), rateBar(split.passing)) : null,
-      split.failing ? h("span", null, h("span", { class: "what" }, `held ${when}, of the failing runs`), rateBar(split.failing)) : null),
-    h("p", { class: "small" }, splitWords(split)),
+      split.passing ? h("span", null, h("span", { class: "what" }, `held ${when}, of the passing ${of}s`), rateBar(split.passing)) : null,
+      split.failing ? h("span", null, h("span", { class: "what" }, `held ${when}, of the failing ${of}s`), rateBar(split.failing)) : null),
+    h("p", { class: "small" }, splitWords(split, of)),
     seen ? h("p", { class: "small" }, seen) : null,
     group.reference
       ? h("p", { class: "small" }, "Step ", h("code", null, group.reference.step),
-          ` names that call in ${group.reference.names} of the ${plural(group.reference.of, "run")}: a refinement's step.`)
+          ` names that call in ${group.reference.names} of the ${plural(group.reference.of, of)}: a refinement's step.`)
       : null,
-    runsTable(group, kind));
+    runsTable(group, kind, of));
 }
 
-function splitWords(split) {
-  if (split.p === null || split.p === undefined) return "Nothing to compare: that needs passing and failing runs.";
+function splitWords(split, of) {
+  if (split.p === null || split.p === undefined) return `Nothing to compare: that needs passing and failing ${of}s.`;
   return split.goes_with
     ? `It goes with ${split.goes_with} (p = ${formatP(split.p)}).`
-    : `No split (p = ${formatP(split.p)}).`;
+    : `No difference (p = ${formatP(split.p)}).`;
 }
 
-function seenWords(group, kind) {
+function seenWords(group, kind, of) {
   const seen = group.seen_at || [];
   if (!seen.length) return null;
   const steps = seen.map(([step, count]) => `step ${step} in ${count}`).join(", ");
   if (kind !== "file") return `First seen at ${steps}.`;
   const made = group.made || {};
-  let text = `Made by a call in ${made.runs} of ${plural(made.of, "judged run")} (${steps})`;
+  let text = `Made by a call in ${made.runs} of ${plural(made.of, `judged ${of}`)} (${steps})`;
   if (made.undone) text += `; undone before the end in ${made.undone}`;
-  if (made.shared_mistake) text += ` — every run made it, the ${made.passing} that passed too, which undid it before the end`;
+  if (made.shared_mistake) text += ` — every ${of} made it, the ${made.passing} that passed too, which undid it before the end`;
   return `${text}.`;
 }
 
-function runsTable(group, kind) {
+function runsTable(group, kind, of) {
   const yes = (value) => (value === true ? "yes" : value === false ? "no" : "—");
   const head = kind === "file"
-    ? ["run", "verdict", "start", "made by", "undone by", "end", "file"]
-    : ["run", "verdict", "first", "steps"];
+    ? [of, "verdict", "start", "made by", "undone by", "end", "file"]
+    : [of, "verdict", "first", "steps"];
   const rows = group.runs.slice(0, 30).map((run) => {
     const placed = run.step !== null && run.step !== undefined;
     const at = placed ? `${run.step} ${(run.tools || []).join(" ")}`.trim() : "—";
@@ -137,5 +141,5 @@ function runsTable(group, kind) {
     h("table", { class: "table" },
       h("thead", null, h("tr", null, head.map((name) => h("th", null, name)))),
       h("tbody", null, rows)),
-    group.runs.length > 30 ? h("p", { class: "faint small" }, `+${group.runs.length - 30} more run(s)`) : null);
+    group.runs.length > 30 ? h("p", { class: "faint small" }, `+${plural(group.runs.length - 30, `more ${of}`)}`) : null);
 }

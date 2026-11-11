@@ -8,7 +8,7 @@ import { answered, api, enc, query } from "../api.js";
 import { guard } from "../auth.js";
 import { ago, chip, command, crumbs, h, kv, loading, numbered, panel, plural, rateBar, replace, short, toast, toggle, when } from "../dom.js";
 import { copyChip, folderTree, nameOf, parentOf, placeOf, treeMeasure, windowsCopy, writes } from "../folders.js";
-import { field, input, planForm } from "../forms.js";
+import { field, input, planForm, ways } from "../forms.js";
 import { live } from "../live.js";
 import { markdownView } from "../markdown.js";
 import { diffView } from "./refine.js";
@@ -50,9 +50,9 @@ export async function skillsView(root) {
 // --- adding one ---------------------------------------------------------------------------------
 
 const WAYS = [
-  ["folder", "A folder on this machine", "remembered where it is: nothing is copied, and an approved edit is written to it"],
-  ["upload", "Upload a folder", "kept as a copy in the recordings folder: an approved edit is written to the copy, never back to yours"],
-  ["run", "From a run", "the skill a run had — the copy it kept, else the SKILL.md its model read — kept as a copy the same way"],
+  ["folder", "On this machine", "A folder remembered where it is: nothing is copied, and an approved edit is written to it."],
+  ["upload", "Upload a folder", "Kept as a copy in the recordings folder: an approved edit is written to the copy, never back to yours."],
+  ["run", "From a run", "The skill a run had — the copy it kept, else the SKILL.md its model read — kept as a copy the same way."],
 ];
 // Never sent: a repository's history, caches, environments (as `ops.addskill.IGNORED`). A task
 // file's folder uploaded as a scenario, and its input files, leave out the same.
@@ -73,10 +73,12 @@ export async function addSkillView(root, _, scope) {
   }
   let way = asked.get("run") ? "run" : "folder";
   const slot = h("div");
-  const choices = h("fieldset", { class: "target-picker" }, h("legend", null, "How"),
-    WAYS.map(([value, label, detail]) => h("label", { class: "target-choice" },
-      h("input", { type: "radio", name: "way", value, checked: value === way, onchange: () => { way = value; draw(); } }),
-      h("span", null, h("strong", null, label), h("span", { class: "muted small" }, ` — ${detail}`)))));
+  const choices = ways("way", WAYS.map(([value, label, note]) => ({ value, label, note, checked: value === way })), { legend: "How" });
+  choices.addEventListener("change", (event) => {
+    if (event.target.name !== "way") return;
+    way = event.target.value;
+    draw();
+  });
   const draw = async () => {
     replace(slot, loading());
     const form = way === "folder" ? folderForm() : way === "upload" ? uploadForm() : await runForm(asked);
@@ -87,7 +89,7 @@ export async function addSkillView(root, _, scope) {
 }
 
 // Each way's form plans as it is filled in, and adds what it planned: the skill's page opens then.
-const ways = {
+const adding = {
   send: async (params, extra) => answered(await api.post("/skills/add", extra.dry_run ? { ...params, dry_run: true, quiet: true } : params)),
   onStarted: (made) => {
     location.hash = `#/skills/${enc(made.added.name)}`;
@@ -99,7 +101,7 @@ const ways = {
 function folderForm() {
   const path = input("path", { placeholder: "e.g. C:\\Users\\you\\skills\\my-skill, or ~/.hermes/skills/my-skill" });
   return planForm({
-    ...ways,
+    ...adding,
     fields: h("div", { class: "form-grid" }, field("Skill folder", path, {
       wide: true, help: "The folder holding its SKILL.md, on the machine tuningfork runs on. A Windows path is read as tuningfork will open it.",
     })),
@@ -133,7 +135,7 @@ function uploadForm() {
     picker.dispatchEvent(new Event("input", { bubbles: true }));
   });
   return planForm({
-    ...ways,
+    ...adding,
     fields: h("div", { class: "form-grid" },
       field("Skill folder", picker, { help: said }),
       field("Kept as", name, { help: "The name the copy is kept under: the skill folder's name, by default." })),
@@ -174,7 +176,7 @@ async function runForm(asked) {
   };
   run.addEventListener("change", loadSkills);
   const form = planForm({
-    ...ways,
+    ...adding,
     fields: h("div", { class: "form-grid" },
       field("Run", run, { help: "Imported, started by tuningfork or recorded live: any run whose skill it kept, or whose conversation shows one." }),
       field("Its skill", skill),
@@ -372,7 +374,7 @@ function foldersPanel(skill, named, home) {
   const drawn = skill.folders.map((folder) => folderItems(folder, named));
   const measure = treeMeasure(...drawn.map((each) => each.items));
   const own = skill.folders.find((folder) => folder.kind !== "scenario");
-  return panel("Where its SKILL.md is kept", h("div", null,
+  return panel(many ? "Skill folders" : "Skill folder", h("div", null,
     h("p", { class: "folder-trees-intro" },
       many ? "Each folder that holds this skill's SKILL.md, with the files beside it. " : "The folder that holds its SKILL.md, with the files beside it. ",
       h("a", { href: "#/words?place=skill-folder" }, "Where things live"), many ? " shows what runs do with them." : " shows what runs do with it."),

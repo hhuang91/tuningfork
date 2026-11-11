@@ -7,13 +7,14 @@
 
 import { api, enc } from "../api.js";
 import { guard } from "../auth.js";
-import { ago, capital, chip, command, h, kv, loading, panel, replace, short, when } from "../dom.js";
+import { ago, capital, chip, command, h, kv, loading, replace, short, tabs, when } from "../dom.js";
 import { field, formError, input } from "../forms.js";
 import { forgetTokenWork, live } from "../live.js";
+import { settle } from "../nav.js";
 import { LABELS } from "../words.js";
 
 const SUPPORT_TONE = { yes: "muted", no: "warn", unknown: "faint" };
-// A server's identity, field by field (`proxy.app.IDENTITY_FIELDS`), as the panel above names it.
+// A server's identity, field by field (`proxy.app.IDENTITY_FIELDS`), as the server's part names it.
 const FIELDS = {
   build: "build", model_file: "model file", models: "models", n_ctx: "context window",
   chat_template_sha256: "chat template", slots: "slots", defaults: "sampling defaults",
@@ -122,16 +123,33 @@ export async function connectionsView(root, _, scope) {
   }
   replace(root, loading());
   const healthEl = h("div");
-  const serverEl = h("div");
-  const proposerEl = h("div");
+  const serverEl = h("div", { class: "tab-part" });
+  const proposerEl = h("div", { class: "tab-part" });
   const harnessesEl = h("div", { class: "stack" });
-  const proxyEl = h("div");
+  const proxyEl = h("div", { class: "tab-part" });
+  // Under the setup at a glance, its detail: one part in sight at a time, the address naming it.
+  const PARTS = ["server", "harnesses", "proposer", "proxy"];
+  const asked = scope.query?.get("part");
+  const parts = tabs([
+    { id: "server", label: "Server", body: serverEl },
+    {
+      id: "harnesses", label: "Harnesses & sandbox",
+      body: [
+        h("div", { class: "tab-actions" },
+          h("button", { class: "btn btn-small", type: "button", "data-control": true, onclick: guard(detect) }, "Detect again")),
+        harnessesEl,
+      ],
+    },
+    { id: "proposer", label: "Proposing model", body: proposerEl },
+    { id: "proxy", label: "This proxy", body: proxyEl },
+  ], {
+    current: PARTS.includes(asked) ? asked : "server", label: "Connections in detail",
+    onChange: (id) => settle(id === "server" ? "#/connections" : `#/connections?part=${id}`),
+  });
   replace(root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Connections"),
       h("p", { class: "sub" }, "What the proxy talks to. Settings for the harnesses and the proposing model are kept in the recordings folder, never in a harness's own configuration."))),
-    h("div", { class: "stack" }, healthEl, serverEl, proposerEl, panel("Harnesses", harnessesEl, {
-      actions: h("button", { class: "btn btn-small", type: "button", "data-control": true, onclick: guard(detect) }, "Detect again"),
-    }), proxyEl));
+    h("div", { class: "stack" }, healthEl, parts.element));
 
   let state = null;
   async function load() {
@@ -155,7 +173,7 @@ export async function connectionsView(root, _, scope) {
   // The server, the harnesses, the sandbox and the proposing model, a word and a colour each —
   // grey what is fine, amber what needs a look — then what that means, in at most three
   // sentences. The server test is here too: much of the rest stands on what it measures. The
-  // panels below hold the detail.
+  // tabs below hold the detail.
 
   function drawHealth() {
     const server = state.server;
@@ -225,7 +243,7 @@ export async function connectionsView(root, _, scope) {
     const measures = server.measures || {};
     const ruledOut = Object.values(server.token_work || {}).filter(Boolean);
     switcher ??= switchForm();
-    replace(serverEl, panel("Inference server", [
+    replace(serverEl, [
       // A server that asks for a key answered: it is no server to start again.
       server.reminder ? cloudNote(server.reminder) : server.read?.asks_key ? keyNote() : server.problem
         ? h("div", { class: "banner banner-warn" }, h("strong", null, "Not answering: "), `${server.problem}. `,
@@ -260,7 +278,7 @@ export async function connectionsView(root, _, scope) {
         : null,
       server.checks?.checked_at ? h("p", { class: "faint small" }, `Tested ${when(server.checks.checked_at)} with ${server.checks.model}.`) : null,
       h("details", { class: "fold" }, h("summary", null, "Point the proxy at another server"), switcher),
-    ]));
+    ]);
   }
 
   function checkButton(models, last) {
@@ -407,11 +425,11 @@ export async function connectionsView(root, _, scope) {
       }
     };
     const number = (field) => (field.value.trim() === "" ? null : Number(field.value));
-    replace(proposerEl, panel("Proposing model", [
+    replace(proposerEl, [
       kv([
         ["asks", settings.url
           ? h("span", { class: "mono" }, settings.url)
-          : h("span", null, "the server above, ", h("span", { class: "muted" }, "through the proxy: it waits its turn with other calls, and is never recorded"))],
+          : h("span", null, "the proxy's own server, ", h("span", { class: "muted" }, "through the proxy: it waits its turn with other calls, and is never recorded"))],
         ["model", settings.model ? h("span", { class: "mono" }, settings.model) : h("span", { class: "muted" }, "the server's default")],
         ["API format", h("span", { class: "mono" }, settings.wire)],
         ["max tokens", String(settings.max_tokens)],
@@ -419,7 +437,7 @@ export async function connectionsView(root, _, scope) {
         ["another machine", settings.allow_remote ? chip("allowed", "warn") : chip("not allowed", "muted")],
         ["key", key.set ? chip(key.from === "environment" ? "set, from TUNINGFORK_PROPOSER_KEY" : "set, in the recordings folder", "muted") : chip("not set", "muted")],
       ]),
-      h("p", { class: "hint" }, "The model tuningfork asks for edits of a skill, from a refinement's page. What it is sent — the skill, recorded prompts and answers — goes to this address."),
+      h("p", { class: "hint" }, "The model tuningfork asks for edits of a skill, from a refinement's page: what it is sent — the skill, recorded prompts and answers — goes to this address."),
       error,
       h("details", { class: "fold" }, h("summary", null, "Change the proposing model"),
         h("form", {
@@ -458,7 +476,7 @@ export async function connectionsView(root, _, scope) {
           key.from === "file"
             ? h("button", { class: "btn btn-quiet btn-small", type: "button", "data-control": true, onclick: guard(() => save("/proposer/key", { key: null })) }, "Clear the key")
             : null))),
-    ]));
+    ]);
   }
 
   // --- harnesses ------------------------------------------------------------------------
@@ -491,7 +509,7 @@ export async function connectionsView(root, _, scope) {
         : h("div", { class: "banner banner-warn" },
             `Runs tuningfork starts are not sandboxed: ${sandbox.reason}. Each sees its run folder at its real path, which differs from run to run, and the model reads it. Their checks run on this machine itself.`),
       // What the configs let every check read, with the sandbox or without it, each by the
-      // file that names it. The same problem the proxy panel says — the machine's config that
+      // file that names it. The same problem the proxy's part says — the machine's config that
       // cannot be read at all — is not said twice; any other is.
       checkEnv?.problem && checkEnv.problem !== configProblem
         ? h("div", { class: "banner banner-warn" }, `${capital(checkEnv.problem)}. Checks that run a command are refused until it is fixed.`)
@@ -521,15 +539,16 @@ export async function connectionsView(root, _, scope) {
         ["program", harness.path ? h("span", { class: "mono" }, harness.path) : h("span", { class: "muted" }, harness.executable)],
         ["problem", harness.error],
       ]),
+      [harness.problem, ...pre.problems].filter(Boolean)
+        .map((problem) => h("div", { class: "banner banner-warn" }, h("strong", null, "Cannot run here: "), problem)),
+      pre.notes.map((note) => h("div", { class: "banner" }, note)),
+      // What it needs of the server is for the record: what it lacks is said above, in a banner.
       harness.requirements?.length
-        ? h("div", null, h("div", { class: "label" }, "Needs of the server"),
+        ? h("details", { class: "fold" }, h("summary", null, `Needs of the server (${harness.requirements.length})`),
             h("ul", { class: "small" }, harness.requirements.map((need) =>
               h("li", { title: need.what }, needName(need),
                 h("span", { class: "faint" }, ` — ${need.why}`)))))
         : null,
-      [harness.problem, ...pre.problems].filter(Boolean)
-        .map((problem) => h("div", { class: "banner banner-warn" }, h("strong", null, "Cannot run here: "), problem)),
-      pre.notes.map((note) => h("div", { class: "banner" }, note)),
       h("details", { class: "fold" }, h("summary", null, "Use another program"),
         h("div", { class: "stack", style: { gap: "var(--space-2)", marginTop: "var(--space-2)" } },
           program,
@@ -545,7 +564,7 @@ export async function connectionsView(root, _, scope) {
 
   function drawProxy() {
     const proxy = state.proxy;
-    replace(proxyEl, panel("This proxy", [
+    replace(proxyEl, [
       // A config that cannot be read stops every call the proxy would send, until it is fixed.
       proxy.config_problem ? h("div", { class: "banner banner-warn" }, `${capital(proxy.config_problem)}. Nothing is sent anywhere until it is fixed.`) : null,
       kv([
@@ -564,9 +583,9 @@ export async function connectionsView(root, _, scope) {
       h("p", { class: "hint" }, "These change only with a restart:"),
       command(proxy.restart),
       proxy.restart_masked
-        ? h("p", { class: "hint" }, "A key in the upstream's address, such as its user and password or a value in its query, shows as <redacted>. Type it back in before you run it.")
+        ? h("p", { class: "hint" }, "Type any key back in before you run it: one in the upstream's address, such as its user and password or a value in its query, shows as <redacted>.")
         : null,
-    ]));
+    ]);
   }
 
   await load();

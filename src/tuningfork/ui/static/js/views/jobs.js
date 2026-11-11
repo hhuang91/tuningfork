@@ -289,12 +289,12 @@ export function jobSummary(job) {
   const finding = job.status === "done" ? found(job) : null;
   parts.push(...(finding ? [foundPanel(job, finding)] : [...ownPanels(job), ...madeView(job)]));
   // What it was asked is kept for the record: folded, the page leading with what it did.
-  parts.push(foldPanel("What it was asked", [
+  parts.push(foldPanel("Request", [
     kv(Object.entries(job.params || {})
       .filter(([key, value]) => value !== null && value !== "" && key !== "variant_text" && !(Array.isArray(value) && !value.length))
       .map(([key, value]) => [key, h("span", { class: "mono" }, typeof value === "object" ? JSON.stringify(value) : String(value))])),
     job.params?.variant_text ? h("details", { class: "fold" }, h("summary", null, "The variant's text"), h("pre", { class: "code" }, job.params.variant_text)) : null,
-    job.plan ? h("details", { class: "fold" }, h("summary", null, "The plan it ran"), h("pre", { class: "code" }, pretty(job.plan))) : null,
+    job.plan ? h("details", { class: "fold" }, h("summary", null, "Plan"), h("pre", { class: "code" }, pretty(job.plan))) : null,
   ], { className: "record-panel", meta: h("span", { class: "muted" }, `queued ${when(job.created_at)}`) }));
   return parts;
 }
@@ -307,7 +307,7 @@ function ownPanels(job) {
   // A question at a held call, and a check tried: this page is their only home once the call
   // is decided or the tester closed.
   if (job.kind === "hold-console" && result.reply) return [panel("What it answered", replyCard(job))];
-  if (job.kind === "check-trial" && result.found) return [panel("What the check said", verdictView(result))];
+  if (job.kind === "check-trial" && result.found) return [panel("Check output", verdictView(result))];
   if (job.kind === "propose") return [proposedView(result)];
   if (job.kind === "validate") return [validatedView(result)];
   if (job.kind === "tokens" && result.run_id) {

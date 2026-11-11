@@ -56,7 +56,7 @@ export async function stepView(root, [reference, index], scope) {
           actions: contextControls,
         })),
       h("div", { class: "stack sticky-col" },
-        panel("What the model did", responseEl, { actions: responseControls }),
+        panel("Answer", responseEl, { actions: responseControls }),
         detailsPanel(step),
         workspacePanel(step))),
   );

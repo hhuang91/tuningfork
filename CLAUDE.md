@@ -39,7 +39,8 @@ Inspecting and experimenting (all take `--home <recordings dir>`):
     tuningfork timeline <run>             # the run as one conversation, each step in its place
     tuningfork step <run> <k>             # one step: exact context in, behaviour out
     tuningfork diff <runA> <runB>         # two runs side by side
-    tuningfork divergence --task <id>     # first step where runs stopped agreeing
+    tuningfork divergence --task <id>     # first step where runs stopped agreeing (--paths: the runs
+                                          #   as paths that part, and the turning point)
     tuningfork tally --task <id>          # what the failed runs' checks said, counted (--screen <id>: by arm)
     tuningfork check-along --task <id>    # the check at each state of each run: which call made each finding
     tuningfork where --task <id> --file F --contains RE   # one question of every run, lined up with the
@@ -218,7 +219,7 @@ notes the launch (`Store.note_launch`), the runner ends the harness and runs the
 workspace as it is, and the run counts, its result saying where it stopped (`stopped_at_skill`).
 
 A task file a person has becomes a scenario too (`scenarios.prepare_import`, `prepare_upload`,
-`execute_import`; the Scenarios page's Add a task file you have, `POST /scenarios/import`), planned
+`execute_import`; the Scenarios page's Add a task file, `POST /scenarios/import`), planned
 before anything is written: by its path, its skill folder kept where it is, or its folder uploaded,
 the skill folder it holds copied into the scenario's folder (`skill/<name>/`). Either way its input
 files, the conversation its runs continue, and what its check reads from its folder
@@ -611,7 +612,8 @@ more seen), since a screen could only show it falling, and one the failing runs'
 satisfy as readily as the passing runs', since moving it would not move the verdict, and says when
 the checkpoint run passed its check, since a step screen there starts near the ceiling (a step screen
 whose original arm reaches the target four times in five says so too); and
-find_divergence also names the step whose behaviour best predicts the verdict, when one does
+find_divergence also names the turning point along the runs' paths (`analysis.paths`), and the step
+whose behaviour best predicts the verdict, when one does
 (`ops.inspect.verdict_split`). No agent is offered the built-in
 proposer — sending recordings to an endpoint is the person's decision — nor anything that
 approves an edit. An answer is a compact view (`ops/compact.py`), masked as it leaves the server
@@ -633,17 +635,36 @@ Record, Measure, Improve, and the Trash; what needs a running proxy stays in it 
 greyed and saying why, and its foot is a status strip — the proxy, the server and the harnesses,
 from `GET /connections`. Its front page is `#/guide` — setup, where you left off, a map of the
 loop and the ways in — and its words have a page of their own, `#/words`, each living once in
-`ops/glossary.py`. Each page leads with its take-away: a run its verdict strip; the divergence
-page the step whose behaviour best predicts the verdict, in a callout with the ways to it, then the
-runs side by side one step at a time, from the first split, every step a click away (`atStep` in
-`views/compare.js`: the first split is often not the step that decides); a forking-token probe each
-position where a forced token changed what the model did, as a tree under its place in the answer:
-the token boxed in its sentence, a word or two each side, and under it the original token and each
-forced one, the model's chance of each and how often the condition was met, a badge after the rate
-a forced one moved, the behaviours each led to a link away (`flipsTree` in `results.js`);
+`ops/glossary.py`. Each page leads with its take-away: a run its verdict strip; the divergence page
+a map of its runs (`ui/static/js/runmap.js`): what the runs did at each step a box — the tool they
+called, or a reply, whatever its words; a tool's calls apart where they came in a few distinct forms
+— a line between two boxes as wide as the runs that went that way, each path ending in its runs, one
+mark a run, coloured by its check. The split where passing and failing part is marked the turning
+point and said in a line over the map, a lead and said to be one, the same at every detail the map
+is drawn at; the box chosen is shown under it: its runs, what they did next, the ways into its
+step. The tree and its turning point are the server's (`analysis.paths`, in the divergence report;
+the terminal prints them, `tuningfork divergence --paths`, and an agent is given the turning
+point): a run gone its own way is drawn no further on a large map, and one Detail control draws
+more or less (`DETAIL`; the first split is often not the step that decides, and compared exactly,
+twenty runs were twelve behaviours at the step that decided them, nine of them one refusal
+reworded). An experiment is drawn the same way, what its step led to as a fan (`fanTree`): a
+wording a fan of its own, a branch for each move it made (`gather_moves`, a reply one move
+whatever its words), ending in how often — or, of forks run to the end, in its forks, a mark each
+by how its check went (`EndToEnd.ended`, a move's `ended`: what the model did at the step set
+against how the run then ended, which the terminal's *then passed* column and an agent's
+`compact.to_end` say too) — and each behaviour in full a click away; a forking-token probe each
+position as a figure of the same kind (`positionFigure` in `results.js`, `choiceFan` in
+`runmap.js`) — its place in the answer is over it; the box it grows from is the token boxed in its
+sentence, a word or two each side; a branch is the original token or one forced there, the forced
+one in a change's cyan with its pencil, each with the model's chance of the token and as wide as
+that chance; a branch ends in how often the condition was met, a badge after the rate a forced one
+moved, then its test and the behaviours it led to — first the positions where a forced token
+changed what the model did, then the rest after the answer, each drawn once;
 Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model, a
 word and a colour each, the server in the status strip's words (`serverWord`), and what that means
-in at most three sentences (`whatItMeans`); a refinement its four stages in a line (`stagesOf` in
+in at most three sentences (`whatItMeans`) — then its detail, one part in sight at a time (tabs:
+the server, the harnesses and the sandbox, the proposing model, the proxy; the address names any
+part but the server's, `?part=`); a refinement its four stages in a line (`stagesOf` in
 `views/refine.js`: propose, test at this step, full test runs, approve — where each proposal
 stands is its latest finished test, as the gate's G0 reads it), then its evidence, each proposal
 named by the line it changes. A run's page keeps the run to read and the work on one of its steps
@@ -765,6 +786,8 @@ and an unclosed SQLite connection fails the run at teardown after every test has
     src/tuningfork/store/      content-addressed blobs + SQLite message tree; token streams; masking
                                (what every write is masked as, once)
     src/tuningfork/analysis/   normalizers, Wilson/Fisher/Holm, distributions, divergence;
+                               paths (a task's runs as paths that part: the tree, its turning
+                               point, behaviours gathered by move);
                                tokens (entropy, margin, the step's sampler, redaction), forking;
                                screen (each proposal against one baseline, Holm over the family);
                                validation (the gate a validated edit meets, check by check);
@@ -899,7 +922,7 @@ than on a hardcoded assumption about which server is running.
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
 - The web UI says some terms more plainly than the CLI, MCP and the docs, which keep the precise
   words: an arm is a *wording*, a target the *condition* (over a result, *Condition* on a line of
-  its own; a probe's rows, *condition met*; a refinement's, *what the model should do*), a screen a
+  its own; a probe's figures, *condition met*; a refinement's, *what the model should do*), a screen a
   *test at this step*, a validation *full test runs*, a spec a *task file*. A run's set-up is a
   *set-up* in every front end, so a condition is never a set-up: the word had meant both.
   `ui/static/js/words.js` holds the phrase for each term the glossary defines (a term's `ui`;
@@ -907,11 +930,49 @@ than on a hardcoded assumption about which server is running.
   glossary` finds a term by its page phrase too. A sentence the server writes — a refusal, a plan's
   warning — keeps the precise words, as the terminal prints it; one that points at a control names
   it in both front ends. A target's badge beside a behaviour says *matches* or *no match*, never
-  *counted*: amber *not counted* is a run or fork left out of a pass rate. The pages' own
-  sentences: one idea a sentence, a sentence rather than a label with a colon; what a thing is
-  before what it is not ("a lead, not a verdict"); the plain phrase first, the precise term after
-  it, muted or in a tooltip; help under a field says what to type, why it matters goes in a
-  tooltip; buttons are verb phrases, with an ellipsis only where a form opens.
+  *counted*: amber *not counted* is a run or fork left out of a pass rate.
+- The pages' own words: a heading — a page's, a panel's, a tab's, a choice's — names a thing in one
+  to three words, never a sentence: *Turning point*, not "What goes with passing", which was correct
+  and gave nothing to picture. The exceptions: the Guide's questions, its *Start from a question*,
+  and a page titled by the question it answers; what a refinement aims at, which keeps its sentence
+  (*What the model should do here*); and a panel or a fold that holds a form, worded as the button
+  that opens it (*A/B a wording at step 2*, *Find the call behind each line…*). What a heading or
+  a control means is a click away, behind a `?` beside it (`info` in `dom.js`); a field's help
+  longer than a line's worth of words goes there by itself (`field` in `forms.js`), and how a
+  form's work runs goes beside its plan (`planForm`'s `about`). A lead or a hint longer than a
+  couple of lines shows its first sentence, the rest behind *more* (`briefly`): nothing a page says
+  is taken away, and none of it has to be read past. So a hint's first sentence carries what to do
+  or what to beware of, and a field's `help` what to type, its `about` the rest: a caution that
+  changes how a result is read stays in sight, in a line. One way of several is a row of short
+  names, only the chosen one's fields under it (`ways` in `forms.js`); parts of a page that answer
+  different questions are tabs (`tabs`). A sentence still says one idea, and what a thing is before
+  what it is not ("a lead, not a verdict"); buttons are verb phrases, with an ellipsis only where a
+  form opens. A short name must not borrow a word that already names something: where paths part is
+  a *split* (a fork is a replayed run), a reply's different texts are its *phrasings* (a wording is
+  an arm), and a line of *Tools & words* is a *rule* (the condition is the whole).
+- Where a thing has a shape, the page draws it before it describes it. Where the shape is things
+  done one after another, or one of several ways taken, the drawing is the node graph
+  (`ui/static/js/runmap.js`, `pathsFigure`): the pages' one figure, to be reached for before a
+  table or a list whenever a page's subject is paths, branches, alternatives, or outcomes that
+  part. It has one grammar. A box is what was done: a tool called, a reply, a token, a wording. A
+  line joins what was done to what came next, as wide as how many went that way: runs, samples,
+  forks, or a token's chance. A path ends in how it fared: its runs' marks, a rate with its
+  interval, its forks' marks. Columns run left to right in the order things happened, headed in
+  a few words, or not at all where a head adds nothing; the box chosen is shown under the
+  figure, and what the figure leaves out — each behaviour in full, each run — is a click away
+  under it. A figure too large to take in is thinned, never shrunk: paths one run took fold, and
+  a Detail control draws more or less. A task's runs are a map of paths that part (`runMap`),
+  what a step led to a fan (`fan`), a probe's position a fan from its token (`choiceFan`). The
+  one map drawn smaller is the one in a list, where it is a sign for the page it leads to and
+  not the figure to read: a task's map in its link on the Runs list (`mapThumb`: dots, lines
+  and marks, no words, never a control). A figure knows its own width (`.rm` is a container):
+  short of room, on a phone or in a narrow column, it scrolls sideways whole, its ends with it,
+  and a probe's position reads down the page. What only a colour shows is said another way too:
+  a forced token wears a change's pencil, and a screen reader is told which box is which. Not
+  everything is a graph: a refinement's stages are a line, a folder is its tree, an answer's
+  tokens a heatmap, and one number is a rate with its bar. Behaviours are shown by move first,
+  the tool called or a reply, and replies that differ only in their words fold to one line. What
+  a drawing counts or tests is the server's: a page works out no statistic.
 - A place on disk is shown, never only described: a folder is drawn as the tree it is, each line
   with what it is for beside it (`folderTree` in `ui/static/js/folders.js`), the part of a path
   inside the recordings folder shown from there. Their names are the glossary's, the same in

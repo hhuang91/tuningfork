@@ -287,7 +287,7 @@ try {
     // out, and every run it made can be reached.
     chain: [1, ["See the chain, link by link"]],
     stopped: ["See the chain, link by link"],
-    validated: [["What it found", "What it made", "What it was asked"], ["The approval checks, in the refinement"],
+    validated: [["What it found", "What it made", "Request"], ["The approval checks, in the refinement"],
       ["The approval checks, in the refinement", "Open the experiment"]],
     fork: [["See the result"], false],
     runs: [true, true],
@@ -406,7 +406,7 @@ try {
     "the A/B's job page says what it found and what it counts, and leaves the rest to the A/B's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/")`), "the A/B's page");
-  const edit = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "The variant's edit")`;
+  const edit = `[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "The edit")`;
   await until(() => page.eval(`!!${edit}`), "the edit it tested");
   check(await page.eval(`[...${edit}.querySelectorAll(".diff-line.add")].some((line) => line.textContent.includes("row_count and amount_total"))
     && ${edit}.querySelector(".panel-meta").textContent.includes(${JSON.stringify(`+ variant ${variantName}`)})`),
@@ -518,7 +518,7 @@ try {
     return bars.length > 0 && bars.every((bar) => bar.classList.contains("tone-accent")); })()`), "each task's pass rate on the Runs page is the accent's");
 
   await openStepOf(page, launched, 1, "fork");
-  await planShows(page, "Stop at the step");
+  await planShows(page, "At this step");
   await startButtonReady(page, "Start the fork");
   await page.click("Start the fork");
   const forkId = await until(async () => jobIdIn(await page.eval("location.hash")), "the fork's job page");
@@ -594,6 +594,31 @@ try {
       && block.querySelector(".verdict-big").textContent === "No difference beyond chance: the variant's forks passed the check in 1 of 1, and the original's in 0 of 1."
       && !block.classList.contains("tone-ok") && !block.classList.contains("tone-bad");
   })()`), "its page names the check as the target, and one fork an arm is said in words, not in green");
+  // What each wording's forks did at the step, and how those forks ended, in one picture: a
+  // branch for each wording, ending in its forks — a mark each, by how its own check went.
+  const endFan = await page.eval(`(() => {
+    const panel = [...document.querySelectorAll(".panel")].find((found) => found.querySelector("h2")?.textContent === "Original vs variant, whole run");
+    const fan = panel.querySelector(".rm");
+    const ends = [...fan.querySelectorAll(".rm-end")].filter((cell) => cell.querySelector(".rm-mark"));
+    return {
+      label: fan.getAttribute("aria-label"),
+      head: fan.querySelector(".rm-head-end").textContent,
+      wordings: [...fan.querySelectorAll(".rm-origin .rm-label")].map((box) => box.textContent),
+      ends: ends.map((cell) => [[...cell.querySelectorAll(".rm-mark")].map((mark) => mark.className.replace("rm-mark ", "")).join(","), cell.querySelector(".rm-fared").textContent]),
+      rates: fan.querySelectorAll(".ci-track").length,
+      keys: [...panel.querySelectorAll(".rm-legend .rm-key")].map((key) => key.textContent),
+      inFull: [...panel.querySelectorAll("details.in-full > summary")].map((summary) => summary.textContent),
+      letters: [...document.querySelectorAll(".panel")].find((found) => found.querySelector("h2")?.textContent === "Forks").querySelectorAll("td .chip.tone-accent").length,
+    };
+  })()`);
+  check(endFan.label === "What step 1 led to, and how those forks ended" && endFan.head === "how they ended"
+    && JSON.stringify(endFan.wordings) === JSON.stringify(["step 1", "original · 1", "variant · 1"])
+    && JSON.stringify(endFan.ends) === JSON.stringify([["tone-bad", "0 of 1 passed"], ["tone-ok", "1 of 1 passed"]]) && endFan.rates === 0,
+    `each wording's branch ends in its forks, a mark each by its own check, never a rate's bar (${JSON.stringify(endFan.ends)})`);
+  check(JSON.stringify(endFan.keys) === JSON.stringify(["passed", "failed", "wider line, more forks"])
+    && JSON.stringify(endFan.inFull) === JSON.stringify(["Original's behaviours (1)", "Variant's behaviours (1)"])
+    && endFan.letters === 2,
+    "the marks' key is under the picture, each wording's behaviours in full a click away, and each fork says which it did");
 
   // --- 4. Cancel a running job ------------------------------------------------------------
   console.log("cancel a job");
@@ -903,8 +928,32 @@ try {
   // --- 8. Connections: check the server, refuse a protected endpoint, switch while idle ------
   console.log("connections");
   await page.eval(`location.hash = "#/connections"`);
-  await until(() => page.eval(`document.querySelectorAll(".harness-card").length >= 2`), "the harness cards");
+  await until(() => page.eval(`document.querySelectorAll(".health-strip .glance").length >= 3 && !!document.querySelector('[role="tab"][aria-selected="true"]')`), "the setup at a glance, and its parts");
   const startedOn = (await api("/connections")).server.url;
+  // Under the glance, the detail a part at a time: the server first, the address naming any other
+  // (the user's yes, 2026-11-10: Connections slimmed; it was four panels down one long page).
+  const partsOf = () => page.eval(`(() => ({
+    tabs: [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent + (tab.getAttribute("aria-selected") === "true" ? "*" : "")).join(","),
+    cards: document.querySelectorAll(".tab-panel .harness-card").length,
+    server: !!document.querySelector(".tab-panel table.measured, .tab-panel .kv"),
+    panels: [...document.querySelectorAll("main .panel > .panel-head h2")].map((h2) => h2.textContent).join(","),
+    hash: location.hash,
+  }))()`);
+  const serverPart = await partsOf();
+  check(serverPart.tabs === "Server*,Harnesses & sandbox,Proposing model,This proxy" && serverPart.server && serverPart.cards === 0 && serverPart.panels === "",
+    `Connections' detail is four parts, one in sight: the server first (${serverPart.tabs})`);
+  await page.eval(`[...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === "Harnesses & sandbox").click()`);
+  await until(() => page.eval(`document.querySelectorAll(".tab-panel .harness-card").length >= 2`), "the harness cards, in their part");
+  const harnessPart = await partsOf();
+  check(harnessPart.tabs === "Server,Harnesses & sandbox*,Proposing model,This proxy" && harnessPart.hash === "#/connections?part=harnesses"
+    && await page.eval(`!document.querySelector("main .chip.tone-ok, main .chip.tone-bad")`)
+    && await page.eval(`[...document.querySelectorAll(".tab-panel button")].some((button) => button.textContent === "Detect again")
+      && [...document.querySelectorAll(".harness-card details.fold > summary")].some((summary) => /^Needs of the server \\(\\d+\\)$/.test(summary.textContent))`),
+    `the harnesses and the sandbox are a part of their own, the address naming it, what each harness needs of the server folded, and nothing there a verdict's green or red (${harnessPart.hash})`);
+  check(await page.eval(`document.querySelector(".status-health a:last-child")?.getAttribute("href") === "#/connections?part=harnesses"`),
+    "and the status strip's harnesses lead there");
+  await page.eval(`[...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === "Server").click()`);
+  await until(async () => (await partsOf()).hash === "#/connections", "the server's part again");
   // The page leads with the setup at a glance: a word and a colour each, what that means, and
   // the server test, which nothing has run yet.
   const glance = () => page.eval(`(() => {
@@ -1228,86 +1277,132 @@ try {
   check(await page.eval(`document.querySelector(".page-head h1").textContent.includes("exact context") && document.querySelectorAll(".msg").length >= 2`),
     "the exact context a step was sent has a page of its own");
 
-  // --- 10b. Where a task's runs split: each run by its verdict; the checks' lines counted --
-  console.log("the divergence page: each run by its verdict, the checks' lines counted");
+  // --- 10b. Where a task's runs part: the run map, each run by its verdict; the checks' lines counted --
+  console.log("the divergence page: the run map, each run by its verdict, the checks' lines counted");
   const split = await api(`/divergence?task=${encodeURIComponent("tally-report/1")}&limit=50`);
-  await page.eval(`location.hash = "#/divergence/${encodeURIComponent("tally-report/1")}"`);
-  await until(() => page.eval(`!!document.querySelector(".run-chips a.chip")`), "the behaviours at the split");
+  const divergenceAt = `#/divergence/${encodeURIComponent("tally-report/1")}`;
+  // The way there is the task's link on the Runs list, and the link shows the map small: the same
+  // tree, a dot a box, a mark a run by its verdict, the turning point a dot where the runs part
+  // (the user's yes, 2026-11-10: the map's picture on the list too).
+  await page.eval(`location.hash = "#/runs"`);
+  await until(() => page.eval(`!!document.querySelector('a.map-thumb[href="${divergenceAt}"] svg.mt .mt-mark')`), "the task's map, small, on the Runs list");
+  const thumb = await page.eval(`(() => {
+    const link = document.querySelector('a.map-thumb[href="${divergenceAt}"]');
+    const marks = [...link.querySelectorAll(".mt-mark")].map((mark) => mark.getAttribute("class"));
+    return {
+      words: link.textContent, title: link.title, marks: marks.length,
+      ok: marks.filter((name) => name.includes("tone-ok")).length, bad: marks.filter((name) => name.includes("tone-bad")).length,
+      lines: link.querySelectorAll(".mt-edge").length, dots: link.querySelectorAll(".mt-node").length, turn: link.querySelectorAll(".mt-turn").length,
+      height: link.querySelector("svg").getBoundingClientRect().height, room: link.querySelector(".map-thumb-slot").getBoundingClientRect().height,
+      hidden: link.querySelector(".map-thumb-slot").getAttribute("aria-hidden"),
+    };
+  })()`);
+  const judged = (verdict) => split.run_ids.filter((id) => split.verdicts[id] === verdict).length;
+  check(thumb.words === "Where do they diverge?" && thumb.hidden === "true" && thumb.title.startsWith(`${split.run_ids.length} runs as paths that part`)
+    && thumb.lines >= 1 && thumb.dots >= 2 && thumb.height > 0 && thumb.height <= thumb.room + 0.5,
+    `on the Runs list a task's link shows its run map, small, in the room kept for it (${JSON.stringify(thumb)})`);
+  check((split.run_ids.length > 10 || (thumb.marks === split.run_ids.length && thumb.ok === judged("passed") && thumb.bad === judged("failed")))
+    && thumb.ok >= 1 && thumb.bad >= 1 && thumb.turn === (split.paths.auto.turning ? 1 : 0),
+    `its paths end in the runs' marks, by verdict, and its turning point is the server's (${thumb.ok} passed, ${thumb.bad} failed of ${thumb.marks}; turning ${thumb.turn})`);
+  await page.eval(`document.querySelector('a.map-thumb[href="${divergenceAt}"]').click()`);
+  await until(() => page.eval(`location.hash === "${divergenceAt}"`), "the map's page, from the link");
+  await until(() => page.eval(`!!document.querySelector(".rm .rm-end .rm-mark") && document.querySelectorAll(".rm-edges path").length > 0`), "the run map, its lines drawn");
   const tones = { passed: "tone-ok", failed: "tone-bad", "not counted": "tone-warn" };
-  const chips = await page.eval(`[...document.querySelectorAll(".run-chips a.chip")].map((chip) => [chip.getAttribute("href"), chip.className])`);
-  const wrong = chips.filter(([href, className]) => {
-    const id = href.split("/")[2];
-    return !className.split(" ").includes(tones[split.verdicts[id]] || "tone-muted");
-  });
-  check(chips.length > 1 && !wrong.length && chips.some(([, className]) => className.includes("tone-ok")) && chips.some(([, className]) => className.includes("tone-bad")),
-    `each run's chip is coloured by its own verdict (${chips.length} runs${wrong.length ? `; wrong: ${JSON.stringify(wrong)}` : ""})`);
-  check(await page.eval(`!document.querySelector(".ci-track.tone-ok, .ci-track.tone-bad") && document.querySelectorAll(".group-rates .ci-track.tone-accent").length > 1`),
-    "and a behaviour's \"then passed\" is a rate, never drawn green: no rate here is");
-  // The page leads with what goes with passing: the step that best predicts it, in a callout,
-  // with the ways to it.
-  const best = split.verdict_split?.best;
-  const lead = await page.eval(`(() => {
-    const callout = document.querySelector(".predictors .callout");
-    return {
-      first: document.querySelector("main .panel .panel-head h2")?.textContent,
-      big: callout?.querySelector(".callout-big")?.textContent,
-      ways: [...(callout?.querySelectorAll(".callout-actions a") || [])].map((a) => a.textContent + "=" + a.getAttribute("href")).join(" | "),
-      p: callout?.querySelector("p > .muted:last-child")?.textContent,
-    };
-  })()`);
-  check(!!best && best.kind !== "ended" && lead.first === "What goes with passing"
-    && lead.big === `What the model does at step ${best.index} best predicts whether a run passes.`,
-    `the page leads with the step whose behaviour best predicts a pass (${lead.first}: ${lead.big})`);
-  check(lead.ways === `Open step ${best.index} in run ${best.run_id.slice(0, 8)}=#/runs/${best.run_id}/${best.index} | Resample step ${best.index}…=#/runs/${best.run_id}/${best.index}?start=resample`
-    && /^\(p = /.test(lead.p || ""), `with the ways to it, and its p last (${lead.ways}; ${lead.p})`);
-  // Under the lead, one step at a time, opening where the runs first split, and every step a
-  // click away: the first split is often not the step that decides.
-  console.log("the divergence page, step by step");
-  const splitAt = split.divergence_index;
-  const shownStep = () => page.eval(`(() => {
-    const panel = document.querySelector(".at-step");
-    return {
-      title: panel?.querySelector(".panel-head h2")?.textContent,
-      current: [...panel.querySelectorAll(".step-pick")].filter((pick) => pick.getAttribute("aria-pressed") === "true").map((pick) => pick.textContent).join(","),
-      shaded: [...panel.querySelectorAll(".step-pick.diverged")].map((pick) => pick.textContent).join(","),
-      note: panel.querySelector(".step-note")?.textContent,
-      hash: location.hash,
-    };
-  })()`);
-  const atSplit = await shownStep();
-  check(atSplit.title === `At step ${splitAt}` && atSplit.current === String(splitAt)
-    && atSplit.shaded === split.steps.filter((step) => step.diverged).map((step) => step.index).join(",")
-    && atSplit.note.startsWith("The runs split here for the first time"),
-    `the section opens at the first split, every step offered and the ones where the runs split shaded (${JSON.stringify(atSplit)})`);
-  const other = split.steps.find((step) => step.index > splitAt) || split.steps.find((step) => step.index !== splitAt);
-  await page.eval(`[...document.querySelectorAll(".at-step .step-pick")].find((pick) => pick.textContent === "${other.index}").click()`);
-  const moved = await shownStep();
-  check(moved.title === `At step ${other.index}` && moved.current === String(other.index)
-    && moved.note.startsWith(other.diverged ? "The runs split here" : "Every run did the same here")
-    && moved.hash === `#/divergence/${encodeURIComponent("tally-report/1")}?step=${other.index}`,
-    `a click shows another step in its place, said in a line, the address naming it (${JSON.stringify(moved)})`);
-  await page.eval(`document.querySelector(".at-step .step-pick.current").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))`);
-  const back = await shownStep();
-  check(back.current === String(Math.max(0, other.index - 1)) && await page.eval(`document.activeElement?.classList.contains("current")`),
-    `the arrow keys move along, the step shown keeping the focus (${back.current})`);
-  await page.eval(`[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "Every step")
-    .querySelector("tbody tr:last-child td a").click()`);
-  const fromTable = await shownStep();
-  check(fromTable.title === `At step ${split.steps.length - 1}`, `a step's number in Every step shows it above (${fromTable.title})`);
-  await page.eval(`location.hash = "#/divergence/${encodeURIComponent("tally-report/1")}?step=0"`);
-  await until(async () => (await shownStep()).title === "At step 0", "the address's step, opened");
-  check(true, "an address naming a step opens the page there");
-  const tallied =`[...document.querySelectorAll(".panel")].find((panel) => panel.querySelector("h2")?.textContent === "What the failed runs' checks said")`;
+  const marks = await page.eval(`[...document.querySelectorAll(".rm .rm-end .rm-mark")].map((mark) => [mark.dataset.run, mark.className])`);
+  const wrong = marks.filter(([id, className]) => !className.split(" ").includes(tones[split.verdicts[id]] || "tone-none"));
+  check(marks.length === split.run_ids.length && !wrong.length && marks.some(([, className]) => className.includes("tone-ok")) && marks.some(([, className]) => className.includes("tone-bad")),
+    `each run is a mark at its path's end, coloured by its own verdict (${marks.length} runs${wrong.length ? `; wrong: ${JSON.stringify(wrong)}` : ""})`);
+  check(await page.eval(`!document.querySelector(".ci-track.tone-ok, .ci-track.tone-bad") && document.querySelectorAll(".rm-inspect .ci-track.tone-accent").length >= 1`),
+    "and a box's pass rate is a rate, never drawn green: no rate here is");
+  // The map is the server's tree, a box a node; the page leads with its turning point, said in a
+  // line over the map and marked on the column where the runs part.
+  const paths = split.paths.auto;
+  const turning = paths.turning;
+  const onMap = () => page.eval(`(() => ({
+    first: document.querySelector("main .panel .panel-head h2")?.textContent,
+    said: document.querySelector(".rm-lead strong")?.textContent,
+    line: document.querySelector(".rm-lead > span")?.textContent,
+    head: document.querySelector(".rm-head-turn")?.textContent,
+    boxes: document.querySelectorAll(".rm-grid .rm-node:not(.rm-alone)").length,
+    step: document.querySelector(".rm-inspect .rm-step")?.textContent,
+    chosen: [...document.querySelectorAll('.rm-node[aria-pressed="true"]')].map((box) => box.querySelector(".rm-label").textContent).join(","),
+    ways: [...document.querySelectorAll(".rm-actions a")].map((a) => a.textContent + "=" + a.getAttribute("href")).join(" | "),
+    detail: document.querySelector(".rm-detail-name")?.textContent,
+    hash: location.hash,
+  }))()`);
+  const lead = await onMap();
+  check(!!turning && lead.first === "Run map" && lead.said === `Turning point: step ${turning.step}.`
+    && lead.line.includes(`passed ${turning.passed} of ${turning.total}`) && lead.line.includes(`The rest passed ${turning.others_passed} of ${turning.others_total}`)
+    && (lead.head || "").startsWith(`step ${turning.step}`),
+    `the page leads with the map and its turning point, said in a line and marked on its column (${lead.said} ${lead.line})`);
+  check(lead.boxes === paths.nodes.length && lead.detail === "every run",
+    `the map draws the server's tree, a box for each of its nodes (${lead.boxes} of ${paths.nodes.length})`);
+  // Shown first: the box the failing runs took at the turning point, with the ways into its step.
+  const failingBox = paths.nodes[turning.parent].children.map((id) => paths.nodes[id])
+    .sort((a, b) => (b.passed.total - b.passed.successes) - (a.passed.total - a.passed.successes))[0];
+  const example = split.run_ids[failingBox.runs[0]];
+  check(lead.step === `Step ${failingBox.step}` && lead.chosen === failingBox.label
+    && lead.ways === `Open step ${failingBox.step} in run ${example.slice(0, 8)}=#/runs/${example}/${failingBox.step} | Resample…=#/runs/${example}/${failingBox.step}?start=resample | Tokens=#/runs/${example}/${failingBox.step}?view=tokens`,
+    `it opens on the box the failing runs took there, with the ways into its step (${lead.step}, ${lead.chosen}; ${lead.ways})`);
+  // A box chosen is shown under the map, the address naming its step; the keys stay on it.
+  console.log("the run map, box by box");
+  await page.eval(`[...document.querySelectorAll(".rm-grid .rm-node")].find((box) => box.querySelector(".rm-label").textContent === "read_file").click()`);
+  const moved = await onMap();
+  check(moved.step === "Step 0" && moved.chosen === "read_file" && moved.hash === `${divergenceAt}?step=0`,
+    `a box chosen is shown under the map, the address naming its step (${JSON.stringify([moved.step, moved.chosen, moved.hash])})`);
   check(await page.eval(`(() => {
-    const panel = ${tallied};
-    return !!panel && panel.querySelector("th").textContent === "failed runs that printed it"
-      && panel.querySelector(".hint").textContent.startsWith("Each bar counts the failed runs that printed the line")
+    const rows = [...document.querySelectorAll(".rm-inspect .rm-next-row")];
+    return rows.length === ${paths.nodes.find((node) => node.label === "read_file").children.length}
+      && rows.every((row) => row.querySelector(".ci-track.tone-accent"));
+  })()`), "with what its runs did next, each branch with how its runs fared");
+  // The window narrowed, the map's lines are drawn again over the boxes as they now stand: their
+  // sheet, left as wide as the window had been, kept a map that fits scrolling sideways.
+  const mapWidth = () => page.eval(`(() => {
+    const map = document.querySelector(".rm");
+    return { scroll: map.scrollWidth, client: map.clientWidth, sheet: Number(map.querySelector(".rm-edges").getAttribute("width")) };
+  })()`);
+  const wide = await mapWidth();
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await until(async () => (await mapWidth()).sheet < wide.sheet, "the map's lines drawn again, narrower", 4000).catch(() => {});
+  const narrowed = await mapWidth();
+  check(narrowed.client < wide.client && narrowed.sheet < wide.sheet && narrowed.scroll === narrowed.client,
+    `a narrower window draws the map's lines again, and a map that fits never scrolls (${JSON.stringify([wide, narrowed])})`);
+  await page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  // Less detail draws a tool's calls together: here the runs then part nowhere by tool. What the
+  // page found is what it was — a control of the view changes the map, never the lead — and the
+  // lead says its split is not drawn; the caution it carries is in sight at every detail.
+  check(await page.eval(`document.querySelector(".rm-lead .rm-lead-caution")?.firstChild.textContent === "A lead, not a verdict."`),
+    "the turning point is said to be a lead, in sight beside it");
+  await page.click("−", `document.querySelector(".rm-detail")`);
+  await until(async () => (await onMap()).detail === "shared paths", "less detail");
+  await page.click("−", `document.querySelector(".rm-detail")`);
+  await until(async () => (await onMap()).detail === "one box a tool", "the least detail");
+  const least = await onMap();
+  check(least.boxes === split.paths.tools.nodes.length && least.said === lead.said && least.line === lead.line && !least.head
+    && await page.eval(`[...document.querySelectorAll(".rm-lead .rm-lead-caution")].some((note) => note.textContent === "It is not marked on the map at this detail.")`),
+    `by tool alone nothing parts here: the lead is what it was, and says the map does not mark it (${least.boxes} boxes; ${least.said})`);
+  // A step's number among All steps shows it on the map; an address naming a step opens there.
+  await page.click("All steps");
+  await page.eval(`document.querySelector(".tab-panel tbody tr:last-child td a").click()`);
+  const fromTable = await onMap();
+  check(fromTable.step === `Step ${split.steps.length - 1}`, `a step's number in All steps shows it on the map (${fromTable.step})`);
+  await page.eval(`location.hash = "${divergenceAt}?step=0"`);
+  await until(async () => (await onMap()).step === "Step 0", "the address's step, opened");
+  check(true, "an address naming a step opens the page there");
+  check(await page.eval(`(() => {
+    const tab = document.querySelector('.tabs .tab[aria-selected="true"]');
+    const panel = document.querySelector(".tab-panel");
+    return !!tab && tab.textContent.startsWith("Why runs failed") && panel.querySelector("th").textContent === "failed runs"
+      && panel.querySelector(".rm-caption").textContent.startsWith("What the check printed for the failed runs")
+      && panel.querySelector(".info-note").textContent.startsWith("Each bar counts the failed runs that printed the line")
       && [...panel.querySelectorAll(".ci-track")].every((bar) => bar.classList.contains("tone-accent"));
-  })()`), "the failed runs' checks are counted line by line, each count a rate in the accent, and the page says so plainly");
+  })()`), "the failed runs' checks are counted line by line, each count a rate in the accent, how they are counted a click away");
   // One question of every run, lined up with the verdicts: how often it held among the passing
   // runs and among the failing ones — rates, so the accent's, the verdict said in the label.
-  await page.type(`document.querySelector('[name="target_match"]')`, "row_count");
   await page.click("Ask every run");
+  await page.eval(`(() => { const way = document.querySelector('.tab-panel [name="where_kind"][value="answer"]'); way.checked = true; way.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+  await page.type(`document.querySelector('.tab-panel [name="target_match"]')`, "row_count");
+  await page.click("Ask", `document.querySelector(".tab-panel form")`);
   await until(() => page.eval(`[...document.querySelectorAll(".group-rates .what")].some((what) => what.textContent.endsWith("of the failing runs"))`), "where it held, by verdict");
   check(await page.eval(`!document.querySelector(".ci-track.tone-ok, .ci-track.tone-bad")
     && [...document.querySelectorAll(".group-rates .what")].filter((what) => /of the (passing|failing) runs$/.test(what.textContent))
@@ -1358,40 +1453,64 @@ try {
   const flipLine = await page.eval(`[...document.querySelectorAll(".verdict-block ul.verdict-lines li")].map((li) => li.textContent).join(" | ")`);
   check(flipLine === `At [${forkSpot.position}], "search_files" forced in place of the original "read_file": the condition was met in 0 of 6 continuations, against 6 of 6.`,
     `and names the token, beside the original, with what each did (${flipLine})`);
-  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".fork-tree")`),
-    "the probe's job page says what it found in lines, and leaves the tree and the tables to the probe's page");
+  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".rm-probe")`),
+    "the probe's job page says what it found in lines, and leaves the figures to the probe's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && [...document.querySelectorAll(".chip")].some((c) => c.textContent === "less often")`), "the result, marked where it forks");
   check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => /^(less|more) often$/.test(c.textContent)).every((c) => c.classList.contains("tone-accent"))`),
     "a forced token that changed what the model did is the accent's colour, its direction in words: a result, not a check's red");
-  // The block the page leads with: the condition on a line of its own, then a tree from the token
-  // boxed in its sentence, its place in the answer over it: the original token and the forced one a
-  // row each, the model's chance of each, how often each met the condition and a badge after the
-  // rate the forced one moved, every column read from the left; the behaviour breakdown a link away
-  // (the user's drawing, 2026-11-06: no "the run's own" to explain, the sentence shows it; their
-  // look, 2026-11-09: the place heads the tree, the badge has no column of its own, and the link,
-  // under the trees, named for what it leads to).
-  const probeLead = await page.eval(`(() => {
+  // The block the page leads with: the condition on a line of its own, then the position as a
+  // figure of the pages' one kind. Its place in the answer is over it; the box it grows from is the
+  // token boxed in its sentence; a branch is the original token, or the forced one in a change's
+  // cyan, with the model's chance of it and as wide as that chance; and it ends in how often it met
+  // the condition, a badge after the rate the forced one moved, its test and where it led after
+  // that. The behaviour breakdown is a link away (the user's drawing, 2026-11-06: the token boxed
+  // in its sentence, no "the run's own" to explain; their look, 2026-11-09: the place heads it,
+  // the badge has no column of its own, and the link is named for what it leads to; their ask,
+  // 2026-11-10: the node graph the run map and the fans are drawn as, in place of a tree of guides
+  // and a table of the same numbers under it).
+  // The page draws its lead again once the original answer has loaded, and a figure's lines come
+  // a frame after its boxes: the lead is read until it is whole, the answer under it.
+  const probeLead = await until(async () => {
+    const read = await page.eval(`(() => {
     const block = document.querySelector(".verdict-block");
-    const at = block.querySelector(".fork-tree tr.fork-at");
+    const figure = block?.querySelector(".flips .fork-position .rm-probe");
+    const origin = figure?.querySelector(".rm-origin");
+    if (!origin || !document.querySelector(".fork-answer")) return null;
     return {
       label: block.querySelector(".verdict-target .label").textContent,
-      boxed: at?.querySelector(".fork-token")?.textContent, before: at?.querySelector(".fork-before")?.textContent,
-      after: at?.querySelector(".fork-after")?.textContent,
+      boxed: origin.querySelector(".fork-token")?.textContent, before: origin.querySelector(".fork-before")?.textContent,
+      after: origin.querySelector(".fork-after")?.textContent,
       link: [...block.querySelectorAll(":scope > button")].map((button) => button.textContent).join(","),
-      heads: [...block.querySelectorAll(".fork-tree thead th")].map((th) => th.textContent).join(","),
-      fromLeft: [...block.querySelectorAll(".fork-tree th, .fork-tree td")].every((cell) => ["left", "start"].includes(getComputedStyle(cell).textAlign)),
-      marked: [...block.querySelectorAll(".fork-tree tr.fork-branch td:first-child span")].map((span) => span.className).join(","),
-      rows: [...block.querySelectorAll(".fork-tree tr.fork-branch")].map((row) => [...row.children].map((cell) => cell.textContent.trim())),
+      heads: [...figure.querySelectorAll(".rm-head")].map((head) => head.textContent).join(" | "),
+      tokens: [...figure.querySelectorAll(".rm-node.kind-token")].map((box) =>
+        [box.querySelector(".rm-label").textContent, box.querySelector(".rm-count").textContent, box.classList.contains("tone-change")]),
+      reads: [...figure.querySelectorAll(".rm-node.kind-token")].map((box) =>
+        [box.querySelector(".visually-hidden")?.textContent, getComputedStyle(box, "::before").maskImage !== "none" && getComputedStyle(box, "::before").maskImage !== ""]),
+      ends: [...figure.querySelectorAll(".rm-end")].map((cell) => cell.textContent.trim()),
+      widths: [...figure.querySelectorAll(".rm-edges path.rm-edge:not(.rm-leader)")].map((path) => Number(path.getAttribute("stroke-width"))),
+      key: [...block.querySelectorAll(".rm-legend .rm-key")].map((key) => key.textContent),
+      tables: document.querySelectorAll(".verdict-block table, .fork-position table").length,
+      once: document.querySelectorAll("#fork-pos-${forkSpot.position}").length,
     };
   })()`);
-  const [own, forced] = probeLead.rows;
+    return read && read.widths.length === 2 ? read : null;
+  }, "the lead's figure, its lines drawn, the answer under it");
+  const [own, forced] = probeLead.ends;
   check(probeLead.label === "Condition:" && probeLead.boxed === "read_file" && probeLead.before.endsWith("call:") && probeLead.after.startsWith("{path:")
-    && probeLead.link === "Behaviour breakdown" && probeLead.heads === `[${forkSpot.position}] tool call,chance of token,condition met`
-    && probeLead.fromLeft && probeLead.marked === "fork-original,fork-forced"
-    && probeLead.rows.length === 2 && own.length === 3 && own[0] === '"read_file"' && own[2].startsWith("6/6") && !own[2].includes("often")
-    && forced[0] === '"search_files"' && forced[2].startsWith("0/6") && forced[2].endsWith("less often"),
-    `the probe's page leads with a tree from the token in its sentence, its place over it: the original token and the forced one, how often each met the condition, and a badge after the rate one moved (${JSON.stringify(probeLead)})`);
+    && probeLead.link === "Behaviour breakdown" && probeLead.heads === `[${forkSpot.position}] tool call | chance of token | condition met`,
+    `the probe's page leads with a figure from the token boxed in its sentence, its place over it (${probeLead.heads}; ${probeLead.before}[${probeLead.boxed}]${probeLead.after})`);
+  check(JSON.stringify(probeLead.tokens) === JSON.stringify([['"read_file"', "60.0%", false], ['"search_files"', "40.0%", true]])
+    && JSON.stringify(probeLead.widths) === JSON.stringify([7.2, 5.3]),
+    `a branch is the original token, or the forced one as a change, each with the model's chance of it and as wide as that chance: 1.5 and 9.5 times it (${JSON.stringify([probeLead.tokens, probeLead.widths])})`);
+  check(JSON.stringify(probeLead.reads) === JSON.stringify([["original token: ", false], ["forced token: ", true]]),
+    `which is which is not left to colour: the forced one wears a change's pencil, and a screen reader is told (${JSON.stringify(probeLead.reads)})`);
+  check(probeLead.ends.length === 2 && own.startsWith("6/6") && !own.includes("often") && own.endsWith("led to A ×6")
+    && forced.startsWith("0/6") && forced.includes("less often") && forced.includes("p 0.002") && forced.endsWith("led to B ×6"),
+    `and ends in how often it met the condition, a badge after the rate one moved, then its test and where its continuations led (${JSON.stringify(probeLead.ends)})`);
+  check(JSON.stringify(probeLead.key) === JSON.stringify(["the original token", "a token forced in its place", "wider line, likelier token"])
+    && probeLead.tables === 0 && probeLead.once === 1,
+    "what its boxes and lines are is said once under it, and a position is drawn once: no table of the same numbers below");
   await page.eval(`[...document.querySelectorAll(".verdict-block > button")].find((button) => button.textContent === "Behaviour breakdown").click()`);
   check(await page.eval(`(() => { const section = document.querySelector(".panel.continuations"), box = section?.getBoundingClientRect();
     return !!section?.querySelector(".probe-behaviours") && !!box && box.top >= -1 && box.top < innerHeight; })()`),
@@ -1401,10 +1520,10 @@ try {
   const probeId = forkJob.result.experiment.id;
   const at = forkSpot.position;
   await page.eval(`location.hash = "#/experiments/${probeId}"`);
-  await until(() => page.eval(`!!document.querySelector('.fork-answer .tk-t.tk-flipped[data-i="${at}"]')`), "the answer it forked from");
-  check(true, "the result shows the answer it forked from, the forking token ringed");
-  check(await page.eval(`[...document.querySelectorAll("#fork-pos-${at} thead th")].pop().textContent === "led to"`),
-    "and each token's row says where its continuations went");
+  await until(() => page.eval(`!!document.querySelector('.fork-answer .tk-t.tk-flipped[data-i="${at}"]')`), "the original answer");
+  check(true, "the result shows the original answer, the forking token ringed");
+  check(await page.eval(`JSON.stringify([...document.querySelectorAll("#fork-pos-${at} .rm-end .fork-led")].map((led) => led.textContent)) === '["led to A ×6","led to B ×6"]'`),
+    "and each token's branch says where its continuations went");
   // Every continuation, in one section under the lead, grouped by token or by behaviour: by token
   // first, each token's behaviours listed and their continuations folded until opened.
   const grouping = () => page.eval(`(() => {
@@ -1421,7 +1540,7 @@ try {
     };
   })()`);
   const byToken = await grouping();
-  check(byToken.after === "Which forced tokens changed what the model did" && byToken.sections === 1 && byToken.picks === "By token*,By behaviour"
+  check(byToken.after === "Forking tokens" && byToken.sections === 1 && byToken.picks === "By token*,By behaviour"
     && byToken.tokens && !byToken.behaviours,
     `every continuation is in one section under the lead, grouped by token first (${JSON.stringify(byToken)})`);
   const written = `document.querySelector(".continuations #written-pos-${at}")`;
@@ -1444,7 +1563,7 @@ try {
   const fromPosition = await grouping();
   check(fromPosition.picks === "By token*,By behaviour" && fromPosition.hash === `#/experiments/${probeId}`
     && await page.eval(`(() => { const box = ${written}.getBoundingClientRect(); return box.top >= -1 && box.top < innerHeight; })()`),
-    `a position's table leads to what its continuations wrote, by token again (${JSON.stringify(fromPosition)})`);
+    `a position's figure leads to what its continuations wrote, by token again (${JSON.stringify(fromPosition)})`);
   await page.eval(`${written}.querySelectorAll(".written-token > details.fold > summary").forEach((summary) => summary.click())`);
   await until(() => page.eval(`${written}.querySelectorAll(".written-text").length === 12`), "what each continuation wrote");
   const wrote = await page.eval(`[...${written}.querySelectorAll(".written-token")].map((token) => ({
@@ -1523,7 +1642,7 @@ try {
     value.dispatchEvent(new Event("input", { bubbles: true }));
     return true;
   })()`);
-  await page.click("+ Add a condition", `document.querySelector(".start-panel")`);
+  await page.click("+ Add a rule", `document.querySelector(".start-panel")`);
   await page.eval(`(() => {
     const values = document.querySelectorAll(".start-panel .rule-builder .rule input");
     const value = values[values.length - 1];
@@ -1681,9 +1800,9 @@ try {
   // At the step, a survivor is a shift of a behaviour, not a check passed: the accent's, never green.
   check(await page.eval(`!document.querySelector(".verdict-block.tone-ok") && [...document.querySelectorAll(".screen-table .chip")]
     .find((chip) => chip.textContent === "beat the original")?.classList.contains("tone-accent")`), "a step screen's survivor is the accent's colour, not a check's green");
-  // What the model did, by arm: the right keys are the target ("calls write_file and mentions row_count").
+  // Behaviours by wording: the right keys are the target ("calls write_file and mentions row_count").
   const byArm = await page.eval(`(() => {
-    const panel = [...document.querySelectorAll(".panel")].find((found) => found.querySelector("h2")?.textContent === "What the model did, by wording");
+    const panel = [...document.querySelectorAll(".panel")].find((found) => found.querySelector("h2")?.textContent === "Behaviours by wording");
     return [...panel.querySelectorAll("tbody tr")].map((row) =>
       [row.querySelector(".chip.tone-target, .chip.tone-not-target")?.textContent, row.children[1].textContent.includes("row_count")].join(":")).join(",");
   })()`);
@@ -1868,8 +1987,9 @@ try {
     `written, every stage is done and none is current (${writtenStages})`);
 
   console.log("the proposer's key: set, never shown, cleared");
-  await page.eval(`location.hash = "#/connections"`);
-  await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "Proposing model")`), "the Proposing model panel");
+  await page.eval(`location.hash = "#/connections?part=proposer"`);
+  await until(() => page.eval(`document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Proposing model"
+    && [...document.querySelectorAll("details.fold > summary")].some((s) => s.textContent === "Set a key")`), "the proposing model's part, by its address");
   const secret = `sk-browser-${Date.now().toString(36)}-0123456789abcdef`;
   await page.eval(`[...document.querySelectorAll("details.fold > summary")].find((s) => s.textContent === "Set a key").click()`);
   await page.type(`document.querySelector('[name="proposer_key"]')`, secret);
@@ -1976,7 +2096,7 @@ try {
   check(await page.eval(`document.querySelectorAll(".checklist li").length === 4 && !!document.querySelector(".left-off")`),
     "what is set up, and where you left off");
   check(await page.eval(`[...document.querySelectorAll(".colours .chip")].map((c) => c.classList[1]).join(",") === "tone-ok,tone-bad,tone-warn,tone-change,tone-skill,tone-accent"
-    && document.querySelector(".colours").textContent.includes("Green and red are a check's verdict.")`),
+    && document.querySelector(".colours").textContent.includes("a check's verdict")`),
     "the colours, each shown on a chip that wears it");
   check(await page.eval(`document.querySelectorAll(".workflow").length === 9 && [...document.querySelectorAll(".workflow .cmd span")].some((s) => s.textContent.startsWith("tuningfork forking-tokens"))
     && [...document.querySelectorAll(".workflow h3")].some((h3) => h3.textContent === "Where did my agent go wrong in a chat I already had?")`),
@@ -2018,7 +2138,7 @@ try {
   // and copies scenarios keep in its place follow (asked for by the user, 2026-11-05: three
   // folders had each been "Its own folder").
   check(await page.eval(`(() => {
-    const panel = [...document.querySelectorAll(".panel")].find((each) => each.querySelector("h2")?.textContent === "Where its SKILL.md is kept");
+    const panel = [...document.querySelectorAll(".panel")].find((each) => ["Skill folder", "Skill folders"].includes(each.querySelector("h2")?.textContent));
     const first = panel?.querySelector(".folder-tree .is-mark");
     const kinds = [...panel.querySelectorAll(".folder-tree .is-mark .chip")].map((chip) => chip.textContent);
     return first?.querySelector(".tree-name").textContent === "tally-report/" && kinds[0] === "skill folder"
@@ -2387,7 +2507,7 @@ try {
     const form = document.querySelector(".plan-form");
     const harness = form.querySelector('select[name="harness"]'), skill = form.querySelector('select[name="skill"]');
     const folder = form.querySelector('[name="skill_dir-run"]');
-    const labels = [...form.querySelectorAll(".form-grid > .form-field > .form-label")].slice(0, 4).map((label) => label.textContent);
+    const labels = [...form.querySelectorAll(".form-grid > .form-field > .form-label")].slice(0, 4).map((label) => label.firstChild.textContent);
     const ways = [...form.querySelectorAll('input[name="skill-from-run"]')].map((radio) => radio.value + (radio.checked ? "*" : "")).join(",");
     return labels.join(",") === "Scenario name,Harness,Skill name,Skill folder"
       && harness.disabled && harness.value === "fake" && skill.disabled && skill.value === "tally-report"

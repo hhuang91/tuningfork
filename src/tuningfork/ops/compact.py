@@ -327,7 +327,8 @@ def skill(recorded: dict[str, Any], variants: Sequence[dict[str, Any]] = (), *, 
 
 
 def distribution(found: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Behaviours, lettered by frequency, each with its rate."""
+    """Behaviours, lettered by frequency, each with its rate — and, of forks run to the end,
+    how often the forks that did it went on to pass (`passed`)."""
     if not found:
         return None
 
@@ -336,12 +337,19 @@ def distribution(found: dict[str, Any] | None) -> dict[str, Any] | None:
         reasoned = cluster.get("reasoned")
         return reasoned is not None and reasoned < ((cluster.get("rate") or {}).get("successes") or 0)
 
+    def went_on(cluster: dict[str, Any]) -> dict[str, Any]:
+        """Of forks run to the end: how the forks that did this fared at the task's check."""
+        ended = cluster.get("ended")
+        if not ended:
+            return {}
+        return {"passed": rate(ended.get("rate")), **({"no_verdict": ended["no_verdict"]} if ended.get("no_verdict") else {})}
+
     return {
         "total": found.get("total"),
         "errors": found.get("errors"),
         "behaviours": [
             {"letter": cluster.get("letter"), **(outcome(cluster.get("outcome")) or {}), "rate": rate(cluster.get("rate")),
-             **({"reasoned": cluster["reasoned"]} if unreasoned(cluster) else {})}
+             **({"reasoned": cluster["reasoned"]} if unreasoned(cluster) else {}), **went_on(cluster)}
             for cluster in found.get("clusters") or []
         ],
     }
@@ -355,8 +363,12 @@ def divergence(report: dict[str, Any], *, all_steps: bool = False) -> dict[str, 
     if not all_steps:
         steps = [found for found in steps if found.get("index") == index]
     mixed = report.get("mixed_skills")
+    turning = ((report.get("paths") or {}).get("auto") or {}).get("turning")
     return {
         "runs": len(report.get("run_ids") or []),
+        # Where the runs that passed and the runs that failed part, read along the runs' paths.
+        "turning_point": {key: value for key, value in turning.items() if key not in ("parent", "branch")} | {
+            "run_id": short(turning.get("run_id"))} if turning else None,
         "run_ids": capped([short(found) for found in report.get("run_ids") or []], 30),
         "divergence_index": index,
         "agreed_steps": report.get("agreed_steps"),
@@ -636,7 +648,11 @@ def screen(found: dict[str, Any] | None) -> dict[str, Any] | None:
         "behaviours": capped(
             [
                 {"letter": entry.get("letter"), **(outcome(entry.get("outcome")) or {}),
-                 "count": entry.get("count"), "by_arm": entry.get("by_arm")}
+                 "count": entry.get("count"), "by_arm": entry.get("by_arm"),
+                 # Run to the end: how often each arm's forks that did it went on to pass, as a
+                 # resample's behaviours say it (`passed`, a rate with its interval).
+                 **({"passed": {arm: rate(ended["rate"]) for arm, ended in entry["ended"].items() if ended.get("rate")}}
+                    if entry.get("ended") else {})}
                 for entry in found.get("behaviours") or []
             ],
             12,
@@ -888,8 +904,28 @@ def to_end_lines(found: dict[str, Any] | None) -> list[str]:
             f"run to the end, judged by the task's check: original {rate_text(found['original'].get('passed'))}"
             f" → variant {rate_text(found['variant'].get('passed'))}",
             f"  Fisher's exact test {p_text(found.get('p_value'))}, alpha {found.get('alpha')}: {verdict}",
+            *_went_on_lines(found["original"], "the original's forks"),
+            *_went_on_lines(found["variant"], "the variant's forks"),
         ]
-    return [f"run to the end, judged by the task's check: passed {rate_text(found.get('passed'))}"]
+    return [
+        f"run to the end, judged by the task's check: passed {rate_text(found.get('passed'))}",
+        *_went_on_lines(found, "the forks"),
+    ]
+
+
+def _went_on_lines(found: dict[str, Any], whose: str, most: int = 4) -> list[str]:
+    """What the model did at the step, set against how the forks that did it ended: where the
+    forks did more than one thing there, which of them goes with passing."""
+    behaviours = [entry for entry in ((found.get("did_at_step") or {}).get("behaviours") or []) if "passed" in entry]
+    if len(behaviours) < 2:
+        return []
+    lines = [f"  what {whose} did at the step, and how those forks ended:"]
+    for entry in behaviours[:most]:
+        fared = f"went on to pass {rate_text(entry['passed'])}" if entry["passed"] else "no verdict"
+        lines.append(f"    {entry.get('letter')}: {_label(entry)} — {fared}")
+    if len(behaviours) > most:
+        lines.append(f"    … and {len(behaviours) - most} more behaviour(s)")
+    return lines
 
 
 def forking_lines(found: dict[str, Any] | None) -> list[str]:

@@ -191,7 +191,7 @@ function healthLines() {
   dot.title = trouble ? "Something here needs a look" : "The server answers, and a harness was found";
   return h("div", { class: "status-health" },
     h("a", { href: "#/connections", class: said.warn ? "warn-text" : null, title: said.title || server.url || "" }, `server ${said.word}`),
-    h("a", { href: "#/connections", class: found.length ? null : "warn-text" },
+    h("a", { href: "#/connections?part=harnesses", class: found.length ? null : "warn-text" },
       found.length ? `${found.join(", ")} found` : "no harness found"));
 }
 

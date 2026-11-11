@@ -1,9 +1,10 @@
 // Every recorded run, grouped by task, with forks nested under the run they came from.
 
-import { api, enc } from "../api.js";
+import { api, enc, query } from "../api.js";
 import { guard } from "../auth.js";
 import { ago, chip, h, importedRun, loading, plural, rateBar, recordedLive, replace, short, verdict, when } from "../dom.js";
 import { live } from "../live.js";
+import { DETAIL, mapThumb, runTree } from "../runmap.js";
 
 export async function runsView(root, _params, scope) {
   const selected = new Set();
@@ -31,13 +32,106 @@ export async function runsView(root, _params, scope) {
   replace(
     root,
     h("div", { class: "page-head" },
-      h("div", null, h("h1", null, "Runs"), h("p", { class: "sub" }, "Recorded runs by task. A run that branched from another sits under it; tick two runs to diff them.")),
+      h("div", null, h("h1", null, "Runs"), h("p", { class: "sub" }, "Recorded runs, by task. Tick two to diff them.")),
       h("div", { class: "actions" }, search, chainsLink,
         live.mode === "live" ? h("a", { class: "btn", href: "#/import", "data-control": true }, "Import a chat…") : null,
         live.mode === "live" ? h("a", { class: "btn btn-primary", href: "#/batch", "data-control": true }, "Run a task…") : null)),
     body,
     compareBar,
   );
+
+  // A task's run map, small, in the link that leads to it: its report asked for when the link
+  // comes into view, and kept by the link with how far its runs had got (`stamp`), so that a run
+  // more, a verdict, or new steps draw it again. New steps alone ask again at most every few
+  // seconds: each asking compares up to fifty runs.
+  const STEPS_EVERY = 5000;
+  const maps = new Map(); // a link's address -> { whole, steps, order, at, report }: its map as last drawn
+  const asking = new Map(); // a link's address -> the request under way, stamped the same
+  const later = new Map(); // a link's address -> the timer that draws the list again for its steps
+  let orders = 0;
+  const fills = new WeakMap();
+  const inView = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      inView.unobserve(entry.target);
+      fills.get(entry.target)?.();
+    }
+  }, { rootMargin: "300px" });
+  scope.onLeave(() => {
+    inView.disconnect();
+    for (const timer of later.values()) clearTimeout(timer);
+  });
+  /** How far some runs have got: which they are and how many are judged (`whole`), and their
+   *  steps, summed. */
+  const stamp = (ids) => {
+    const byId = new Map(runs.map((run) => [run.id, run]));
+    let steps = 0, judged = 0;
+    for (const id of ids) {
+      steps += byId.get(id)?.step_count || 0;
+      judged += byId.get(id)?.result ? 1 : 0;
+    }
+    return { whole: `${ids.length} ${ids[0] || ""} ${judged}`, steps };
+  };
+
+  /** The way to a task's map (`asked`: its runs, as the map's own page asks for them), with the
+   *  map itself before the words, small. `ids`: the runs it draws, newest first. */
+  function mapLink(href, asked, ids, extra = null) {
+    const slot = h("span", { class: "map-thumb-slot", "aria-hidden": "true" });
+    const link = h("a", { class: ["map-thumb", extra], href }, slot, h("span", { class: "btn btn-small" }, "Where do they diverge?"));
+    const now = stamp(ids);
+    const fill = (report) => {
+      const tree = runTree(report, DETAIL[1]);
+      replace(slot, mapThumb(tree));
+      link.title = `${plural(tree.root.runs.length, "run")} as paths that part${tree.turning ? `; turning point at step ${tree.turning.step}` : ""}`;
+    };
+    // The map as last drawn, at once: the list is redrawn as runs arrive, and a map a step behind
+    // is drawn again when its report comes. One that cannot be had leaves its place empty.
+    const had = maps.get(href);
+    if (had) fill(had.report);
+    if (had?.whole === now.whole && had.steps === now.steps) return link;
+    // The latest asking is the one under way, else the one drawn. A link that waits on one under
+    // way fills when it lands.
+    const pending = asking.get(href);
+    const whenLanded = () => pending?.promise.then(() => {
+      const got = maps.get(href);
+      if (got && link.isConnected) fill(got.report);
+    });
+    if (pending?.whole === now.whole && pending.steps === now.steps) {
+      whenLanded();
+      return link;
+    }
+    const last = pending ?? had;
+    if (last?.whole === now.whole) {
+      const wait = last.at + STEPS_EVERY - Date.now();
+      if (wait > 0) {
+        if (!later.has(href)) {
+          later.set(href, setTimeout(() => {
+            later.delete(href);
+            draw();
+          }, wait));
+        }
+        whenLanded();
+        return link;
+      }
+    }
+    fills.set(link, async () => {
+      // Asked for by another drawing of this link meanwhile: the same request.
+      let request = asking.get(href);
+      if (request?.whole !== now.whole || request.steps !== now.steps) {
+        request = { ...now, order: ++orders, at: Date.now(), promise: api.get(`/divergence${asked}`).catch(() => null) };
+        asking.set(href, request);
+      }
+      const report = await request.promise;
+      if (asking.get(href) === request) asking.delete(href);
+      if (!report) return;
+      if (!(maps.get(href)?.order > request.order)) {
+        maps.set(href, { whole: request.whole, steps: request.steps, order: request.order, at: request.at, report });
+      }
+      if (link.isConnected) fill(maps.get(href).report);
+    });
+    inView.observe(link);
+    return link;
+  }
 
   async function load() {
     let chains;
@@ -88,7 +182,9 @@ export async function runsView(root, _params, scope) {
     }
     const actions = [];
     if (summary.task_id && summary.runs >= 2 && !split) {
-      actions.push(h("a", { class: "btn btn-small", href: `#/divergence/${enc(summary.task_id)}` }, "Where do they diverge?"));
+      // The task's runs whatever the filter shows of them: the map is of the task.
+      const all = runs.filter((run) => (run.task_id ?? "") === summary.task_id).map((run) => run.id);
+      actions.push(mapLink(`#/divergence/${enc(summary.task_id)}`, query({ task: summary.task_id, limit: 50 }), all));
     }
     return h(
       "section",
@@ -144,7 +240,7 @@ export async function runsView(root, _params, scope) {
         h("div", { class: "condition-label" }, label),
         h("div", { class: "panel-meta" }, h("span", { class: "muted" }, plural(condition.runs, "run")), rateMeta(condition)),
         condition.runs >= 2
-          ? h("a", { class: "btn btn-small push", href: `#/divergence/${enc(summary.task_id)}@${condition.id}` }, "Where do they diverge?")
+          ? mapLink(`#/divergence/${enc(summary.task_id)}@${condition.id}`, query({ runs: condition.run_ids.slice(0, 50).join(",") }), condition.run_ids, "push")
           : null),
       h("div", { class: "tree" }, treeRows(own)),
     );

@@ -90,7 +90,9 @@ setup at a glance — the server, the harnesses, the sandbox and the proposing m
 test there, and what it means before the test and after (a server that reuses its prompts says
 so), worked out too for a server that asks for a key (never said to be down), one down, a harness
 missing, a proposing model on another machine, more to say than three sentences, and scoring
-greyed before any test — that a server
+greyed before any test — then its detail, one part in sight at a time, in four tabs, the address
+naming any part but the server's, what each harness needs of the server folded to a line, and the
+status strip's harnesses leading to their part; that a server
 check measures what the harnesses need, a protected endpoint is refused, and an idle proxy
 switches its server after a dry run; that Start… on the Jobs page leads to a step's form;
 that a run reads as one conversation — each message once, the final reply marked (and not
@@ -100,15 +102,22 @@ was when opened again, the rail's lines bringing a step or a message into sight 
 and opening nothing, a form opening beside the step without moving the run, its Close leaving the
 step's work there, an address naming that work reloading to it, and its exact context on a page
 of its own;
-that the divergence page leads with the step whose behaviour best predicts a pass, in a callout
-with the ways to it, colours each run by its own verdict, draws "then passed", the tally's counts
-and where a question held as rates — the accent's, never green or red — and says plainly how it
-counts the failed runs' check lines;
+that a task's link on the Runs list shows its run map small, and leads to the map; that the
+divergence page leads with the map and its turning point, said in a line over it and said to be a
+lead, each run a mark at its path's end coloured by its own verdict, a box's pass rate drawn as a
+rate, never green, the box chosen shown under the map with the ways into its step, the address
+naming it, with what its runs did next and how each branch fared, and the lead the same at less
+detail, saying so where the map does not mark it; that the tally's counts and where a question
+held are rates — the accent's, never green or red — with how the failed runs' check lines are
+counted a click away;
 that an answer scored from its Tokens view is rebuilt token for token and drawn once
 per token, a token shows what else the model weighed there, and a token selected there
 opens the forking-token form, whose probe finds that token decides the answer; that the
-probe's page shows the answer it forked from with that token ringed, and leads to it on the
-step's Tokens view and back; and that a target described in conditions is set against what
+probe's page leads with that token's position as a figure — the token boxed in its sentence, a
+branch for the original token and for the forced one, each as wide as the model's chance of it
+and ending in how often the condition was met, the forced one wearing a change's pencil — shows
+the answer it forked from with that token ringed, and leads to it on the step's Tokens view and
+back; and that a target described in conditions is set against what
 the step has done, and declared in words; that a refinement started from a step declares its
 target first, offering no exploratory choice — a condition's value keeping the room to be read in
 the work beside the run, its × beside it, the form inside the column though the step's latest

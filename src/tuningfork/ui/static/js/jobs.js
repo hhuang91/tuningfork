@@ -11,8 +11,8 @@ import { chip, elapsed, h, outcome, plural, short, since } from "./dom.js";
 export const KIND_LABEL = {
   resample: "Resample",
   ab: "Wording A/B",
-  "resample-to-end": "Resample to the end",
-  "ab-to-end": "Wording A/B to the end",
+  "resample-to-end": "Resample, whole run",
+  "ab-to-end": "Wording A/B, whole run",
   fork: "Fork",
   batch: "Batch",
   chain: "Chain",
@@ -23,10 +23,10 @@ export const KIND_LABEL = {
   tokens: "Tokens scored",
   "forking-tokens": "Forking tokens",
   propose: "Edits proposed",
-  screen: "Proposals tested at a step",
-  "screen-to-end": "Proposals tested at a step, to the end",
+  screen: "Test at a step",
+  "screen-to-end": "Test at a step, whole run",
   validate: "Full test runs of an edit",
-  "check-along": "Check run along the runs",
+  "check-along": "The call behind each check line",
 };
 
 // The sidebar's section of the work each kind does: the loop's stage it serves (Record, Measure,
@@ -94,7 +94,7 @@ export function madeLink(job) {
       return result.task_id && runs.length ? { href: `#/divergence/${enc(result.task_id)}`, text: `${result.task_id}'s runs` } : null;
     case "check-along":
       // What the check found along each run, on the task's runs, each finding with the call that made it.
-      return result.task_id ? { href: `#/divergence/${enc(result.task_id)}`, text: `the check along ${result.task_id}'s runs` } : null;
+      return result.task_id ? { href: `#/divergence/${enc(result.task_id)}`, text: `the call behind each check line, in ${result.task_id}'s runs` } : null;
     case "screen":
     case "screen-to-end":
       // One experiment a wording, the first the test's own report.
@@ -223,7 +223,7 @@ export function logLine(entry) {
     case "experiment":
       return h("div", { class: "log-line" }, at, chip(data.arm && data.arm !== "original" ? `${data.arm} wording` : "experiment", "muted"),
         h("a", { class: "mono", href: `#/experiments/${data.id}` }, short(data.id)),
-        h("span", { class: "muted" }, `${data.n} sample${data.n === 1 ? "" : "s"}${data.reach === "end" ? ", each run to the end" : ""}`));
+        h("span", { class: "muted" }, `${data.n} sample${data.n === 1 ? "" : "s"}${data.reach === "end" ? ", each a whole run" : ""}`));
     case "sample":
       return h("div", { class: "log-line" }, at,
         h("span", { class: "muted" }, `${data.arm && data.arm !== "original" ? `${data.arm} ` : ""}sample ${Number(data.index) + 1}`),
@@ -233,7 +233,7 @@ export function logLine(entry) {
     case "run": {
       // The check run along a run (`check-along`): which of how many, no verdict of its own.
       if (data.done !== undefined) {
-        return h("div", { class: "log-line" }, at, h("span", { class: "muted" }, `run ${data.done} of ${data.total}, checked along`),
+        return h("div", { class: "log-line" }, at, h("span", { class: "muted" }, `run ${data.done} of ${data.total}`),
           data.run ? h("a", { class: "mono", href: `#/runs/${data.run}` }, short(data.run)) : null);
       }
       const verdict = data.exclusion

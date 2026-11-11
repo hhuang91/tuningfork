@@ -2122,6 +2122,10 @@ def divergence(
         "--normalizer",
         help="Compare under these normalizers only, e.g. tool_name to ignore arguments.",
     ),
+    paths: bool = typer.Option(
+        False, "--paths",
+        help="Also the runs as paths that part, by the tool each step called, and the turning point.",
+    ),
     home: Optional[Path] = typer.Option(None),
 ) -> None:
     """Find the first step where runs of the same task stop agreeing."""
@@ -2147,6 +2151,28 @@ def divergence(
     if lens:
         heading = f"{heading}, compared under {', '.join(lens)}"
     _print_divergence(report, heading, store, results)
+    if paths:
+        _print_paths(report, results)
+
+
+def _print_paths(report: DivergenceReport, results: dict) -> None:
+    """The runs as paths that part: the web UI's run map, in lines."""
+    from tuningfork.analysis.paths import outline, path_tree, turning_text
+
+    tree = path_tree(report.to_json(results))
+    judged = f"; passed {tree['passed']}/{tree['judged']}" if tree["judged"] else ""
+    console.print(f"\n[bold]paths[/bold]  {tree['runs']} runs, by the tool each step called (any reply is one; a "
+                  f"call's distinct forms apart, in brackets){judged}")
+    for line in outline(tree):
+        console.print(f"  {escape(line)}", soft_wrap=True)
+    turning = turning_text(tree["turning"])
+    if turning:
+        console.print(f"\n[bold]turning point[/bold]  {escape(turning)}", soft_wrap=True)
+        console.print("[dim]A lead to read, never a verdict: the split whose branches best separate passing from "
+                      "failing, under p 0.2. With many splits compared, chance alone can make one.[/dim]")
+    elif tree["judged"] and 0 < tree["passed"] < tree["judged"]:
+        console.print("\n[dim]No split separates passing from failing clearly enough to name (p under 0.2, two judged "
+                      "runs on each side): the difference may be in what the runs wrote.[/dim]")
 
 
 def _print_divergence(
@@ -2929,12 +2955,21 @@ def _print_probe_behaviours(report) -> None:
         )
 
 
-def _print_distribution(dist, heading: str) -> None:
+def _print_distribution(dist, heading: str, ended: dict[str, tuple[int, int, int]] | None = None) -> None:
+    """`ended`, of forks run to the end (`EndToEnd.ended`): by a behaviour's letter, how many of
+    its forks passed the check, failed it, and were not counted. Where the forks did more than
+    one thing at the step, each behaviour then says how often its forks then passed, as a
+    divergence's table says it of runs: which of them goes with passing. One behaviour parts
+    nothing, and the arm's own rate says it."""
+    from tuningfork.analysis.stats import rate
+
     console.print(f"\n[bold]{escape(heading)}[/bold]")
     # Only where some behaviour was reached without reasoning, where others reasoned: then it
     # stands out. Where every sample reasoned, the column would say nothing.
     reasoning = any(cluster.reasoned is not None and cluster.reasoned < cluster.count for cluster in dist.clusters)
-    columns = ["", "count", "rate", "95% CI", *(["reasoned"] if reasoning else []), "behaviour"]
+    went_on = ended is not None and len(dist.clusters) > 1
+    columns = ["", "count", "rate", "95% CI", *(["reasoned"] if reasoning else []), "behaviour",
+               *(["then passed"] if went_on else [])]
     table = Table(*columns, box=None, pad_edge=False)
     for cluster in dist.clusters:
         label = _clip(cluster.outcome.label, full=False, limit=90)
@@ -2944,6 +2979,10 @@ def _print_distribution(dist, heading: str) -> None:
         if reasoning:
             said = f"{cluster.reasoned}/{cluster.count}"
             reasoned = [f"[yellow]{said}[/yellow]" if cluster.reasoned < cluster.count else said]
+        fared = []
+        if went_on:
+            passed, failed, _ = ended.get(cluster.letter, (0, 0, 0))
+            fared = [escape(rate(passed, passed + failed).format()) if passed + failed else "-"]
         table.add_row(
             cluster.letter,
             f"{cluster.count}/{cluster.rate.total}",
@@ -2951,9 +2990,14 @@ def _print_distribution(dist, heading: str) -> None:
             escape(f"[{cluster.rate.low:.0%}-{cluster.rate.high:.0%}]"),
             *reasoned,
             label,
+            *fared,
         )
     console.print(table)
-    if dist.errors:
+    if dist.errors and ended is not None:
+        # Of forks, what the step's rates leave out failed in no transport: it was excluded.
+        console.print(f"  [yellow]{dist.errors} fork(s) are in none of these rows[/yellow]: they timed out, or were "
+                      "not counted")
+    elif dist.errors:
         console.print(
             f"  [red]{dist.errors} sample(s) failed in transport[/red] and are excluded from "
             "every rate above"
@@ -3370,7 +3414,7 @@ def _resample_to_end(store: Store, run: str, reference: str, *, n, concurrency, 
         _refuse(error)
     k = plan.checkpoint.step.idx
     _print_end_to_end(summary, f"end to end from step {k}, {plan.checkpoint.describe()} — {n} forks")
-    _print_distribution(summary.actions, f"what the model did at step {k}, in the forks that count")
+    _print_distribution(summary.actions, f"what the model did at step {k}, in the forks that count", summary.ended())
     console.print(f"\n[dim]{_to_end_caveat(k, arms=False)}[/dim]")
     console.print(
         f"[dim]experiment {summary.experiment.id[:8]} · {summary.elapsed / 60:.1f} min · "
@@ -3427,7 +3471,7 @@ def _print_ab_to_end(result, k: int, alpha: float) -> None:
                 f"  [yellow]not counted[/yellow] ({name}) {(run_id or '--------')[:8]}: {escape(why)}"
             )
     for name, arm in (("original", result.original), ("variant", result.variant)):
-        _print_distribution(arm.actions, f"{name}: what the model did at step {k}")
+        _print_distribution(arm.actions, f"{name}: what the model did at step {k}", arm.ended())
     console.print(f"\n[dim]{_to_end_caveat(k, arms=True)}[/dim]")
 
 
@@ -3647,7 +3691,7 @@ def experiment(
     if report.kind == "to_end":
         summary = report.to_end
         _print_end_to_end(summary, f"end to end from step {k} — {found.sample_count} forks")
-        _print_distribution(summary.actions, f"what the model did at step {k}, in the forks that count")
+        _print_distribution(summary.actions, f"what the model did at step {k}, in the forks that count", summary.ended())
         console.print(f"\n[dim]{_to_end_caveat(k, arms=False)}[/dim]")
         return
     if report.kind == "resample":

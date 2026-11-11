@@ -18,7 +18,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
-from tuningfork.analysis.normalize import Outcome, recorded_outcome
+from tuningfork.analysis.normalize import Outcome, called_tools, recorded_outcome
 from tuningfork.analysis.stats import Rate, rate
 from tuningfork.store.db import Store
 
@@ -113,6 +113,9 @@ class DivergenceReport:
                     "groups": [
                         {
                             "outcome": group.outcome.to_json(),
+                            # The tools its calls named, in order: what a run map draws a
+                            # node by, whatever the arguments were. Empty for a reply.
+                            "tools": list(called_tools(group.outcome) or ()),
                             "run_ids": group.run_ids,
                             "rate": group.rate.to_json(),
                             "passed": passed(group.run_ids),

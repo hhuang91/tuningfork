@@ -8,13 +8,21 @@
 
 import { answered, api } from "./api.js";
 import { guard } from "./auth.js";
-import { h, replace } from "./dom.js";
+import { h, info, replace } from "./dom.js";
 
-export function field(label, control, { help, wide } = {}) {
+/** A field: its label, its control, and its help. What to type stays under the field (`help`);
+ *  what explains it (`about`) is a click away, beside the label. A help of more than a line's
+ *  worth of words, given with no `about`, goes there whole — it explains more than it says what
+ *  to type — unless the form says to `keep` it in sight. */
+export function field(label, control, { help, about = null, wide, keep = false } = {}) {
+  const long = !about && typeof help === "string" && !keep && help.trim().split(/\s+/).length > HELP_IN_SIGHT;
+  const note = about || (long ? help : null);
   return h("label", { class: ["form-field", wide && "wide"] },
-    h("span", { class: "form-label" }, label), control,
-    help ? h("span", { class: "form-help" }, help) : null);
+    h("span", { class: "form-label" }, label, note ? info(note) : null), control,
+    help && !long ? h("span", { class: "form-help" }, help) : null);
 }
+/** The most words a field's help has to stay under the field. */
+const HELP_IN_SIGHT = 9;
 
 export function input(name, { type = "text", value, placeholder, min, max, step, ...rest } = {}) {
   // The rest goes on the element too: the batch form's `oninput` was dropped here, so a new
@@ -38,6 +46,47 @@ export function numberOf(form, name, { integer = true } = {}) {
     throw Object.assign(new Error(`${name} must be ${integer ? "a whole number" : "a number"}`), { field: name });
   }
   return value;
+}
+
+/** One way of several, each named in a word or two and set side by side; under them, a line
+ *  saying what the chosen way is, then what it needs. `name` is the radios' name; `options`
+ *  are `{ value, label, note, body, disabled, checked }`. Every body stays in the form, hidden
+ *  unless its way is chosen, so a form reads its fields as it did. `about`: what the choice is
+ *  for, a click away beside the legend. The fieldset has `choose(value)`. */
+export function ways(name, options, { legend, about = null, className = null } = {}) {
+  const shown = options.filter(Boolean);
+  const radios = new Map();
+  const bodies = new Map();
+  const note = h("p", { class: "ways-note" });
+  const row = h("div", { class: "ways-row" }, shown.map((option) => {
+    const radio = h("input", { type: "radio", name, value: option.value, disabled: Boolean(option.disabled), checked: Boolean(option.checked) });
+    radios.set(option.value, radio);
+    return h("label", { class: ["ways-item", option.disabled && "disabled"], title: option.disabled ? option.note : null }, radio, h("span", null, option.label));
+  }));
+  const held = h("div", { class: "ways-bodies" }, shown.map((option) => {
+    const body = h("div", { class: "ways-body", hidden: true }, option.body || null);
+    bodies.set(option.value, body);
+    return body;
+  }));
+  const element = h("fieldset", { class: ["target-picker", "ways", className] },
+    h("legend", null, legend, about ? info(about) : null), row, note, held);
+  const draw = () => {
+    const chosen = shown.find((option) => radios.get(option.value).checked);
+    for (const [value, body] of bodies) body.hidden = !chosen || value !== chosen.value;
+    replace(note, chosen ? chosen.note : "Choose one.");
+    note.classList.toggle("ways-unchosen", !chosen);
+  };
+  element.addEventListener("change", (event) => {
+    if (event.target.name === name) draw();
+  });
+  element.choose = (value) => {
+    const radio = radios.get(value);
+    if (!radio || radio.checked || radio.disabled) return;
+    radio.checked = true;
+    radio.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  draw();
+  return element;
 }
 
 export function textOf(form, name) {
@@ -94,8 +143,10 @@ const newId = () =>
  *           not a job: by default `POST /jobs` with `kind`. A dry run asks `quiet`: its refusal
  *           is an answer (`answered`), never an error a browser logs.
  * planLabel what the plan box is called: what the form will run, by default
+ * about     how the work goes, a click away beside that label: what a paragraph under every
+ *           plan used to say
  */
-export function planForm({ kind, fields, read, render, startLabel = "Start", onStarted, send = null, planLabel = "What will run" }) {
+export function planForm({ kind, fields, read, render, startLabel = "Start", onStarted, send = null, planLabel = "What will run", about = null }) {
   const kindOf = typeof kind === "function" ? kind : () => kind;
   const post = send || (async (params, extra) =>
     answered(await api.post("/jobs", { kind: kindOf(form), params, ...extra, ...(extra.dry_run ? { quiet: true } : {}) })));
@@ -128,7 +179,7 @@ export function planForm({ kind, fields, read, render, startLabel = "Start", onS
     onchange: (event) => (ours(event) ? changed(event) : undefined),
   },
     fields,
-    h("div", { class: "plan-box" }, h("div", { class: "label" }, planLabel), status, preview),
+    h("div", { class: "plan-box" }, h("div", { class: "label plan-label" }, planLabel, about ? info(about, { label: "How it runs" }) : null), status, preview),
     h("div", { class: "form-actions" }, start, note));
 
   function current() {

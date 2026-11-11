@@ -2,13 +2,13 @@
 
 import { api, enc, query } from "../api.js";
 import {
-  ago, chip, crumbs, foldPanel, h, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
+  ago, chip, crumbs, foldPanel, h, info, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
 } from "../dom.js";
 import { costOf } from "../cost.js";
 import { placeOf } from "../folders.js";
 import { live } from "../live.js";
 import { settle } from "../nav.js";
-import { comparisonView, distributionView, endHeadline, forkingView, formatP, screenView, tallyView, targetLine } from "../results.js";
+import { behaviourList, comparisonView, distributionView, endHeadline, fanOf, forkingView, formatP, notCounted, screenView, tallyView, targetLine } from "../results.js";
 import { trashButton, trashedBanner } from "../trash.js";
 import { whereForm } from "../where.js";
 import { diffView } from "./refine.js";
@@ -48,7 +48,7 @@ export async function experimentsView(root) {
   replace(
     root,
     h("div", { class: "page-head" }, h("div", null, h("h1", null, "Experiments"),
-      h("p", { class: "sub" }, "Resamples, wording A/B tests and tests of proposed edits, each made at a recorded step. Start one from a step's page, or from a terminal: `tuningfork resample`, `tuningfork ab`, `tuningfork refine screen`."))),
+      h("p", { class: "sub" }, "What was measured at a step: resamples, wording A/Bs, forking tokens and tests of proposed edits. Start one from a step of a run."))),
     rows.length
       ? h("section", { class: "panel" }, h("div", { class: "table-wrap" }, h("table", { class: "table" },
           h("thead", null, h("tr", null, h("th", null, "experiment"), h("th", null, "kind"), h("th", null, "step"),
@@ -73,15 +73,15 @@ export async function experimentsView(root) {
 /** What kind of experiment it is, in the pages' words. */
 export function kindName(experiment) {
   const toEnd = experiment.reach === "end";
-  const kinds = { ab: toEnd ? "A/B to the end" : "A/B", "forking-tokens": "forking tokens", screen: toEnd ? "test at a step, to the end" : "test at a step" };
-  return kinds[experiment.kind] || (toEnd ? "resample to the end" : "resample");
+  const kinds = { ab: toEnd ? "A/B, whole run" : "A/B", "forking-tokens": "forking tokens", screen: toEnd ? "test at a step, whole run" : "test at a step" };
+  return kinds[experiment.kind] || (toEnd ? "resample, whole run" : "resample");
 }
 
 function kindChip(experiment) {
   return chip(kindName(experiment), "muted");
 }
 
-const TITLES = { ab: "Wording A/B", resample: "Resample", "forking-tokens": "Forking tokens", screen: "Proposed edits, tested at a step" };
+const TITLES = { ab: "Wording A/B", resample: "Resample", "forking-tokens": "Forking tokens", screen: "Test at a step" };
 
 export async function experimentView(root, [id], scope) {
   replace(root, loading());
@@ -167,14 +167,17 @@ export async function experimentView(root, [id], scope) {
   function draw() {
     const checkpoint = experiment.run_id ? `#/runs/${experiment.run_id}/${experiment.step_idx}` : null;
     const toEnd = experiment.reach === "end";
-    const title = (TITLES[experiment.kind] || experiment.kind) + (toEnd ? ", to the end" : "");
+    const title = (TITLES[experiment.kind] || experiment.kind) + (toEnd ? ", whole run" : "");
+    // How its samples were drawn, a click away beside where they were drawn from.
     const how = toEnd
-      ? ": each sample a fork of the run, answered from the recording up to it and live from there to the end, where the task's check decided."
+      ? "Each sample is a fork of the run, answered from the recording up to the step and live from there to the end, where the task's check decided."
       : experiment.kind === "forking-tokens"
-        ? ": at each probed token, the original and each alternative forced, and the model left to go on — with everything before it held fixed."
+        ? "At each probed token, the original and each alternative were forced, and the model left to go on, with everything before it held fixed."
         : experiment.kind === "screen"
-          ? ": each proposal's wording swapped in, and sampled against the original wording, drawn fresh — with everything before it held fixed."
-          : ", with everything before it held fixed.";
+          ? "Each proposal's wording was swapped in, and sampled against the original wording, drawn fresh, with everything before it held fixed."
+          : experiment.kind === "ab"
+            ? "Each wording's samples resent the step's request, the variant's with its text swapped in, with everything before it held fixed."
+            : "Each sample resent the step's request, with everything before it held fixed.";
     const refinement = experiment.settings?.refinement;
 
     replace(
@@ -185,7 +188,7 @@ export async function experimentView(root, [id], scope) {
         h("p", { class: "sub" }, "From ", checkpoint
           ? h("a", { class: "mono", href: checkpoint }, `run ${short(experiment.run_id)}, step ${experiment.step_idx}`)
           : h("span", { class: "mono" }, `a call held at a breakpoint (${short(experiment.hold_id)}), not recorded yet`),
-          how,
+          ".", info(how, { label: "How it was sampled" }),
           refinement ? [" Part of ", h("a", { class: "mono", href: `#/refine/${refinement}` }, `refinement ${short(refinement)}`), "."] : null)),
         h("div", { class: "actions" },
           experiment.trashed_at || experiment.status === "running" ? null
@@ -218,11 +221,9 @@ export async function experimentView(root, [id], scope) {
         // A screen run to the end: one question asked of its forks, arm by arm — what the passing
         // forks wrote that the failing ones did not.
         experiment.screen && experiment.reach === "end"
-          ? (whereHolds ??= panel("Where does it hold?", whereForm(null, { screen: experiment.id }), {
-              meta: h("span", { class: "muted" }, "One question of every fork, wording by wording: what the passing forks have that the failing lack."),
-            }))
+          ? (whereHolds ??= panel("Ask every fork", whereForm(null, { screen: experiment.id })))
           : null,
-        experiment.distribution ? distributionView(experiment.distribution) : null,
+        experiment.distribution ? distributionView(experiment.distribution, "Behaviours", { from: stepName(experiment) }) : null,
         // Only where they were kept: a server that sends no logprobs leaves a note instead.
         experiment.settings?.logprobs && checkpoint && experiment.tokens_kept
           ? h("p", { class: "hint" }, `${plural(experiment.tokens_kept, "sample")} kept ${experiment.tokens_kept === 1 ? "its" : "their"} tokens: `,
@@ -238,7 +239,7 @@ export async function experimentView(root, [id], scope) {
  *  sent (`ops.experiments.ab_wording`). */
 function wordingPanel(wording) {
   const { original, variant, diff } = wording;
-  return panel("The variant's edit", [
+  return panel("The edit", [
     diff
       ? diffView(diff.hunks)
       : h("p", { class: "muted" }, `Not shown: ${wording.missing}.`),
@@ -315,6 +316,9 @@ function nextSteps(experiment) {
   return h("nav", { class: "next-line", "aria-label": "Next" }, h("strong", null, "Next"), links, back);
 }
 
+/** The step an experiment sampled, as its picture's first box says it. */
+const stepName = (experiment) => (experiment.step_idx === undefined || experiment.step_idx === null ? "this step" : `step ${experiment.step_idx}`);
+
 function armView(arm, label, tone) {
   return h("div", { class: "stack", style: { gap: "var(--space-1)" } },
     h("span", null, h("span", { class: "muted" }, `${label}  `), arm.rate ? rateBar(arm.rate, tone) : h("span", { class: "muted" }, "no fork counts")),
@@ -330,25 +334,40 @@ function toEndView(experiment) {
   if (!result.original) {
     // One arm: a resample to the end, or the arm an interrupted A/B got through.
     return h("div", { class: "stack" },
-      panel("The task's check, end to end", [armView(result, "passed", undefined)],
+      panel("Check, whole run", [armView(result, "passed", undefined)],
         { meta: h("span", { class: "muted", title: "Wilson score interval" }, `${plural(result.counted, "fork")} counted · 95% interval`) }),
-      distributionView(result.actions, "What the model did at the step"),
+      distributionView(result.actions, "Behaviours at the step", { from: stepName(experiment), unit: "fork" }),
       forksPanel([[null, result]]));
   }
   // The target is the task's check: here green and red mean what they mean for a run.
   const [headline, tone] = endHeadline(result);
+  // What each wording's forks did at the step, and how those forks ended: both in one picture.
+  const drawn = fanOf([
+    { name: "original", moves: result.moves, arm: "original" },
+    { name: "variant", tone: "change", moves: result.moves, arm: "variant" },
+  ], { from: stepName(experiment), unit: "fork" });
+  const left = (result.original.actions.errors || 0) + (result.variant.actions.errors || 0);
+  const inFull = (label, arm) => h("details", { class: "fold in-full" },
+    h("summary", null, `${label}'s behaviours (${arm.actions.clusters.length})`), behaviourList(arm.actions));
   return h("div", { class: "stack" },
-    panel("Original wording against the variant, to the end", [
+    panel("Original vs variant, whole run", [
       h("div", { class: ["verdict-block", tone] },
         targetLine("the task's check passes", "set by the task, before any fork ran"),
         h("div", { class: "verdict-big" }, headline),
         h("div", { class: "stack", style: { gap: "var(--space-1)" } },
           armView(result.original, "original", undefined), armView(result.variant, "variant", "change")),
         result.p_value === null ? null : h("div", { class: "mono small", title: "Fisher's exact test" }, `p = ${formatP(result.p_value)}, α = ${result.alpha}`)),
-      h("p", { class: "hint" }, "Steps before this one were answered from the recording in every fork, so both wordings share the history written under the original. From here, each ran live with its own wording."),
+      h("p", { class: "hint" }, "Both wordings share the run's history up to this step.",
+        info("Steps before this one were answered from the recording in every fork, so both wordings share the history written under the original. From here, each ran live with its own wording.", { label: "What the forks share" })),
+      drawn,
+      // A fork that timed out or was left out is in no branch: said, where a wording's box holds
+      // fewer forks than it ran.
+      drawn && left ? h("p", { class: "hint" }, notCounted(left, "fork")) : null,
+      drawn ? [inFull("Original", result.original), inFull("Variant", result.variant)] : null,
     ]),
-    distributionView(result.original.actions, "Original: what the model did at the step"),
-    distributionView(result.variant.actions, "Variant: what the model did at the step"),
+    // A result with no picture to draw keeps each wording's behaviours in sight.
+    drawn ? null : distributionView(result.original.actions, "Original's behaviours", { from: stepName(experiment), unit: "fork" }),
+    drawn ? null : distributionView(result.variant.actions, "Variant's behaviours", { from: stepName(experiment), unit: "fork" }),
     forksPanel([["original", result.original], ["variant", result.variant]]));
 }
 
@@ -370,12 +389,16 @@ function forksPanel(arms) {
         h("td", null, fork.run_id
           ? h("a", { class: "mono", href: `#/runs/${fork.run_id}` }, `run ${short(fork.run_id)}`)
           : h("span", { class: "muted" }, "never reached the proxy")),
+        h("td", null, fork.letter
+          ? h("span", { class: "chip tone-accent", title: `At the step it did ${label ? `the ${label}'s ` : ""}behaviour ${fork.letter}` }, fork.letter)
+          : null),
         h("td", null, verdict)));
     }
   }
   if (!rows.length) return null;
   return panel("Forks", h("details", { class: "fold" },
-    h("summary", null, `${plural(rows.length, "fork")}, each a run of its own: its steps say which the recording answered`),
+    h("summary", null, `Every fork (${rows.length})`),
+    h("p", { class: "hint" }, "Each is a run of its own: its steps say which the recording answered."),
     h("div", { class: "table-wrap" }, h("table", { class: "table" }, h("tbody", null, rows)))));
 }
 
@@ -386,7 +409,7 @@ function notesPanel(experiment) {
   const scalars = Object.entries(settings).filter(([, value]) => value === null || typeof value !== "object");
   const notes = (experiment.notes || []).map((note) =>
     h("div", { class: "banner banner-warn" }, `${note[0].toUpperCase()}${note.slice(1)}.`));
-  return [notes, foldPanel("How it was sampled", [
+  return [notes, foldPanel("Settings", [
     kv(scalars.map(([key, value]) => [key, h("span", { class: "mono" }, String(value))])),
     experiment.variant ? h("div", null, h("div", { class: "label" }, "Variant"),
       kv([
@@ -399,7 +422,7 @@ function notesPanel(experiment) {
           : ["substituted", plural((experiment.variant.spans || []).length, "place")],
       ])) : null,
     Object.keys(experiment.changes || {}).length
-      ? h("details", { class: "fold" }, h("summary", null, "Parameters changed from the recording"), h("pre", { class: "code" }, pretty(experiment.changes)))
+      ? h("details", { class: "fold" }, h("summary", null, "Changed parameters"), h("pre", { class: "code" }, pretty(experiment.changes)))
       : null,
     h("details", { class: "fold" }, h("summary", null, "All settings"), h("pre", { class: "code" }, pretty(settings))),
   ], { className: "record-panel", meta: costOf({ experiment: experiment.id }) })];

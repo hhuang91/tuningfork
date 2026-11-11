@@ -11,7 +11,7 @@ import { guard } from "../auth.js";
 import { checkPicker } from "../checktry.js";
 import { ago, chip, crumbs, firstLine, h, importedRun, kv, loading, panel, plural, rateBar, recordedLive, replace, short, toast, verdict, when } from "../dom.js";
 import { copyChip, folderTree, writes } from "../folders.js";
-import { field, formError, input, planForm, textArea } from "../forms.js";
+import { field, formError, input, planForm, textArea, ways } from "../forms.js";
 import { live } from "../live.js";
 import { leaving } from "../nav.js";
 import { skillNameLabel, skillNameOf, skillPicker } from "../skillpick.js";
@@ -125,20 +125,22 @@ async function runPickView(root, scope) {
 // each planned as its form is filled in (`ops.scenarios.prepare_import`, `prepare_upload`), as
 // Add a skill plans, then made and opened.
 const IMPORT_WAYS = [
-  ["path", "By its path", "a task file on this machine: its skill folder stays where it is, and approved edits are written to it"],
-  ["upload", "Upload its folder", "the folder holding the task file, with its skill and what its check reads: kept as copies in the recordings folder"],
+  ["path", "On this machine", "A task file named by its path: its skill folder stays where it is, and approved edits are written to it."],
+  ["upload", "Upload a folder", "The folder holding the task file, with its skill and what its check reads: kept as copies in the recordings folder."],
 ];
 
 function importForm() {
   let way = "path";
   const slot = h("div");
-  const choices = h("fieldset", { class: "target-picker" }, h("legend", null, "How"),
-    IMPORT_WAYS.map(([value, label, detail]) => h("label", { class: "target-choice" },
-      h("input", { type: "radio", name: "import-way", value, checked: value === way, onchange: () => { way = value; draw(); } }),
-      h("span", null, h("strong", null, label), h("span", { class: "muted small" }, ` — ${detail}`)))));
+  const choices = ways("import-way", IMPORT_WAYS.map(([value, label, note]) => ({ value, label, note, checked: value === way })), { legend: "How" });
+  choices.addEventListener("change", (event) => {
+    if (event.target.name !== "import-way") return;
+    way = event.target.value;
+    draw();
+  });
   const draw = () => replace(slot, way === "path" ? byPath() : byUpload());
   draw();
-  return panel("Add a task file you have", h("div", { class: "stack" }, choices, slot));
+  return panel("Add a task file", h("div", { class: "stack" }, choices, slot));
 }
 
 const keeping = {
@@ -220,7 +222,7 @@ function byUpload() {
     fields: h("div", { class: "form-grid" },
       field("The task file's folder", picker, { wide: true, help: said }),
       field("The task file in it", which, { help: "Where the folder's top holds several." }),
-      field("Scenario name", name, { help: "lowercase letters, digits, - and _: its folder's name, by default" })),
+      field("Scenario name", name, { help: "lowercase letters, digits, - and _", about: "Its folder's name, unless you type another." })),
     read: () => {
       if (!files) throw Object.assign(new Error("Choose the task file's folder."), { field: "folder" });
       return {
@@ -411,9 +413,9 @@ export async function scenarioView(root, [name], scope) {
           changed();
         } }, "Add a task") : null),
       h("div", { class: "stack sticky-col" },
-        panel(isNew ? "The scenario's folder, once saved" : "The scenario's folder", folderEl),
+        panel("Scenario folder", folderEl, isNew ? { meta: h("span", { class: "muted" }, "once saved") } : {}),
         panel("Before it runs", checkedEl),
-        panel("The task file (evals.json), exactly as it will be saved", previewEl))));
+        panel("Task file preview", previewEl, { meta: h("span", { class: "muted" }, "evals.json, as it will be saved") }))));
 
   function bind(control, set) {
     control.disabled = !editable;

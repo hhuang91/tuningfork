@@ -12,7 +12,8 @@
 // do; for each source, the web UI address its server printed, token and all —
 //
 //   TUNINGFORK_SHOTS_FINDFILE  `tuningfork serve` over examples/find-the-file's recordings
-//   TUNINGFORK_SHOTS_GUIDE     `tuningfork serve` over the guide's, refinement 338504b1 among them
+//   TUNINGFORK_SHOTS_GUIDE     `tuningfork serve` over the guide's, refinement 338504b1 and
+//                              forking-token probe d1c77d07 among them
 //   TUNINGFORK_SHOTS_LIVE      `tuningfork demo live`, started fresh
 //   TUNINGFORK_SHOTS_LAB       `tuningfork demo`, started fresh: the GIF, and a chat had elsewhere
 //
@@ -54,6 +55,7 @@ const FIND_THE_FILE = {
   setup: "d668ec81", // the original skill's runs, where they split
 };
 const REFINEMENT = "338504b156154e7ea15cbbf41f30e355"; // the guide's, from its target to the approval
+const PROBE = "d1c77d070a7b40b7bb1b25f7f8b6eb07"; // the guide's: six alternatives forced at five positions in a step's reasoning, one changing what the model did
 
 // --- the pictures ---------------------------------------------------------------------------------
 
@@ -65,10 +67,12 @@ const SHOTS = [
     name: "ui-run.png", source: "findfile", hash: `#/runs/${FIND_THE_FILE.fixed}/2/context`, ready: ".msg",
   },
   {
-    name: "ui-divergence.png", source: "findfile", hash: `#/divergence/find-the-file%2F1@${FIND_THE_FILE.setup}`, ready: ".run-chips a.chip",
+    // The run map, its lines drawn, and under it the box it opens on with its runs.
+    name: "ui-divergence.png", source: "findfile", hash: `#/divergence/find-the-file%2F1@${FIND_THE_FILE.setup}`, ready: ".run-map .rm-edges path",
   },
   {
-    name: "ui-ab.png", source: "findfile", hash: `#/experiments/${FIND_THE_FILE.ab}`, ready: ".verdict-block",
+    // The edit, what it found, and what each arm's samples did, as a fan.
+    name: "ui-ab.png", source: "findfile", hash: `#/experiments/${FIND_THE_FILE.ab}`, ready: ".rm-edges path",
   },
   {
     // Token [121], "Wait" where the model more often wrote "According": the hero figure's fork.
@@ -79,6 +83,15 @@ const SHOTS = [
         window.scrollBy(0, token.getBoundingClientRect().top - 210);
         return true;
       })()`);
+    },
+  },
+  {
+    // A forking-token probe: the position where a forced token changed what the model did, as a
+    // figure, over the answer it forked from. The page draws its lead again once that answer has
+    // loaded, and a figure's lines come a frame after its boxes: both are waited for.
+    name: "ui-forking-tokens.png", source: "guide", hash: `#/experiments/${PROBE}`, ready: ".fork-answer", height: 1160,
+    act: async (page) => {
+      await until(() => page.eval(`document.querySelectorAll(".flips .rm-probe .rm-edges path.rm-edge").length >= 2`), "the lead's figure, its lines drawn");
     },
   },
   {
@@ -171,11 +184,12 @@ async function abDemo(page, source) {
   await pointer.caret(`document.querySelector('.tl-workcol textarea[name="variant_text"]')`, sentence, sentence.length);
   await pointer.type(", using the keys row_count and amount_total");
   await sleep(700);
-  // The condition: a behaviour described, one of its conditions at a time.
+  // The condition, in tools and words: one rule at a time.
+  await pointer.click(`[...document.querySelectorAll(".tl-workcol .ways-item")].find((way) => way.textContent === "Tools & words")`);
   await pointer.click(`document.querySelector(".tl-workcol .rule-builder .rule input")`);
   await pointer.type("write_file");
   for (const phrase of ["row_count", "amount_total"]) {
-    await pointer.click(`[...document.querySelectorAll(".tl-workcol .rule-builder button")].find((b) => b.textContent === "+ Add a condition")`);
+    await pointer.click(`[...document.querySelectorAll(".tl-workcol .rule-builder button")].find((b) => b.textContent === "+ Add a rule")`);
     await pointer.click(`[...document.querySelectorAll(".tl-workcol .rule-builder .rule input")].at(-1)`);
     await pointer.type(phrase);
   }

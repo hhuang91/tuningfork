@@ -161,6 +161,9 @@
 
   /* --- what one component measures ---------------------------------------------------------- */
   --ci-track: 120px;
+  /* The room a run map is given in a list (runmap.js `THUMB`). */
+  --thumb-w: 240px;
+  --thumb-h: 56px;
   --ci-track-h: 8px;
   --ci-point-h: 14px;
   --progress-h: 6px;
@@ -297,12 +300,12 @@ a:hover { text-decoration: underline; }
 /* A link inside a sentence is told from its words by more than its colour (WCAG 1.4.1): a line
    under it, quieter than its text. A link that stands alone (a run's id in a table, a button)
    keeps none. */
-:where(p, dd, .hint, .banner, .sub, .callout, .error-box, .tl-note, .form-help, .empty, .checklist, .map-notes, .verdict-lines, .next-line .muted) a:not(.btn):not(.chip) {
+:where(p, dd, .hint, .banner, .sub, .callout, .error-box, .tl-note, .form-help, .empty, .checklist, .map-notes, .verdict-lines, .proposal-screens, .next-line .muted) a:not(.btn):not(.chip) {
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
   text-underline-offset: 0.2em;
 }
-:where(p, dd, .hint, .banner, .sub, .callout, .error-box, .tl-note, .form-help, .empty, .checklist, .map-notes, .verdict-lines, .next-line .muted) a:not(.btn):not(.chip):hover {
+:where(p, dd, .hint, .banner, .sub, .callout, .error-box, .tl-note, .form-help, .empty, .checklist, .map-notes, .verdict-lines, .proposal-screens, .next-line .muted) a:not(.btn):not(.chip):hover {
   text-decoration-color: currentColor;
 }
 
@@ -1524,12 +1527,9 @@ pre.code { color: var(--muted); }
 .group-rates { display: flex; flex-wrap: wrap; gap: var(--space-1-5) var(--space-6); font-size: var(--text-sm); }
 .group-rates .what { color: var(--muted); margin-right: var(--space-2); }
 .run-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-/* A task's steps, to open each in turn on the divergence page: where the runs split shaded as
-   the Every step table shades it, the step shown in the accent. A probe's continuations are
-   grouped by buttons like them, the grouping shown in the accent. */
-.step-picker { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-2-5); }
-.step-picks, .group-picks { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.step-pick, .group-pick {
+/* How a probe's continuations are grouped: two buttons, the grouping shown in the accent. */
+.group-picks { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.group-pick {
   min-width: var(--control-sm);
   height: var(--control-sm);
   padding: 0 var(--space-2);
@@ -1543,12 +1543,9 @@ pre.code { color: var(--muted); }
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease);
 }
-.step-pick:hover, .group-pick:hover { background: var(--panel-2); color: var(--text); }
-.step-pick.diverged { border-color: var(--accent-soft); background: var(--accent-soft); color: var(--accent); }
-.step-pick.current, .group-pick.current { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.group-pick:hover { background: var(--panel-2); color: var(--text); }
+.group-pick.current { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .group-pick { padding: 0 var(--space-3); font-family: var(--sans); font-size: var(--text-sm); }
-.step-picker > .btn { min-height: var(--control-sm); height: var(--control-sm); padding: 0 var(--space-2-5); font-size: var(--text-md); line-height: 1; }
-.step-note { margin: var(--space-2-5) 0 var(--space-3); }
 
 .verdict-block {
   display: flex;
@@ -1575,50 +1572,81 @@ pre.code { color: var(--muted); }
 .verdict-target .label { margin: 0; font-size: var(--text-sm); }
 .verdict-target-body { padding-left: var(--space-5); }
 .verdict-target-text { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
-/* A probe's lead, under its headline: each position where a forced token changed what the model
-   did, as a tree, a table each, as wide as its words. Its place in the answer heads the tree's
-   column; under it the token is boxed in its sentence (the head of the position's rows below
-   too), and from under the box hang the original token, boxed alike, and each one forced, in the
-   cyan of a change, a row each. The guides are drawn on the token's cell, set in by the text
-   before the box (`--fork-before`, in the mono font's ch, as the sentence is), so the trunk falls
-   from the box: a screen reader hears a table. Every sentence is as wide as the widest tree needs
-   (`--fork-span`) and every tree's panel as wide as the widest, so their columns line up. */
+/* A probe's positions, each a figure (results.js `positionFigure`): the token boxed in its
+   sentence, and from it a branch for the original token and each one forced there, in the cyan
+   of a change, as wide as the model's own chance of it, ending in how often the condition was
+   met. The figures line up: every sentence as wide as the widest (`--fork-span`) and every
+   token (`--fork-token`), in the mono font's ch. In the block a page leads with, a figure
+   stands on the panel's own ground, as its rates do everywhere. */
 .flips { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
-.flips p { margin: 0; }
-.fork-trees { display: grid; gap: var(--space-2); width: fit-content; max-width: 100%; }
-.fork-trees > .table-wrap { background-color: var(--panel); }
-.fork-sentence, .fork-tree td.fork-alt { font-family: var(--mono); font-size: var(--text-code); }
-.fork-sentence { white-space: pre; }
-/* A block of its own, so the box sits at its cell's foot, where the trunk starts. */
-.fork-tree .fork-sentence { display: block; min-width: var(--fork-span, 0); }
+.flips > .fork-position { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--panel); }
+.fork-others { display: flex; flex-direction: column; gap: var(--space-2); }
+.fork-others p { margin: 0; }
+/* The answer the probe forked from, then the positions it led nowhere at: a rule between them. */
+.fork-answer + .fork-others { padding-top: var(--space-3); border-top: 1px solid var(--border); }
+/* The key's two boxes: a token's, as its figure draws it. */
+.fork-key { display: inline-block; width: var(--space-4); height: var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--radius-xs); background: var(--panel); }
+.fork-key.tone-change { border-color: var(--change); background: var(--change-soft); }
+.fork-sentence { font-family: var(--mono); font-size: var(--text-code); white-space: pre; }
 .fork-before, .fork-after { color: var(--muted); }
 /* The box drawn outside the token, a pixel clear of it: an underscore at its foot still reads. */
-.fork-token, .fork-original { box-shadow: 0 0 0 1px var(--text); border-radius: var(--radius-sm); padding: 1px var(--space-0-5); color: var(--text); }
-.fork-forced { background: var(--change-soft); color: var(--change); border-radius: var(--radius-sm); padding: 0 var(--space-0-5); }
-.fork-tree { --fork-before: 0ch; background: var(--panel); }
-/* The token's column and its chance's as narrow as their words: a tree narrower than the widest
-   gives its room to the rates, its heading's rule across its panel and its columns where the
-   widest tree has them. */
-.fork-tree th:not(:last-child), .fork-tree td:not(:last-child) { width: 1px; }
-.fork-tree tr.fork-at td { padding-top: var(--space-2-5); padding-bottom: var(--space-1); border-bottom: none; }
-.fork-tree tr.fork-branch td { padding-top: var(--space-1); padding-bottom: var(--space-1); border-bottom: none; vertical-align: middle; }
-.fork-tree tr.fork-branch:last-child td { padding-bottom: var(--space-3); }
-/* A token's chance and how often the condition was met after it read alike, from the left; a
-   badge follows the rate it is about. */
-.fork-tree td.fork-chance { font-family: var(--mono); font-size: var(--text-xs); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.fork-met { display: inline-flex; align-items: center; gap: var(--space-2-5); white-space: nowrap; }
-.fork-tree td.fork-alt { position: relative; white-space: pre; padding-left: calc(var(--space-3) + var(--fork-before) + var(--space-5)); }
-.fork-tree td.fork-alt::before, .fork-tree td.fork-alt::after {
-  content: "";
-  position: absolute;
-  left: calc(var(--space-3) + var(--fork-before) + var(--space-2));
-  border: 0 solid var(--control);
+.fork-token { box-shadow: 0 0 0 1px var(--text); border-radius: var(--radius-sm); padding: 1px var(--space-0-5); color: var(--text); }
+.rm-probe .rm-node.rm-origin { max-width: none; }
+.rm-probe .rm-origin .rm-label { overflow: visible; }
+.rm-probe .fork-sentence { display: inline-block; min-width: var(--fork-span, 0); }
+.rm-probe .rm-node.kind-token .rm-label { min-width: var(--fork-token, 0); }
+.rm-probe .rm-node.kind-token.tone-change { background: var(--change-soft); }
+.rm-probe .rm-node.kind-token.tone-change .rm-label { color: var(--change); }
+/* A forced token is a change, and wears the pencil a change wears everywhere: not its colour
+   alone says so. The original's box keeps the pencil's room, so the tokens line up. */
+.rm-probe .rm-node.kind-token { grid-template-columns: auto auto auto; }
+.rm-probe .rm-node.kind-token::before { content: ""; align-self: center; width: var(--icon-xs); height: var(--icon-xs); }
+.rm-probe .rm-node.kind-token.tone-change::before {
+  background: var(--change);
+  -webkit-mask: var(--icon-pencil) center / contain no-repeat;
+  mask: var(--icon-pencil) center / contain no-repeat;
 }
-.fork-tree td.fork-alt::before { top: 0; height: calc(var(--space-1) + 0.75em); width: var(--space-2); border-left-width: 1px; border-bottom-width: 1px; }
-.fork-tree tr.fork-branch:not(:last-child) td.fork-alt::after { top: 0; bottom: 0; border-left-width: 1px; }
-/* The first row's guides reach up to the box. */
-.fork-tree tr.fork-at + tr.fork-branch td.fork-alt::before { top: calc(-1 * var(--space-1)); height: calc(var(--space-2) + 0.75em); }
-.fork-tree tr.fork-at + tr.fork-branch td.fork-alt::after { top: calc(-1 * var(--space-1)); }
+.rm-probe .rm-node.kind-token .rm-hint { grid-column: 2 / -1; }
+.rm-probe .rm-count { min-width: 5ch; text-align: right; }
+/* Two columns and its ends: nothing scrolls under them, so they scroll with the figure. */
+.rm-probe .rm-end, .rm-probe .rm-head-end { position: static; }
+/* The positions after the answer line up, so their columns are headed once in sight, over the
+   first: the others keep their heads for a screen reader. */
+.fork-others .fork-position ~ .fork-position .rm-head:not(:first-child) { opacity: 0; }
+/* A figure knows its own width (`.rm`, below). With room, an end too long for its line goes on
+   under its rate's numbers, the bar hanging before them; with less, each part goes under the
+   bar. On a phone the position reads down the page: its sentence, its two heads on a line, then
+   each token over how it ended, every position headed, and no lines: a token's chance is the
+   number in its box. The script places each cell by column and row; here they are placed again. */
+@container (min-width: 900px) {
+  .rm-probe .rm-end { padding-left: calc(var(--space-2) + var(--ci-track) + var(--space-2-5)); }
+  .rm-probe .rm-end > .ci:first-child { margin-left: calc(-1 * (var(--ci-track) + var(--space-2-5))); }
+}
+@container (max-width: 560px) {
+  .rm-probe .rm-canvas { width: auto; }
+  .rm-probe .rm-grid { grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--space-4); row-gap: var(--space-1-5); align-items: start; }
+  .rm-probe .rm-grid > * { grid-column: 1 / -1 !important; grid-row: auto !important; order: 3; }
+  .rm-probe .rm-grid > .rm-head { grid-column: auto !important; order: 2; padding-bottom: 0; }
+  .rm-probe .rm-grid > .rm-head:first-child { grid-column: 1 / -1 !important; order: 0; }
+  .rm-probe .rm-grid > .rm-node.rm-origin { order: 1; max-width: 100%; }
+  .rm-probe .rm-grid > .rm-node.kind-token { margin-top: var(--space-1-5); }
+  .rm-probe .rm-edges { display: none; }
+  .rm-probe .fork-sentence { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .rm-probe .rm-end { padding-left: 0; }
+  .fork-others .fork-position ~ .fork-position .rm-head:not(:first-child) { opacity: 1; }
+}
+/* The key's line is of the figures' lines: where the positions read down the page, none is
+   drawn, and the key leaves it out. A figure's own room is its block's, less the figure's
+   padding (2px a side) and, in the lead, the position's (12px a side). */
+.flips, .fork-others { container-type: inline-size; }
+@container (max-width: 588px) { .flips > .rm-legend .rm-key-wide { display: none; } }
+@container (max-width: 564px) { .fork-others > .rm-legend .rm-key-wide { display: none; } }
+/* After a token's rate: its test, then where its continuations ended. */
+.fork-test { color: var(--muted); font-family: var(--mono); font-size: var(--text-xs); white-space: nowrap; }
+.fork-led { color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
+.fork-foot { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); }
+/* The foot's note opens from the foot's own edge, under it: from its "?" it would pass the window's. */
+.fork-foot .info { position: static; }
 .verdict-block.tone-ok .verdict-big { color: var(--ok); }
 .verdict-block.tone-bad .verdict-big { color: var(--bad); }
 .verdict-block.tone-warn .verdict-big { color: var(--warn); }
@@ -1886,7 +1914,7 @@ pre.code { color: var(--muted); }
 .tk-probes { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2-5); }
 .tk-probe { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-0-5) var(--space-3); }
 .tk-probe-flip { color: var(--accent); font-weight: var(--weight-semibold); }
-.fork-answer { display: flex; flex-direction: column; gap: var(--space-1-5); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
+.fork-answer { display: flex; flex-direction: column; gap: var(--space-1-5); }
 .fork-links { display: inline-flex; flex-wrap: wrap; gap: var(--space-1-5); margin-left: auto; }
 .passes-when { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2-5); padding: var(--space-2) var(--space-4) 0; }
 .passes-when .label { margin: 0; }
@@ -2361,6 +2389,273 @@ a.stage-name:hover { color: var(--accent); text-decoration: none; }
 .validation-table td { vertical-align: top; }
 .approve-code { display: flex; align-items: baseline; gap: var(--space-2-5); font-size: var(--text-lg); }
 .approve-code .label { margin: 0; font-size: var(--text-xs); }
+
+/* --- tabs: parts of a page that answer different questions, one in sight at a time ---------- */
+
+.tab-list { display: flex; flex-wrap: wrap; gap: var(--space-1); padding: var(--space-1) var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.tab {
+  display: inline-flex; align-items: center; gap: var(--space-1-5);
+  min-height: var(--control-md); margin-bottom: -1px; padding: var(--space-2) var(--space-3);
+  border: 0; border-bottom: var(--stroke-2) solid transparent; background: none;
+  color: var(--muted); font: inherit; font-size: var(--text-sm); font-weight: var(--weight-medium); cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: var(--badge-h); height: var(--badge-h); padding: 0 var(--space-1-5);
+  border-radius: var(--radius-full); background: var(--panel-3); color: var(--muted);
+  font-size: var(--text-2xs); font-variant-numeric: tabular-nums;
+}
+.tab-panel { padding: var(--space-4); }
+.tab-panel > * + * { margin-top: var(--space-3); }
+/* A tab's body that a page fills again as its data changes; an action of the whole tab, to the right. */
+.tab-part > * + * { margin-top: var(--space-3); }
+.tab-actions { display: flex; justify-content: flex-end; }
+
+/* --- a note a click away: what a word or a control means, off the page until asked for ------ */
+
+.info { position: relative; display: inline-flex; margin-left: var(--space-1-5); vertical-align: middle; }
+.info-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--space-6); height: var(--space-6); padding: 0;
+  border: 1px solid var(--control); border-radius: var(--radius-full); background: transparent;
+  color: var(--muted); font: inherit; font-size: var(--text-2xs); font-weight: var(--weight-bold); line-height: 1; cursor: pointer;
+}
+.info-toggle:hover, .info.open > .info-toggle { border-color: var(--accent); color: var(--accent); }
+.info-note {
+  position: absolute; z-index: 5; top: calc(100% + var(--space-1-5)); right: 0;
+  width: max-content; max-width: min(var(--toast-max), 80vw);
+  padding: var(--space-2-5) var(--space-3);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--panel);
+  box-shadow: var(--shadow-float);
+  color: var(--text); font-size: var(--text-sm); font-weight: var(--weight-regular); line-height: var(--leading-normal);
+  text-align: left; white-space: normal;
+}
+
+/* --- the run map: a task's runs as paths that part --------------------------------------------
+   Boxes in a grid, one column a step; under them the lines, as wide as their runs are many. A
+   box for a tool call wears the accent, as the model's own answer does everywhere; a reply is
+   grey. Each path ends in its runs, one mark a run: green passed, red failed, as a check's
+   verdict is on every page, and shaped apart too, a round mark and a square one. */
+
+.run-map .panel-body > * + * { margin-top: var(--space-4); }
+.rm { overflow-x: auto; overflow-y: hidden; padding: var(--space-1) var(--space-0-5) var(--space-2); container-type: inline-size; }
+.rm-canvas { position: relative; width: fit-content; min-width: 100%; }
+.rm-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.rm-grid {
+  position: relative; display: grid; align-items: center; justify-items: start;
+  grid-template-columns: repeat(var(--rm-columns), max-content) minmax(min-content, 1fr);
+  column-gap: var(--space-8); row-gap: var(--space-2-5);
+}
+.rm-head {
+  padding-bottom: var(--space-1); color: var(--faint);
+  font-size: var(--text-2xs); font-weight: var(--weight-bold); letter-spacing: var(--tracking-caps); text-transform: uppercase; white-space: nowrap;
+}
+.rm-head-end { padding-left: var(--space-2); }
+.rm-head-turn { color: var(--accent); }
+.rm-turn { margin-left: var(--space-1-5); padding: var(--space-0-5) var(--space-1-5); border-radius: var(--radius-sm); background: var(--accent); color: var(--on-accent); }
+.rm-turn-mark { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.rm-node {
+  display: inline-grid; grid-template-columns: auto auto; align-items: baseline; column-gap: var(--space-2);
+  min-height: var(--control-md); max-width: var(--label-max); padding: var(--space-1) var(--space-2-5);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--panel);
+  color: var(--text); font: inherit; text-align: left;
+}
+/* A box that can be chosen is a button: only it points, and answers a hover. */
+button.rm-node { cursor: pointer; }
+button.rm-node:hover { border-color: var(--control); background: var(--panel-2); }
+.rm-node.kind-tool_call { border-color: var(--accent-line); background: var(--accent-soft); }
+button.rm-node.kind-tool_call:hover { border-color: var(--accent); }
+.rm-node.kind-text { background: var(--panel-2); }
+.rm-node.kind-empty, .rm-node.kind-truncated, .rm-node.kind-error { border-color: var(--warn-line); background: var(--warn-soft); }
+.rm-node.rm-origin, .rm-node.rm-alone { border-style: dashed; background: transparent; color: var(--muted); }
+.rm-node[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 var(--stroke-2) var(--accent); }
+.rm-label { overflow: hidden; font-family: var(--mono); font-size: var(--text-code); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.rm-node.kind-text .rm-label, .rm-node.rm-origin .rm-label, .rm-node.rm-alone .rm-label { font-family: var(--sans); font-size: var(--text-sm); }
+.rm-count { color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.rm-hint { grid-column: 1 / -1; overflow: hidden; color: var(--muted); font-family: var(--mono); font-size: var(--text-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.rm-stop { color: var(--faint); font-size: var(--text-xs); font-style: italic; white-space: nowrap; }
+/* Where the paths end stays in sight while the steps scroll under it. */
+.rm-end, .rm-head-end { position: sticky; right: 0; z-index: 1; background: var(--panel); }
+.rm-end { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2-5); min-height: var(--control-md); padding-left: var(--space-2); }
+.rm-fared { color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rm-marks { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); max-width: calc(10 * (var(--dot) + var(--space-1) + var(--space-0-5))); }
+.rm-mark { display: inline-block; flex: none; width: calc(var(--dot) + var(--space-0-5)); height: calc(var(--dot) + var(--space-0-5)); border-radius: var(--radius-full); background: var(--control); }
+.rm-mark.tone-ok { background: var(--ok); }
+.rm-mark.tone-bad { border-radius: var(--radius-xs); background: var(--bad); }
+.rm-mark.tone-warn { border: var(--stroke-2) solid var(--warn); background: transparent; }
+.rm-mark.tone-none { border: var(--stroke-1-5) solid var(--control); background: transparent; }
+/* Short of room — a phone, a narrow column — a figure scrolls sideways whole: its ends go with
+   it, since a column kept in sight would cover the boxes. Its columns close up, a box's second
+   line goes, and a rate's bar and a path's marks take less. */
+@container (max-width: 560px) {
+  .rm-end, .rm-head-end { position: static; }
+  .rm-grid { column-gap: var(--space-5); }
+  .rm-node { max-width: 60cqw; padding: var(--space-0-5) var(--space-2); }
+  .rm-hint { display: none; }
+  .rm-end .ci-track { width: var(--space-16); }
+  .rm-marks { max-width: calc(5 * (var(--dot) + var(--space-1) + var(--space-0-5))); }
+}
+.rm-edge { fill: none; stroke: var(--border-strong); stroke-linecap: round; }
+.rm-edge.on { stroke: var(--accent); }
+.rm-leader { stroke-width: 1; stroke-dasharray: 2 4; }
+.rm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5) var(--space-4); color: var(--muted); font-size: var(--text-xs); }
+.rm-key { display: inline-flex; align-items: center; gap: var(--space-1-5); }
+.rm-key-line { display: inline-block; width: var(--space-6); height: var(--space-1-5); border-radius: var(--radius-full); background: var(--border-strong); }
+/* The Detail control: its parts wrap on a very narrow page. */
+.rm-detail { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.rm-detail-step { min-width: var(--control-sm); padding: 0; justify-content: center; }
+.rm-detail-name { min-width: 14ch; text-align: center; color: var(--text); }
+/* What the map shows, in a line over it: the accent's, as a lead is. */
+.rm-lead {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2-5);
+  padding: var(--space-2-5) var(--space-3-5); border: 1px solid var(--accent-line); border-radius: var(--radius-lg); background: var(--accent-soft);
+}
+.rm-lead strong { font-size: var(--text-md); }
+.rm-lead-caution { color: var(--muted); font-size: var(--text-sm); }
+.rm-lead .info { align-self: center; }
+.rm-caption { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+
+/* The box chosen, under the map: what its runs did here beside what they did next. */
+.rm-inspect { border-top: 1px solid var(--border); padding: var(--space-4); }
+.rm-inspect > * + * { margin-top: var(--space-3); }
+.rm-inspect-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.rm-step { font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.rm-path { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); color: var(--faint); font-family: var(--mono); font-size: var(--text-xs); }
+.rm-path .sep { color: var(--faint); }
+.rm-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
+.rm-cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--space-4) var(--space-8); align-items: start; }
+.rm-col { min-width: 0; }
+.rm-forms, .rm-next { display: grid; gap: var(--space-1-5); margin: 0; padding: 0; list-style: none; }
+.rm-form { display: flex; align-items: baseline; gap: var(--space-3); padding: var(--space-1-5) var(--space-2-5); border-radius: var(--radius-md); background: var(--panel-2); }
+.rm-form-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.rm-form-runs { display: inline-flex; flex: none; align-items: center; gap: var(--space-2); }
+.rm-next-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5) var(--space-3); min-height: var(--control-sm); }
+.rm-next-name { min-width: 0; text-align: left; }
+.rm-next-name .outcome-label { color: var(--text); }
+.rm-next-rate { display: inline-flex; align-items: center; gap: var(--space-2); margin-left: auto; }
+.rm-inspect-head .rm-next-rate { margin-left: 0; }
+.rm-along > summary { font-size: var(--text-sm); }
+.rm-more-runs { flex-basis: 100%; }
+.rm-more-runs > .run-chips { margin-top: var(--space-1-5); }
+@media (max-width: 900px) {
+  .rm-cols { grid-template-columns: minmax(0, 1fr); }
+  .rm-actions { margin-left: 0; }
+}
+
+/* A fan: what one step led to. A wording's own fan wears its colour: the variant's, cyan. */
+.rm-node.has-badge { grid-template-columns: auto auto auto; }
+.rm-node.has-badge .rm-hint { grid-column: 2 / -1; }
+.rm-letter { align-self: center; min-width: var(--chip-h); padding: 0 var(--space-1); border-radius: var(--radius-sm); background: var(--panel); color: var(--accent); font-size: var(--text-xs); font-weight: var(--weight-bold); line-height: var(--chip-h); text-align: center; }
+.rm-node.rm-none { opacity: 0.6; }
+.in-full > summary { font-size: var(--text-sm); }
+.in-full > .groups, .in-full > .table-wrap { margin-top: var(--space-2); }
+.rm-node.tone-change { border-color: var(--change); }
+.rm-node.rm-origin.tone-change { color: var(--change); }
+.rm-edge.tone-change { stroke: color-mix(in srgb, var(--change) 45%, var(--panel)); }
+.rm-head:empty { padding: 0; }
+/* The run map, small (runmap.js `mapThumb`): a task's runs as a picture in a list, before the
+   words of the link that leads to the map. Each box a dot, each line as wide as its runs are
+   many, each path ending in its runs' marks. Its place is kept while it loads: the list under it
+   never jumps. */
+.map-thumb { display: inline-flex; align-items: center; gap: var(--space-3); color: inherit; text-decoration: none; }
+.map-thumb:hover { text-decoration: none; }
+.map-thumb:hover .btn { background: var(--panel-2); border-color: var(--control); }
+.map-thumb-slot { display: flex; align-items: center; justify-content: flex-end; height: var(--thumb-h); max-width: var(--thumb-w); }
+.mt { display: block; }
+.mt-edge { fill: none; stroke: color-mix(in srgb, var(--control) 55%, var(--panel)); stroke-linecap: round; }
+.mt-leader { fill: none; stroke: color-mix(in srgb, var(--control) 70%, var(--panel)); stroke-width: 1; stroke-dasharray: 1 3; }
+.mt-leader.mt-alone { stroke-dasharray: 3 3; }
+/* A dot is its box's colour, filled: at this size an outline alone is lost. */
+.mt-node { fill: color-mix(in srgb, var(--control) 75%, var(--panel)); }
+.mt-node.kind-tool_call { fill: color-mix(in srgb, var(--accent) 60%, var(--panel)); }
+.mt-node.kind-empty, .mt-node.kind-truncated, .mt-node.kind-error { fill: var(--warn); }
+.mt-start { fill: var(--panel); stroke: var(--control); stroke-dasharray: 2 2; }
+.mt-mark.tone-ok { fill: var(--ok); }
+.mt-mark.tone-bad { fill: var(--bad); }
+.mt-mark.tone-warn { fill: none; stroke: var(--warn); }
+.mt-mark.tone-none { fill: none; stroke: var(--control); }
+.mt-more { fill: none; stroke: var(--faint); }
+.mt-turn { fill: var(--accent); stroke: var(--panel); }
+/* Replies that differ only in their words, as one line of a list of behaviours. */
+.group-fold > summary { min-height: var(--control-md); padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); font-size: var(--text-sm); color: var(--text); }
+.group-fold > .groups { margin-top: var(--space-2); padding-left: var(--space-5); }
+
+/* --- one way of several: each named in a word or two, side by side ----------------------------
+   The radios of a choice as one row of segments, the chosen one raised; under the row a line
+   saying what that way is, then only what it needs. What the others need stays off the page. */
+
+.ways { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.ways > legend { display: flex; align-items: center; }
+.ways-row {
+  display: inline-flex; flex-wrap: wrap; gap: var(--space-0-5); padding: var(--space-0-5);
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel-2);
+}
+.ways-item {
+  position: relative; display: inline-flex; align-items: center; min-height: var(--control-sm); padding: 0 var(--space-3);
+  border-radius: var(--radius-sm); color: var(--muted); font-size: var(--text-sm); font-weight: var(--weight-medium); cursor: pointer;
+}
+.ways-item input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.ways-item:hover { color: var(--text); }
+.ways-item:has(input:checked) { background: var(--panel); color: var(--text); box-shadow: var(--shadow-raised); }
+.ways-item:has(input:focus-visible) { outline: var(--stroke-2) solid var(--accent); outline-offset: 1px; }
+.ways-item.disabled { color: var(--faint); cursor: not-allowed; }
+.ways-item.disabled input { cursor: not-allowed; }
+.ways-note { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+.ways-note.ways-unchosen { color: var(--faint); font-style: italic; }
+.ways-bodies, .ways-body { align-self: stretch; }
+.ways-body:empty { display: none; }
+/* What a way needs sits under the row, flush with it: the indent was for a radio's label. */
+.ways .target-letters, .ways .target-pattern, .ways .rule-builder { margin-left: 0; }
+.ways .seen-preview { align-self: stretch; }
+/* A behaviour to pick: its letter and what it is, then its rate under that. Beside it, in the
+   column a step's work has, the rate left the words no room at all: each letter of the call
+   took a line of its own, out of sight. */
+.target-letter { grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; }
+.target-letter > .ci { grid-column: 3; }
+.rule-more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.seen-title { display: flex; align-items: center; }
+.seen-replies > .fold > summary { min-height: 0; font-size: inherit; color: inherit; }
+.seen-replies > .fold > .seen-list { margin: var(--space-1) 0 var(--space-1) var(--space-6); }
+
+/* A paragraph's rest, a press away: the toggle reads as part of the line. */
+.more-toggle { margin-left: var(--space-1); color: var(--accent); font-size: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 0.2em; }
+.more-text:not([hidden]) { display: inline; }
+/* A field's label, or a plan's, with its note a click away beside it. */
+.form-label, .plan-label { display: flex; align-items: center; }
+.form-label .info-note, .plan-label .info-note, .ways > legend .info-note, .seen-title .info-note, .fork-foot .info-note { left: 0; right: auto; }
+
+/* --- the Guide, in fewer words: what a part needs said stays a click away ---------------------- */
+
+.colours { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5) var(--space-5); margin: var(--space-3) 0 0; font-size: var(--text-sm); line-height: var(--leading-normal); }
+.colour-key { display: inline-flex; align-items: center; gap: var(--space-1-5); }
+.map-more > summary { font-size: var(--text-sm); }
+.map-more > .map-notes { margin-top: var(--space-2); }
+/* A banner that opens: its line says what to do, the why under it once asked for. */
+details.server-note > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2-5); list-style: none; cursor: pointer; }
+details.server-note > summary::-webkit-details-marker { display: none; }
+details.server-note > summary::before { content: none; }
+.server-note-why { margin-left: auto; color: var(--warn); font-weight: var(--weight-medium); text-decoration: underline; text-underline-offset: 0.2em; }
+details.server-note[open] .server-note-why { visibility: hidden; }
+details.server-note > p { margin: var(--space-2) 0 0; max-width: var(--measure); }
+/* Each question a line of the sheet; opened, its answer, its steps and the way in. */
+details.workflow { padding: 0; gap: 0; }
+details.workflow > summary { display: flex; align-items: center; gap: var(--space-2); min-height: var(--space-12); padding: var(--space-2) var(--space-5); list-style: none; cursor: pointer; }
+details.workflow > summary::-webkit-details-marker { display: none; }
+details.workflow > summary h3 { font-size: var(--text-base); font-weight: var(--weight-medium); }
+details.workflow > summary:hover { background: var(--panel-2); }
+details.workflow[open] > summary h3 { font-weight: var(--weight-semibold); }
+.workflow-body { display: flex; flex-direction: column; gap: var(--space-2); padding: 0 var(--space-5) var(--space-4); }
+.workflow-body .btn { align-self: flex-start; }
+/* The work on a step: its two reaches in a word each. */
+.reach { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+/* A behaviour seen at a step: its mark, then what it is over where it was seen. */
+.ways .seen { display: grid; grid-template-columns: var(--space-5) minmax(0, 1fr); column-gap: var(--space-1); align-items: baseline; }
+.ways .seen > .outcome, .ways .seen > .muted, .ways .seen > .fold { grid-column: 2; min-width: 0; }
+.ways .seen > .seen-mark { grid-row: 1; }
+.ways .seen-replies { display: block; }
 
 /* --- where motion is turned down: nothing travels or spins; the feedback stays ---------------- */
 
