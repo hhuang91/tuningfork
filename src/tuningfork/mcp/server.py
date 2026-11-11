@@ -50,9 +50,9 @@ at a step of a task, and why — evidence for or against a skill's wording.
 A good path: list_tasks; find_divergence (the first step where a task's runs split); \
 show_step there (the context, and the skill lines in it); start_resample at that step (how \
 often each behaviour happens, history held fixed); show_skill, then start_ab with an edited \
-wording (variant_text, variant_name) and a target declared before sampling — `target` (a \
-letter from that step's resample), `target_match` or `target_rules`. Without one, an A/B is \
-exploratory.
+wording (variant_text, and a variant_name new for each new text) and a target declared before \
+sampling — `target` (a letter from that step's resample), `target_match` or `target_rules`. \
+Without one, an A/B is exploratory.
 
 Every rate comes with its 95% Wilson interval: report both, and do not call a difference \
 real unless the test says it is significant. start_* tools run as jobs: wait with \

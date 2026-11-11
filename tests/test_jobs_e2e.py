@@ -17,10 +17,16 @@ import pytest
 from tuningfork.config import Settings
 from tuningfork.control import ControlClient, ControlError
 from tuningfork.demo.mock import MockTurn
+from tuningfork.experiment.skill import text_sha256
+from tuningfork.ops import OperationError
+from tuningfork.ops.variants import save_variant
 from tuningfork.proxy.app import create_app
 from tests.helpers import PROPS, SKILL, VARIANT, control_headers, record_pilot, serving
 
 API = "/_tuningfork/api"
+#: The variant edited again: another text.
+EDITED = VARIANT + "\nSay which keys you used.\n"
+TAKEN = "a variant named '{}' of tally-report already exists, with other text"
 
 
 def write(keys: dict) -> MockTurn:
@@ -192,6 +198,153 @@ class TestAB:
         assert comparison["target"]["significant"]
         assert len(done["links"]["experiments"]) == 2
         assert {proxy.store.get_experiment(e).status for e in done["links"]["experiments"]} == {"done"}
+
+    def test_a_name_holding_another_text_is_refused_before_anything_is_sampled(self, proxy, tmp_path):
+        # Found in review of #79: the A/B editor's "Start from" fills in the name of the variant it
+        # loads, and an edit of it started under that name tested the edit while both arms' records
+        # named the file, which held the text before it; the edit was saved nowhere.
+        original = tmp_path / "SKILL.md"
+        original.write_text(SKILL, encoding="utf-8")
+        params = {
+            "run": proxy.run_id, "step": "1", "n": 2,
+            "original": str(original), "variant_text": VARIANT, "variant_name": "keys-named",
+            "target_match": "row_count",
+        }
+        saved = proxy.store.home / "variants" / "tally-report" / "keys-named.md"
+        with proxy.client() as client:
+            first = client.wait_for_job(client.submit("ab", params)["id"], timeout=60, poll=0.1)
+            assert first["status"] == "done", first["error"]
+            for ask in (client.plan, client.submit):
+                with pytest.raises(ControlError, match=TAKEN.format("keys-named")) as refused:
+                    ask("ab", {**params, "variant_text": EDITED})
+                assert refused.value.error["field"] == "variant_name" and refused.value.status == 400
+            assert saved.read_text(encoding="utf-8") == VARIANT
+            saved.write_bytes(b"\xff not UTF-8")  # holds no text
+            with pytest.raises(ControlError, match=TAKEN.format("keys-named")):
+                client.plan("ab", params)
+        assert [job.id for job in proxy.store.jobs()] == [first["id"]]
+
+    def test_a_variant_is_called_saved_under_its_name_only_while_its_file_holds_the_text_tested(self, proxy, tmp_path):
+        # An A/B started under a name another text had taken, before that was refused, named that
+        # file: its page said the variant was saved there.
+        from tuningfork.ops import compact
+        from tuningfork.ops.inspect import experiment_report
+
+        original = tmp_path / "SKILL.md"
+        original.write_text(SKILL, encoding="utf-8")
+        params = {
+            "run": proxy.run_id, "step": "1", "n": 2,
+            "original": str(original), "variant_text": VARIANT, "variant_name": "keys-named",
+            "target_match": "row_count",
+        }
+        with proxy.client() as client:
+            done = client.wait_for_job(client.submit("ab", params)["id"], timeout=60, poll=0.1)
+        assert done["status"] == "done", done["error"]
+        saved = proxy.store.home / "variants" / "tally-report" / "keys-named.md"
+
+        def wording() -> dict:
+            return experiment_report(proxy.store, done["links"]["experiments"][0]).to_json()["wording"]
+
+        assert wording()["variant"]["name"] == "keys-named" and "file" not in wording()["variant"]
+        saved.write_text(EDITED, encoding="utf-8")
+        found = wording()
+        assert "name" not in found["variant"] and found["variant"]["label"] == "tally-report/keys-named.md"
+        assert found["variant"]["file"] == "holds another text than the one tested"
+        assert found["source"] == "sent" and found["diff"]["changed"] == 1  # the edit it tested
+        lines = compact.wording_lines(compact.wording(found))
+        assert "the variant's file holds another text than the one tested" in lines
+        saved.unlink()
+        assert wording()["variant"]["file"] == "is not there"
+
+    def test_the_text_a_name_holds_is_tested_under_it_again_its_file_kept(self, proxy, tmp_path):
+        # A browser gives a text box's text with LF line endings, whatever the file's: a variant
+        # saved with CRLF and loaded into the editor again is the text its records name.
+        original = tmp_path / "SKILL.md"
+        original.write_text(SKILL, encoding="utf-8")
+        saved = proxy.store.home / "variants" / "tally-report" / "keys-named.md"
+        saved.parent.mkdir(parents=True)
+        saved.write_bytes(VARIANT.replace("\n", "\r\n").encode("utf-8"))
+        params = {
+            "run": proxy.run_id, "step": "1", "n": 2,
+            "original": str(original), "variant_text": VARIANT, "variant_name": "keys-named",
+            "target_match": "row_count",
+        }
+        with proxy.client() as client:
+            done = client.wait_for_job(client.submit("ab", params)["id"], timeout=60, poll=0.1)
+        assert done["status"] == "done", done["error"]
+        assert saved.read_bytes() == VARIANT.replace("\n", "\r\n").encode("utf-8")
+        (variant,) = [e for e in map(proxy.store.get_experiment, done["links"]["experiments"]) if e.arm == "variant"]
+        assert variant.variant["variant_path"] == str(saved)
+        assert variant.variant["variant_sha256"] == text_sha256(VARIANT)
+
+    def test_a_name_a_queued_ab_holds_is_refused_for_another_text_and_taken_for_its_own(self, proxy, tmp_path):
+        # Each is planned while no file is there: the later would be refused only as it starts,
+        # perhaps hours on, behind the work queued before it (found in review).
+        original = tmp_path / "SKILL.md"
+        original.write_text(SKILL, encoding="utf-8")
+        params = {
+            "run": proxy.run_id, "step": "1", "n": 2,
+            "original": str(original), "variant_text": VARIANT, "variant_name": "v9",
+            "target_match": "row_count",
+        }
+        with proxy.client() as client:
+            client.pause()
+            try:
+                first = client.submit("ab", params)
+                for ask in (client.plan, client.submit):
+                    with pytest.raises(ControlError, match=f"is taken by job {first['id'][:8]}, queued with another text") as refused:
+                        ask("ab", {**params, "variant_text": EDITED})
+                    assert refused.value.error["field"] == "variant_name"
+                again = client.submit("ab", {**params, "variant_text": VARIANT.replace("\n", "\r\n")})  # the same text
+            finally:
+                client.resume()
+            first = client.wait_for_job(first["id"], timeout=60, poll=0.1)
+            again = client.wait_for_job(again["id"], timeout=60, poll=0.1)
+        assert first["status"] == "done" and again["status"] == "done", (first["error"], again["error"])
+        assert (proxy.store.home / "variants" / "tally-report" / "v9.md").read_text(encoding="utf-8") == VARIANT
+        assert len(proxy.store.jobs()) == 2
+
+    def test_an_ab_whose_name_was_taken_while_it_waited_is_refused_as_it_starts(self, proxy, tmp_path):
+        # A job is prepared again as its turn comes: the file there then decides.
+        original = tmp_path / "SKILL.md"
+        original.write_text(SKILL, encoding="utf-8")
+        with proxy.client() as client:
+            client.pause()
+            try:
+                job = client.submit("ab", {
+                    "run": proxy.run_id, "step": "1", "n": 2,
+                    "original": str(original), "variant_text": VARIANT, "variant_name": "v9",
+                    "target_match": "row_count",
+                })
+                saved = save_variant(proxy.store.home, "tally-report", "v9", EDITED)
+            finally:
+                client.resume()
+            done = client.wait_for_job(job["id"], timeout=60, poll=0.1)
+        assert done["status"] == "failed" and TAKEN.format("v9") in done["error"]["message"]
+        assert not done["links"].get("experiments") and proxy.store.experiments() == []
+        assert saved.read_text(encoding="utf-8") == EDITED
+
+    def test_a_name_taken_after_the_ab_was_prepared_is_refused_as_it_starts(self, proxy, tmp_path):
+        # Two A/Bs started at once are each prepared before either saves its text.
+        from tuningfork.ops.catalog import CATALOG, JobContext
+
+        original = tmp_path / "SKILL.md"
+        original.write_text(SKILL, encoding="utf-8")
+        params = {
+            "run": proxy.run_id, "step": "1", "n": 2,
+            "original": str(original), "variant_text": VARIANT, "variant_name": "v8",
+            "target_match": "row_count",
+        }
+        with proxy.client() as client:
+            client.plan("ab", params)  # the proxy learns its address from a request for work
+        kind = CATALOG["ab"]
+        context = JobContext(store=proxy.store, proxy=proxy.app.state.jobs.proxy, job_id="")
+        prepared = kind.prepare(context, kind.parse(params))
+        saved = save_variant(proxy.store.home, "tally-report", "v8", EDITED)
+        with pytest.raises(OperationError, match=TAKEN.format("v8")):
+            asyncio.run(kind.execute(context, prepared, progress=None, cancel=None))
+        assert proxy.store.experiments() == []
+        assert saved.read_text(encoding="utf-8") == EDITED
 
     def test_an_ab_must_say_what_it_is_about_before_sampling(self, proxy, tmp_path):
         original = tmp_path / "SKILL.md"

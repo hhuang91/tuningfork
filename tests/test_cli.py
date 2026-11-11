@@ -250,6 +250,13 @@ class TestAB:
         # The target declared at the time is the one re-tested, not a new choice.
         assert "row_count/" in again.output
         assert "declared before sampling" in again.output
+        assert "the variant's file" not in again.output
+        # A file given as the variant is the person's: it can hold another text later.
+        (skill_files / "SKILL.v2.md").write_text(VARIANT + "\nSay which keys you used.\n", encoding="utf-8")
+        later = cli("experiment", experiment_id, "--home", str(path))
+        assert later.exit_code == 0, later.output
+        assert "the variant's file holds another text than the one tested" in later.output
+        assert "row_count and amount_total" in later.output  # the edit it tested, from what its arms were sent
 
 
 class TestReanalysis:
