@@ -142,8 +142,8 @@ class TestTheRefineToolset:
     # 708 for what a probe's continuations wrote (issue #29). `all` grew by 164 for OpenClaw's options,
     # named where a batch and a chain take harness options. Each grew by 150 for the turning point along
     # the runs' paths and, of forks run to the end, which behaviour at the step went on to pass. `all`
-    # grew by 50 where that met a variant's name said to be new for each new text, on both of its A/Bs;
-    # the loops, with one A/B, took it within theirs.
+    # grew by 50 more once a variant's name was said to be new for each new text, on both of its A/B
+    # tools; the loops, with one A/B tool, took that within theirs.
     @pytest.mark.parametrize("toolset, budget", [("refine", 31_250), ("refine-to-end", 34_550), ("all", 55_500)])
     def test_each_toolset_stays_small(self, toolset, budget):
         listed = [tool.model_dump(by_alias=True, exclude_none=True, mode="json")
