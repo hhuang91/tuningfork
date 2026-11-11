@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.8.3 — a refinement from a copy, an A/B's variant name, CRLF skills, and the web UI revised
+
+This release fixes three bugs in how tuningfork keeps and checks the skill texts it tests, and
+revises the web UI. A refinement opened from a copy of the recordings folder, or from one that was
+moved, read its proposals' texts from the folder it was made in, and its page failed once they were
+gone from there. An A/B given its variant as text, under a name whose file held another text, named
+that file in its records while it tested the text it was given, and never saved that text. And for
+a skill whose lines end with CRLF, the same text proposed twice was refused, and the check that
+keeps a proposal off the frontmatter missed the frontmatter. It closes #76.
+
+- **A refinement opened from a copy reads its proposals there** (#78, #76). A proposal's record
+  keeps the path of its saved text, which points into the recordings folder it was made in, and
+  every reader opened that path. Opened from a copy of the folder, or from one that was moved, the
+  refinement's page answered HTTP 500 once the folder it was made in no longer held the texts, and
+  `refine show`, MCP's `show_refinement` and the packet a proposing model is shown failed with it.
+  While that folder still held them, the copy's screens, validations and approvals read that
+  folder's files rather than the copy's own. Deleting a refinement for good from a copy took none
+  of the copy's texts, and now takes them, still never a file outside the recordings folder. A
+  proposal's text is now read by its name in the recordings folder the refinement is opened in,
+  else from the path its record keeps, and only from a file holding the text proposed. Refinements
+  made before are covered. A proposal whose text is found nowhere is shown saying where it was
+  looked for, and screening, validating or approving it is refused until its file is put back.
+  `refine screen` with no `--proposals` leaves it out and says so; with every proposal's text gone,
+  the screen is refused.
+- **An A/B's variant name holds one text** (#80). An A/B given its variant as text, from the A/B
+  editor or over MCP, saves it as `variants/<skill>/<name>.md` as it starts, and its records name
+  that file. Under a name whose file held another text, an A/B tested the text it was given while
+  its records named that file, never saved the text it tested, and its page said the variant was
+  saved under the name. Editing a variant that the editor's *Start from* had loaded, then starting
+  the A/B without a new name, did this. Such an A/B is now refused when it is planned and again as
+  it starts. So is one under a name that an A/B queued or running will save another text under. A
+  browser's text box gives LF line endings, and these checks read texts that differ only in their
+  line endings as one, so a saved variant loaded into the editor and sent again keeps its name and
+  its file. A save never writes over another's file, as two A/Bs started at once under one name
+  could. The editor gives an edited variant a name of its own, never one an A/B queued or running
+  holds, until you type one. A report calls the variant saved only while its file holds the text
+  tested, and where a saved variant's file in the recordings folder holds another text or is gone,
+  it says so: on the page, in `tuningfork experiment` and in MCP's `show_experiment`. A/Bs recorded
+  before keep their records, and their reports follow the same rule. A variant given as a file, as
+  `tuningfork ab --variant` takes one, is tested and recorded as before.
+- **For a skill whose lines end with CRLF, the same text is one proposal, and its frontmatter is
+  guarded as an LF skill's is** (#79). A file written on Windows may end its lines so. The same
+  text proposed twice, by a second proposer or by `refine propose --file` given the same file
+  again, was refused as other text. It is now one proposal, with the second proposer added to it.
+  The check that keeps a proposal off the frontmatter found none in such a skill: an edit to the
+  frontmatter could be taken as a proposal, while every text from the refinement page's *Write one
+  yourself* form, whose box gives LF line endings, was refused as changing the frontmatter. The
+  form also counted every line as changed; it now counts only the lines edited. A person's whole
+  text now takes the line ending most of the skill's lines end with, as an approval does when it
+  writes the file back, so a text from the form is saved with the skill's CRLF, not the box's LF.
+  Proposals saved before keep their line endings.
+- **The web UI is revised** (#77). The stylesheet is rebuilt on one set of design tokens, its text
+  and border colours retuned so that the pairs measured meet WCAG AA contrast in both themes, and
+  the tick, cross, box, theme and menu glyphs are drawn icons, alike on every system. A folder is
+  drawn as the tree it is, each line saying what it is for, and the Words page draws where things
+  live. Places on disk have the glossary's names in every front end, with one exception: the CLI,
+  MCP and the docs call a task file a spec. *Run a task* takes either a scenario or a task file's
+  path, not both. A variant's chip is cyan: its pale teal had read as a pass's green. A
+  forking-token probe leads with a tree under each place in the answer where a forced token changed
+  what the model did, and its report gives the words after each probed token (`after`). The pages
+  call a target the *condition*, and what a run was given besides its task (its harness, model,
+  skill version and server) is its *set-up* in every front end, where "condition" had meant both;
+  JSON keys stay as they were. The docs' pictures were taken again.
+
 ## 0.8.2 — a home that is a link, the pinned clock, and a run given another skill text
 
 This release closes a gap in what the sandbox hides, and fixes two places where tuningfork said or

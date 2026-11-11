@@ -1,3 +1,3 @@
 """tuningfork — a step debugger and experiment lab for agent skills on local LLMs."""
 
-__version__ = "0.8.2"
+__version__ = "0.8.3"
