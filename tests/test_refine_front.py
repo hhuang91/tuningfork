@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -194,6 +195,45 @@ class TestTheCli:
     def invoke(self, stack, *args: str, input: str | None = None):
         result = CliRunner().invoke(cli, [*args, "--home", str(stack.store.home)], input=input)
         return result
+
+    def test_a_proposal_whose_saved_text_is_gone_is_shown_without_it(self, stack):
+        """Issue #76: `refine show` failed outright where a proposal's saved text was gone."""
+        made = refine.create(stack.store, stack.run_id, "write_file", target_rules=RULES)
+        proposal = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="r", proposer={"via": "person"})
+        Path(proposal.data["variant_path"]).unlink()
+        shown = self.invoke(stack, "refine", "show", made.id[:8])
+        assert shown.exit_code == 0, shown.output
+        assert (f"proposal {proposal.id[:8]}'s saved text is missing: {proposal.data['variant_path']} is not there"
+                in shown.output)
+        assert "it cannot be screened, validated or approved until its text is back" in shown.output
+
+    def test_a_screen_of_every_proposal_leaves_out_one_whose_text_is_gone(self, stack):
+        """Issue #76's review: with no --proposals, every proposal is screened; one whose saved text
+        is gone is left out, saying so, rather than refusing the screen of the rest."""
+        made = refine.create(stack.store, stack.run_id, "write_file", target_rules=RULES)
+        gone = refine.add_proposal(stack.store, made.id, edits=[{"old": KEYS["old"], "new": "Name the keys in report.json."}],
+                                   rationale="r", proposer={"via": "person"})
+        kept = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="r", proposer={"via": "person"})
+        Path(gone.data["variant_path"]).unlink()
+        screened = self.invoke(stack, "refine", "screen", made.id[:8], "-n", "4", "--base-url", stack.url)
+        assert screened.exit_code == 0, screened.output
+        assert (f"proposal {gone.id[:8]}'s saved text is missing: {gone.data['variant_path']} is not there; the proposal "
+                "is left out of the screen") in screened.output
+        (screen,) = refine.screens(stack.store, made.id)
+        assert list(screen["proposals"].values()) == [kept.id]
+
+    def test_a_screen_of_every_proposal_whose_texts_are_all_gone_says_why(self, stack):
+        """More proposals than a screen holds, every saved text gone: the refusal says the texts
+        are missing, not that there are too many to screen (round 3 of #76's review)."""
+        made = refine.create(stack.store, stack.run_id, "write_file", target_rules=RULES)
+        proposed = [refine.add_proposal(stack.store, made.id, rationale="r", proposer={"via": "person"},
+                                        edits=[{"old": KEYS["old"], "new": f"Write the totals to report.json ({each})."}])
+                    for each in range(7)]
+        for each in proposed:
+            Path(each.data["variant_path"]).unlink()
+        screened = self.invoke(stack, "refine", "screen", made.id[:8], "-n", "4", "--base-url", stack.url)
+        assert screened.exit_code != 0 and "saved text is missing" in screened.output, screened.output
+        assert "a screen holds at most" not in screened.output
 
     def test_the_loop_from_a_terminal(self, stack, tmp_path):
         started = self.invoke(stack, "refine", "start", stack.run_id[:8], "write_file", "--target-rules", json.dumps(RULES))

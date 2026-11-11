@@ -228,6 +228,7 @@ def prepare_approve(
                              field="refinement")
     refine.refuse_closed(refinement)
     proposal = refine.proposal(store, refinement.id, proposal_ref)
+    _, proposed = proposal.found()  # the text an approval writes: refused first where it is gone
     records = validation_records(store, refinement.id)
     record = _validation(records, proposal, validation)
     found = find_target(store, refinement, spec=spec, target=target)
@@ -246,7 +247,7 @@ def prepare_approve(
             hint="`tuningfork refine show` shows every check with its numbers",
             code="gate", field="validation",
         )
-    after = render(proposal.text(), before)
+    after = render(proposed, before)
     if after == before:
         raise OperationError("the edit changes nothing in this file", code="no_change", field="proposal")
     passing = sum(

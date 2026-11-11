@@ -5,6 +5,7 @@ import {
   ago, chip, crumbs, foldPanel, h, info, kv, loading, panel, plural, pretty, rateBar, replace, short, when,
 } from "../dom.js";
 import { costOf } from "../cost.js";
+import { placeOf } from "../folders.js";
 import { live } from "../live.js";
 import { settle } from "../nav.js";
 import { behaviourList, comparisonView, distributionView, endHeadline, fanOf, forkingView, formatP, notCounted, screenView, tallyView, targetLine } from "../results.js";
@@ -251,6 +252,12 @@ function wordingPanel(wording) {
     variant.name
       ? h("p", { class: "hint" }, "The variant is saved as ", h("span", { class: "mono" }, variant.name), ", one of ",
           h("a", { href: `#/skills/${enc(variant.skill)}` }, `${variant.skill}'s saved variants`), ".")
+      : null,
+    // A file can hold another text than the one tested: an A/B started under a name another text
+    // had taken, before that was refused, named that file.
+    variant.file
+      ? h("p", { class: "hint warn-text" }, "The variant's file, ", placeOf(variant.path, live.home, { file: true }),
+          `, ${variant.file}${diff ? ": the edit above is read from what the A/B recorded" : ""}.`)
       : null,
   ], {
     meta: h("span", { class: "muted" },

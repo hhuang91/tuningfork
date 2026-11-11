@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 import shutil
+from pathlib import Path
 
+import httpx
 import pytest
 
 from tuningfork.ops import approve, refine
@@ -315,3 +317,18 @@ def test_a_refused_code_never_tells_the_right_one(stack):
     plan = prepare_approve(stack.store, made.id, proposal.id)
     found = refused(execute_approve, stack.store, plan, confirm="00000000", front_end="ui")
     assert plan.code not in found.message + (found.hint or "") + json.dumps(found.to_json())
+
+
+def test_a_proposal_whose_saved_text_is_gone_is_never_approved(stack):
+    """Issue #76: what an approval writes is the proposal's saved text; with it gone, nothing is."""
+    made, proposal = validated(stack)
+    before = stack.skill.read_bytes()
+    Path(proposal.data["variant_path"]).unlink()
+    found = refused(prepare_approve, stack.store, made.id, proposal.id)
+    assert found.code == "text_missing" and found.message == (
+        f"proposal {proposal.id[:8]}'s saved text is missing: {proposal.data['variant_path']} is not there")
+    # The page's plan: refused for where things stand, not for what was asked.
+    plan = httpx.get(f"{stack.url}/_tuningfork/api/refinements/{made.id}/approve", params={"proposal": proposal.id},
+                     timeout=60)
+    assert plan.status_code == 409 and plan.json()["error"]["code"] == "text_missing"
+    assert stack.skill.read_bytes() == before

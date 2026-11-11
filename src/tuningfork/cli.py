@@ -3775,6 +3775,8 @@ def _print_wording(wording) -> None:
     """The edit an A/B tested, as a line diff of its two texts."""
     if wording is None:
         return
+    if wording.variant.get("file"):
+        console.print(f"  [yellow]the variant's file {escape(wording.variant['file'])}[/yellow]")
     if wording.diff is None:
         console.print(f"  the edit  [yellow]not shown: {escape(wording.missing or '')}[/yellow]")
         return
@@ -3970,6 +3972,10 @@ def refine_show(
         console.print(f"    why  {_clip(first.get('rationale') or '', full=False, limit=400)}")
         for warning in item.get("warnings") or []:
             console.print(f"    [yellow]{escape(warning)}[/yellow]")
+        if item.get("missing"):
+            console.print(f"    [yellow]{escape(item['missing'])}[/yellow]", soft_wrap=True)
+            if shown["refinement"]["status"] == "open" and not shown["refinement"].get("trashed_at"):
+                console.print("    [dim]it cannot be screened, validated or approved until its text is back[/dim]")
         _print_diff(item["diff"])
         for verdict in item["screens"]:
             console.print(f"    screened  {_screen_verdict(verdict)}")
@@ -4176,7 +4182,7 @@ def refine_screen(
     proposals: Optional[str] = typer.Option(
         None, "--proposals",
         help="The proposals to screen, comma-separated ids or prefixes: the family the correction "
-        "counts. Default: every proposal the refinement has, if there are at most 6.",
+        "counts. Default: every proposal whose saved text is there, if there are at most 6.",
     ),
     n: int = typer.Option(20, "-n", help="Samples per arm, the original's included."),
     alpha: float = typer.Option(0.05, help="Family-wise significance level."),
@@ -4225,10 +4231,19 @@ def refine_screen(
         if proposals:
             chosen = [each.strip() for each in proposals.split(",") if each.strip()]
         else:
-            chosen = [each.id for each in refine.proposals(store, reference)]
-            if len(chosen) > MAX_ARMS:
+            # Every proposal whose saved text is there: one gone is left out, saying so — unless
+            # every one is, when the screen's refusal says why.
+            found = refine.proposals(store, reference)
+            there = [each.id for each in found if each.saved() is not None]
+            for each in found:
+                if there and each.id not in there:
+                    console.print(f"[yellow]{escape(each.missing())}; the proposal is left out of the screen[/yellow]",
+                                  soft_wrap=True)
+            chosen = there or [each.id for each in found]
+            if there and len(chosen) > MAX_ARMS:
                 raise OperationError(
-                    f"the refinement has {len(chosen)} proposals; a screen holds at most {MAX_ARMS}",
+                    f"the refinement has {len(chosen)} proposals whose saved text is there; "
+                    f"a screen holds at most {MAX_ARMS}",
                     hint="name the ones to screen with --proposals",
                 )
         if to_end:

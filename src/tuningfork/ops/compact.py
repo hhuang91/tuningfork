@@ -710,6 +710,7 @@ def wording(found: dict[str, Any]) -> dict[str, Any]:
     data = {
         "original": (found.get("original") or {}).get("label"),
         "variant": (found.get("variant") or {}).get("label"),
+        "variant_file": (found.get("variant") or {}).get("file"),
         "changed": diff.get("changed") if diff else None,
         "diff": [line for hunk in diff["hunks"] for line in hunk["lines"] if line["op"] != " "][:12] if diff else None,
         "form": found.get("form"),
@@ -721,10 +722,11 @@ def wording(found: dict[str, Any]) -> dict[str, Any]:
 def wording_lines(found: dict[str, Any] | None) -> list[str]:
     if not found:
         return []
+    held = [f"the variant's file {found['variant_file']}"] if found.get("variant_file") else []
     if found.get("changed") is None:
-        return [f"the edit it tested is not shown: {found.get('missing')}"]
+        return [f"the edit it tested is not shown: {found.get('missing')}", *held]
     lines = [f"the edit it tested, original {found.get('original')} → variant {found.get('variant')}: "
-             f"{found['changed']} line(s) changed"]
+             f"{found['changed']} line(s) changed", *held]
     lines += [f"  {line['op']} {clip(line['text'], 200)}" for line in (found.get("diff") or [])[:6]]
     return lines
 

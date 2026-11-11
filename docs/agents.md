@@ -178,7 +178,9 @@ reads `<redacted>` on each line it holds, and each line keeps its number: an edi
 lines, but cannot write `<redacted>` into the skill, changes a key whole or not at all, and leaves
 the words that make it a key (`password=` before it) as they are. A whole
 wording given to `start_ab` as text, written from the skill as shown, is set on the skill as it
-stands: each line it keeps as shown is the skill's own, the key with it.
+stands: each line it keeps as shown is the skill's own, the key with it. Its `variant_name` holds
+that text alone: another text under a name already saved, or under one an A/B still waiting will
+save, is refused.
 
 A result carries its text and its structured content, because a client shows the model one of
 them: Claude Code the structured content, OpenJarvis the text. Hermes shows both, so give it

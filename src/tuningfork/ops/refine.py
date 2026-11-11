@@ -11,7 +11,9 @@ A refinement is a folder in the recordings folder, `refinements/<id>/`:
     trashed.json         there while it is in the trash (`ops.trash`): left out of the list,
                          taking no new work, and shown as it was
     proposals/<pid>.json each proposal — its edits, and who proposed it and why. The text is
-                         a saved variant (`ops.variants`), so an A/B or a batch takes it as is
+                         a saved variant (`ops.variants`), so an A/B or a batch takes it as is,
+                         read by its name in the recordings folder the refinement is opened
+                         in, a copy of the folder keeping its own (`Proposal.saved`)
     packets/<sha>.json   what a proposer was shown, by its digest (`ops.packet`)
     proposer/            each call of the built-in proposer: its prompt and its redacted answer
 
@@ -473,18 +475,98 @@ class Proposal:
     data: dict[str, Any]
     #: Given back for a text already proposed: the proposer was added to the one there.
     duplicate: bool = False
+    #: Where the recordings folder it was read from keeps its text, by the name its record keeps
+    #: (`ops.variants`). A copy of the folder, or the folder moved, holds the text there, while the
+    #: path its record keeps names the folder it was made in (issue #76).
+    here: Path | None = None
+
+    def places(self) -> list[Path]:
+        """Where its text is looked for: in this recordings folder, then where it was saved."""
+        places = [self.here] if self.here is not None else []
+        saved = self.data.get("variant_path")
+        if saved and Path(saved) not in places:
+            places.append(Path(saved))
+        return places
+
+    def saved(self) -> tuple[Path, str] | None:
+        """The file holding its text, and the text: the first of its places that holds the text
+        proposed, whose digest begins with its id. None where none does."""
+        for path in self.places():
+            text, _ = _held(path, self.id)
+            if text is not None:
+                return path, text
+        return None
+
+    def missing(self) -> str:
+        """Why its text cannot be read: what each place it is looked for holds instead."""
+        said = [f"{path}{'' if path == self.here else ', where it was saved,'} {_held(path, self.id)[1]}"
+                for path in self.places()]
+        return f"proposal {self.id[:8]}'s saved text is missing: {', and '.join(said) or 'its record names no file'}"
+
+    def found(self) -> tuple[Path, str]:
+        """`saved`, or refused in the words of `missing`: nothing is screened, validated or
+        approved without the text proposed."""
+        saved = self.saved()
+        if saved is None:
+            raise OperationError(self.missing(), hint=self.remedy(), code="text_missing", field="proposals")
+        return saved
+
+    def remedy(self) -> str | None:
+        """How its text comes back: its file put back where it is looked for first, this recordings
+        folder's place. Never where that file is there and cannot be read, which its permissions
+        decide."""
+        places = self.places()
+        if not places or _held(places[0], self.id)[1].startswith("cannot be read"):
+            return None
+        where = f" at {places[0]}" if len(places) > 1 else ""
+        return f"put its file back{where}, from a copy of the recordings folder that still holds it"
 
     def text(self) -> str:
-        return _text(Path(self.data["variant_path"]))
+        return self.found()[1]
 
     def to_json(self) -> dict[str, Any]:
         return {**self.data, "duplicate": self.duplicate}
 
 
+def _held(path: Path, pid: str) -> tuple[str | None, str]:
+    """What `path` holds of a proposal's saved text: the text, where its digest begins with the
+    proposal's id; else None, and, in words, what the path holds or why it cannot be read."""
+    from tuningfork.experiment.skill import text_sha256
+
+    try:
+        text = _text(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None, "is not there"
+    except OSError as error:
+        return None, f"cannot be read ({error.strerror or error})"
+    except ValueError:
+        return None, "holds another text"  # not UTF-8: never the text proposed
+    if pid and text_sha256(text).startswith(pid):
+        return text, "holds it"
+    return None, "holds another text"
+
+
+def _proposal(store: Store, refinement: Refinement, pid: str, data: dict[str, Any], *,
+              duplicate: bool = False) -> Proposal:
+    """A proposal as the recordings folder it is read from holds it: its text looked for there
+    first, by the name its record keeps."""
+    from tuningfork.ops.variants import path_for
+
+    try:
+        here = path_for(store.home, refinement.skill, data.get("variant") or "")
+    except OperationError:
+        here = None  # a name no variant could have: where it was saved is all there is
+    return Proposal(pid, data, duplicate=duplicate, here=here)
+
+
 def proposals(store: Store, reference: str) -> list[Proposal]:
-    refinement = get(store, reference)
+    return _proposals(store, get(store, reference))
+
+
+def _proposals(store: Store, refinement: Refinement) -> list[Proposal]:
     folder = refinement.folder / "proposals"
-    found = [Proposal(path.stem, _read(path)) for path in folder.glob("*.json")] if folder.is_dir() else []
+    found = [_proposal(store, refinement, path.stem, _read(path)) for path in folder.glob("*.json")] \
+        if folder.is_dir() else []
     return sorted(found, key=lambda proposal: proposal.data.get("created_at", 0))
 
 
@@ -507,10 +589,17 @@ def add_proposal(
 
     `strict` holds a proposal to a few small edits; a person's own text only warns."""
     from tuningfork.config import REDACTED
-    from tuningfork.experiment.skill import NothingToCompare, split_frontmatter, substitute, text_sha256
+    from tuningfork.experiment.skill import (
+        NothingToCompare,
+        normalize_newlines,
+        split_frontmatter,
+        substitute,
+        text_sha256,
+    )
+    from tuningfork.ops.approve import line_endings
     from tuningfork.ops.diff import apply_resolved, line_diff, resolve_edits
     from tuningfork.ops.experiments import load
-    from tuningfork.ops.variants import save_variant
+    from tuningfork.ops.variants import path_for, save_variant
 
     refinement = get(store, reference)
     refuse_closed(refinement)
@@ -547,11 +636,21 @@ def add_proposal(
         kept = [{"lines": found["lines"], "old": found["shown"], "new": found["new"], "given": found["given"]}
                 for found in resolved]
     else:
+        # A person's whole text takes the line ending most of the skill's lines end with, the one
+        # an approval writes the file back with: a text box sends LF whatever the skill's lines end
+        # with, and the full runs a validation makes, each given the file, would set the original
+        # against an edit that differs from it in every line.
+        text = normalize_newlines(text)
+        if line_endings(baseline.encode("utf-8"))[0] == "CRLF":
+            text = text.replace("\n", "\r\n")
         kept = None
     assert text is not None
     if text_sha256(text) == text_sha256(baseline):
         raise OperationError("the proposal changes nothing", code="bad_params", field="edits")
-    if split_frontmatter(text)[0].strip() != split_frontmatter(baseline)[0].strip():
+    # A frontmatter is found only where its lines end with LF: read so, a skill whose lines end with
+    # CRLF has one too.
+    before, after = (split_frontmatter(normalize_newlines(each))[0].strip() for each in (baseline, text))
+    if after != before:
         raise OperationError(
             "the frontmatter is how a harness chooses the skill, which a screen at one step "
             "cannot measure: edit the skill's body",
@@ -585,7 +684,14 @@ def add_proposal(
         "at": time.time(),
     }
     name = f"r{refinement.id[:8]}-{pid[:8]}"
-    path = save_variant(store.home, refinement.skill, name, text)
+    path = path_for(store.home, refinement.skill, name)
+    # A file there holding this text with its lines ended otherwise is this proposal's all the same,
+    # since its id reads every line's ending as one, and it stays as it is: on a skill whose lines
+    # mix their endings, an edit keeps the mix and a person's whole text takes the commonest; an
+    # older tuningfork saved a person's text as it was given; a copy of the folder may have had its
+    # line endings changed.
+    if _held(path, pid)[0] is None:
+        path = save_variant(store.home, refinement.skill, name, text)
     record = refinement.folder / "proposals" / f"{pid}.json"
     data = {
         "id": pid,
@@ -607,8 +713,8 @@ def add_proposal(
         data = _read(record)
         data["proposers"].append(entry)
         _replace(record, data)
-        return Proposal(pid, data, duplicate=True)
-    return Proposal(pid, data)
+        return _proposal(store, refinement, pid, data, duplicate=True)
+    return _proposal(store, refinement, pid, data)
 
 
 def proposal(store: Store, reference: str, pid: str) -> Proposal:
@@ -660,8 +766,12 @@ def prepare_refinement_screen(
         found = proposal(store, refinement.id, each)
         if found.id not in [already.id for already in chosen]:
             chosen.append(found)
-    arms = [(found.id[:8], found.text(), {"proposal": found.id, "variant_path": found.data["variant_path"]})
-            for found in chosen]
+    arms = []
+    for found in chosen:
+        # Its text where it is found, this recordings folder's own first: a fork to the end is given
+        # that file.
+        path, text = found.found()
+        arms.append((found.id[:8], text, {"proposal": found.id, "variant_path": str(path)}))
     if refinement.target.get("kind") == "check" and not to_end:
         raise OperationError(
             "this refinement's target is the task's check, which no answer at the step can be judged by",
@@ -823,16 +933,18 @@ def made_by(store: Store, refinement: Refinement) -> Made:
         for ids in ((record.get("training") or {}).get("runs") or {}).values():
             runs.update(ids or [])
     home = store.home.resolve()
-    variants = []
-    for proposal_data in (_read(path) for path in (refinement.folder / "proposals").glob("*.json")):
-        path = Path(proposal_data.get("variant_path") or "")
-        try:
-            path.resolve().relative_to(home)  # its own saved text, never a file elsewhere
-        except ValueError:
-            continue
-        if path.is_file():
-            variants.append(path)
-    return Made(experiments=sorted(experiments), runs=sorted(runs), variants=sorted(variants))
+    variants: dict[Path, Path] = {}
+    # Its texts where this recordings folder keeps them — a copy's own, never the original's.
+    for proposal in _proposals(store, refinement):
+        for path in proposal.places():
+            try:
+                resolved = path.resolve()
+                resolved.relative_to(home)  # its own saved text, never a file elsewhere
+            except ValueError:
+                continue
+            if path.is_file():
+                variants.setdefault(resolved, path)  # once, though two places name it
+    return Made(experiments=sorted(experiments), runs=sorted(runs), variants=sorted(variants.values()))
 
 
 def view(store: Store, reference: str, *, held_out: bool = False, masking: Any = None) -> dict[str, Any]:
@@ -864,15 +976,20 @@ def view(store: Store, reference: str, *, held_out: bool = False, masking: Any =
                     "baseline": report["baseline"]["target"], "adjusted_p": arm.get("adjusted_p"),
                     "survives": arm.get("survives"), "worse": arm.get("worse"), "complete": report["complete"],
                 })
-    found_proposals = proposals(store, refinement.id)
-    texts = [baseline, *(each.text() for each in found_proposals)]
+    found_proposals = _proposals(store, refinement)
+    saved = [each.saved() for each in found_proposals]
+    texts = [baseline, *(found[1] for found in saved if found is not None)]
     if masking is not None:
         texts = masking.alike(texts)
-    baseline = texts[0]
+    baseline, kept = texts[0], iter(texts[1:])
     items = []
-    for each, text in zip(found_proposals, texts[1:]):
+    for each, found in zip(found_proposals, saved):
         proposed = masking.shown(each.to_json()).value if masking is not None else each.to_json()
-        items.append({**proposed, "diff": line_diff(baseline, text)["hunks"],
+        # A proposal whose text is gone is shown without it, saying where it was looked for: the
+        # rest of the refinement as it is.
+        missing = None if found is not None else each.missing()
+        items.append({**proposed, "diff": line_diff(baseline, next(kept))["hunks"] if found is not None else [],
+                      "missing": masking.shown(missing).value if masking is not None and missing else missing,
                       "screens": verdicts.get(each.id, [])})
     packets = sorted(path.stem for path in (refinement.folder / "packets").glob("*.json")) \
         if (refinement.folder / "packets").is_dir() else []

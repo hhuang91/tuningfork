@@ -701,7 +701,7 @@ What is left to look at:
 - **What a deletion leaves:** a job's record of the work it did, a chain's record, a refinement's
   quotes of a run it cites, what a scenario or a skill added took from a run, the changelog and old
   versions an approval kept beside a skill copied into `skills/` or a scenario, and an A/B's
-  wording saved in `variants/` — in a copy, a refinement's proposals there too.
+  wording saved in `variants/`.
 - **What an older tuningfork recorded.** It kept more in clear, and `serve` and `ui` say when the
   folder holds what one recorded: `tuningfork scan --home <copy>` says where, run by run, never the
   key, and prints the `trash` commands that set it aside, to delete for good as in step 2.

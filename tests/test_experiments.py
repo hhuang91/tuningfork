@@ -348,6 +348,26 @@ class TestAMaskedContext:
                        base_url=UPSTREAM)
         assert refused.value.field == "variant_text" and REDACTED in refused.value.message
 
+    def test_a_variant_written_from_the_skill_as_shown_again_is_the_text_its_name_holds(self, store, tmp_path):
+        """Saved under its name as the A/B starts, it is the text tested, the key set back on it: the
+        same text sent again, as an agent repeating an A/B sends it, is that variant's, not another
+        text under its name."""
+        from tuningfork.ops.experiments import prepare_ab
+
+        skill = SKILL + f"\nLog in with {KEY}.\n"
+        (tmp_path / "SKILL.md").write_text(skill, encoding="utf-8")
+        run = record_pilot(store, skill=skill)
+        edited = store.masking.shown(skill, lines=True).value.replace(
+            "Write the totals to report.json.", "Write the totals to report.json, using the keys row_count and amount_total.")
+        saved = tmp_path / "variants" / "tally-report" / "v2.md"
+        first = prepare_ab(store, run, "1", variant=saved, variant_text=edited, original=tmp_path / "SKILL.md",
+                           base_url=UPSTREAM)
+        saved.parent.mkdir(parents=True)
+        saved.write_text(first.variant_text, encoding="utf-8")
+        again = prepare_ab(store, run, "1", variant=saved, variant_text=edited, original=tmp_path / "SKILL.md",
+                           base_url=UPSTREAM)
+        assert again.variant_text == first.variant_text and f"Log in with {KEY}." in again.variant_text
+
     def test_a_variant_keeps_a_key_whole_or_not_at_all_and_a_person_s_text_is_as_given(self, store, tmp_path):
         """A private key's lines each read `<redacted>` as show_skill shows them: a variant written
         from it that keeps some of them would test a broken key, and is refused; one that leaves them
@@ -677,6 +697,83 @@ class TestAB:
             )
 
         assert mock_server.requests == []  # nothing was spent on a doomed experiment
+
+    def test_a_report_says_what_a_variants_file_holds_only_where_it_can_tell(self, store, tmp_path, monkeypatch):
+        """A report names a saved variant only while its file holds the text tested, and otherwise says
+        what the file holds — but nothing of a path as it was typed, relative to a folder the record
+        does not keep, and never that a file outside the recordings folder is gone: a copy of the folder,
+        read elsewhere, names the files of the one it was copied from (found in review)."""
+        import hashlib
+        import os
+
+        from tuningfork.experiment.skill import text_sha256
+        from tuningfork.ops.experiments import _side
+        from tuningfork.ops.variants import save_variant
+
+        def side(path, text=VARIANT):
+            return _side(store, {"variant_path": str(path), "variant_sha256": text_sha256(text)}, "variant")
+
+        saved = save_variant(store.home, "tally-report", "v1", VARIANT.replace("\n", "\r\n"))
+        assert side(saved) == {"path": str(saved), "label": "v1", "skill": "tally-report", "name": "v1"}
+        assert side(saved, VARIANT + "Say which keys you used.\n") == {
+            "path": str(saved), "label": "tally-report/v1.md", "file": "holds another text than the one tested"}
+        copied_from = tmp_path / "copied-from" / "variants" / "tally-report" / "v1.md"
+        assert side(copied_from) == {"path": str(copied_from), "label": "tally-report/v1.md"}
+        # The folder a relative path is read from now holds another file of that name.
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "variants" / "tally-report").mkdir(parents=True)
+        (tmp_path / "variants" / "tally-report" / "v1.md").write_text("Another text.\n", encoding="utf-8")
+        assert side("variants/tally-report/v1.md") == {"path": "variants/tally-report/v1.md", "label": "tally-report/v1.md"}
+        # A fork digests its text as given: a file holding those bytes, CR and all, holds it.
+        given = tmp_path / "given.md"
+        given.write_bytes(VARIANT.replace("\n", "\r\n").encode("utf-8"))
+        assert "file" not in _side(store, {"variant_path": str(given), "variant_sha256": hashlib.sha256(
+            VARIANT.replace("\n", "\r\n").encode("utf-8")).hexdigest()}, "variant")
+        mine = tmp_path / "mine.md"
+        mine.write_bytes(b"\xff not UTF-8")
+        assert side(mine)["file"] == "holds another text than the one tested"
+        mine.write_text(VARIANT, encoding="utf-8")
+        assert "file" not in side(mine) and "file" not in _side(store, {"variant_path": str(mine)}, "variant")
+        mine.write_text(VARIANT + "Say which keys you used.\n", encoding="utf-8")
+        assert side(mine)["file"] == "holds another text than the one tested"
+        assert "file" not in _side(store, {"variant_path": str(mine)}, "variant")  # no digest to tell by
+        if os.geteuid() != 0:  # root reads it all the same
+            mine.chmod(0)
+            try:
+                assert side(mine)["file"].startswith("cannot be read (")
+            finally:
+                mine.chmod(0o600)
+        saved.unlink()
+        assert side(saved)["file"] == "is not there"
+
+    @pytest.mark.parametrize("home", ["rec", "."])
+    def test_a_recordings_folder_given_as_a_relative_path_names_its_saved_variants(self, tmp_path, monkeypatch, home):
+        """`serve --home rec` keeps its folder as typed, so each variant it saves is recorded under
+        `rec/variants/`: read from where the folder was given, it is named as main named it. Any other
+        relative path, as `--variant SKILL.v2.md` typed elsewhere records it, is said nothing of — under
+        `--home .` too, whose folder has no parts to tell it by (found in review)."""
+        from pathlib import Path
+
+        from tuningfork.experiment.skill import text_sha256
+        from tuningfork.ops.experiments import _side
+        from tuningfork.ops.variants import save_variant
+        from tuningfork.store.db import Store
+
+        (tmp_path / "here").mkdir()
+        monkeypatch.chdir(tmp_path / "here")
+        store = Store(Path(home))
+        try:
+            saved = save_variant(store.home, "tally-report", "v1", VARIANT)
+            assert not saved.is_absolute()
+            info = {"variant_path": str(saved), "variant_sha256": text_sha256(VARIANT)}
+            assert _side(store, info, "variant") == {"path": str(saved), "label": "v1", "skill": "tally-report", "name": "v1"}
+            saved.write_text("Another text.\n", encoding="utf-8")
+            assert _side(store, info, "variant")["file"] == "holds another text than the one tested"
+            for typed in ("elsewhere/variants/tally-report/v1.md", "SKILL.v2.md", "variants/tally-report/SKILL.v2.md"):
+                found = _side(store, {"variant_path": typed, "variant_sha256": text_sha256(VARIANT)}, "variant")
+                assert found == {"path": typed, "label": "/".join(Path(typed).parts[-2:])}
+        finally:
+            store.close()
 
 
 class TestTargets:

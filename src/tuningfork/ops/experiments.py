@@ -669,6 +669,9 @@ class ABPlan:
     alpha: float = 0.05
     #: Things a person should know before sampling, which do not stop it.
     warnings: list[str] = field(default_factory=list)
+    #: The variant was given as text, which is saved at `variant` as the A/B starts, and only
+    #: then (`catalog.execute_ab_job`).
+    given_text: bool = False
 
     @property
     def estimate(self) -> Estimate | None:
@@ -742,7 +745,8 @@ def prepare_ab(
     original is the skill the run kept — `skill` names it where the run kept several.
 
     `variant` is the variant's file. With `variant_text`, that is where the text will be
-    saved when the A/B starts — a wording edited in the browser is written only then.
+    saved when the A/B starts — a wording edited in the browser is written only then — and a
+    file there holding another text is refused: its experiments name that file.
     """
     from tuningfork.experiment import (
         CheckpointError,
@@ -796,12 +800,17 @@ def prepare_ab(
                 field="original" if path == original else "variant",
             )
     original_text = original.read_text(encoding="utf-8")
+    given_text = variant_text is not None
     if variant_text is None:
         variant_text = variant.read_text(encoding="utf-8")
     else:
         variant_text = variant_onto(store, original_text, variant_text)
     if variant_text == original_text:
         raise OperationError("the variant and the original are the same text", field="variant_text")
+    if given_text:
+        from tuningfork.ops.variants import refuse_taken
+
+        refuse_taken(variant, variant_text)
 
     warnings: list[str] = []
     try:
@@ -853,6 +862,7 @@ def prepare_ab(
         target=declared,
         alpha=alpha,
         warnings=warnings,
+        given_text=given_text,
     )
 
 
@@ -917,7 +927,8 @@ class Wording:
     """The edit an A/B tested: its two texts, and the lines between them."""
 
     #: Each side's file as the A/B named it (`path`), and a short name for it (`label`); a
-    #: variant saved in this home's variants folder adds its `skill` and `name`.
+    #: variant saved in this home's variants folder adds its `skill` and `name` while its file
+    #: holds the text tested, and a file that does not says what it holds (`file`).
     original: dict[str, Any]
     variant: dict[str, Any]
     #: `ops.diff.line_diff` from the original to the variant, numbered as the skill file's
@@ -953,9 +964,10 @@ def ab_wording(store: Store, arms: dict[str, Any], *, masking: Any = None) -> Wo
     info = next((arm.variant for arm in arms.values() if arm.variant), None)
     if not info:
         return None
-    found = Wording(original=_side(store, info, "original"), variant=_side(store, info, "variant"))
-    offset = 0
     texts = _fork_texts(store, arms.get("variant"))
+    found = Wording(original=_side(store, info, "original", texts[0] if texts else None),
+                    variant=_side(store, info, "variant", texts[1] if texts else None))
+    offset = 0
     if texts is not None:
         found.source = "fork"
     elif {"original", "variant"} <= set(arms) and arms["variant"].settings.get("reach") != "end":
@@ -985,21 +997,40 @@ def ab_wording(store: Store, arms: dict[str, Any], *, masking: Any = None) -> Wo
     return found
 
 
-def _side(store: Store, info: dict[str, Any], which: str) -> dict[str, Any]:
+def _side(store: Store, info: dict[str, Any], which: str, tested: str | None = None) -> dict[str, Any]:
     """One side of an A/B: its file, and a short name — a saved variant's own, else the file's
-    folder and name."""
+    folder and name. A saved variant is named only while its file holds the text the A/B tested
+    (`tested`, where the A/B kept it): one started under a name another text had taken, before
+    that was refused, named that file. Where the file does not hold that text, `file` says what
+    it holds. Of a relative path, the record does not keep the folder it was read from, so
+    nothing is said, but of a variant saved in this recordings folder given as a relative path
+    (`serve --home rec` saves them under `rec/variants/`, `--home .` under `variants/`). A file
+    outside this recordings folder is never said to be gone: a copy of the folder, read
+    elsewhere, names the files of the one it was copied from."""
     from tuningfork.ops.variants import NAME, root
 
     path = info.get(f"{which}_path")
     side: dict[str, Any] = {"path": path, "label": "/".join(Path(path).parts[-2:]) if path else "—"}
     if not path:
         return side
+    typed, saved_in = Path(path), root(store.home)
+    saved = (typed.parent.parent == saved_in and typed.suffix == ".md"
+             and NAME.fullmatch(typed.parent.name) and NAME.fullmatch(typed.stem))
+    if not typed.is_absolute() and (saved_in.is_absolute() or not saved):
+        return side
+    text, held = _held(info, which, tested)
+    try:
+        inside = Path(path).resolve().relative_to(Path(store.home).resolve())
+    except (OSError, ValueError):
+        inside = None
+    if held and (inside is not None or held != "is not there"):
+        side["file"] = held
     try:
         skill, name = Path(path).resolve().relative_to(root(store.home).resolve()).parts
     except (OSError, ValueError):
         return side
     stem = name[: -len(".md")] if name.endswith(".md") else ""
-    if NAME.fullmatch(skill) and NAME.fullmatch(stem):
+    if NAME.fullmatch(skill) and NAME.fullmatch(stem) and text is not None:
         side.update(label=stem, skill=skill, name=stem)
     return side
 
@@ -1019,24 +1050,38 @@ def _fork_texts(store: Store, arm: Any) -> tuple[str, str] | None:
 
 def _file_texts(info: dict[str, Any]) -> tuple[str, str] | None:
     """The texts in the files an A/B names, each only if it is still the text the A/B
-    recorded (its digest: an A/B at a step digests it with its line endings plain, a fork as
-    read)."""
+    recorded."""
+    original, variant = (_held(info, which)[0] for which in ("original", "variant"))
+    return (original, variant) if original is not None and variant is not None else None
+
+
+def _held(info: dict[str, Any], which: str, tested: str | None = None) -> tuple[str | None, str | None]:
+    """The text in the file an A/B names for one side, its lines ended with LF, where it is
+    still the text the A/B tested, every line's ending read as one; else None, and what the file
+    holds, in words — none where the A/B kept nothing to tell by. The text itself where the A/B
+    kept it (`tested`: a fork's launch keeps it as given), else its digest: an A/B at a step
+    digests it with its line endings plain, a fork as given, which its file holds as saved."""
     import hashlib
 
-    from tuningfork.experiment.skill import text_sha256
+    from tuningfork.experiment.skill import normalize_newlines, text_sha256
 
-    texts = []
-    for which in ("original", "variant"):
-        path = info.get(f"{which}_path")
-        try:
-            text = Path(path).read_text(encoding="utf-8") if path else None
-        except (OSError, ValueError):
-            text = None
-        digests = {text_sha256(text), hashlib.sha256(text.encode()).hexdigest()} if text is not None else set()
-        if info.get(f"{which}_sha256") not in digests:
-            return None
-        texts.append(text)
-    return texts[0], texts[1]
+    path, digest = info.get(f"{which}_path"), info.get(f"{which}_sha256")
+    if not path or not (digest or tested is not None):
+        return None, None
+    try:
+        with open(path, encoding="utf-8", newline="") as handle:
+            text = handle.read()
+    except (FileNotFoundError, NotADirectoryError):
+        return None, "is not there"
+    except UnicodeDecodeError:
+        return None, "holds another text than the one tested"  # not UTF-8: never the text tested
+    except OSError as error:
+        return None, f"cannot be read ({error.strerror or error})"
+    if tested is not None:
+        same = text_sha256(text) == text_sha256(tested)
+    else:
+        same = digest in {text_sha256(text), hashlib.sha256(text.encode()).hexdigest()}
+    return (normalize_newlines(text), None) if same else (None, "holds another text than the one tested")
 
 
 def _renumbered(diff: dict[str, Any], offset: int) -> dict[str, Any]:

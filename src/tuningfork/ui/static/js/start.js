@@ -426,14 +426,19 @@ async function abForm(step, toEnd = false) {
 
 async function abBody(step, toEnd, skill, named) {
   const targets = toEnd ? null : await api.get(`/runs/${enc(step.run.id)}/steps/${step.idx}/targets`);
-  const saved = await api.get(`/variants?skill=${enc(skill.skill)}`);
+  const [saved, jobs] = await Promise.all([api.get(`/variants?skill=${enc(skill.skill)}`), api.get("/jobs")]);
+  // The names A/Bs not yet started will save their texts under: taken, though no file holds them yet.
+  const pending = jobs
+    .filter((job) => ["ab", "ab-to-end"].includes(job.kind) && ["queued", "running"].includes(job.status))
+    .map((job) => job.params?.variant_name)
+    .filter(Boolean);
   // The skill the variant replaces, where the run kept several.
   const which = named ? { skill: named } : {};
   if (toEnd) {
     const { element } = planForm({
       kind: "ab-to-end",
       fields: [
-        variantEditor(skill, saved),
+        variantEditor(skill, saved, pending),
         h("p", { class: "hint" }, "The condition is the task's check passing, set by the task before any fork runs."),
         ...forkFields({ alpha: true }),
       ],
@@ -452,7 +457,7 @@ async function abBody(step, toEnd, skill, named) {
   }
   const { element } = planForm({
     kind: "ab",
-    fields: [variantEditor(skill, saved), targetPicker(targets, { run: step.run.id, idx: step.idx }), ...samplingFields({ alpha: true })],
+    fields: [variantEditor(skill, saved, pending), targetPicker(targets, { run: step.run.id, idx: step.idx }), ...samplingFields({ alpha: true })],
     read: (form) => {
       const params = {
         run: step.run.id,

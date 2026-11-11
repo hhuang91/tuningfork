@@ -113,7 +113,8 @@ database's log emptied once no other process reads it (`Store.checkpoint`). A jo
 record of the work, a chain its record and the skill each link left, and what was made of a run
 — a scenario, a skill added — what it took: each goes only as itself, a chain by hand. A
 refinement goes with what it made (`refine.made_by`): its screens, its validations' forks and
-fresh training runs, its proposals' saved texts and its folder — never the run it studies, nor
+fresh training runs, its proposals' saved texts where the recordings folder it is deleted from
+keeps them (a copy's own, never the original's) and its folder — never the run it studies, nor
 the changelog and old versions an approval wrote beside the skill folder. One in the trash is
 shown as it was and takes no new work (`refine.refuse_closed`). A fork an experiment drew goes
 to the trash, and is deleted, only with its experiment, as a thread goes with its run
@@ -291,7 +292,17 @@ recorded with it; `--seed-base` draws an earlier experiment's samples again. An 
 starts with the edit it tested, a line diff of its two texts (`ops.experiments.ab_wording`;
 `tuningfork experiment`, its page, MCP's show_experiment), read back from what it recorded — a
 checkpoint A/B's arms' requests (`experiment.skill.swapped`, the inverse of `substitute`), a
-fork's launch — and from the files it names only while each still holds the text tested.
+fork's launch — and from the files it names only while each still holds the text tested. A
+wording given as text (the A/B editor's, an agent's `variant_text`) is saved as
+`variants/<skill>/<name>.md` as its A/B starts, and only then. A name holds one text, which every
+experiment run with it names by that file, its lines' endings read as one: another text under it is
+refused when the A/B is planned, as is a name an A/B queued or running will save another text
+under (`catalog._refuse_queued`), and again as it starts (`variants.refuse_taken`, `keep`); a save
+is linked into place, never over another's; and the editor gives an edit of a saved variant a
+name of its own, never one a queued A/B holds. A report calls its variant saved under a name only
+while that file holds the text tested, and says what the file holds otherwise (`experiments._side`'s
+`file`): nothing of a relative path but a variant saved in a recordings folder given as one, and
+of a file outside the recordings folder never that it is gone.
 
 Refining a skill at a step — the target first, then proposed edits, each screened, a survivor
 validated with full runs, and approved by a person:
@@ -316,10 +327,15 @@ it can be: the checkpoint, the run's copy of the skill, its target, and every pr
 proposal is at most 3 edits (`ops/diff.py`: a line named by its number as show_skill prints
 it and the line as it should read, lines added after one, or exact `{old, new}` text — each
 resolved to an exact replacement of the text as shown, so none shifts another) changing at
-most 10 lines — a person's whole text only warns — never the frontmatter, and it must change what the model
-saw at the step; it is saved as a variant, with who proposed it, why, and the packet they
+most 10 lines — a person's whole text only warns, and takes the line ending most of the skill's lines
+end with, the one an approval writes the file back with — never the frontmatter, and it must change
+what the model saw at the step; it is saved as a variant, with who proposed it, why, and the packet they
 were shown (`ops/packet.py`: built from the run's own task's records only, never sampled
-for, and masked as it is built). A screen (`ops/screen.py`; `analysis/screen.py`) draws a
+for, and masked as it is built). Its text is read by the variant's name from the recordings
+folder the refinement is opened in — a copy of the folder keeps its own — else from where its
+record says it was saved, and only from a file whose text's digest begins with the proposal's
+id (`Proposal.saved`; issue #76): one found nowhere is shown saying so, and nothing screens,
+validates or approves it. A screen (`ops/screen.py`; `analysis/screen.py`) draws a
 fresh original arm first, then each proposal, and tests each against it — Fisher, Holm over
 the proposals named before sampling; an unfinished screen has rates and no verdict. Run to the end
 (`prepare_screen_to_end`, `refine screen --to-end`, the `screen-to-end` job kind), each

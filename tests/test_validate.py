@@ -144,6 +144,22 @@ def test_a_proposal_is_validated_three_ways_and_the_gate_reads_the_record(stack,
     assert [check.id for check in gate.failed()] == ["G0"] and "did not keep it" in gate.failed()[0].reason
 
 
+def test_a_text_gone_since_the_plan_is_refused_before_a_record_says_it_started(stack, monkeypatch):
+    """Issue #76: the proposal's saved text is looked for again as the validation starts. Gone
+    since the plan, nothing runs, and no record says a validation started."""
+    monkeypatch.setattr(validate, "MINIMUM", 2)
+    made, proposal = screened(stack)
+    plan = validate.prepare_validate(stack.store, made.id, proposal.id, n=2, runs=2, proxy_url=stack.url)
+    runs = len(stack.store.runs(limit=500))
+    Path(proposal.data["variant_path"]).unlink()
+    with pytest.raises(OperationError) as refused:
+        validate.execute_validate(stack.store, plan)
+    assert refused.value.code == "text_missing" and refused.value.message == (
+        f"proposal {proposal.id[:8]}'s saved text is no longer where the validation's plan found it: "
+        f"{proposal.data['variant_path']} is not there")
+    assert validate.validations(stack.store, made.id) == [] and len(stack.store.runs(limit=500)) == runs
+
+
 def test_refused_before_anything_runs_when_what_it_would_measure_has_changed(stack):
     made, proposal = screened(stack)
     runs = len(stack.store.runs(limit=500))

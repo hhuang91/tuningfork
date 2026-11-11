@@ -14,7 +14,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
-from tuningfork.ops.common import OperationError, params_schema, parse_params
+from tuningfork.ops.common import OperationError, kept_params, params_schema, parse_params
 
 BACKGROUND, INTERACTIVE = "background", "interactive"
 
@@ -250,7 +250,7 @@ def execute_forking_job(context: JobContext, prepared: Any, *, progress: Any, ca
 class ABParams(Sampling):
     variant: str | None = field(default=None, metadata=_help("The variant skill file, a path on the proxy's machine."))
     variant_text: str | None = field(default=None, metadata=_help("The variant's text, when edited in the browser: saved as a variant when the A/B starts."))
-    variant_name: str | None = field(default=None, metadata=_help("The name to save variant_text under."))
+    variant_name: str | None = field(default=None, metadata=_help("The name to save variant_text under, new for each new text."))
     original: str | None = field(default=None, metadata=_help("The skill file as the run was given it. Default: the copy its batch kept."))
     skill: str | None = field(default=None, metadata=_help("Which skill the variant replaces, by name, where the run kept several: an imported chat."))
     target: str | None = field(default=None, metadata=_help("The target: a behaviour's letter from an earlier resample of this step."))
@@ -289,22 +289,25 @@ def prepare_ab_job(context: JobContext, params: ABParams) -> Any:
             raise OperationError("name the variant, to save it under", code="bad_params", field="variant_name")
         checkpoint = load(context.store, params.run, params.step)
         variant = str(variants.path_for(context.home, _skill_of(context, checkpoint.run, params.skill), params.variant_name))
-    return prepare_ab(
+    prepared = prepare_ab(
         context.store, params.run, params.step,
         variant=variant, variant_text=params.variant_text, original=params.original, skill=params.skill,
         target=params.target, target_match=params.target_match, target_rules=params.target_rules or None,
         alpha=params.alpha, base_url=context.model_url, normalizers=params.normalizers, **_sampling(params),
     )
+    if prepared.given_text:
+        _refuse_queued(context, params, prepared.variant)
+    return prepared
 
 
 def execute_ab_job(context: JobContext, prepared: Any, *, progress: Any, cancel: Any) -> Any:
     from tuningfork.ops import variants
     from tuningfork.ops.experiments import execute_ab
 
-    # A wording edited in the browser is written now, and only now.
-    if not prepared.variant.exists():
-        skill, name = prepared.variant.parent.name, prepared.variant.stem
-        variants.save_variant(context.home, skill, name, prepared.variant_text)
+    # A wording edited in the browser is written now, and only now: refused where another A/B
+    # under its name started since this one was prepared, and saved its own text there.
+    if prepared.given_text:
+        variants.keep(context.home, prepared.variant, prepared.variant_text)
     return execute_ab(context.store, prepared, progress=progress, cancel=cancel)
 
 
@@ -324,7 +327,7 @@ class ToEndParams(AtStep):
 class ABToEndParams(ToEndParams):
     variant: str | None = field(default=None, metadata=_help("The variant skill file, a path on the proxy's machine."))
     variant_text: str | None = field(default=None, metadata=_help("The variant's text, when edited in the browser: saved as a variant when the A/B starts."))
-    variant_name: str | None = field(default=None, metadata=_help("The name to save variant_text under."))
+    variant_name: str | None = field(default=None, metadata=_help("The name to save variant_text under, new for each new text."))
     original: str | None = field(default=None, metadata=_help("The skill file as the run was given it. Default: the copy its launch kept."))
     alpha: float = field(default=0.05, metadata=_help("Significance level.", minimum=0.0001, maximum=0.5))
 
@@ -340,6 +343,8 @@ def prepare_to_end_job(context: JobContext, params: ToEndParams) -> Any:
 
 
 def prepare_ab_to_end_job(context: JobContext, params: ABToEndParams) -> Any:
+    from pathlib import Path
+
     from tuningfork.ops import variants
     from tuningfork.ops.experiments import load
     from tuningfork.ops.forks import prepare_to_end
@@ -356,11 +361,46 @@ def prepare_ab_to_end_job(context: JobContext, params: ABToEndParams) -> Any:
             raise OperationError("name the variant, to save it under", code="bad_params", field="variant_name")
         checkpoint = load(context.store, params.run, params.step)
         variant = str(variants.path_for(context.home, _skill_of(context, checkpoint.run), params.variant_name))
-    return prepare_to_end(
+    prepared = prepare_to_end(
         context.store, params.run, params.step, n=params.n, concurrency=params.concurrency,
         variant=variant, variant_text=params.variant_text, original=params.original,
         alpha=params.alpha, proxy=context.proxy.status(),
     )
+    if prepared.variant is not None and prepared.variant.given_text:
+        _refuse_queued(context, params, Path(prepared.variant.variant.variant_path))
+    return prepared
+
+
+def _refuse_queued(context: JobContext, params: Any, path: Path) -> None:
+    """Refused, as it is planned and queued, where an A/B queued or running will save another
+    text under the same name: each is planned while no file is there, and the later would be
+    refused only as it starts, perhaps hours on, behind the work before it. Its text is compared
+    as a job keeps it, masked, its lines' endings read as one. As a job starts, the file decides
+    (`variants.keep`)."""
+    from tuningfork.experiment.skill import text_sha256
+    from tuningfork.ops import variants
+    from tuningfork.ops.experiments import load
+
+    if context.job_id:
+        return
+    mine = text_sha256(kept_params(params, context.store.masking)["variant_text"])
+    for job in context.store.jobs(limit=1000, unfinished=True):
+        other = job.params or {}
+        if job.kind not in ("ab", "ab-to-end") or other.get("variant_name") != params.variant_name:
+            continue
+        if not isinstance(other.get("variant_text"), str) or text_sha256(other["variant_text"]) == mine:
+            continue
+        try:
+            skill = _skill_of(context, load(context.store, other["run"], str(other["step"])).run, other.get("skill"))
+        except (OperationError, KeyError):
+            continue
+        if variants.path_for(context.home, skill, params.variant_name) == path:
+            raise OperationError(
+                f"a variant named {params.variant_name!r} of {skill} is taken by job {job.id[:8]}, "
+                f"{job.status} with another text",
+                hint="choose another name: that A/B saves its text under it as it starts",
+                field="variant_name",
+            )
 
 
 def _skill_of(context: JobContext, run: Any, skill: str | None = None) -> str:
@@ -387,11 +427,11 @@ def execute_to_end_job(context: JobContext, prepared: Any, *, progress: Any, can
     from tuningfork.ops import variants
     from tuningfork.ops.forks import execute_to_end_plan
 
-    swapped = prepared.variant.variant if prepared.variant is not None else None
-    if swapped is not None and swapped.variant_path and not Path(swapped.variant_path).exists():
-        # A wording edited in the browser is written now, and only now.
-        target = Path(swapped.variant_path)
-        variants.save_variant(context.home, target.parent.name, target.stem, swapped.variant_text)
+    if prepared.variant is not None and prepared.variant.given_text:
+        # A wording edited in the browser is written now, and only now: refused where another A/B
+        # under its name started since this one was prepared, and saved its own text there.
+        swapped = prepared.variant.variant
+        variants.keep(context.home, Path(swapped.variant_path), swapped.variant_text)
     return execute_to_end_plan(context.store, prepared, progress=progress, cancel=cancel)
 
 

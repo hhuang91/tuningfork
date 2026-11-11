@@ -31,6 +31,9 @@ class ForkPlan:
     #: Recorded calls the fork will be answered from, all threads counted.
     replayed: int
     variant: Any = None  # replay.Variant
+    #: The variant was given as text, which is saved at its path as the forks start, and only
+    #: then (`catalog.execute_to_end_job`).
+    given_text: bool = False
     #: Where the original wording sits at the step, when a variant is swapped in.
     spans: list[Any] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -93,7 +96,8 @@ def prepare_fork(
 ) -> ForkPlan:
     """Everything a fork needs, checked before a harness starts. `proxy` is for a caller
     inside the proxy itself, which knows it without asking over HTTP. With `variant_text`,
-    `variant` is where that text will be saved when the fork starts."""
+    `variant` is where that text will be saved when the fork starts, and a file there holding
+    another text is refused: its experiments name that file."""
     from tuningfork.control import default_proxy
     from tuningfork.experiment import locate
     from tuningfork.harness import ADAPTERS
@@ -189,6 +193,7 @@ def prepare_fork(
         )
 
     swapped = None
+    given_text = False
     spans: list[Any] = []
     warnings: list[str] = []
     if sandbox is not None and sandbox.clock_problem:
@@ -209,6 +214,7 @@ def prepare_fork(
         if variant_text is None and not variant.exists():
             raise OperationError(f"{variant} does not exist", field="variant")
         original_text = original.read_text(encoding="utf-8")
+        given_text = variant_text is not None
         if variant_text is None:
             variant_text = variant.read_text(encoding="utf-8")
         else:
@@ -217,6 +223,10 @@ def prepare_fork(
             variant_text = variant_onto(store, original_text, variant_text)
         if original_text == variant_text:
             raise OperationError("the variant and the original are the same text", field="variant_text")
+        if given_text:
+            from tuningfork.ops.variants import refuse_taken
+
+            refuse_taken(variant, variant_text)
         swapped = Variant(
             original_text=original_text,
             variant_text=variant_text,
@@ -277,6 +287,7 @@ def prepare_fork(
         workdir=workdir,
         replayed=len(replayed_steps(store, source_run, k)),
         variant=swapped,
+        given_text=given_text,
         spans=spans,
         warnings=warnings,
         adapter=adapter,

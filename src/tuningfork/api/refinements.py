@@ -31,9 +31,10 @@ PREFIX = "/_tuningfork/api/refinements"
 PROPOSER = "/_tuningfork/api/proposer"
 STATUS = {
     "not_found": 404, "closed": 409, "held_out": 409, "remote_not_allowed": 403, "too_large": 413,
-    # Approving: refused because of where things stand, not because of what was asked.
+    # Approving: refused because of where things stand, not because of what was asked — a proposal
+    # whose saved text is gone among them.
     "approved": 409, "drifted": 409, "locked": 409, "gate": 409, "moved": 409, "not_validated": 409,
-    "no_change": 409, "permission": 403,
+    "no_change": 409, "permission": 403, "text_missing": 409,
 }
 #: A body here is a few edits, or a skill's whole text: never near this.
 MAX_BODY = 1024 * 1024

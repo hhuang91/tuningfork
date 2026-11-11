@@ -930,7 +930,8 @@ def show_skill(context: Context, args: RunArgs) -> Answer:
                      "should read, {after, insert} adds lines after one; or {old, new} copies one exactly. This is "
                      "the only way to read the skill: it is not a file on your machine")
     else:
-        lines.append("to test an edit: start_ab with variant_text (the whole edited file) and variant_name")
+        lines.append("to test an edit: start_ab with variant_text (the whole edited file) and a variant_name, a new one "
+                     "for each new text")
     if REDACTED in (recorded.get("text") or ""):
         lines.append(f"a key the skill holds reads {REDACTED} on each line it stands on: leave those lines, and the "
                      f"words that make it a key (`password=` before it), as they are, or take its lines out whole; "
@@ -1233,6 +1234,8 @@ def show_refinement(context: Context, args: RefinementRef) -> Answer:
     said = refine.source_note(found.get("source"), found["run"])
     if said:
         lines.append(f"note: {said}")
+    lines += [f"{item['missing']}; the proposal cannot be screened until the person puts its text back"
+              for item in shown["proposals"] if item.get("missing")]
     for screen in shown["screens"][:1]:
         lines += compact.screen_lines(compact.screen(screen["report"]))
     if shown["validations"]:
@@ -1260,6 +1263,7 @@ def capped_proposals(items: list[dict[str, Any]]) -> Any:
             "id": item["id"][:8],
             "changed": item["changed"],
             "diff": [line for hunk in item["diff"] for line in hunk["lines"] if line["op"] != " "][:12],
+            **({"missing": item["missing"]} if item.get("missing") else {}),
             "proposers": [{key: p.get(key) for key in ("via", "client", "model") if p.get(key)} for p in item["proposers"]],
             "rationale": compact.clip(item["proposers"][0].get("rationale"), 300),
             "screens": [
@@ -1666,6 +1670,6 @@ def check_job_id(value: str) -> str:
 def same_params(kind: Kind, params: dict[str, Any], masking: Any) -> dict[str, Any]:
     """Parameters as the job runner stores them — parsed, defaults filled, masked as the store
     masks (`masking`, its own) — so an identical job already under way can be found."""
-    from tuningfork.jobs import kept_params
+    from tuningfork.ops.common import kept_params
 
     return kept_params(kind.parse(params), masking)
