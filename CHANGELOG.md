@@ -1,5 +1,108 @@
 # Changelog
 
+## 0.9.0 — a run map, and the web UI in shapes and short names
+
+The web UI now draws what its pages said in sentences, and names what they show in a word or two. A
+task's runs are now also read as paths that part, with their turning point: the split whose
+branches best separate the runs that passed from the runs that failed. The divergence page draws
+the paths as a run map, `tuningfork divergence --paths` prints them, and MCP's `find_divergence`
+gives the turning point. A resample whose samples did more than one thing, an A/B, a screen and a
+forking-token probe are drawn as figures of the same kind. Of forks run to the end, each behaviour
+at the step now says how often its forks went on to pass.
+
+- **A task's runs as paths that part, and their turning point** (#81). A divergence report compares
+  a task's runs step by step, each behaviour exactly. It now also reads the runs as a tree: they
+  start together, and their path parts where they did different things. What a run did at a step is
+  the tools it called, whatever their arguments, or a reply, whatever its words. A tool's calls are
+  told apart only where they came in a few distinct forms. The turning point is the split whose
+  branches best separate passing from failing. A branch is what some runs did there, or their
+  having ended there. Each is set against the rest of the runs that got there, by Fisher's exact
+  test, where each side has at least two judged runs. The smallest p is named when it is under 0.2.
+  It is a lead, never a verdict: with many splits compared, chance alone can make one.
+  `tuningfork divergence --task <id> --paths` prints the tree under the comparison, each path
+  ending in how its runs fared, then the turning point, when there is one. MCP's `find_divergence`
+  gives the turning point too (`turning_point`), and where it and the step whose behaviour best
+  predicts the verdict are different steps, says why. `GET /divergence` gives the trees (`paths`),
+  and the glossary defines *run map* and *turning point*.
+- **The divergence page is the run map** (#81). It led with the step whose behaviour best predicts
+  the verdict, then set the runs side by side one step at a time. It now draws the tree. A box is
+  what runs did at a step. A line joins it to what they did next, as wide as the runs that went
+  that way. Each path ends in its runs, a mark each: round for a run that passed, square for one
+  that failed. The turning point is said in a line over the map, with the counts it stands on, and
+  marked on the map wherever the detail drawn finds the same split. The page no longer names the
+  step whose behaviour best predicts the verdict: the turning point leads in its place, and
+  `find_divergence` names both. *Detail* draws less or more, from one box a tool to every run and
+  every form of a call. The box chosen shows its runs under the map, what they did next, and the
+  ways into its step. Under that are tabs: *Why runs failed*, where some did, *Ask every run* and
+  *All steps*. On the Runs list, each link to a divergence page carries its map small.
+- **An experiment's page draws what its step led to** (#81), as a fan: the step is a box, and from
+  it a branch for each thing the model did there, as wide as its samples were many, ending in how
+  often that was. A reply is one branch, whatever its words. A resample draws a fan where its
+  samples did more than one thing, an A/B one for each wording, and a screen one for the original
+  and one for each proposal. Each behaviour in full is under the fans, a click away; an A/B with no
+  target declared keeps its table in sight. Of forks run to the end, a branch ends in its forks, a
+  mark each by how the task's check went, so the page shows which behaviour at the step went on to
+  pass. The terminal says it too: `resample --to-end` and `ab --to-end`, and
+  `tuningfork experiment` of either, give each behaviour at the step a *then passed* column where
+  the forks did more than one thing there. An agent is given it as well: MCP's `show_experiment`
+  gives how often each behaviour's forks passed (`passed`), and `show_refinement` gives it for each
+  arm of a screen run to the end. A fork that timed out, or was not counted, is in no behaviour's
+  count, though its arm's pass rate counts a timeout as failed.
+- **A forking-token probe's positions are figures of the same kind** (#81). Each probed position is
+  one figure. The box it grows from is the token boxed in its sentence. A branch is the original
+  token or one forced there, as wide as the model's chance of that token, and it ends in how often
+  the target was met, with a badge where a forced token moved it beyond chance. The positions where
+  a forced token changed what the model did lead the page, and the rest follow the answer the probe
+  forked from. Each position is drawn once: the tables under the answer are gone. A forced token
+  wears the pencil a change wears on every page, and a screen reader is told which box is the
+  original token and which was forced.
+- **Short names, and what they mean a click away** (#81). Most headings now name a thing in one to
+  three words: *Forking tokens*, where a probe's page said "Which forced tokens changed what the
+  model did". What a name or a control means, where it needs saying, is behind a "?" beside it, and
+  a hint longer than a couple of lines shows its first sentence, with the rest behind *more*. One
+  way of several is a row of short names, with only the chosen one's fields under it: an A/B's
+  condition is *Seen here*, *Tools & words*, *Pattern* or *None*, where each choice was a sentence,
+  and a form measures *The next step* or *The whole run*, where it asked "Judge each try by:
+  whether the whole run then passes". Parts of a page that answer different questions are tabs. On
+  the Guide, each question under *Start from a question* is a line that opens to its answer and its
+  steps. Some names changed with this. Scenarios' *Add a task file you have* is *Add a task file*,
+  its two ways *On this machine* and *Upload a folder*. The divergence page's *Where does it hold?*
+  is *Ask every run*. Where paths part is a *split*, a reply's different texts are its *phrasings*,
+  and a line of *Tools & words* is a *rule*. The CLI, MCP and the docs keep the precise words, and
+  the Words page shows both.
+- **Connections in tabs, and figures on a narrow page** (#81). Connections keeps the setup at a
+  glance. Under it, its four panels are four tabs: *Server*, *Harnesses & sandbox*, *Proposing
+  model* and *This proxy*. The address names the tab open (`?part=`), but for *Server*, and a link
+  to one part opens it: the status strip's harnesses, a refinement's proposing model. On a harness,
+  what it needs of the server folds to a line with its count. On Live, the panel that says how to
+  connect an agent folds to its title. A figure short of room, on a phone or in a narrow column,
+  scrolls sideways whole, and a probe's position reads down the page.
+- **Put right on the way** (#81): links in a proposal's tests are underlined, where colour alone
+  told them from the words around them; the two links that choose what a form measures are no
+  longer announced as pressed buttons; and the variant editor's text box has a name for a screen
+  reader.
+- **The docs' pictures were taken again** (#81), on the pages as they are now, from the same
+  recordings, with a tenth: a forking-token probe's page. The README's "Where do the runs go
+  wrong?" row shows `divergence --paths`.
+
+Changed:
+
+- **The step whose behaviour best predicts the verdict is the one with the smallest p, and of equal
+  ones the earliest.** `find_divergence` and `GET /divergence` (`verdict_split`) name it. Each
+  behaviour's p was compared with the best so far as rounded to four decimals, so of two whose p's
+  agreed that far, the one named could be the one with the larger p, or the later of two equal
+  ones. In `find_divergence`'s answer, that line now always names its step by number, and says so
+  when it is the step where the runs first stopped agreeing.
+- **Forks left out of a step's rates are said to be so.** Of forks run to the end, the terminal
+  said the ones in no row of the step's table had "failed in transport", and the experiment's page
+  that their call itself had failed. Both now say they timed out or were not counted.
+- **More in the JSON.** A divergence report's behaviours each name the tools they called (`tools`),
+  and so do a screen's. Of forks run to the end, each behaviour says how its forks ended (`ended`:
+  how many passed, failed and had no verdict, and the pass rate with its interval), and each fork
+  the letter of what it did at the step (`letter`). A resample's behaviours, an A/B's and a
+  screen's are also given by move (`moves`), a reply one move whatever its words. No key was
+  renamed or removed.
+
 ## 0.8.3 — a refinement from a copy, an A/B's variant name, CRLF skills, and the web UI revised
 
 This release fixes three bugs in how tuningfork keeps and checks the skill texts it tests, and
