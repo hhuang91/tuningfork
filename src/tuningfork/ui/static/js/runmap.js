@@ -8,7 +8,7 @@
 // rate and the turning point are the server's (`analysis.paths`): the terminal prints the same
 // tree (`tuningfork divergence --paths`). An experiment's samples are drawn the same way, a fan
 // out of one step (`fanTree`), and so is a choice among a few things at one place, a probe's
-// tokens at a position (`choiceFan`).
+// tokens at a position (`choiceFan`). A list shows a task's map small, as a picture (`mapThumb`).
 //
 // The map is of what is shared and where it parts. A run gone its own way is one no other run can
 // be compared with from there on: on a large map its later steps are not drawn, and runs that each
@@ -453,4 +453,99 @@ export function choiceFan(origin, branches, { heads, end, label, className = nul
     describe: (node) => node.title,
     end: (_, node) => (node ? end(node.data) : null),
   });
+}
+
+/** The room a small map is given, in px (the stylesheet's `--thumb-w` and `--thumb-h`): a map
+ *  larger than it is drawn smaller, never cut. */
+const THUMB = { width: 240, height: 56 };
+
+/**
+ * A run map small enough for a list (`runTree`, its lone runs folded): each box a dot — a tool
+ * call's in the accent, as on the map — each line as wide as its runs are many, each path ending
+ * in its runs' marks, and the turning point a dot of the accent where the runs part. It has no
+ * words and is no control: the link it stands in says where it leads.
+ */
+export function mapThumb(tree, { most = 10 } = {}) {
+  const COLUMN = 24, ROW = 14, PAD = 5, DOT = 4.5, MARK = 7, GAP = 14;
+  const total = Math.max(1, tree.root.runs.length);
+  const svg = document.createElementNS(SVG, "svg");
+  const add = (name, attributes, parent = svg) => {
+    const made = document.createElementNS(SVG, name);
+    for (const [key, value] of Object.entries(attributes)) made.setAttribute(key, String(value));
+    parent.append(made);
+    return made;
+  };
+  // The lines under the dots, the marks after them.
+  const lines = add("g", {});
+  const dots = add("g", {});
+  const x = (step) => PAD + DOT + (step + 1) * COLUMN;
+  const y = (row) => PAD + ROW / 2 + row * ROW;
+  // Where every path's marks start: a little after the last column of dots.
+  const endX = x(tree.columns - 2) + GAP;
+  const curve = (x1, y1, x2, y2) => {
+    const bend = (x2 - x1) / 2;
+    return `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
+  };
+  let widest = 1;
+  const marks = (runs, row) => {
+    const sorted = byVerdict(runs, tree.verdicts);
+    const shown = sorted.slice(0, most);
+    shown.forEach((id, index) => {
+      const tone = (VERDICT_MARK[tree.verdicts[id]] || ["none"])[0];
+      const cx = endX + MARK / 2 + index * MARK, cy = y(row);
+      if (tone === "bad") add("rect", { x: cx - 2.5, y: cy - 2.5, width: 5, height: 5, rx: 0.5, class: "mt-mark tone-bad" });
+      else add("circle", { cx, cy, r: tone === "ok" ? 2.7 : 2.1, class: `mt-mark tone-${tone}` });
+    });
+    if (sorted.length > most) {
+      // More runs than marks: a plus after the last.
+      const cx = endX + MARK / 2 + most * MARK, cy = y(row);
+      add("path", { d: `M ${cx - 2.5} ${cy} H ${cx + 2.5} M ${cx} ${cy - 2.5} V ${cy + 2.5}`, class: "mt-more" });
+    }
+    widest = Math.max(widest, shown.length + (sorted.length > most ? 1 : 0));
+  };
+  // From a dot to its path's marks: straight on, or down to a row of its own first.
+  const lead = (fromX, fromRow, row, alone = false) => add("path", {
+    d: fromRow === row
+      ? `M ${fromX} ${y(row)} H ${endX - 2}`
+      : `${curve(fromX, y(fromRow), fromX + COLUMN - DOT * 2, y(row))} H ${endX - 2}`,
+    class: alone ? "mt-leader mt-alone" : "mt-leader",
+  }, lines);
+  const walk = (node) => {
+    const cx = x(node.step), cy = y(node.row);
+    if (node.parent) {
+      add("path", {
+        d: curve(x(node.parent.step) + DOT, y(node.parent.row), cx - DOT, cy),
+        "stroke-width": (1.5 + 4.5 * node.runs.length / total).toFixed(1), class: "mt-edge",
+      }, lines);
+    }
+    if (node.move) add("rect", { x: cx - DOT, y: cy - DOT, width: DOT * 2, height: DOT * 2, rx: 2, class: `mt-node kind-${node.move.kind}` }, dots);
+    else add("circle", { cx, cy, r: DOT - 0.5, class: "mt-start" }, dots);
+    node.drawn.forEach(walk);
+    if (!node.drawn.length && !node.alone) {
+      // The end of a path: a run that went on alone, by a dashed line for the steps not drawn.
+      lead(cx + DOT, node.row, node.row, Boolean(node.more));
+      marks(node.runs, node.row);
+      return;
+    }
+    if (node.alone) {
+      lead(cx + DOT, node.row, node.aloneRow, true);
+      marks(node.alone.runs, node.aloneRow);
+    }
+    if (node.stopRow !== undefined) {
+      lead(cx + DOT, node.row, node.stopRow);
+      marks(node.ends, node.stopRow);
+    }
+  };
+  walk(tree.root);
+  const turn = tree.turning?.parent;
+  if (turn && turn.row !== undefined) add("circle", { cx: x(turn.step) + DOT, cy: y(turn.row), r: 3, class: "mt-turn" });
+  const width = endX + widest * MARK + PAD, height = PAD * 2 + tree.rows * ROW;
+  const scale = Math.min(1, THUMB.width / width, THUMB.height / height);
+  svg.setAttribute("class", "mt");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("width", String(Math.round(width * scale)));
+  svg.setAttribute("height", String(Math.round(height * scale)));
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  return svg;
 }

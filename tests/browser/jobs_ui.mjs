@@ -928,8 +928,32 @@ try {
   // --- 8. Connections: check the server, refuse a protected endpoint, switch while idle ------
   console.log("connections");
   await page.eval(`location.hash = "#/connections"`);
-  await until(() => page.eval(`document.querySelectorAll(".harness-card").length >= 2`), "the harness cards");
+  await until(() => page.eval(`document.querySelectorAll(".health-strip .glance").length >= 3 && !!document.querySelector('[role="tab"][aria-selected="true"]')`), "the setup at a glance, and its parts");
   const startedOn = (await api("/connections")).server.url;
+  // Under the glance, the detail a part at a time: the server first, the address naming any other
+  // (the user's yes, 2026-11-10: Connections slimmed; it was four panels down one long page).
+  const partsOf = () => page.eval(`(() => ({
+    tabs: [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent + (tab.getAttribute("aria-selected") === "true" ? "*" : "")).join(","),
+    cards: document.querySelectorAll(".tab-panel .harness-card").length,
+    server: !!document.querySelector(".tab-panel table.measured, .tab-panel .kv"),
+    panels: [...document.querySelectorAll("main .panel > .panel-head h2")].map((h2) => h2.textContent).join(","),
+    hash: location.hash,
+  }))()`);
+  const serverPart = await partsOf();
+  check(serverPart.tabs === "Server*,Harnesses & sandbox,Proposing model,This proxy" && serverPart.server && serverPart.cards === 0 && serverPart.panels === "",
+    `Connections' detail is four parts, one in sight: the server first (${serverPart.tabs})`);
+  await page.eval(`[...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === "Harnesses & sandbox").click()`);
+  await until(() => page.eval(`document.querySelectorAll(".tab-panel .harness-card").length >= 2`), "the harness cards, in their part");
+  const harnessPart = await partsOf();
+  check(harnessPart.tabs === "Server,Harnesses & sandbox*,Proposing model,This proxy" && harnessPart.hash === "#/connections?part=harnesses"
+    && await page.eval(`!document.querySelector("main .chip.tone-ok, main .chip.tone-bad")`)
+    && await page.eval(`[...document.querySelectorAll(".tab-panel button")].some((button) => button.textContent === "Detect again")
+      && [...document.querySelectorAll(".harness-card details.fold > summary")].some((summary) => /^Needs of the server \\(\\d+\\)$/.test(summary.textContent))`),
+    `the harnesses and the sandbox are a part of their own, the address naming it, what each harness needs of the server folded, and nothing there a verdict's green or red (${harnessPart.hash})`);
+  check(await page.eval(`document.querySelector(".status-health a:last-child")?.getAttribute("href") === "#/connections?part=harnesses"`),
+    "and the status strip's harnesses lead there");
+  await page.eval(`[...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === "Server").click()`);
+  await until(async () => (await partsOf()).hash === "#/connections", "the server's part again");
   // The page leads with the setup at a glance: a word and a colour each, what that means, and
   // the server test, which nothing has run yet.
   const glance = () => page.eval(`(() => {
@@ -1257,7 +1281,31 @@ try {
   console.log("the divergence page: the run map, each run by its verdict, the checks' lines counted");
   const split = await api(`/divergence?task=${encodeURIComponent("tally-report/1")}&limit=50`);
   const divergenceAt = `#/divergence/${encodeURIComponent("tally-report/1")}`;
-  await page.eval(`location.hash = "${divergenceAt}"`);
+  // The way there is the task's link on the Runs list, and the link shows the map small: the same
+  // tree, a dot a box, a mark a run by its verdict, the turning point a dot where the runs part
+  // (the user's yes, 2026-11-10: the map's picture on the list too).
+  await page.eval(`location.hash = "#/runs"`);
+  await until(() => page.eval(`!!document.querySelector('a.map-thumb[href="${divergenceAt}"] svg.mt .mt-mark')`), "the task's map, small, on the Runs list");
+  const thumb = await page.eval(`(() => {
+    const link = document.querySelector('a.map-thumb[href="${divergenceAt}"]');
+    const marks = [...link.querySelectorAll(".mt-mark")].map((mark) => mark.getAttribute("class"));
+    return {
+      words: link.textContent, title: link.title, marks: marks.length,
+      ok: marks.filter((name) => name.includes("tone-ok")).length, bad: marks.filter((name) => name.includes("tone-bad")).length,
+      lines: link.querySelectorAll(".mt-edge").length, dots: link.querySelectorAll(".mt-node").length, turn: link.querySelectorAll(".mt-turn").length,
+      height: link.querySelector("svg").getBoundingClientRect().height, room: link.querySelector(".map-thumb-slot").getBoundingClientRect().height,
+      hidden: link.querySelector(".map-thumb-slot").getAttribute("aria-hidden"),
+    };
+  })()`);
+  const judged = (verdict) => split.run_ids.filter((id) => split.verdicts[id] === verdict).length;
+  check(thumb.words === "Where do they diverge?" && thumb.hidden === "true" && thumb.title.startsWith(`${split.run_ids.length} runs as paths that part`)
+    && thumb.lines >= 1 && thumb.dots >= 2 && thumb.height > 0 && thumb.height <= thumb.room + 0.5,
+    `on the Runs list a task's link shows its run map, small, in the room kept for it (${JSON.stringify(thumb)})`);
+  check((split.run_ids.length > 10 || (thumb.marks === split.run_ids.length && thumb.ok === judged("passed") && thumb.bad === judged("failed")))
+    && thumb.ok >= 1 && thumb.bad >= 1 && thumb.turn === (split.paths.auto.turning ? 1 : 0),
+    `its paths end in the runs' marks, by verdict, and its turning point is the server's (${thumb.ok} passed, ${thumb.bad} failed of ${thumb.marks}; turning ${thumb.turn})`);
+  await page.eval(`document.querySelector('a.map-thumb[href="${divergenceAt}"]').click()`);
+  await until(() => page.eval(`location.hash === "${divergenceAt}"`), "the map's page, from the link");
   await until(() => page.eval(`!!document.querySelector(".rm .rm-end .rm-mark") && document.querySelectorAll(".rm-edges path").length > 0`), "the run map, its lines drawn");
   const tones = { passed: "tone-ok", failed: "tone-bad", "not counted": "tone-warn" };
   const marks = await page.eval(`[...document.querySelectorAll(".rm .rm-end .rm-mark")].map((mark) => [mark.dataset.run, mark.className])`);
@@ -1939,8 +1987,9 @@ try {
     `written, every stage is done and none is current (${writtenStages})`);
 
   console.log("the proposer's key: set, never shown, cleared");
-  await page.eval(`location.hash = "#/connections"`);
-  await until(() => page.eval(`[...document.querySelectorAll(".panel h2")].some((h2) => h2.textContent === "Proposing model")`), "the Proposing model panel");
+  await page.eval(`location.hash = "#/connections?part=proposer"`);
+  await until(() => page.eval(`document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Proposing model"
+    && [...document.querySelectorAll("details.fold > summary")].some((s) => s.textContent === "Set a key")`), "the proposing model's part, by its address");
   const secret = `sk-browser-${Date.now().toString(36)}-0123456789abcdef`;
   await page.eval(`[...document.querySelectorAll("details.fold > summary")].find((s) => s.textContent === "Set a key").click()`);
   await page.type(`document.querySelector('[name="proposer_key"]')`, secret);

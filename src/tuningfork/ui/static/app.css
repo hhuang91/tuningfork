@@ -161,6 +161,9 @@
 
   /* --- what one component measures ---------------------------------------------------------- */
   --ci-track: 120px;
+  /* The room a run map is given in a list (runmap.js `THUMB`). */
+  --thumb-w: 240px;
+  --thumb-h: 56px;
   --ci-track-h: 8px;
   --ci-point-h: 14px;
   --progress-h: 6px;
@@ -1612,11 +1615,32 @@ pre.code { color: var(--muted); }
 .fork-others .fork-position ~ .fork-position .rm-head:not(:first-child) { opacity: 0; }
 /* A figure knows its own width (`.rm`, below). With room, an end too long for its line goes on
    under its rate's numbers, the bar hanging before them; with less, each part goes under the
-   bar. */
+   bar. On a phone the position reads down the page: its sentence, its two heads on a line, then
+   each token over how it ended, every position headed, and no lines: a token's chance is the
+   number in its box. The script places each cell by column and row; here they are placed again. */
 @container (min-width: 900px) {
   .rm-probe .rm-end { padding-left: calc(var(--space-2) + var(--ci-track) + var(--space-2-5)); }
   .rm-probe .rm-end > .ci:first-child { margin-left: calc(-1 * (var(--ci-track) + var(--space-2-5))); }
 }
+@container (max-width: 560px) {
+  .rm-probe .rm-canvas { width: auto; }
+  .rm-probe .rm-grid { grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--space-4); row-gap: var(--space-1-5); align-items: start; }
+  .rm-probe .rm-grid > * { grid-column: 1 / -1 !important; grid-row: auto !important; order: 3; }
+  .rm-probe .rm-grid > .rm-head { grid-column: auto !important; order: 2; padding-bottom: 0; }
+  .rm-probe .rm-grid > .rm-head:first-child { grid-column: 1 / -1 !important; order: 0; }
+  .rm-probe .rm-grid > .rm-node.rm-origin { order: 1; max-width: 100%; }
+  .rm-probe .rm-grid > .rm-node.kind-token { margin-top: var(--space-1-5); }
+  .rm-probe .rm-edges { display: none; }
+  .rm-probe .fork-sentence { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .rm-probe .rm-end { padding-left: 0; }
+  .fork-others .fork-position ~ .fork-position .rm-head:not(:first-child) { opacity: 1; }
+}
+/* The key's line is of the figures' lines: where the positions read down the page, none is
+   drawn, and the key leaves it out. A figure's own room is its block's, less the figure's
+   padding (2px a side) and, in the lead, the position's (12px a side). */
+.flips, .fork-others { container-type: inline-size; }
+@container (max-width: 588px) { .flips > .rm-legend .rm-key-wide { display: none; } }
+@container (max-width: 564px) { .fork-others > .rm-legend .rm-key-wide { display: none; } }
 /* After a token's rate: its test, then where its continuations ended. */
 .fork-test { color: var(--muted); font-family: var(--mono); font-size: var(--text-xs); white-space: nowrap; }
 .fork-led { color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
@@ -2385,6 +2409,9 @@ a.stage-name:hover { color: var(--accent); text-decoration: none; }
 }
 .tab-panel { padding: var(--space-4); }
 .tab-panel > * + * { margin-top: var(--space-3); }
+/* A tab's body that a page fills again as its data changes; an action of the whole tab, to the right. */
+.tab-part > * + * { margin-top: var(--space-3); }
+.tab-actions { display: flex; justify-content: flex-end; }
 
 /* --- a note a click away: what a word or a control means, off the page until asked for ------ */
 
@@ -2459,6 +2486,17 @@ button.rm-node.kind-tool_call:hover { border-color: var(--accent); }
 .rm-mark.tone-bad { border-radius: var(--radius-xs); background: var(--bad); }
 .rm-mark.tone-warn { border: var(--stroke-2) solid var(--warn); background: transparent; }
 .rm-mark.tone-none { border: var(--stroke-1-5) solid var(--control); background: transparent; }
+/* Short of room — a phone, a narrow column — a figure scrolls sideways whole: its ends go with
+   it, since a column kept in sight would cover the boxes. Its columns close up, a box's second
+   line goes, and a rate's bar and a path's marks take less. */
+@container (max-width: 560px) {
+  .rm-end, .rm-head-end { position: static; }
+  .rm-grid { column-gap: var(--space-5); }
+  .rm-node { max-width: 60cqw; padding: var(--space-0-5) var(--space-2); }
+  .rm-hint { display: none; }
+  .rm-end .ci-track { width: var(--space-16); }
+  .rm-marks { max-width: calc(5 * (var(--dot) + var(--space-1) + var(--space-0-5))); }
+}
 .rm-edge { fill: none; stroke: var(--border-strong); stroke-linecap: round; }
 .rm-edge.on { stroke: var(--accent); }
 .rm-leader { stroke-width: 1; stroke-dasharray: 2 4; }
@@ -2517,6 +2555,29 @@ button.rm-node.kind-tool_call:hover { border-color: var(--accent); }
 .rm-node.rm-origin.tone-change { color: var(--change); }
 .rm-edge.tone-change { stroke: color-mix(in srgb, var(--change) 45%, var(--panel)); }
 .rm-head:empty { padding: 0; }
+/* The run map, small (runmap.js `mapThumb`): a task's runs as a picture in a list, before the
+   words of the link that leads to the map. Each box a dot, each line as wide as its runs are
+   many, each path ending in its runs' marks. Its place is kept while it loads: the list under it
+   never jumps. */
+.map-thumb { display: inline-flex; align-items: center; gap: var(--space-3); color: inherit; text-decoration: none; }
+.map-thumb:hover { text-decoration: none; }
+.map-thumb:hover .btn { background: var(--panel-2); border-color: var(--control); }
+.map-thumb-slot { display: flex; align-items: center; justify-content: flex-end; height: var(--thumb-h); max-width: var(--thumb-w); }
+.mt { display: block; }
+.mt-edge { fill: none; stroke: color-mix(in srgb, var(--control) 55%, var(--panel)); stroke-linecap: round; }
+.mt-leader { fill: none; stroke: color-mix(in srgb, var(--control) 70%, var(--panel)); stroke-width: 1; stroke-dasharray: 1 3; }
+.mt-leader.mt-alone { stroke-dasharray: 3 3; }
+/* A dot is its box's colour, filled: at this size an outline alone is lost. */
+.mt-node { fill: color-mix(in srgb, var(--control) 75%, var(--panel)); }
+.mt-node.kind-tool_call { fill: color-mix(in srgb, var(--accent) 60%, var(--panel)); }
+.mt-node.kind-empty, .mt-node.kind-truncated, .mt-node.kind-error { fill: var(--warn); }
+.mt-start { fill: var(--panel); stroke: var(--control); stroke-dasharray: 2 2; }
+.mt-mark.tone-ok { fill: var(--ok); }
+.mt-mark.tone-bad { fill: var(--bad); }
+.mt-mark.tone-warn { fill: none; stroke: var(--warn); }
+.mt-mark.tone-none { fill: none; stroke: var(--control); }
+.mt-more { fill: none; stroke: var(--faint); }
+.mt-turn { fill: var(--accent); stroke: var(--panel); }
 /* Replies that differ only in their words, as one line of a list of behaviours. */
 .group-fold > summary { min-height: var(--control-md); padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); font-size: var(--text-sm); color: var(--text); }
 .group-fold > .groups { margin-top: var(--space-2); padding-left: var(--space-5); }

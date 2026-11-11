@@ -158,7 +158,7 @@ function setup(runs, scenarios, connections) {
       title: "A harness tuningfork can start",
       body: harnesses.length
         ? ["found: ", harnesses.map((each) => each.name).join(", ")]
-        : ["none found on PATH — ", h("a", { href: "#/connections" }, "name its executable"), ", or point your own harness at ", h("code", null, `${location.origin}/v1`)],
+        : ["none found on PATH — ", h("a", { href: "#/connections?part=harnesses" }, "name its executable"), ", or point your own harness at ", h("code", null, `${location.origin}/v1`)],
     },
     {
       // A scenario, or a task file on disk whose task has been run.

@@ -750,7 +750,7 @@ export async function refinementView(root, [id], scope) {
           h("label", { class: "form-field" }, h("span", { class: "form-label" }, "The task's criteria"),
             h("span", { class: "inline-check" }, include, " show them to the proposing model"),
             h("span", { class: "form-help" }, "Its expected output and check: often the only place the fix shows."))),
-        h("p", { class: "form-help" }, "The proposing model, and its key, are set on ", h("a", { href: "#/connections" }, "Connections"), "."),
+        h("p", { class: "form-help" }, "The proposing model, and its key, are set on ", h("a", { href: "#/connections?part=proposer" }, "Connections"), "."),
       ],
       read: (form) => ({
         refinement: shown.refinement.id,

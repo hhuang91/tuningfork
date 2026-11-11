@@ -646,7 +646,9 @@ moved, then its test and the behaviours it led to — first the positions where 
 changed what the model did, then the rest after the answer, each drawn once;
 Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model, a
 word and a colour each, the server in the status strip's words (`serverWord`), and what that means
-in at most three sentences (`whatItMeans`); a refinement its four stages in a line (`stagesOf` in
+in at most three sentences (`whatItMeans`) — then its detail, one part in sight at a time (tabs:
+the server, the harnesses and the sandbox, the proposing model, the proxy; the address names any
+part but the server's, `?part=`); a refinement its four stages in a line (`stagesOf` in
 `views/refine.js`: propose, test at this step, full test runs, approve — where each proposal
 stands is its latest finished test, as the gate's G0 reads it), then its evidence, each proposal
 named by the line it changes. A run's page keeps the run to read and the work on one of its steps
@@ -939,18 +941,22 @@ than on a hardcoded assumption about which server is running.
   part. It has one grammar. A box is what was done: a tool called, a reply, a token, a wording. A
   line joins what was done to what came next, as wide as how many went that way: runs, samples,
   forks, or a token's chance. A path ends in how it fared: its runs' marks, a rate with its
-  interval, its forks' marks. Columns run left to right in the order things happened, headed in a
-  few words, or not at all where a head adds nothing; the box chosen is shown under the figure,
-  and what the figure leaves out — each behaviour in full, each run — is a click away under it. A
-  figure too large to take in is thinned, never shrunk: paths one run took fold, and a Detail
-  control draws more or less. A task's runs are a map of paths that part (`runMap`), what a step
-  led to a fan (`fan`), a probe's position a fan from its token (`choiceFan`). What only a colour
-  shows is said another way too: a forced token wears a change's pencil, and a screen reader is
-  told which box is which. Not everything is a graph: a refinement's stages are a line, a folder
-  is its tree, an answer's tokens a heatmap, and one number is a rate with its bar. Behaviours
-  are shown by move first, the tool called or a reply, and replies that differ only in their
-  words fold to one line. What a drawing counts or tests is the server's: a page works out no
-  statistic.
+  interval, its forks' marks. Columns run left to right in the order things happened, headed in
+  a few words, or not at all where a head adds nothing; the box chosen is shown under the
+  figure, and what the figure leaves out — each behaviour in full, each run — is a click away
+  under it. A figure too large to take in is thinned, never shrunk: paths one run took fold, and
+  a Detail control draws more or less. A task's runs are a map of paths that part (`runMap`),
+  what a step led to a fan (`fan`), a probe's position a fan from its token (`choiceFan`). The
+  one map drawn smaller is the one in a list, where it is a sign for the page it leads to and
+  not the figure to read: a task's map in its link on the Runs list (`mapThumb`: dots, lines
+  and marks, no words, never a control). A figure knows its own width (`.rm` is a container):
+  short of room, on a phone or in a narrow column, it scrolls sideways whole, its ends with it,
+  and a probe's position reads down the page. What only a colour shows is said another way too:
+  a forced token wears a change's pencil, and a screen reader is told which box is which. Not
+  everything is a graph: a refinement's stages are a line, a folder is its tree, an answer's
+  tokens a heatmap, and one number is a rate with its bar. Behaviours are shown by move first,
+  the tool called or a reply, and replies that differ only in their words fold to one line. What
+  a drawing counts or tests is the server's: a page works out no statistic.
 - A place on disk is shown, never only described: a folder is drawn as the tree it is, each line
   with what it is for beside it (`folderTree` in `ui/static/js/folders.js`), the part of a path
   inside the recordings folder shown from there. Their names are the glossary's, the same in

@@ -8,7 +8,7 @@ import { api } from "../api.js";
 import { guard } from "../auth.js";
 import { holdTools } from "../holdtools.js";
 import {
-  chip, command, count, elapsed, h, panel, plural, pretty, replace, short, tick as tickUnder, toast,
+  chip, command, count, elapsed, foldPanel, h, panel, plural, pretty, replace, short, tick as tickUnder, toast,
 } from "../dom.js";
 import { live } from "../live.js";
 import { settle } from "../nav.js";
@@ -321,8 +321,10 @@ export async function liveView(root, [holdId], scope) {
         }, "×"))));
   }
 
+  // Folded to its line: while nothing is held the page's own lead says where an agent points,
+  // and while a call is held this keeps it a click away.
   function connectPanel() {
-    return panel("Connect your agent", h("div", { class: "connect stack" },
+    return foldPanel("Connect your agent", h("div", { class: "connect stack" },
       h("p", { class: "hint" }, "Its base URL, for an OpenAI-style API; for Anthropic's, the same without /v1:"),
       command(`${location.origin}/v1`),
       h("p", { class: "hint" }, "The same controls from a terminal:"),
