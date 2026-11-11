@@ -52,6 +52,12 @@ def run_of(stack, **options) -> str:
     return outcome.run_id
 
 
+def ended_with_crlf(stack) -> None:
+    """The task's skill as a file written on Windows: each of its lines ended with CRLF."""
+    skill = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+    skill.write_bytes(skill.read_bytes().replace(b"\n", b"\r\n"))
+
+
 def older(parity: dict, stack, run_id: str) -> None:
     """The run's parity as an older tuningfork recorded it."""
     with stack.store._lock:
@@ -232,6 +238,81 @@ class TestProposals:
         assert again.duplicate and again.id == first.id
         assert [p["via"] for p in again.data["proposers"]] == ["mcp", "person"]
         assert len(refine.proposals(stack.store, made.id)) == 1
+
+    @pytest.mark.parametrize("crlf", [True, False], ids=["skill-ended-with-crlf", "skill-ended-with-lf"])
+    def test_the_same_text_is_one_proposal_however_its_lines_end(self, stack, crlf):
+        # Found in review of issue #76's fix: the text saved was compared with the proposal's as
+        # Python reads text, CRLF as LF, so a skill whose lines end with CRLF, proposed the same
+        # way twice, was refused as another text under the proposal's own name; and a person's text
+        # whose lines end otherwise than the skill's was refused as changing its frontmatter. A
+        # proposal's id is its text's digest with every line's ending read as one: the same text,
+        # however its lines end, is the same proposal, and the text saved first is kept as it was.
+        if crlf:
+            ended_with_crlf(stack)
+        made = start(stack, a_run(stack))
+        assert ("\r\n" in made.baseline_text()) is crlf
+        first = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="a", proposer={"via": "mcp"})
+        saved = kept_in(stack.store, first)
+        kept = saved.read_bytes()
+        assert (b"amount_total.\r\n" in kept) is crlf
+        again = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="b", proposer={"via": "mcp"})
+        other = first.text().replace("\r\n", "\n") if crlf else first.text().replace("\n", "\r\n")
+        alike = refine.add_proposal(stack.store, made.id, text=other, rationale="c", proposer={"via": "person"},
+                                    strict=False)
+        assert again.duplicate and alike.duplicate and again.id == alike.id == first.id
+        assert saved.read_bytes() == kept and alike.text() == first.text()
+        # Saved with its lines ended otherwise, as a person's text was kept as given before, or
+        # by a copy of the folder whose line endings were changed, it is the proposal's text still.
+        saved.write_bytes(other.encode("utf-8"))
+        later = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="d", proposer={"via": "mcp"})
+        assert later.duplicate and later.id == first.id and saved.read_bytes() == other.encode("utf-8")
+        assert [entry["rationale"] for entry in later.data["proposers"]] == ["a", "b", "c", "d"]
+        assert len(refine.proposals(stack.store, made.id)) == 1
+
+    def test_a_file_at_a_proposals_name_holding_another_text_is_never_taken_for_it(self, stack):
+        made = start(stack, a_run(stack))
+        first = refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="a", proposer={"via": "mcp"})
+        kept_in(stack.store, first).write_text("Another text.\n", encoding="utf-8")
+        with pytest.raises(OperationError, match="already exists, with other text"):
+            refine.add_proposal(stack.store, made.id, edits=[KEYS], rationale="b", proposer={"via": "mcp"})
+        assert kept_in(stack.store, first).read_text(encoding="utf-8") == "Another text.\n"
+
+    @pytest.mark.parametrize("ended", ["crlf", "lf", "mostly-lf", "mostly-crlf"],
+                             ids=["skill-ended-with-crlf", "skill-ended-with-lf", "skill-ended-mostly-with-lf",
+                                  "skill-ended-mostly-with-crlf"])
+    def test_a_persons_text_takes_the_skills_line_endings(self, stack, ended):
+        # A text box sends LF whatever the skill's lines end with, and an editor on Windows writes
+        # CRLF. Kept as given, the full runs a validation makes, each given the file, would set the
+        # original against an edit that differs from it in every line, and an approval writes the
+        # file back with the line ending most of its lines end with, which no validation ran. One
+        # line ended otherwise among the rest, its first or its last, changes nothing.
+        skill = stack.tmp / "skills-src" / "tally-report" / "SKILL.md"
+        crlf = ended in ("crlf", "mostly-crlf")
+        if crlf:
+            ended_with_crlf(stack)
+        if ended == "mostly-lf":
+            skill.write_bytes(skill.read_bytes().replace(b"\n", b"\r\n", 1))
+        elif ended == "mostly-crlf":
+            skill.write_bytes(skill.read_bytes().removesuffix(b"\r\n") + b"\n")
+        made = start(stack, a_run(stack))
+        assert made.baseline_text().count("\r\n") == {"crlf": 7, "lf": 0, "mostly-lf": 1, "mostly-crlf": 6}[ended]
+        typed = made.baseline_text().replace("\r\n", "\n").replace(KEYS["old"], KEYS["new"])
+        given = typed if crlf else typed.replace("\n", "\r\n")
+        proposal = refine.add_proposal(stack.store, made.id, text=given, rationale="mine", proposer={"via": "person"},
+                                       strict=False)
+        expected = typed.replace("\n", "\r\n") if crlf else typed
+        assert proposal.text() == expected and kept_in(stack.store, proposal).read_bytes() == expected.encode("utf-8")
+        assert proposal.data["changed"] == 1 and not proposal.data["warnings"]
+
+    def test_a_skill_written_with_crlf_keeps_its_frontmatter(self, stack):
+        # A frontmatter was found only where its lines end with LF: a proposal could change a CRLF
+        # skill's, which is how a harness chooses the skill.
+        ended_with_crlf(stack)
+        made = start(stack, a_run(stack))
+        with pytest.raises(OperationError, match="frontmatter"):
+            refine.add_proposal(stack.store, made.id, edits=[{"old": "name: tally-report", "new": "name: tally"}],
+                                rationale="why", proposer={"via": "mcp"})
+        assert refine.proposals(stack.store, made.id) == []
 
     def test_what_a_proposal_may_not_do(self, stack):
         made = start(stack, a_run(stack))

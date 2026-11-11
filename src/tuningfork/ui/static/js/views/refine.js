@@ -1357,10 +1357,12 @@ function editLine(item) {
 
 /** Lines added or removed, roughly: enough to say how much was edited. */
 function changedLines(before, after) {
+  // A text box reads every line ended with LF, whatever the skill's lines end with.
+  const lines = (text) => text.replace(/\r\n?/g, "\n").split("\n");
   const count = new Map();
-  for (const line of before.split("\n")) count.set(line, (count.get(line) || 0) + 1);
+  for (const line of lines(before)) count.set(line, (count.get(line) || 0) + 1);
   let added = 0;
-  for (const line of after.split("\n")) {
+  for (const line of lines(after)) {
     const left = count.get(line) || 0;
     if (left) count.set(line, left - 1);
     else added += 1;

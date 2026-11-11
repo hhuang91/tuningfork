@@ -467,7 +467,8 @@ exact edits changing at most ten lines, never the frontmatter, and it must chang
 saw at the step.
 
 - `--file SKILL.md --why '…'` — your own wording: the whole skill, edited by hand (a whole text
-  that changes more only warns).
+  that changes more only warns). Its lines take the skill's line ending, the one an approval
+  writes the file back with.
 - `--builtin` — asks the built-in proposer, a model, for edits from the evidence (`-m N`, default
   3, at most 6). Unless `connections proposer set` names an endpoint of its own, it asks the
   inference server — `--base-url`, by default `TUNINGFORK_UPSTREAM`; point it at a running proxy to
