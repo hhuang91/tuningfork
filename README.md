@@ -179,7 +179,7 @@ and an agent can do the reading, measuring and refining itself, over MCP
 |---|---|---|
 | [Does my skill work?](docs/commands.md#does-my-skill-work) | `tuningfork batch spec.json -n 8` | Runs a task N times, each run judged by the task's check |
 | [What happened in a run?](docs/commands.md#what-happened-in-a-run) | `tuningfork timeline <run>` | The run as one conversation, each step's answer where it happened |
-| [Where do the runs go wrong?](docs/commands.md#where-do-the-runs-go-wrong) | `tuningfork divergence --task <id>` | The first step where a task's runs stop agreeing, and how the runs that did each thing fared |
+| [Where do the runs go wrong?](docs/commands.md#where-do-the-runs-go-wrong) | `tuningfork divergence --task <id> --paths` | The first step where a task's runs stop agreeing, the paths they took, and how the runs that did each thing fared |
 | [Bad luck, or the wording?](docs/commands.md#bad-luck-or-the-wording) | `tuningfork ab <run> <step> --variant SKILL.v2.md --target-match RE` | Your edit against the original at that step, its history held fixed, toward a target declared before sampling |
 | [Which token decided it?](docs/commands.md#which-token-decided-it) | `tuningfork forking-tokens <run> <step>` | Each likely alternative forced at the uncertain tokens: which ones change what the model does |
 | [What is the model doing right now?](docs/commands.md#what-is-the-model-doing-right-now) | `tuningfork break add --tool write_file` | Stops a live call after the model answers, before the harness acts |

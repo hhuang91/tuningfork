@@ -14,12 +14,13 @@ The pictures in the top-level README, and in [the web UI page](../web-ui.md).
 
 | File | What it shows | Taken from |
 |---|---|---|
-| `ui-demo.gif` | A run opened, its write step's work beside it, an edited wording A/B-tested there, its job running, and the A/B's own page: the edit, then the original arm against it, with intervals and Fisher's test. About 35 seconds, no sound | `tuningfork demo` |
-| `ui-guide.png` | The front page from its title down: where you left off, what is set up, and the loop from a skill to its next version | the guide's recordings |
+| `ui-demo.gif` | A run opened, its write step's work beside it, an edited wording A/B-tested there, its job running, and the A/B's own page: the edit, then the original arm against it, with intervals and Fisher's test. About 37 seconds, no sound | `tuningfork demo` |
+| `ui-guide.png` | The front page from its title down: the latest runs, what is set up, and the loop from a skill to its next version | the guide's recordings |
 | `ui-run.png` | A step's exact context: every message as the model saw it, the skill marked in it, and the call it made | find-the-file's |
-| `ui-divergence.png` | A task's divergence page: the step that best predicts the verdict, then where the runs split, each step a click away, and how each behaviour fared | find-the-file's |
-| `ui-ab.png` | An A/B's result at a step: the edit it tested, both arms with their intervals, and the declared target's test | find-the-file's |
+| `ui-divergence.png` | A task's divergence page: its runs as a map of paths that part, each box the tool a step called, or a reply, and each path ending in its runs' marks; over the map the turning point, the split that best separates passing from failing; under it the box chosen, with its runs | find-the-file's |
+| `ui-ab.png` | An A/B's result at a step: the edit it tested, the declared target's test with both arms' rates and intervals, then what each arm's samples did, as a fan | find-the-file's |
 | `ui-tokens.png` | An answer's token heatmap, one uncertain token's alternatives open | find-the-file's |
+| `ui-forking-tokens.png` | A forking-token probe's result: the position where a forced token changed what the model did, as a figure — the token boxed in its sentence, a branch for the original token and for each one forced there, each as wide as the model's chance of it and ending in how often its continuations met the target — and under it the answer the probe forked from, the probed tokens ringed | the guide's recordings |
 | `ui-refine.png` | A refinement: its target and its four stages, then the evidence — each proposal's screen, the approved one's validation — and a section for each stage | the guide's recordings |
 | `ui-live.png` | The Live page with a call held at a breakpoint, its tool call edited | `tuningfork demo live` |
 | `ui-scenario.png` | A chat had elsewhere, made a scenario: its first message the starting prompt, and each of its steps beside what a run of the scenario does there | `tuningfork demo` |
@@ -30,12 +31,14 @@ suit the run, divergence, A/B and token shots best — its step 1, token [121] o
 figure's fork. The refinement shot is the guide's own Hermes refinement, `338504b1` in
 [`examples/README.md`](../../examples/README.md): the whole loop on one page, from its target
 through three proposals and their screen to a validated, approved edit. find-the-file has no
-held-out task, so no refinement of it could be validated. The ids the pictures show are at the top
-of `shots.mjs`. **`tuningfork demo`** serves seeded runs through a real proxy, in front of a scripted
-model that names the report's keys only when the skill holds the words `row_count and
-amount_total`: an A/B of that edit shows the shift in seconds, with no GPU. The chat the scenario
-is made from is made up in the script, about the example skill: no one's real conversation.
-**`tuningfork demo live`** is the same proxy with a call held at a breakpoint.
+held-out task, so no refinement of it could be validated. The forking-token shot is the guide's
+too, probe `d1c77d07`: six alternatives forced at five positions in a step's reasoning, one of the
+six changing what the model did. The ids the pictures show are at the top of `shots.mjs`.
+**`tuningfork demo`** serves seeded runs through a real proxy, in front of a scripted model that
+names the report's keys only when the skill holds the words `row_count and amount_total`: an A/B
+of that edit shows the shift in seconds, with no GPU. The chat the scenario is made from is made
+up in the script, about the example skill: no one's real conversation. **`tuningfork demo live`**
+is the same proxy with a call held at a breakpoint.
 
 ## Taking them
 
@@ -73,9 +76,9 @@ the README and in `docs/web-ui.md` with no other change; `--out <folder>` writes
 picture whose source is not named is skipped. What it does for you:
 
 - **The page alone, one pixel to one.** Headless, there is no address bar — and so no access
-  token — on a picture, and nothing to crop. A page is 1440 pixels wide and 896 high (the chat
-  made a scenario 1160, the GIF 1200 by 800), at a device scale of one, in the light theme, its
-  scrollbars hidden.
+  token — on a picture, and nothing to crop. A page is 1440 pixels wide and 896 high (1160 for the
+  forking-token probe and for the chat made a scenario, the GIF 1200 by 800), at a device scale of
+  one, in the light theme, its scrollbars hidden.
 - **Nothing of one machine.** A screenshot is a tracked file like any other. The script reads what
   each page shows — its text and what its fields hold, and on the GIF's every page, any text it
   showed however briefly — and reports a path naming a person or a place (`/home/<name>`,
@@ -99,9 +102,9 @@ pixels hold, a variant's cyan, still reads as itself. What it plays:
 1. **Runs** → run `tally-report/1#demo.2` → step 1's **Work from here** → **A/B a wording…**
 2. In the editor, `Write the totals to report.json.` becomes
    `Write the totals to report.json, using the keys row_count and amount_total.`
-3. Under *Condition*, *A behaviour I describe*: *Calls the tool* `write_file`, then
-   *+ Add a condition* twice, for *Mentions* `row_count` and *Mentions* `amount_total`. The
-   suggested name and 20 samples for each wording stay as they are, and it starts.
+3. Under *Condition*, *Tools & words*: *Calls the tool* `write_file`, then *+ Add a rule*
+   twice, for *Mentions* `row_count` and *Mentions* `amount_total`. The suggested name and 20
+   samples for each wording stay as they are, and it starts.
 4. Its job runs, and its page says what it found. *See the result* opens the A/B's own page: the
    edit as a diff, then the original's 0/20 against the variant's 20/20, more than chance would
    explain (p = 1.5e-11).
