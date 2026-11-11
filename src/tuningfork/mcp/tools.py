@@ -911,7 +911,8 @@ def show_skill(context: Context, args: RunArgs) -> Answer:
                      "should read, {after, insert} adds lines after one; or {old, new} copies one exactly. This is "
                      "the only way to read the skill: it is not a file on your machine")
     else:
-        lines.append("to test an edit: start_ab with variant_text (the whole edited file) and variant_name")
+        lines.append("to test an edit: start_ab with variant_text (the whole edited file) and a variant_name, a new one "
+                     "for each new text")
     if REDACTED in (recorded.get("text") or ""):
         lines.append(f"a key the skill holds reads {REDACTED} on each line it stands on: leave those lines, and the "
                      f"words that make it a key (`password=` before it), as they are, or take its lines out whole; "
@@ -1648,6 +1649,6 @@ def check_job_id(value: str) -> str:
 def same_params(kind: Kind, params: dict[str, Any], masking: Any) -> dict[str, Any]:
     """Parameters as the job runner stores them — parsed, defaults filled, masked as the store
     masks (`masking`, its own) — so an identical job already under way can be found."""
-    from tuningfork.jobs import kept_params
+    from tuningfork.ops.common import kept_params
 
     return kept_params(kind.parse(params), masking)

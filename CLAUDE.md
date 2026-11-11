@@ -291,7 +291,17 @@ recorded with it; `--seed-base` draws an earlier experiment's samples again. An 
 starts with the edit it tested, a line diff of its two texts (`ops.experiments.ab_wording`;
 `tuningfork experiment`, its page, MCP's show_experiment), read back from what it recorded — a
 checkpoint A/B's arms' requests (`experiment.skill.swapped`, the inverse of `substitute`), a
-fork's launch — and from the files it names only while each still holds the text tested.
+fork's launch — and from the files it names only while each still holds the text tested. A
+wording given as text (the A/B editor's, an agent's `variant_text`) is saved as
+`variants/<skill>/<name>.md` as its A/B starts, and only then. A name holds one text, which every
+experiment run with it names by that file, its lines' endings read as one: another text under it is
+refused when the A/B is planned, as is a name an A/B queued or running will save another text
+under (`catalog._refuse_queued`), and again as it starts (`variants.refuse_taken`, `keep`); a save
+is linked into place, never over another's; and the editor gives an edit of a saved variant a
+name of its own, never one a queued A/B holds. A report calls its variant saved under a name only
+while that file holds the text tested, and says what the file holds otherwise (`experiments._side`'s
+`file`): nothing of a relative path but a variant saved in a recordings folder given as one, and
+of a file outside the recordings folder never that it is gone.
 
 Refining a skill at a step — the target first, then proposed edits, each screened, a survivor
 validated with full runs, and approved by a person:

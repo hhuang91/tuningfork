@@ -10,7 +10,12 @@ import time
 import pytest
 
 from tuningfork.control import ControlClient
+from tuningfork.ops.variants import save_variant
 from tests.helpers import VARIANT, task_stack
+
+#: The variant edited again: another text.
+EDITED = VARIANT + "\nSay which keys you used.\n"
+TAKEN = "a variant named 'keys-named' of tally-report already exists, with other text"
 
 
 @pytest.fixture
@@ -71,6 +76,89 @@ def test_an_ab_to_the_end_with_a_wording_edited_in_the_browser(stack):
     saved = stack.store.home / "variants" / "tally-report" / "keys-named.md"
     assert saved.read_text(encoding="utf-8") == VARIANT
     assert len(done["links"]["experiments"]) == 2
+
+
+def test_an_ab_to_the_end_under_a_name_holding_another_text_is_refused(stack):
+    # Its forks would be given this text while their records named that file.
+    from tuningfork.control import ControlError
+
+    source = stack.record()
+    saved = save_variant(stack.store.home, "tally-report", "keys-named", EDITED)
+    with ControlClient(stack.url) as client, pytest.raises(ControlError, match=TAKEN) as refused:
+        client.submit("ab-to-end", {
+            "run": source.run_id, "step": "1", "n": 2,
+            "variant_text": VARIANT, "variant_name": "keys-named",
+        })
+    assert refused.value.error["field"] == "variant_name"
+    assert stack.store.jobs() == []
+    assert saved.read_text(encoding="utf-8") == EDITED
+
+
+def test_an_ab_to_the_end_whose_name_is_taken_after_it_was_prepared_is_refused_as_it_starts(stack):
+    # Its plan reads the harness and the clock first, which takes seconds: another A/B under the
+    # name can start and save its text meanwhile.
+    from tuningfork.ops import OperationError
+    from tuningfork.ops.catalog import CATALOG, JobContext
+
+    source = stack.record()
+    params = {"run": source.run_id, "step": "1", "n": 2, "variant_text": VARIANT, "variant_name": "keys-named"}
+    with ControlClient(stack.url) as client:
+        client.plan("ab-to-end", params)  # the proxy learns its address from a request for work
+    kind = CATALOG["ab-to-end"]
+    context = JobContext(store=stack.store, proxy=stack.app.state.jobs.proxy, job_id="")
+    prepared = kind.prepare(context, kind.parse(params))
+    launched = stack.store._conn.execute("SELECT count(*) FROM launches").fetchone()[0]
+    saved = save_variant(stack.store.home, "tally-report", "keys-named", EDITED)
+    with pytest.raises(OperationError, match=TAKEN):
+        kind.execute(context, prepared, progress=None, cancel=None)
+    assert stack.store._conn.execute("SELECT count(*) FROM launches").fetchone()[0] == launched
+    assert stack.store.experiments() == []
+    assert saved.read_text(encoding="utf-8") == EDITED
+
+
+def test_an_ab_to_the_end_given_crlf_is_named_by_its_file_its_lines_ended_either_way(stack):
+    # A fork keeps its text as given, CR and all, and digests it so: read back as Python reads text, its
+    # own file was said to hold another (found in review). Under a name whose file holds the text with
+    # LF, that file is kept, and is the variant's too.
+    from tuningfork.ops.inspect import experiment_report
+
+    source = stack.record()
+    crlf = VARIANT.replace("\n", "\r\n")
+    kept = save_variant(stack.store.home, "tally-report", "lf-kept", VARIANT)
+    with ControlClient(stack.url) as client:
+        for name in ("crlf-new", "lf-kept"):
+            done = wait(client, client.submit("ab-to-end", {
+                "run": source.run_id, "step": "1", "n": 1, "variant_text": crlf, "variant_name": name,
+            }))
+            assert done["status"] == "done", done["error"]
+            variant = experiment_report(stack.store, done["links"]["experiments"][0]).to_json()["wording"]["variant"]
+            assert variant.get("name") == name and "file" not in variant, variant
+    assert (stack.store.home / "variants" / "tally-report" / "crlf-new.md").read_bytes() == crlf.encode("utf-8")
+    assert kept.read_bytes() == VARIANT.encode("utf-8")
+
+
+def test_a_name_a_queued_ab_to_the_end_holds_is_refused_to_an_ab_with_another_text(stack):
+    # Both are planned while no file is there: the later would be refused only as it starts.
+    from tuningfork.control import ControlError
+
+    source = stack.record()
+    queued = None
+    with ControlClient(stack.url) as client:
+        client.pause()
+        try:
+            queued = client.submit("ab-to-end", {
+                "run": source.run_id, "step": "1", "n": 1, "variant_text": VARIANT, "variant_name": "keys-named",
+            })
+            with pytest.raises(ControlError, match=f"is taken by job {queued['id'][:8]}, queued with another text"):
+                client.submit("ab", {
+                    "run": source.run_id, "step": "1", "n": 1, "variant_text": EDITED, "variant_name": "keys-named",
+                    "target_match": "row_count",
+                })
+        finally:
+            if queued is not None:
+                client.cancel_job(queued["id"])
+            client.resume()
+    assert [job.id for job in stack.store.jobs()] == [queued["id"]]
 
 
 def test_a_fork_stops_at_its_step_for_a_person(stack):

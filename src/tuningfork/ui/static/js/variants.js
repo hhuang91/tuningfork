@@ -14,8 +14,9 @@ import { field, input, textArea, textOf } from "./forms.js";
 import { describeBuilder, seenPreview } from "./targets.js";
 import { LABELS } from "./words.js";
 
-function suggestedName(saved) {
-  const taken = new Set(saved.map((variant) => variant.name));
+/** The first `v<n>` no saved variant has, nor an A/B not yet started will save (`pending`). */
+function suggestedName(saved, pending = []) {
+  const taken = new Set([...saved.map((variant) => variant.name), ...pending]);
   let n = 1;
   while (taken.has(`v${n}`)) n += 1;
   return `v${n}`;
@@ -36,13 +37,17 @@ function changedLines(before, after) {
 }
 
 /**
- * skill  the run's skill file (`GET /runs/{run}/skill`): its text is the baseline
- * saved  variants already saved for that skill (`GET /variants?skill=`)
+ * skill    the run's skill file (`GET /runs/{run}/skill`): its text is the baseline
+ * saved    variants already saved for that skill (`GET /variants?skill=`)
+ * pending  the names A/Bs queued or running will save their texts under (`GET /jobs`)
  */
-export function variantEditor(skill, saved) {
+export function variantEditor(skill, saved, pending = []) {
   const baseline = skill.text ?? "";
   const text = textArea("variant_text", baseline, { rows: 18 });
-  const name = input("variant_name", { value: suggestedName(saved) });
+  const name = input("variant_name", {
+    value: suggestedName(saved, pending),
+    title: "A name holds one text: an edit of a saved variant is given a new name, until you type one.",
+  });
   const original = skill.text === null || skill.text === undefined
     ? input("original", { placeholder: "/path/to/the/SKILL.md the run was given" })
     : null;
@@ -52,7 +57,21 @@ export function variantEditor(skill, saved) {
     const lines = changedLines(baseline, text.value);
     changes.textContent = lines ? `${lines} line${lines === 1 ? "" : "s"} changed` : "unchanged: edit it to have something to test";
   };
-  text.addEventListener("input", count);
+  // A saved variant's name holds its text alone, and is refused for another: the one "Start
+  // from" loaded keeps its name while the box holds its text, and an edit of it is given a name
+  // of its own, until the person writes one.
+  let loaded = null; // its name, and its text as the box reads it
+  let named = false;
+  const rename = () => {
+    if (!named) name.value = loaded && text.value === loaded.text ? loaded.name : suggestedName(saved, pending);
+  };
+  text.addEventListener("input", () => {
+    count();
+    rename();
+  });
+  name.addEventListener("input", () => {
+    named = true;
+  });
   count();
 
   const from = saved.length
@@ -63,14 +82,14 @@ export function variantEditor(skill, saved) {
           const chosen = event.target.value;
           if (!chosen) {
             text.value = baseline;
-            name.value = suggestedName(saved);
+            loaded = null;
           } else {
             const variant = await api.get(`/variants/${enc(skill.skill)}/${enc(chosen)}`);
             text.value = variant.text;
-            name.value = variant.name;
+            loaded = { name: variant.name, text: text.value };
           }
-          count();
-          text.dispatchEvent(new Event("input", { bubbles: true })); // the form checks it again
+          named = false;
+          text.dispatchEvent(new Event("input", { bubbles: true })); // named, counted, and the form checks it again
         },
       },
       h("option", { value: "" }, "the wording the run was given"),

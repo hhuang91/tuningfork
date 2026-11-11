@@ -33,10 +33,10 @@ from contextlib import nullcontext
 from typing import Any
 
 from tuningfork.ops.catalog import BACKGROUND, CATALOG, INTERACTIVE, JobContext, Kind
-from tuningfork.ops.common import Cancel, Cancelled, Event, OperationError
+from tuningfork.ops.common import Cancel, Cancelled, Event, OperationError, kept_params
 from tuningfork.owners import current_owner, owner_alive
 from tuningfork.store.db import JobRecord, Store
-from tuningfork.store.masking import Masked, Masking
+from tuningfork.store.masking import Masked
 
 logger = logging.getLogger("tuningfork.jobs")
 
@@ -140,20 +140,6 @@ def asked_by(value: Any) -> dict[str, str] | None:
             raise OperationError(f"started_by.{key} must be short text", code="bad_params", field="started_by")
         kept[key] = found
     return kept
-
-
-def kept_params(parsed: Any, masking: Masking) -> dict[str, Any]:
-    """A job's parameters as they are kept and shown — on the Jobs page, to whoever reads the
-    jobs API — masked as the store masks (`masking`, its own), and a harness's options as its
-    plan shows them: every value under an MCP server's `headers` or `env` masked, whatever its
-    name, which no pattern would know for a secret (`shown_options`). The job runs with them as
-    given; what is kept is never run."""
-    from tuningfork.ops.batch import shown_options
-
-    data = dataclasses.asdict(parsed)
-    if isinstance(data.get("harness_options"), dict):
-        data["harness_options"] = shown_options(data["harness_options"])
-    return masking.value(data)
 
 
 def plain(value: Any) -> Any:

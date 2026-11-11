@@ -3731,6 +3731,8 @@ def _print_wording(wording) -> None:
     """The edit an A/B tested, as a line diff of its two texts."""
     if wording is None:
         return
+    if wording.variant.get("file"):
+        console.print(f"  [yellow]the variant's file {escape(wording.variant['file'])}[/yellow]")
     if wording.diff is None:
         console.print(f"  the edit  [yellow]not shown: {escape(wording.missing or '')}[/yellow]")
         return

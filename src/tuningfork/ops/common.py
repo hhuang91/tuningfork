@@ -154,6 +154,20 @@ def emit(progress: Progress | None, kind: str, /, subject: Any = None, **data: A
 # --- typed parameters ----------------------------------------------------------------------
 
 
+def kept_params(parsed: Any, masking: Any) -> dict[str, Any]:
+    """A job's parameters as they are kept and shown — on the Jobs page, to whoever reads the
+    jobs API — masked as the store masks (`masking`, its own), and a harness's options as its
+    plan shows them: every value under an MCP server's `headers` or `env` masked, whatever its
+    name, which no pattern would know for a secret (`shown_options`). The job runs with them as
+    given; what is kept is never run."""
+    from tuningfork.ops.batch import shown_options
+
+    data = dataclasses.asdict(parsed)
+    if isinstance(data.get("harness_options"), dict):
+        data["harness_options"] = shown_options(data["harness_options"])
+    return masking.value(data)
+
+
 def parse_params(cls: type[T], data: Any) -> T:
     """Build `cls` (a dataclass) from untrusted JSON, strictly.
 
