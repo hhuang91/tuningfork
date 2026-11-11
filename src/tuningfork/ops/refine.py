@@ -589,10 +589,17 @@ def add_proposal(
 
     `strict` holds a proposal to a few small edits; a person's own text only warns."""
     from tuningfork.config import REDACTED
-    from tuningfork.experiment.skill import NothingToCompare, split_frontmatter, substitute, text_sha256
+    from tuningfork.experiment.skill import (
+        NothingToCompare,
+        normalize_newlines,
+        split_frontmatter,
+        substitute,
+        text_sha256,
+    )
+    from tuningfork.ops.approve import line_endings
     from tuningfork.ops.diff import apply_resolved, line_diff, resolve_edits
     from tuningfork.ops.experiments import load
-    from tuningfork.ops.variants import save_variant
+    from tuningfork.ops.variants import path_for, save_variant
 
     refinement = get(store, reference)
     refuse_closed(refinement)
@@ -629,11 +636,21 @@ def add_proposal(
         kept = [{"lines": found["lines"], "old": found["shown"], "new": found["new"], "given": found["given"]}
                 for found in resolved]
     else:
+        # A person's whole text takes the line ending most of the skill's lines end with, the one
+        # an approval writes the file back with: a text box sends LF whatever the skill's lines end
+        # with, and the full runs a validation makes, each given the file, would set the original
+        # against an edit that differs from it in every line.
+        text = normalize_newlines(text)
+        if line_endings(baseline.encode("utf-8"))[0] == "CRLF":
+            text = text.replace("\n", "\r\n")
         kept = None
     assert text is not None
     if text_sha256(text) == text_sha256(baseline):
         raise OperationError("the proposal changes nothing", code="bad_params", field="edits")
-    if split_frontmatter(text)[0].strip() != split_frontmatter(baseline)[0].strip():
+    # A frontmatter is found only where its lines end with LF: read so, a skill whose lines end with
+    # CRLF has one too.
+    before, after = (split_frontmatter(normalize_newlines(each))[0].strip() for each in (baseline, text))
+    if after != before:
         raise OperationError(
             "the frontmatter is how a harness chooses the skill, which a screen at one step "
             "cannot measure: edit the skill's body",
@@ -667,7 +684,14 @@ def add_proposal(
         "at": time.time(),
     }
     name = f"r{refinement.id[:8]}-{pid[:8]}"
-    path = save_variant(store.home, refinement.skill, name, text)
+    path = path_for(store.home, refinement.skill, name)
+    # A file there holding this text with its lines ended otherwise is this proposal's all the same,
+    # since its id reads every line's ending as one, and it stays as it is: on a skill whose lines
+    # mix their endings, an edit keeps the mix and a person's whole text takes the commonest; an
+    # older tuningfork saved a person's text as it was given; a copy of the folder may have had its
+    # line endings changed.
+    if _held(path, pid)[0] is None:
+        path = save_variant(store.home, refinement.skill, name, text)
     record = refinement.folder / "proposals" / f"{pid}.json"
     data = {
         "id": pid,

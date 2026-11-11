@@ -316,8 +316,9 @@ it can be: the checkpoint, the run's copy of the skill, its target, and every pr
 proposal is at most 3 edits (`ops/diff.py`: a line named by its number as show_skill prints
 it and the line as it should read, lines added after one, or exact `{old, new}` text — each
 resolved to an exact replacement of the text as shown, so none shifts another) changing at
-most 10 lines — a person's whole text only warns — never the frontmatter, and it must change what the model
-saw at the step; it is saved as a variant, with who proposed it, why, and the packet they
+most 10 lines — a person's whole text only warns, and takes the line ending most of the skill's lines
+end with, the one an approval writes the file back with — never the frontmatter, and it must change
+what the model saw at the step; it is saved as a variant, with who proposed it, why, and the packet they
 were shown (`ops/packet.py`: built from the run's own task's records only, never sampled
 for, and masked as it is built). Its text is read by the variant's name from the recordings
 folder the refinement is opened in — a copy of the folder keeps its own — else from where its

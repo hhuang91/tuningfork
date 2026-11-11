@@ -37,6 +37,21 @@ def test_a_name_holding_other_text_is_refused_not_overwritten(tmp_path):
     assert read_variant(tmp_path, "tally-report", "v2") == "first"
 
 
+def test_the_text_a_name_holds_is_its_bytes_line_endings_and_all(tmp_path):
+    # Read back as Python reads text, CRLF as LF, a text whose lines end with CRLF was refused as
+    # another when saved again (found in review of issue #76's fix), and the same lines ended with
+    # LF were said to be what the file holds: a run given that file is given other bytes.
+    path = save_variant(tmp_path, "tally-report", "v2", "first\r\nsecond\r\n")
+    assert save_variant(tmp_path, "tally-report", "v2", "first\r\nsecond\r\n") == path
+    assert read_variant(tmp_path, "tally-report", "v2") == "first\r\nsecond\r\n"
+    with pytest.raises(OperationError, match="already exists"):
+        save_variant(tmp_path, "tally-report", "v2", "first\nsecond\n")
+    assert path.read_bytes() == b"first\r\nsecond\r\n"
+    path.write_bytes(b"\xff not UTF-8")
+    with pytest.raises(OperationError, match="already exists"):
+        save_variant(tmp_path, "tally-report", "v2", "first\r\nsecond\r\n")
+
+
 def test_saved_variants_are_listed_newest_first(tmp_path):
     older = save_variant(tmp_path, "tally-report", "older", "a")
     os.utime(older, (time.time() - 60, time.time() - 60))

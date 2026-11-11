@@ -96,17 +96,21 @@ def read_variant(home: Path | str, skill: str, name: str) -> str:
     path = path_for(home, skill, name)
     if not path.is_file():
         raise OperationError(f"no variant {name!r} of {skill}")
-    return path.read_text(encoding="utf-8")
+    # As saved, line endings and all: the text `save_variant` takes back under its name.
+    with open(path, encoding="utf-8", newline="") as handle:
+        return handle.read()
 
 
 def save_variant(home: Path | str, skill: str, name: str, text: str) -> Path:
     """Write a variant, atomically. A name already holding other text is refused rather
-    than overwritten: an earlier experiment's record points at that file."""
-    if len(text.encode("utf-8")) > MAX_BYTES:
+    than overwritten: an earlier experiment's record points at that file. Only the same bytes
+    are the same text: read as Python reads a text, a line ended with CRLF ends with LF."""
+    data = text.encode("utf-8")
+    if len(data) > MAX_BYTES:
         raise OperationError("the variant is larger than 1 MiB", field="variant_text")
     path = path_for(home, skill, name)
     if path.exists():
-        if path.read_text(encoding="utf-8") == text:
+        if path.read_bytes() == data:
             return path
         raise OperationError(
             f"a variant named {name!r} of {skill} already exists, with other text",
