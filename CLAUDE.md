@@ -646,7 +646,7 @@ step. The tree and its turning point are the server's (`analysis.paths`, in the 
 the terminal prints them, `tuningfork divergence --paths`, and an agent is given the turning
 point): a run gone its own way is drawn no further on a large map, and one Detail control draws
 more or less (`DETAIL`; the first split is often not the step that decides, and compared exactly,
-twenty runs were twelve behaviours at the step that decided them, nine of them one refusal
+twenty runs were ten behaviours at the step that decided them, eight of them one refusal
 reworded). An experiment is drawn the same way, what its step led to as a fan (`fanTree`): a
 wording a fan of its own, a branch for each move it made (`gather_moves`, a reply one move
 whatever its words), ending in how often — or, of forks run to the end, in its forks, a mark each

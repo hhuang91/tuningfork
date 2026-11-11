@@ -7,7 +7,7 @@ forks. A node is the runs that did the same things so far; its children are what
 What "the same thing" is decides what the tree shows. Two replies that differ in a word, or two
 searches with another pattern, are one move here: a node is the tools a step called, whatever
 their arguments, or a reply, whatever its words. Compared exactly, as the divergence report
-compares them, twenty runs of a task were twelve behaviours at the step that decided them, nine
+compares them, twenty runs of a task were ten behaviours at the step that decided them, eight
 of them the same refusal reworded; by move they were two, and the two were the passing runs and
 the failing ones. A tool's calls are drawn apart only where they came in a few distinct forms
 (`forms`): the demo's two ways of writing its report are two branches where its runs part, and
@@ -98,8 +98,8 @@ def gather_moves(
     `{arm: (passed, failed, no verdict)}` — and each move then says it of its own (`ended`,
     `ended_json` for each arm): a branch of a fan ends in its forks, as a path of runs does.
 
-    A move is the tools a behaviour called, or a reply, whatever its words: sixteen behaviours
-    at a step, fifteen of them one refusal reworded, are two moves. A tool's calls are told
+    A move is the tools a behaviour called, or a reply, whatever its words: twelve behaviours
+    at a step, eleven of them one refusal reworded, are two moves. A tool's calls are told
     apart as a tree of paths tells them (`_parts`): where they came in a few distinct forms,
     counted over every arm together, each form is a move of its own, with what tells it from
     the others (`hint`). Each move says its behaviours' letters, how many forms they were — over
