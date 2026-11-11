@@ -1884,10 +1884,11 @@ the task there, the samples drawn there — and marks which would match, before 
 sampled.
 
 The result is on the experiment's page. It leads with each position where a forced token
-changed what the model did: the token boxed in its sentence, and under it the original token
-and each forced one, with how often the condition was met after each. Then come the answer it
-forked from, with the probed tokens ringed — doubled where a forced token changed what the
-model did — and each position's table. *In the answer* opens a position's
+changed what the model did, as a figure: the token boxed in its sentence, and from it a branch
+for the original token and for each forced one, as wide as the model's chance of that token,
+ending in how often the condition was met after it. Then come the answer it forked from, with
+the probed tokens ringed — doubled where a forced token changed what the model did — and the
+other positions, a figure each. *In the answer* opens a position's
 token there; *On the step* opens it on the step's own Tokens view, where every token a probe
 forced is ringed and says what each probe found.
 

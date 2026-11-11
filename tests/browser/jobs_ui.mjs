@@ -1405,40 +1405,64 @@ try {
   const flipLine = await page.eval(`[...document.querySelectorAll(".verdict-block ul.verdict-lines li")].map((li) => li.textContent).join(" | ")`);
   check(flipLine === `At [${forkSpot.position}], "search_files" forced in place of the original "read_file": the condition was met in 0 of 6 continuations, against 6 of 6.`,
     `and names the token, beside the original, with what each did (${flipLine})`);
-  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".fork-tree")`),
-    "the probe's job page says what it found in lines, and leaves the tree and the tables to the probe's page");
+  check(await page.eval(`!document.querySelector(".fork-position") && !document.querySelector(".rm-probe")`),
+    "the probe's job page says what it found in lines, and leaves the figures to the probe's page");
   await page.eval(`[...document.querySelectorAll("a.btn")].find((a) => a.textContent === "See the result").click()`);
   await until(() => page.eval(`location.hash.startsWith("#/experiments/") && [...document.querySelectorAll(".chip")].some((c) => c.textContent === "less often")`), "the result, marked where it forks");
   check(await page.eval(`[...document.querySelectorAll(".chip")].filter((c) => /^(less|more) often$/.test(c.textContent)).every((c) => c.classList.contains("tone-accent"))`),
     "a forced token that changed what the model did is the accent's colour, its direction in words: a result, not a check's red");
-  // The block the page leads with: the condition on a line of its own, then a tree from the token
-  // boxed in its sentence, its place in the answer over it: the original token and the forced one a
-  // row each, the model's chance of each, how often each met the condition and a badge after the
-  // rate the forced one moved, every column read from the left; the behaviour breakdown a link away
-  // (the user's drawing, 2026-11-06: no "the run's own" to explain, the sentence shows it; their
-  // look, 2026-11-09: the place heads the tree, the badge has no column of its own, and the link,
-  // under the trees, named for what it leads to).
-  const probeLead = await page.eval(`(() => {
+  // The block the page leads with: the condition on a line of its own, then the position as a
+  // figure of the pages' one kind. Its place in the answer is over it; the box it grows from is the
+  // token boxed in its sentence; a branch is the original token, or the forced one in a change's
+  // cyan, with the model's chance of it and as wide as that chance; and it ends in how often it met
+  // the condition, a badge after the rate the forced one moved, its test and where it led after
+  // that. The behaviour breakdown is a link away (the user's drawing, 2026-11-06: the token boxed
+  // in its sentence, no "the run's own" to explain; their look, 2026-11-09: the place heads it,
+  // the badge has no column of its own, and the link is named for what it leads to; their ask,
+  // 2026-11-10: the node graph the run map and the fans are drawn as, in place of a tree of guides
+  // and a table of the same numbers under it).
+  // The page draws its lead again once the original answer has loaded, and a figure's lines come
+  // a frame after its boxes: the lead is read until it is whole, the answer under it.
+  const probeLead = await until(async () => {
+    const read = await page.eval(`(() => {
     const block = document.querySelector(".verdict-block");
-    const at = block.querySelector(".fork-tree tr.fork-at");
+    const figure = block?.querySelector(".flips .fork-position .rm-probe");
+    const origin = figure?.querySelector(".rm-origin");
+    if (!origin || !document.querySelector(".fork-answer")) return null;
     return {
       label: block.querySelector(".verdict-target .label").textContent,
-      boxed: at?.querySelector(".fork-token")?.textContent, before: at?.querySelector(".fork-before")?.textContent,
-      after: at?.querySelector(".fork-after")?.textContent,
+      boxed: origin.querySelector(".fork-token")?.textContent, before: origin.querySelector(".fork-before")?.textContent,
+      after: origin.querySelector(".fork-after")?.textContent,
       link: [...block.querySelectorAll(":scope > button")].map((button) => button.textContent).join(","),
-      heads: [...block.querySelectorAll(".fork-tree thead th")].map((th) => th.textContent).join(","),
-      fromLeft: [...block.querySelectorAll(".fork-tree th, .fork-tree td")].every((cell) => ["left", "start"].includes(getComputedStyle(cell).textAlign)),
-      marked: [...block.querySelectorAll(".fork-tree tr.fork-branch td:first-child span")].map((span) => span.className).join(","),
-      rows: [...block.querySelectorAll(".fork-tree tr.fork-branch")].map((row) => [...row.children].map((cell) => cell.textContent.trim())),
+      heads: [...figure.querySelectorAll(".rm-head")].map((head) => head.textContent).join(" | "),
+      tokens: [...figure.querySelectorAll(".rm-node.kind-token")].map((box) =>
+        [box.querySelector(".rm-label").textContent, box.querySelector(".rm-count").textContent, box.classList.contains("tone-change")]),
+      reads: [...figure.querySelectorAll(".rm-node.kind-token")].map((box) =>
+        [box.querySelector(".visually-hidden")?.textContent, getComputedStyle(box, "::before").maskImage !== "none" && getComputedStyle(box, "::before").maskImage !== ""]),
+      ends: [...figure.querySelectorAll(".rm-end")].map((cell) => cell.textContent.trim()),
+      widths: [...figure.querySelectorAll(".rm-edges path.rm-edge:not(.rm-leader)")].map((path) => Number(path.getAttribute("stroke-width"))),
+      key: [...block.querySelectorAll(".rm-legend .rm-key")].map((key) => key.textContent),
+      tables: document.querySelectorAll(".verdict-block table, .fork-position table").length,
+      once: document.querySelectorAll("#fork-pos-${forkSpot.position}").length,
     };
   })()`);
-  const [own, forced] = probeLead.rows;
+    return read && read.widths.length === 2 ? read : null;
+  }, "the lead's figure, its lines drawn, the answer under it");
+  const [own, forced] = probeLead.ends;
   check(probeLead.label === "Condition:" && probeLead.boxed === "read_file" && probeLead.before.endsWith("call:") && probeLead.after.startsWith("{path:")
-    && probeLead.link === "Behaviour breakdown" && probeLead.heads === `[${forkSpot.position}] tool call,chance of token,condition met`
-    && probeLead.fromLeft && probeLead.marked === "fork-original,fork-forced"
-    && probeLead.rows.length === 2 && own.length === 3 && own[0] === '"read_file"' && own[2].startsWith("6/6") && !own[2].includes("often")
-    && forced[0] === '"search_files"' && forced[2].startsWith("0/6") && forced[2].endsWith("less often"),
-    `the probe's page leads with a tree from the token in its sentence, its place over it: the original token and the forced one, how often each met the condition, and a badge after the rate one moved (${JSON.stringify(probeLead)})`);
+    && probeLead.link === "Behaviour breakdown" && probeLead.heads === `[${forkSpot.position}] tool call | chance of token | condition met`,
+    `the probe's page leads with a figure from the token boxed in its sentence, its place over it (${probeLead.heads}; ${probeLead.before}[${probeLead.boxed}]${probeLead.after})`);
+  check(JSON.stringify(probeLead.tokens) === JSON.stringify([['"read_file"', "60.0%", false], ['"search_files"', "40.0%", true]])
+    && JSON.stringify(probeLead.widths) === JSON.stringify([7.2, 5.3]),
+    `a branch is the original token, or the forced one as a change, each with the model's chance of it and as wide as that chance: 1.5 and 9.5 times it (${JSON.stringify([probeLead.tokens, probeLead.widths])})`);
+  check(JSON.stringify(probeLead.reads) === JSON.stringify([["original token: ", false], ["forced token: ", true]]),
+    `which is which is not left to colour: the forced one wears a change's pencil, and a screen reader is told (${JSON.stringify(probeLead.reads)})`);
+  check(probeLead.ends.length === 2 && own.startsWith("6/6") && !own.includes("often") && own.endsWith("led to A ×6")
+    && forced.startsWith("0/6") && forced.includes("less often") && forced.includes("p 0.002") && forced.endsWith("led to B ×6"),
+    `and ends in how often it met the condition, a badge after the rate one moved, then its test and where its continuations led (${JSON.stringify(probeLead.ends)})`);
+  check(JSON.stringify(probeLead.key) === JSON.stringify(["the original token", "a token forced in its place", "wider line, likelier token"])
+    && probeLead.tables === 0 && probeLead.once === 1,
+    "what its boxes and lines are is said once under it, and a position is drawn once: no table of the same numbers below");
   await page.eval(`[...document.querySelectorAll(".verdict-block > button")].find((button) => button.textContent === "Behaviour breakdown").click()`);
   check(await page.eval(`(() => { const section = document.querySelector(".panel.continuations"), box = section?.getBoundingClientRect();
     return !!section?.querySelector(".probe-behaviours") && !!box && box.top >= -1 && box.top < innerHeight; })()`),
@@ -1450,8 +1474,8 @@ try {
   await page.eval(`location.hash = "#/experiments/${probeId}"`);
   await until(() => page.eval(`!!document.querySelector('.fork-answer .tk-t.tk-flipped[data-i="${at}"]')`), "the original answer");
   check(true, "the result shows the original answer, the forking token ringed");
-  check(await page.eval(`[...document.querySelectorAll("#fork-pos-${at} thead th")].pop().textContent === "led to"`),
-    "and each token's row says where its continuations went");
+  check(await page.eval(`JSON.stringify([...document.querySelectorAll("#fork-pos-${at} .rm-end .fork-led")].map((led) => led.textContent)) === '["led to A ×6","led to B ×6"]'`),
+    "and each token's branch says where its continuations went");
   // Every continuation, in one section under the lead, grouped by token or by behaviour: by token
   // first, each token's behaviours listed and their continuations folded until opened.
   const grouping = () => page.eval(`(() => {
@@ -1491,7 +1515,7 @@ try {
   const fromPosition = await grouping();
   check(fromPosition.picks === "By token*,By behaviour" && fromPosition.hash === `#/experiments/${probeId}`
     && await page.eval(`(() => { const box = ${written}.getBoundingClientRect(); return box.top >= -1 && box.top < innerHeight; })()`),
-    `a position's table leads to what its continuations wrote, by token again (${JSON.stringify(fromPosition)})`);
+    `a position's figure leads to what its continuations wrote, by token again (${JSON.stringify(fromPosition)})`);
   await page.eval(`${written}.querySelectorAll(".written-token > details.fold > summary").forEach((summary) => summary.click())`);
   await until(() => page.eval(`${written}.querySelectorAll(".written-text").length === 12`), "what each continuation wrote");
   const wrote = await page.eval(`[...${written}.querySelectorAll(".written-token")].map((token) => ({

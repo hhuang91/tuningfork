@@ -637,10 +637,13 @@ whatever its words), ending in how often — or, of forks run to the end, in its
 by how its check went (`EndToEnd.ended`, a move's `ended`: what the model did at the step set
 against how the run then ended, which the terminal's *then passed* column and an agent's
 `compact.to_end` say too) — and each behaviour in full a click away; a forking-token probe each
-position where a forced token changed what the model did, as a tree under its place in the answer:
-the token boxed in its sentence, a word or two each side, and under it the original token and each
-forced one, the model's chance of each and how often the condition was met, a badge after the rate
-a forced one moved, the behaviours each led to a link away (`flipsTree` in `results.js`);
+position as a figure of the same kind (`positionFigure` in `results.js`, `choiceFan` in
+`runmap.js`) — its place in the answer is over it; the box it grows from is the token boxed in its
+sentence, a word or two each side; a branch is the original token or one forced there, the forced
+one in a change's cyan with its pencil, each with the model's chance of the token and as wide as
+that chance; a branch ends in how often the condition was met, a badge after the rate a forced one
+moved, then its test and the behaviours it led to — first the positions where a forced token
+changed what the model did, then the rest after the answer, each drawn once;
 Connections the setup at a glance — the server, the harnesses, the sandbox, the proposing model, a
 word and a colour each, the server in the status strip's words (`serverWord`), and what that means
 in at most three sentences (`whatItMeans`); a refinement its four stages in a line (`stagesOf` in
@@ -901,7 +904,7 @@ than on a hardcoded assumption about which server is running.
   text. `tests/test_ui.py` fails on any HTML-parsing sink (`innerHTML` and friends).
 - The web UI says some terms more plainly than the CLI, MCP and the docs, which keep the precise
   words: an arm is a *wording*, a target the *condition* (over a result, *Condition* on a line of
-  its own; a probe's rows, *condition met*; a refinement's, *what the model should do*), a screen a
+  its own; a probe's figures, *condition met*; a refinement's, *what the model should do*), a screen a
   *test at this step*, a validation *full test runs*, a spec a *task file*. A run's set-up is a
   *set-up* in every front end, so a condition is never a set-up: the word had meant both.
   `ui/static/js/words.js` holds the phrase for each term the glossary defines (a term's `ui`;
@@ -929,13 +932,25 @@ than on a hardcoded assumption about which server is running.
   form opens. A short name must not borrow a word that already names something: where paths part is
   a *split* (a fork is a replayed run), a reply's different texts are its *phrasings* (a wording is
   an arm), and a line of *Tools & words* is a *rule* (the condition is the whole).
-- Where a thing has a shape, the page draws it before it describes it: a task's runs as a map of
-  paths that part, what a step led to as a fan, a refinement's stages in a line, a probe's forced
-  tokens as a tree, a folder as its tree. The drawings share one language: a box is what was done, a
-  line's width is how many did it, and a path ends in how it fared. Behaviours are shown by move
-  first — the tool called, a reply — and replies that differ only in their words fold to one line;
-  each behaviour in full is a click away. What a drawing counts or tests is the server's: a page
-  works out no statistic.
+- Where a thing has a shape, the page draws it before it describes it. Where the shape is things
+  done one after another, or one of several ways taken, the drawing is the node graph
+  (`ui/static/js/runmap.js`, `pathsFigure`): the pages' one figure, to be reached for before a
+  table or a list whenever a page's subject is paths, branches, alternatives, or outcomes that
+  part. It has one grammar. A box is what was done: a tool called, a reply, a token, a wording. A
+  line joins what was done to what came next, as wide as how many went that way: runs, samples,
+  forks, or a token's chance. A path ends in how it fared: its runs' marks, a rate with its
+  interval, its forks' marks. Columns run left to right in the order things happened, headed in a
+  few words, or not at all where a head adds nothing; the box chosen is shown under the figure,
+  and what the figure leaves out — each behaviour in full, each run — is a click away under it. A
+  figure too large to take in is thinned, never shrunk: paths one run took fold, and a Detail
+  control draws more or less. A task's runs are a map of paths that part (`runMap`), what a step
+  led to a fan (`fan`), a probe's position a fan from its token (`choiceFan`). What only a colour
+  shows is said another way too: a forced token wears a change's pencil, and a screen reader is
+  told which box is which. Not everything is a graph: a refinement's stages are a line, a folder
+  is its tree, an answer's tokens a heatmap, and one number is a rate with its bar. Behaviours
+  are shown by move first, the tool called or a reply, and replies that differ only in their
+  words fold to one line. What a drawing counts or tests is the server's: a page works out no
+  statistic.
 - A place on disk is shown, never only described: a folder is drawn as the tree it is, each line
   with what it is for beside it (`folderTree` in `ui/static/js/folders.js`), the part of a path
   inside the recordings folder shown from there. Their names are the glossary's, the same in

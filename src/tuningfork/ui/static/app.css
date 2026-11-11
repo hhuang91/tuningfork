@@ -1569,50 +1569,60 @@ pre.code { color: var(--muted); }
 .verdict-target .label { margin: 0; font-size: var(--text-sm); }
 .verdict-target-body { padding-left: var(--space-5); }
 .verdict-target-text { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
-/* A probe's lead, under its headline: each position where a forced token changed what the model
-   did, as a tree, a table each, as wide as its words. Its place in the answer heads the tree's
-   column; under it the token is boxed in its sentence (the head of the position's rows below
-   too), and from under the box hang the original token, boxed alike, and each one forced, in the
-   cyan of a change, a row each. The guides are drawn on the token's cell, set in by the text
-   before the box (`--fork-before`, in the mono font's ch, as the sentence is), so the trunk falls
-   from the box: a screen reader hears a table. Every sentence is as wide as the widest tree needs
-   (`--fork-span`) and every tree's panel as wide as the widest, so their columns line up. */
+/* A probe's positions, each a figure (results.js `positionFigure`): the token boxed in its
+   sentence, and from it a branch for the original token and each one forced there, in the cyan
+   of a change, as wide as the model's own chance of it, ending in how often the condition was
+   met. The figures line up: every sentence as wide as the widest (`--fork-span`) and every
+   token (`--fork-token`), in the mono font's ch. In the block a page leads with, a figure
+   stands on the panel's own ground, as its rates do everywhere. */
 .flips { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
-.flips p { margin: 0; }
-.fork-trees { display: grid; gap: var(--space-2); width: fit-content; max-width: 100%; }
-.fork-trees > .table-wrap { background-color: var(--panel); }
-.fork-sentence, .fork-tree td.fork-alt { font-family: var(--mono); font-size: var(--text-code); }
-.fork-sentence { white-space: pre; }
-/* A block of its own, so the box sits at its cell's foot, where the trunk starts. */
-.fork-tree .fork-sentence { display: block; min-width: var(--fork-span, 0); }
+.flips > .fork-position { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--panel); }
+.fork-others { display: flex; flex-direction: column; gap: var(--space-2); }
+.fork-others p { margin: 0; }
+/* The answer the probe forked from, then the positions it led nowhere at: a rule between them. */
+.fork-answer + .fork-others { padding-top: var(--space-3); border-top: 1px solid var(--border); }
+/* The key's two boxes: a token's, as its figure draws it. */
+.fork-key { display: inline-block; width: var(--space-4); height: var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--radius-xs); background: var(--panel); }
+.fork-key.tone-change { border-color: var(--change); background: var(--change-soft); }
+.fork-sentence { font-family: var(--mono); font-size: var(--text-code); white-space: pre; }
 .fork-before, .fork-after { color: var(--muted); }
 /* The box drawn outside the token, a pixel clear of it: an underscore at its foot still reads. */
-.fork-token, .fork-original { box-shadow: 0 0 0 1px var(--text); border-radius: var(--radius-sm); padding: 1px var(--space-0-5); color: var(--text); }
-.fork-forced { background: var(--change-soft); color: var(--change); border-radius: var(--radius-sm); padding: 0 var(--space-0-5); }
-.fork-tree { --fork-before: 0ch; background: var(--panel); }
-/* The token's column and its chance's as narrow as their words: a tree narrower than the widest
-   gives its room to the rates, its heading's rule across its panel and its columns where the
-   widest tree has them. */
-.fork-tree th:not(:last-child), .fork-tree td:not(:last-child) { width: 1px; }
-.fork-tree tr.fork-at td { padding-top: var(--space-2-5); padding-bottom: var(--space-1); border-bottom: none; }
-.fork-tree tr.fork-branch td { padding-top: var(--space-1); padding-bottom: var(--space-1); border-bottom: none; vertical-align: middle; }
-.fork-tree tr.fork-branch:last-child td { padding-bottom: var(--space-3); }
-/* A token's chance and how often the condition was met after it read alike, from the left; a
-   badge follows the rate it is about. */
-.fork-tree td.fork-chance { font-family: var(--mono); font-size: var(--text-xs); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.fork-met { display: inline-flex; align-items: center; gap: var(--space-2-5); white-space: nowrap; }
-.fork-tree td.fork-alt { position: relative; white-space: pre; padding-left: calc(var(--space-3) + var(--fork-before) + var(--space-5)); }
-.fork-tree td.fork-alt::before, .fork-tree td.fork-alt::after {
-  content: "";
-  position: absolute;
-  left: calc(var(--space-3) + var(--fork-before) + var(--space-2));
-  border: 0 solid var(--control);
+.fork-token { box-shadow: 0 0 0 1px var(--text); border-radius: var(--radius-sm); padding: 1px var(--space-0-5); color: var(--text); }
+.rm-probe .rm-node.rm-origin { max-width: none; }
+.rm-probe .rm-origin .rm-label { overflow: visible; }
+.rm-probe .fork-sentence { display: inline-block; min-width: var(--fork-span, 0); }
+.rm-probe .rm-node.kind-token .rm-label { min-width: var(--fork-token, 0); }
+.rm-probe .rm-node.kind-token.tone-change { background: var(--change-soft); }
+.rm-probe .rm-node.kind-token.tone-change .rm-label { color: var(--change); }
+/* A forced token is a change, and wears the pencil a change wears everywhere: not its colour
+   alone says so. The original's box keeps the pencil's room, so the tokens line up. */
+.rm-probe .rm-node.kind-token { grid-template-columns: auto auto auto; }
+.rm-probe .rm-node.kind-token::before { content: ""; align-self: center; width: var(--icon-xs); height: var(--icon-xs); }
+.rm-probe .rm-node.kind-token.tone-change::before {
+  background: var(--change);
+  -webkit-mask: var(--icon-pencil) center / contain no-repeat;
+  mask: var(--icon-pencil) center / contain no-repeat;
 }
-.fork-tree td.fork-alt::before { top: 0; height: calc(var(--space-1) + 0.75em); width: var(--space-2); border-left-width: 1px; border-bottom-width: 1px; }
-.fork-tree tr.fork-branch:not(:last-child) td.fork-alt::after { top: 0; bottom: 0; border-left-width: 1px; }
-/* The first row's guides reach up to the box. */
-.fork-tree tr.fork-at + tr.fork-branch td.fork-alt::before { top: calc(-1 * var(--space-1)); height: calc(var(--space-2) + 0.75em); }
-.fork-tree tr.fork-at + tr.fork-branch td.fork-alt::after { top: calc(-1 * var(--space-1)); }
+.rm-probe .rm-node.kind-token .rm-hint { grid-column: 2 / -1; }
+.rm-probe .rm-count { min-width: 5ch; text-align: right; }
+/* Two columns and its ends: nothing scrolls under them, so they scroll with the figure. */
+.rm-probe .rm-end, .rm-probe .rm-head-end { position: static; }
+/* The positions after the answer line up, so their columns are headed once in sight, over the
+   first: the others keep their heads for a screen reader. */
+.fork-others .fork-position ~ .fork-position .rm-head:not(:first-child) { opacity: 0; }
+/* A figure knows its own width (`.rm`, below). With room, an end too long for its line goes on
+   under its rate's numbers, the bar hanging before them; with less, each part goes under the
+   bar. */
+@container (min-width: 900px) {
+  .rm-probe .rm-end { padding-left: calc(var(--space-2) + var(--ci-track) + var(--space-2-5)); }
+  .rm-probe .rm-end > .ci:first-child { margin-left: calc(-1 * (var(--ci-track) + var(--space-2-5))); }
+}
+/* After a token's rate: its test, then where its continuations ended. */
+.fork-test { color: var(--muted); font-family: var(--mono); font-size: var(--text-xs); white-space: nowrap; }
+.fork-led { color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }
+.fork-foot { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); }
+/* The foot's note opens from the foot's own edge, under it: from its "?" it would pass the window's. */
+.fork-foot .info { position: static; }
 .verdict-block.tone-ok .verdict-big { color: var(--ok); }
 .verdict-block.tone-bad .verdict-big { color: var(--bad); }
 .verdict-block.tone-warn .verdict-big { color: var(--warn); }
@@ -1880,7 +1890,7 @@ pre.code { color: var(--muted); }
 .tk-probes { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2-5); }
 .tk-probe { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-0-5) var(--space-3); }
 .tk-probe-flip { color: var(--accent); font-weight: var(--weight-semibold); }
-.fork-answer { display: flex; flex-direction: column; gap: var(--space-1-5); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
+.fork-answer { display: flex; flex-direction: column; gap: var(--space-1-5); }
 .fork-links { display: inline-flex; flex-wrap: wrap; gap: var(--space-1-5); margin-left: auto; }
 .passes-when { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2-5); padding: var(--space-2) var(--space-4) 0; }
 .passes-when .label { margin: 0; }
@@ -2403,7 +2413,7 @@ a.stage-name:hover { color: var(--accent); text-decoration: none; }
    verdict is on every page, and shaped apart too, a round mark and a square one. */
 
 .run-map .panel-body > * + * { margin-top: var(--space-4); }
-.rm { overflow-x: auto; overflow-y: hidden; padding: var(--space-1) var(--space-0-5) var(--space-2); }
+.rm { overflow-x: auto; overflow-y: hidden; padding: var(--space-1) var(--space-0-5) var(--space-2); container-type: inline-size; }
 .rm-canvas { position: relative; width: fit-content; min-width: 100%; }
 .rm-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
 .rm-grid {
@@ -2423,11 +2433,13 @@ a.stage-name:hover { color: var(--accent); text-decoration: none; }
   display: inline-grid; grid-template-columns: auto auto; align-items: baseline; column-gap: var(--space-2);
   min-height: var(--control-md); max-width: var(--label-max); padding: var(--space-1) var(--space-2-5);
   border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--panel);
-  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  color: var(--text); font: inherit; text-align: left;
 }
-.rm-node:hover { border-color: var(--control); background: var(--panel-2); }
+/* A box that can be chosen is a button: only it points, and answers a hover. */
+button.rm-node { cursor: pointer; }
+button.rm-node:hover { border-color: var(--control); background: var(--panel-2); }
 .rm-node.kind-tool_call { border-color: var(--accent-line); background: var(--accent-soft); }
-.rm-node.kind-tool_call:hover { border-color: var(--accent); }
+button.rm-node.kind-tool_call:hover { border-color: var(--accent); }
 .rm-node.kind-text { background: var(--panel-2); }
 .rm-node.kind-empty, .rm-node.kind-truncated, .rm-node.kind-error { border-color: var(--warn-line); background: var(--warn-soft); }
 .rm-node.rm-origin, .rm-node.rm-alone { border-style: dashed; background: transparent; color: var(--muted); }
@@ -2504,10 +2516,6 @@ a.stage-name:hover { color: var(--accent); text-decoration: none; }
 .rm-node.tone-change { border-color: var(--change); }
 .rm-node.rm-origin.tone-change { color: var(--change); }
 .rm-edge.tone-change { stroke: color-mix(in srgb, var(--change) 45%, var(--panel)); }
-div.rm-node { cursor: default; }
-div.rm-node:hover { background: var(--panel); border-color: var(--border-strong); }
-div.rm-node.kind-tool_call:hover { background: var(--accent-soft); border-color: var(--accent-line); }
-div.rm-node.kind-text:hover { background: var(--panel-2); }
 .rm-head:empty { padding: 0; }
 /* Replies that differ only in their words, as one line of a list of behaviours. */
 .group-fold > summary { min-height: var(--control-md); padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); font-size: var(--text-sm); color: var(--text); }
@@ -2555,7 +2563,7 @@ div.rm-node.kind-text:hover { background: var(--panel-2); }
 .more-text:not([hidden]) { display: inline; }
 /* A field's label, or a plan's, with its note a click away beside it. */
 .form-label, .plan-label { display: flex; align-items: center; }
-.form-label .info-note, .plan-label .info-note, .ways > legend .info-note, .seen-title .info-note { left: 0; right: auto; }
+.form-label .info-note, .plan-label .info-note, .ways > legend .info-note, .seen-title .info-note, .fork-foot .info-note { left: 0; right: auto; }
 
 /* --- the Guide, in fewer words: what a part needs said stays a click away ---------------------- */
 

@@ -14,7 +14,7 @@ export const UI_WORDS = {
   "launch": "a run tuningfork started",
   "skill version": "version 1, 2, … in order of first run, on the Skills page",
   "arm": "wording",
-  "target": "condition (over a result, Condition; a probe's rows, condition met); in a refinement, what the model should do",
+  "target": "condition (over a result, Condition; a probe's figures, condition met); in a refinement, what the model should do",
   "to the end": "the whole run",
   "check along": "the call behind each line",
   "where it holds": "ask every run",

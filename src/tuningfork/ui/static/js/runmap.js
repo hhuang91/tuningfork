@@ -7,7 +7,8 @@
 // each path ends in its runs, one mark a run, coloured by its check. The tree, each box's pass
 // rate and the turning point are the server's (`analysis.paths`): the terminal prints the same
 // tree (`tuningfork divergence --paths`). An experiment's samples are drawn the same way, a fan
-// out of one step (`fanTree`).
+// out of one step (`fanTree`), and so is a choice among a few things at one place, a probe's
+// tokens at a position (`choiceFan`).
 //
 // The map is of what is shared and where it parts. A run gone its own way is one no other run can
 // be compared with from there on: on a large map its later steps are not drawn, and runs that each
@@ -192,12 +193,16 @@ export function faredText(tally) {
  * a map of runs and a fan of samples is said by the caller:
  *   heads      the words over each column, the first and the last included
  *   end(runs, node)   what a path ends in: a run map's marks, a fan's rate
- *   count(node)       the number on a box
+ *   count(node)       the number on a box, and what its line is as wide as
+ *   countText(node)   the number as the box says it: "×4", or a caller's own words
  *   describe(node)    a box's tooltip, and what a screen reader hears
  *   onSelect(node)    hears the box chosen; `turning` marks a split and its column
  * Returns its `element` and `select(node)`, which marks a box and the way to it.
  */
-export function pathsFigure(tree, { heads, end, count = (node) => node.runs.length, describe, onSelect = null, turning = null, label, total = null }) {
+export function pathsFigure(tree, {
+  heads, end, count = (node) => node.runs.length, countText = (node) => `×${count(node)}`, describe,
+  onSelect = null, turning = null, label, total = null, className = null,
+}) {
   const all = total ?? count(tree.root);
   const boxes = new Map();
   const edges = [];
@@ -207,7 +212,7 @@ export function pathsFigure(tree, { heads, end, count = (node) => node.runs.leng
   svg.setAttribute("class", "rm-edges");
   svg.setAttribute("aria-hidden", "true");
   const canvas = h("div", { class: "rm-canvas" }, svg, grid);
-  const element = h("div", { class: "rm", role: "group", "aria-label": label }, canvas);
+  const element = h("div", { class: ["rm", className], role: "group", "aria-label": label }, canvas);
   let chosen = null;
 
   const cell = (child, column, row) => {
@@ -232,8 +237,10 @@ export function pathsFigure(tree, { heads, end, count = (node) => node.runs.leng
     const said = describe(node);
     const inside = [
       node.badge ? h("span", { class: "rm-letter" }, node.badge) : null,
+      // What a box is, where only its colour shows it: said for a screen reader.
+      node.reads ? h("span", { class: "visually-hidden" }, `${node.reads}: `) : null,
       h("span", { class: "rm-label" }, node.move ? node.move.label : node.label),
-      node.move ? h("span", { class: "rm-count" }, `×${count(node)}`) : null,
+      node.move ? h("span", { class: "rm-count" }, countText(node)) : null,
       node.hint ? h("span", { class: "rm-hint" }, node.hint) : null,
     ];
     const classes = ["rm-node", node.move ? `kind-${node.move.kind}` : "rm-origin", node.tone && `tone-${node.tone}`, node.badge && "has-badge", node.move && !count(node) && "rm-none"];
@@ -415,5 +422,35 @@ export function fan(tree, { label, onSelect = null, ended = false } = {}) {
     end: (_, node) => (ended
       ? (node?.ended ? fared(node) : null)
       : node?.rate ? rateBar(node.rate, node.tone === "change" ? "change" : "accent") : null),
+  });
+}
+
+/**
+ * A choice among a few things at one place, as a fan: the place a box, and from it a branch for
+ * each thing chosen there, as wide as its weight, ending in what the caller says of it. A probe's
+ * position is one: the token in its sentence, and the original token and each one forced there,
+ * each as wide as the model's own chance of it.
+ *   origin     `{ label, title }`: the place, its label a string or a node
+ *   branches   `[{ kind, label, tone, reads, weight, count, hint, title, data }]`: `weight` from
+ *              0 to 1, `count` the words beside the label, `reads` what the box is, in words, where
+ *              its colour alone shows it
+ *   heads      `{ start, branch, end }`: the words over the three columns
+ *   end(data)  what a branch ends in
+ */
+export function choiceFan(origin, branches, { heads, end, label, className = null } = {}) {
+  const root = { id: 0, step: -1, parent: null, move: null, label: origin.label, title: origin.title || "", runs: [], ends: [], children: [], weight: 1 };
+  root.children = branches.map((branch, index) => ({
+    id: index + 1, step: 0, parent: root, move: { kind: branch.kind, label: branch.label }, hint: branch.hint || null,
+    tone: branch.tone || null, reads: branch.reads || null, runs: [], ends: [], children: [], weight: branch.weight || 0, said: branch.count ?? "",
+    title: branch.title || "", data: branch.data,
+  }));
+  return pathsFigure({ root, ...arrange(root, "draw") }, {
+    label, className,
+    total: 1,
+    count: (node) => node.weight,
+    countText: (node) => node.said,
+    heads: { start: heads.start, step: () => heads.branch, end: heads.end },
+    describe: (node) => node.title,
+    end: (_, node) => (node ? end(node.data) : null),
   });
 }
